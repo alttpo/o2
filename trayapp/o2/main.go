@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/getlantern/systray"
+	"log"
+	"o2/snes"
+	_ "o2/snes/fxpakpro"
 )
 
 func main() {
@@ -23,4 +26,12 @@ func trayStart() {
 		fmt.Println("Requesting quit")
 		systray.Quit()
 	}()
+
+	conn, err := snes.Open("fxpakpro", "")
+	if err != nil {
+		log.Printf("%v\n", err)
+		systray.Quit()
+		return
+	}
+	conn.Close()
 }
