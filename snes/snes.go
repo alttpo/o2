@@ -29,16 +29,24 @@ type Conn interface {
 	SubmitWrite(reqs []WriteRequest)
 }
 
+type ReadOrWriteResponse struct {
+	IsWrite bool // was the request a read or write?
+	Address uint32
+	Size    uint8
+	Data    []byte // the data that was read or written
+}
+
 type ReadRequest struct {
 	Address uint32
 	Size    uint8
-	ReplyTo chan<- []byte
+	ReplyTo chan<- ReadOrWriteResponse
 }
 
 type WriteRequest struct {
 	Address uint32
 	Size    uint8
 	Data    []byte
+	ReplyTo chan<- ReadOrWriteResponse
 }
 
 var (
