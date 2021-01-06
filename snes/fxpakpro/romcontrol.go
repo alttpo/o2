@@ -2,7 +2,6 @@ package fxpakpro
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 )
@@ -25,11 +24,3 @@ func (c *Conn) PlayROM(name string, rom []byte) {
 	// wait until last command is completed:
 	wg.Wait()
 }
-
-func newBOOT(path string) Command {
-	return &CallbackCommand{Callback: func() error {
-		log.Println("TODO")
-		return nil
-	}}
-}
-

@@ -5,33 +5,29 @@ import (
 	"go.bug.st/serial"
 )
 
-var (
-	ErrInvalidResponse = fmt.Errorf("invalid response packet")
-)
-
-type mkdir struct {
-	name string
+type boot struct {
+	path string
 }
 
-func newMKDIR(name string) *mkdir {
-	return &mkdir{name: name}
+func newBOOT(path string) *boot {
+	return &boot{path: path}
 }
 
-func (c *mkdir) Execute(f serial.Port) error {
+func (c *boot) Execute(f serial.Port) error {
 	sb := make([]byte, 512)
 	sb[0] = byte('U')
 	sb[1] = byte('S')
 	sb[2] = byte('B')
 	sb[3] = byte('A')
-	sb[4] = byte(OpMKDIR)
+	sb[4] = byte(OpBOOT)
 	sb[5] = byte(SpaceFILE)
 	sb[6] = byte(FlagNONE)
 
-	// copy in the name to position 256:
-	nameBytes := []byte(c.name)
-	copy(sb[256:511], nameBytes)
+	// copy in the path to position 256:
+	nameBytes := []byte(c.path)
+	copy(sb[256:512], nameBytes)
 
-	// size isn't used for MKDIR:
+	// size isn't used for BOOT:
 	size := uint32(0)
 	sb[252] = byte((size >> 24) & 0xFF)
 	sb[253] = byte((size >> 16) & 0xFF)
@@ -51,7 +47,7 @@ func (c *mkdir) Execute(f serial.Port) error {
 		return err
 	}
 	if rsp[0] != 'U' || rsp[1] != 'S' || rsp[2] != 'B' || rsp[3] != 'A' {
-		return fmt.Errorf("mkdir: %w", ErrInvalidResponse)
+		return fmt.Errorf("boot: %w", ErrInvalidResponse)
 	}
 
 	//ec := rsp[5]
