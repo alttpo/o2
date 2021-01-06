@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
+	"log"
 	"o2/snes"
 	"strconv"
 	"strings"
@@ -12,15 +13,22 @@ import (
 
 type Driver struct{}
 
-type rwop struct {
+type Command interface {
+	Execute(f serial.Port) error
+}
+
+type rwrequest struct {
 	isRead bool
 	read   []snes.ReadRequest
 	write  []snes.WriteRequest
 }
 
 type Conn struct {
+	// must be only accessed via Command.Execute
 	f serial.Port
-	q chan rwop
+
+	// command execution queue:
+	cq chan Command
 }
 
 var (
@@ -128,10 +136,32 @@ func (d *Driver) Open(name string) (snes.Conn, error) {
 		return nil, fmt.Errorf("fxpakpro: failed to set DTR: %w", err)
 	}
 
-	c := &Conn{f: f, q: make(chan rwop, 64)}
+	c := &Conn{
+		f: f,
+		cq: make(chan Command, 64),
+	}
 	go c.handleQueue()
 
 	return c, err
+}
+
+func (c *Conn) handleQueue() {
+	var err error
+	defer func() {
+		log.Printf("fxpakpro: %v\n", err)
+	}()
+
+	for {
+		cmd := <-c.cq
+		if cmd == nil {
+			break
+		}
+
+		err = cmd.Execute(c.f)
+		if err != nil {
+			return
+		}
+	}
 }
 
 func init() {

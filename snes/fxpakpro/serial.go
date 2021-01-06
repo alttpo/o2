@@ -3,7 +3,6 @@ package fxpakpro
 import (
 	"fmt"
 	"go.bug.st/serial"
-	"log"
 	"o2/snes"
 )
 
@@ -34,30 +33,6 @@ func recvSerial(f serial.Port, rsp []byte, expected int) error {
 	return nil
 }
 
-func (c *Conn) sendVGET(reqs []snes.ReadRequest) (int, error) {
-	// VGET:
-	sb := make([]byte, 64)
-	sb[0] = byte('U')
-	sb[1] = byte('S')
-	sb[2] = byte('B')
-	sb[3] = byte('A')
-	sb[4] = byte(OpVGET)
-	sb[5] = byte(SpaceSNES)
-	sb[6] = byte(FlagDATA64B | FlagNORESP)
-
-	expected := 0
-	for i := 0; i < len(reqs); i++ {
-		// 4-byte struct: 1 byte size, 3 byte address
-		sb[32+(i*4)] = reqs[i].Size
-		sb[33+(i*4)] = byte((reqs[i].Address >> 16) & 0xFF)
-		sb[34+(i*4)] = byte((reqs[i].Address >> 8) & 0xFF)
-		sb[35+(i*4)] = byte((reqs[i].Address >> 0) & 0xFF)
-		expected += int(reqs[i].Size)
-	}
-
-	return expected, sendSerial(c.f, sb)
-}
-
 func (c *Conn) sendVPUT(reqs []snes.WriteRequest) (int, error) {
 	// VGET:
 	sb := make([]byte, 64)
@@ -80,50 +55,6 @@ func (c *Conn) sendVPUT(reqs []snes.WriteRequest) (int, error) {
 	}
 
 	return expected, sendSerial(c.f, sb)
-}
-
-func (c *Conn) sendVGETBatch(batch []snes.ReadRequest) error {
-	//log.Printf("fxpakpro queue: VGET %d requests\n", len(batch))
-	total, err := c.sendVGET(batch)
-	if err != nil {
-		return err
-	}
-
-	// wait for response:
-	for i := 0; i < len(batch); i++ {
-		size := int(batch[i].Size)
-		//log.Printf("fxpakpro queue: %d VGET wait for %d bytes\n", i, size)
-		rsp := make([]byte, size)
-
-		err = recvSerial(c.f, rsp, size)
-		if err != nil {
-			return err
-		}
-
-		// make response callback:
-		cb := batch[i].Completed
-		if cb != nil {
-			cb(snes.ReadOrWriteResponse{
-				IsWrite: false,
-				Address: batch[i].Address,
-				Size:    batch[i].Size,
-				Data:    rsp,
-			})
-		}
-	}
-
-	remainder := total & 63
-	if remainder > 0 {
-		//log.Printf("fxpakpro queue: VGET wait for %d remainder\n", remainder)
-		buf := make([]byte, 64)
-		err = recvSerial(c.f, buf, remainder)
-		buf = nil
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (c *Conn) sendVPUTBatch(batch []snes.WriteRequest) error {
@@ -168,57 +99,4 @@ func (c *Conn) sendVPUTBatch(batch []snes.WriteRequest) error {
 	}
 
 	return nil
-}
-
-func (c *Conn) handleQueue() {
-	var err error
-	defer func() {
-		log.Printf("fxpakpro queue: %v\n", err)
-	}()
-
-	for {
-		op := <-c.q
-
-		if op.isRead {
-			reqs := op.read
-
-			for len(reqs) >= 8 {
-				// send VGET command:
-				err = c.sendVGETBatch(reqs[:8])
-				if err != nil {
-					return
-				}
-
-				// move to next batch:
-				reqs = reqs[8:]
-			}
-
-			if len(reqs) > 0 && len(reqs) <= 8 {
-				err = c.sendVGETBatch(reqs)
-				if err != nil {
-					return
-				}
-			}
-		} else {
-			reqs := op.write
-
-			for len(reqs) >= 8 {
-				// send VPUT command:
-				err = c.sendVPUTBatch(reqs[:8])
-				if err != nil {
-					return
-				}
-
-				// move to next batch:
-				reqs = reqs[8:]
-			}
-
-			if len(reqs) > 0 && len(reqs) <= 8 {
-				err = c.sendVPUTBatch(reqs)
-				if err != nil {
-					return
-				}
-			}
-		}
-	}
 }

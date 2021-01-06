@@ -19,9 +19,21 @@ func (c *Conn) Close() (err error) {
 }
 
 func (c *Conn) SubmitRead(reqs []snes.ReadRequest) {
-	c.q <- rwop{isRead: true, read: reqs}
+	for len(reqs) >= 8 {
+		// queue up a VGET command:
+		batch := reqs[:8]
+		c.cq <- c.newVGET(batch)
+
+		// move to next batch:
+		reqs = reqs[8:]
+	}
+
+	if len(reqs) > 0 && len(reqs) <= 8 {
+		c.cq <- c.newVGET(reqs)
+	}
 }
 
 func (c *Conn) SubmitWrite(reqs []snes.WriteRequest) {
-	c.q <- rwop{isRead: false, write: reqs}
+	//c.rq <- rwrequest{isRead: false, write: reqs}
+	panic("TODO")
 }
