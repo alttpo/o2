@@ -65,5 +65,19 @@ func trayStart() {
 	})
 	wg.Wait()
 
+	wg = sync.WaitGroup{}
+	wg.Add(1)
+	conn.SubmitRead([]snes.ReadRequest{
+		{
+			Address: 0x007FC0,
+			Size:    0x40,
+			Completed: func(b snes.ReadOrWriteResponse) {
+				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
+				wg.Done()
+			},
+		},
+	})
+	wg.Wait()
+
 	conn.Close()
 }
