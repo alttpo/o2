@@ -56,9 +56,9 @@ func trayStart() {
 		{
 			Address: 0x007FEA, // NMI vector in bank 00
 			Size:    2,
-			Data:    []byte{0x2C, 0x82},
+			Data:    []byte{0xC9, 0x80},
 			Completed: func(b snes.ReadOrWriteResponse) {
-				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
+				fmt.Printf("write %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},
 		},
