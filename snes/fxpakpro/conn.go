@@ -34,6 +34,16 @@ func (c *Conn) SubmitRead(reqs []snes.ReadRequest) {
 }
 
 func (c *Conn) SubmitWrite(reqs []snes.WriteRequest) {
-	//c.rq <- rwrequest{isRead: false, write: reqs}
-	panic("TODO")
+	for len(reqs) >= 8 {
+		// queue up a VPUT command:
+		batch := reqs[:8]
+		c.cq <- c.newVPUT(batch)
+
+		// move to next batch:
+		reqs = reqs[8:]
+	}
+
+	if len(reqs) > 0 && len(reqs) <= 8 {
+		c.cq <- c.newVPUT(reqs)
+	}
 }
