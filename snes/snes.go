@@ -30,6 +30,11 @@ type Conn interface {
 	SubmitWrite(reqs []WriteRequest)
 }
 
+type ROMControl interface {
+	// Loads the given ROM into the system and resets.
+	PlayROM(rom []byte)
+}
+
 type ReadOrWriteResponse struct {
 	IsWrite bool // was the request a read or write?
 	Address uint32
