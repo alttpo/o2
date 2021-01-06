@@ -53,10 +53,10 @@ func (c *mkdir) Execute(f serial.Port) error {
 		return fmt.Errorf("mkdir: %w", ErrInvalidResponse)
 	}
 
-	ec := rsp[5]
-	if ec != 0 {
-		return fmt.Errorf("mkdir: error %d", ec)
-	}
+	//ec := rsp[5]
+	//if ec != 0 {
+	//	return fmt.Errorf("mkdir: error %d", ec)
+	//}
 
 	return nil
 }

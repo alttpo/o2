@@ -33,9 +33,3 @@ func newBOOT(path string) Command {
 	}}
 }
 
-func newPUTFile(path string, rom []byte) Command {
-	return &CallbackCommand{Callback: func() error {
-		log.Println("TODO")
-		return nil
-	}}
-}
