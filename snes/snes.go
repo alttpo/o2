@@ -32,7 +32,7 @@ type Conn interface {
 
 type ROMControl interface {
 	// Loads the given ROM into the system and resets.
-	PlayROM(rom []byte)
+	PlayROM(name string, rom []byte)
 }
 
 type ReadOrWriteResponse struct {

@@ -17,6 +17,14 @@ type Command interface {
 	Execute(f serial.Port) error
 }
 
+type CallbackCommand struct {
+	Callback func() error
+}
+
+func (c *CallbackCommand) Execute(f serial.Port) error {
+	return c.Callback()
+}
+
 type rwrequest struct {
 	isRead bool
 	read   []snes.ReadRequest
@@ -137,7 +145,7 @@ func (d *Driver) Open(name string) (snes.Conn, error) {
 	}
 
 	c := &Conn{
-		f: f,
+		f:  f,
 		cq: make(chan Command, 64),
 	}
 	go c.handleQueue()

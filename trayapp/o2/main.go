@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/getlantern/systray"
+	"io/ioutil"
 	"log"
 	"o2/snes"
 	_ "o2/snes/fxpakpro"
@@ -34,6 +35,16 @@ func trayStart() {
 		log.Printf("%v\n", err)
 		systray.Quit()
 		return
+	}
+
+	if rc, ok := conn.(snes.ROMControl); ok {
+		rom, err := ioutil.ReadFile("lttp.smc")
+		if err != nil {
+			log.Printf("%v\n", err)
+			systray.Quit()
+			return
+		}
+		rc.PlayROM("lttp.smc", rom)
 	}
 
 	wg := sync.WaitGroup{}
