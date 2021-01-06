@@ -36,17 +36,19 @@ type ReadOrWriteResponse struct {
 	Data    []byte // the data that was read or written
 }
 
+type ReadOrWriteCompleted func(response ReadOrWriteResponse)
+
 type ReadRequest struct {
-	Address uint32
-	Size    uint8
-	ReplyTo chan<- ReadOrWriteResponse
+	Address   uint32
+	Size      uint8
+	Completed ReadOrWriteCompleted
 }
 
 type WriteRequest struct {
-	Address uint32
-	Size    uint8
-	Data    []byte
-	ReplyTo chan<- ReadOrWriteResponse
+	Address   uint32
+	Size      uint8
+	Data      []byte
+	Completed ReadOrWriteCompleted
 }
 
 var (

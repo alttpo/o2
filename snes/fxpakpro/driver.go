@@ -225,12 +225,15 @@ func (c *Conn) sendVGETBatch(batch []snes.ReadRequest) error {
 			return err
 		}
 
-		// send response back:
-		batch[i].ReplyTo <- snes.ReadOrWriteResponse{
-			IsWrite: false,
-			Address: batch[i].Address,
-			Size:    batch[i].Size,
-			Data:    rsp,
+		// make response callback:
+		cb := batch[i].Completed
+		if cb != nil {
+			cb(snes.ReadOrWriteResponse{
+				IsWrite: false,
+				Address: batch[i].Address,
+				Size:    batch[i].Size,
+				Data:    rsp,
+			})
 		}
 	}
 
@@ -302,11 +305,14 @@ func (c *Conn) sendVPUTBatch(batch []snes.WriteRequest) error {
 
 	// reply to each write request:
 	for i := 0; i < len(batch); i++ {
-		batch[i].ReplyTo <- snes.ReadOrWriteResponse{
-			IsWrite: true,
-			Address: batch[i].Address,
-			Size:    batch[i].Size,
-			Data:    batch[i].Data,
+		cb := batch[i].Completed
+		if cb != nil {
+			cb(snes.ReadOrWriteResponse{
+				IsWrite: true,
+				Address: batch[i].Address,
+				Size:    batch[i].Size,
+				Data:    batch[i].Data,
+			})
 		}
 	}
 

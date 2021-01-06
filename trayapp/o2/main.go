@@ -7,6 +7,7 @@ import (
 	"log"
 	"o2/snes"
 	_ "o2/snes/fxpakpro"
+	"sync"
 )
 
 func main() {
@@ -35,84 +36,34 @@ func trayStart() {
 		return
 	}
 
-	respC := make(chan snes.ReadOrWriteResponse, 64)
-	requests := []snes.ReadRequest{
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	conn.SubmitRead([]snes.ReadRequest{
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
-			ReplyTo: respC,
+			Completed: func(b snes.ReadOrWriteResponse) {
+				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
+				wg.Done()
+			},
 		},
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0x00FFC0,
-			Size:    0x40,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0x407FC0,
-			Size:    0x40,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0x40FFC0,
-			Size:    0x40,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0x807FC0,
-			Size:    0x40,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			ReplyTo: respC,
-		},
-		{
-			Address: 0x80FFC0,
-			Size:    0x40,
-			ReplyTo: respC,
-		},
-	}
-	conn.SubmitRead(requests)
+	})
+	wg.Wait()
+
+	wg = sync.WaitGroup{}
+	wg.Add(1)
 	conn.SubmitWrite([]snes.WriteRequest{
 		{
 			Address: 0x007FEA, // NMI vector in bank 00
 			Size:    2,
-			Data:    []byte{0x12, 0x80},
-			ReplyTo: respC,
+			Data:    []byte{0x2C, 0x82},
+			Completed: func(b snes.ReadOrWriteResponse) {
+				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
+				wg.Done()
+			},
 		},
 	})
-	//conn.SubmitRead(requests)
-
-	for i := 0; ; i++ {
-		b := <-respC
-		fmt.Printf("%3d: %5v %s\n", i, b.IsWrite, hex.EncodeToString(b.Data))
-	}
+	wg.Wait()
 
 	conn.Close()
 }
