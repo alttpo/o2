@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/getlantern/systray"
+	"github.com/skratchdot/open-golang/open"
 	"io/ioutil"
 	"log"
 	"o2/snes"
@@ -14,6 +15,10 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
+	// Start a web server:
+	go startWebServer()
+
+	// Start up a systray:
 	systray.Run(trayStart, trayExit)
 }
 
@@ -22,16 +27,34 @@ func trayExit() {
 }
 
 func trayStart() {
+	// Set up the systray:
 	//systray.SetTemplateIcon(icon.Data, icon.Data)
 	systray.SetTitle("O2")
 	systray.SetTooltip("O2 - SNES Online 2.0")
-	mQuitOrig := systray.AddMenuItem("Quit", "Quit")
-	go func() {
-		<-mQuitOrig.ClickedCh
-		fmt.Println("Requesting quit")
-		systray.Quit()
-	}()
+	mOpenWeb := systray.AddMenuItem("Web UI", "Opens the web UI in the default browser")
+	systray.AddSeparator()
+	mQuit := systray.AddMenuItem("Quit", "Quit")
 
+	// Menu item click handler:
+	go func() {
+		for {
+			select {
+			case <-mOpenWeb.ClickedCh:
+				err := open.Start("http://127.0.0.1:27637/")
+				if err != nil {
+					log.Println(err)
+				}
+				break
+			case <-mQuit.ClickedCh:
+				fmt.Println("Requesting quit")
+				systray.Quit()
+				break
+			}
+		}
+	}()
+}
+
+func test() {
 	conn, err := snes.Open("fxpakpro", "")
 	if err != nil {
 		log.Printf("%v\n", err)
@@ -40,7 +63,7 @@ func trayStart() {
 	}
 
 	if rc, ok := conn.(snes.ROMControl); ok {
-		rom, err := ioutil.ReadFile("lttp.smc")
+		rom, err := ioutil.ReadFile("lttpj.smc")
 		if err != nil {
 			log.Printf("%v\n", err)
 			systray.Quit()
