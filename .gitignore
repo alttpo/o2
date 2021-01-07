@@ -18,3 +18,7 @@
 
 sd2snes
 z3randomizer
+
+# Ignore any ROMs for testing
+*.smc
+*.sfc
