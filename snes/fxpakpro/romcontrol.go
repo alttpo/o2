@@ -2,6 +2,7 @@ package fxpakpro
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 )
@@ -14,7 +15,9 @@ func (c *Conn) PlayROM(name string, rom []byte) {
 
 	c.cq <- newMKDIR("o2")
 	path := fmt.Sprintf("o2/%s", name)
-	c.cq <- newPUTFile(path, rom)
+	c.cq <- newPUTFile(path, rom, func(sent, total int) {
+		log.Printf("%d of %d\n", sent, total)
+	})
 	c.cq <- newBOOT(path)
 	c.cq <- &CallbackCommand{Callback: func() error {
 		wg.Done()

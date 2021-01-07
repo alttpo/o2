@@ -6,14 +6,16 @@ import (
 )
 
 type putfile struct {
-	path string
-	rom  []byte
+	path   string
+	rom    []byte
+	report func(sent int, total int)
 }
 
-func newPUTFile(path string, rom []byte) *putfile {
+func newPUTFile(path string, rom []byte, report func(int, int)) *putfile {
 	return &putfile{
 		path,
 		rom,
+		report,
 	}
 }
 
@@ -45,7 +47,11 @@ func (c *putfile) Execute(f serial.Port) error {
 	}
 
 	// send data:
-	err = sendSerial(f, c.rom)
+	if c.report == nil {
+		err = sendSerial(f, c.rom)
+	} else {
+		err = sendSerialProgress(f, c.rom, c.report)
+	}
 	if err != nil {
 		return err
 	}

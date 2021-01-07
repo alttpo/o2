@@ -17,6 +17,21 @@ func sendSerial(f serial.Port, buf []byte) error {
 	return nil
 }
 
+func sendSerialProgress(f serial.Port, buf []byte, report func(sent, total int)) error {
+	sent := 0
+	total := len(buf)
+	for sent < total {
+		report(sent, total)
+		n, e := f.Write(buf[sent:])
+		if e != nil {
+			return e
+		}
+		sent += n
+	}
+	report(sent, total)
+	return nil
+}
+
 func recvSerial(f serial.Port, rsp []byte, expected int) error {
 	o := 0
 	for o < expected {

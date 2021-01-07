@@ -12,6 +12,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
+
 	systray.Run(trayStart, trayExit)
 }
 
