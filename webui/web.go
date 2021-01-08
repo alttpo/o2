@@ -1,4 +1,4 @@
-package main
+package webui
 
 import (
 	"encoding/json"
@@ -7,14 +7,12 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 )
 
 // starts a web server with websockets support to enable bidirectional communication with the UI
-func startWebServer() {
-	listenAddr := os.Getenv("O2_WEB_LISTENADDR")
-	if listenAddr == "" {
-		listenAddr = ":27637"
+func StartWebServer(listenAddr *string, staticPath string) {
+	if *listenAddr == "" {
+		*listenAddr = ":27637"
 	}
 
 	mux := http.NewServeMux()
@@ -32,10 +30,10 @@ func startWebServer() {
 	}))
 
 	// serve static content on /:
-	mux.Handle("/", http.FileServer(http.Dir("static")))
+	mux.Handle("/", http.FileServer(http.Dir(staticPath)))
 
 	// start server:
-	log.Fatal(http.ListenAndServe(listenAddr, mux))
+	log.Fatal(http.ListenAndServe(*listenAddr, mux))
 }
 
 type CommandRequest struct {

@@ -9,6 +9,8 @@ import (
 	"log"
 	"o2/snes"
 	_ "o2/snes/fxpakpro"
+	"o2/webui"
+	"os"
 	"sync"
 )
 
@@ -16,7 +18,8 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
 	// Start a web server:
-	go startWebServer()
+	listenAddr := os.Getenv("O2_WEB_LISTENADDR")
+	go webui.StartWebServer(&listenAddr, "webui/static")
 
 	// Start up a systray:
 	systray.Run(trayStart, trayExit)
