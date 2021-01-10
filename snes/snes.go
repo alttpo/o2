@@ -6,8 +6,18 @@ import (
 	"sync"
 )
 
+// A struct that contains fields used to uniquely identify a device
+type DeviceDescriptor interface{}
+
 type Driver interface {
-	Open(name string) (Conn, error)
+	// Open a connection to a specific device
+	Open(desc DeviceDescriptor) (Conn, error)
+
+	// Detect any present devices
+	Detect() ([]DeviceDescriptor, error)
+
+	// Returns a descriptor with all fields empty or defaulted
+	Empty() DeviceDescriptor
 }
 
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.

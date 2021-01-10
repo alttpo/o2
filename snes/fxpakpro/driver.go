@@ -7,41 +7,12 @@ import (
 	"go.bug.st/serial/enumerator"
 	"log"
 	"o2/snes"
-	"strconv"
-	"strings"
 )
-
-type Driver struct{}
-
-type Command interface {
-	Execute(f serial.Port) error
-}
-
-type CallbackCommand struct {
-	Callback func() error
-}
-
-func (c *CallbackCommand) Execute(f serial.Port) error {
-	return c.Callback()
-}
-
-type rwrequest struct {
-	isRead bool
-	read   []snes.ReadRequest
-	write  []snes.WriteRequest
-}
-
-type Conn struct {
-	// must be only accessed via Command.Execute
-	f serial.Port
-
-	// command execution queue:
-	cq chan Command
-}
 
 var (
 	ErrNoFXPakProFound = errors.New("fxpakpro: no device found among serial ports")
-	baudRates          = []int{
+
+	baudRates = []int{
 		921600, // first rate that works on Windows
 		460800,
 		256000,
@@ -59,10 +30,33 @@ var (
 	}
 )
 
-func DetectDevice() (portName string, err error) {
+type Driver struct{}
+
+type DeviceDescriptor struct {
+	Port string
+	Baud *int
+}
+
+type Conn struct {
+	// must be only accessed via Command.Execute
+	f serial.Port
+
+	// command execution queue:
+	cq chan Command
+}
+
+func (d *Driver) Empty() snes.DeviceDescriptor {
+	return DeviceDescriptor{
+		Port: "",
+		Baud: &(baudRates[0]),
+	}
+}
+
+func (d *Driver) Detect() (names []snes.DeviceDescriptor, err error) {
 	var ports []*enumerator.PortDetails
 
-	portName = ""
+	// It would be surprising to see more than one FX Pak Pro connected to a PC.
+	names = make([]snes.DeviceDescriptor, 0, 1)
 
 	ports, err = enumerator.GetDetailedPortsList()
 	if err != nil {
@@ -81,25 +75,28 @@ func DetectDevice() (portName string, err error) {
 		//}
 
 		if port.SerialNumber == "DEMO00000000" {
-			portName = port.Name
-			err = nil
-			return
+			names = append(names, DeviceDescriptor{port.Name, nil})
 		}
 	}
 
+	err = nil
 	return
 }
 
-func (d *Driver) Open(name string) (snes.Conn, error) {
+func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 	var err error
 
-	parts := strings.Split(name, ";")
-
-	portName := parts[0]
+	dd := ddg.(DeviceDescriptor)
+	portName := dd.Port
 	if portName == "" {
-		portName, err = DetectDevice()
+		ddgs, err := d.Detect()
 		if err != nil {
 			return nil, err
+		}
+
+		// pick first device found, if any:
+		if len(ddgs) > 0 {
+			portName = ddgs[0].(DeviceDescriptor).Port
 		}
 	}
 	if portName == "" {
@@ -107,9 +104,10 @@ func (d *Driver) Open(name string) (snes.Conn, error) {
 	}
 
 	baudRequest := baudRates[0]
-	if len(parts) > 1 {
-		if n, e := strconv.Atoi(parts[1]); e == nil {
-			baudRequest = n
+	if dd.Baud != nil {
+		b := *dd.Baud
+		if b > 0 {
+			baudRequest = b
 		}
 	}
 
