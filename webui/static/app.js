@@ -1,25 +1,37 @@
 
+let host;
+class Host {
+    constructor() {
+        const { protocol, host } = window.location;
+        const url = (protocol === "https:" ? "wss:" : "ws:") + "//" + host + "/ws/";
+        this.ws = new WebSocket(url);
+        this.ws.onmessage = this.onmessage;
+    }
+
+    onmessage(e) {
+        let msg = JSON.parse(e.data);
+        switch (msg.c) {
+        case "devices":
+            vm.provide()
+            break;
+        }
+    }
+}
 
 const App = {
     name: 'App',
     data: function() {
         return {
-            ws: null
+            host: null
         };
     },
     methods: {
-
     },
     mounted() {
         console.log("mounted");
     },
     created: function() {
-        const { protocol, host, pathname } = window.location;
-        const url = (protocol === "https:" ? "wss:" : "ws:") + "//" + host + "/ws/";
-        this.ws = new WebSocket(url);
-        this.ws.onmessage = function (e) {
-            console.log(e.data);
-        };
+        host = new Host();
     }
 };
 
