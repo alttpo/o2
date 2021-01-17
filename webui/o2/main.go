@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"o2/snes"
+	"o2/snes/fxpakpro"
 	_ "o2/snes/fxpakpro"
 	"o2/webui"
 	"os"
@@ -58,7 +59,7 @@ func trayStart() {
 }
 
 func test() {
-	conn, err := snes.Open("fxpakpro", "")
+	conn, err := snes.Open("fxpakpro", fxpakpro.DeviceDescriptor{})
 	if err != nil {
 		log.Printf("%v\n", err)
 		systray.Quit()
