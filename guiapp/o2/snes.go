@@ -40,12 +40,18 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 		vb.Add(card)
 
 		var err error
+		var devSelect *widget.Select
 		options := make([]string, 0)
 		devices := make([]snes.DeviceDescriptor, 0, 4)
 		devSelected := func(id string) {
-			fmt.Println(id)
+			i := devSelect.SelectedIndex()
+			if i == 0 {
+				return
+			}
+			// send device to main loop:
+			snesC <- devices[i-1]
 		}
-		devSelect := widget.NewSelect(options, devSelected)
+		devSelect = widget.NewSelect(options, devSelected)
 		devSelect.PlaceHolder = "(No Devices Detected)"
 
 		doDetect := func() {
@@ -56,17 +62,19 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 			}
 
 			options = make([]string, 0, len(devices) + 1)
+			i := 0
 			if len(devices) == 0 {
 				options = append(options, "(No Devices Detected)")
 			} else {
 				options = append(options, "(Select Device)")
+				i = 1
 			}
 			for _, dev := range devices {
 				options = append(options, dev.DisplayName())
 			}
 			devSelect.Options = options
 
-			devSelect.SetSelectedIndex(0)
+			devSelect.SetSelectedIndex(i)
 		}
 
 		doDetect()

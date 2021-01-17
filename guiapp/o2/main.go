@@ -1,19 +1,25 @@
 package main
 
 import (
+	"fmt"
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
+	"o2/snes"
 )
 
 var (
-	a fyne.App
-	w fyne.Window
+	a     fyne.App
+	w     fyne.Window
+	snesC chan snes.DeviceDescriptor = make(chan snes.DeviceDescriptor)
 )
 
 func main() {
 	a = app.NewWithID("o2")
+
+	go appMain()
+
 	w = a.NewWindow("O2")
 	setContent(w)
 	w.SetMaster()
@@ -63,4 +69,16 @@ func setContent(w fyne.Window) {
 
 	menu.Select(0)
 	w.Resize(fyne.NewSize(640, 480))
+}
+
+func appMain() {
+	for {
+		select {
+		case dev := <-snesC:
+			fmt.Println(dev.DisplayName())
+			break
+		}
+	}
+
+	//time.NewTicker(16700 * time.Microsecond)
 }
