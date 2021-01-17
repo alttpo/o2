@@ -69,7 +69,7 @@ func setContent(w fyne.Window) {
 	w.SetContent(split)
 
 	menu.Select(0)
-	w.Resize(fyne.NewSize(640, 480))
+	w.Resize(fyne.NewSize(1024, 800))
 }
 
 func appMain() {

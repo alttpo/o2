@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/layout"
+	"fyne.io/fyne/storage"
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 	"io/ioutil"
@@ -45,22 +46,48 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 		layout.NewFormLayout(),
 		widget.NewLabel("ROM:"),
 		widget.NewButtonWithIcon("Open...", theme.FolderOpenIcon(), func() {
-			dialog.ShowFileOpen(func(rc fyne.URIReadCloser, err error) {
+			var fo *dialog.FileDialog
+			fo = dialog.NewFileOpen(
+				func(rc fyne.URIReadCloser, err error) {
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					if rc == nil {
+						return
+					}
+
+					// save last location:
+					dir, _ := storage.Parent(rc.URI())
+					a.Preferences().SetString("lastLocation", dir.String())
+
+					// load contents:
+					s.ROMContents, err = ioutil.ReadAll(rc)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+
+					s.ROMURI = rc.URI()
+					s.IsLoaded = true
+					rc.Close()
+				},
+				w,
+			)
+
+			sz := w.Content().Size()
+			fo.Resize(fyne.NewSize(int(float64(sz.Width)*0.85), int(float64(sz.Height)*0.85)))
+
+			if lastLocation := a.Preferences().String("lastLocation"); lastLocation != "" {
+				l, err := storage.ListerForURI(storage.NewURI(lastLocation))
 				if err != nil {
 					log.Println(err)
-					return
+				} else {
+					fo.SetLocation(l)
 				}
+			}
 
-				s.ROMContents, err = ioutil.ReadAll(rc)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-
-				s.ROMURI = rc.URI()
-				s.IsLoaded = true
-				rc.Close()
-			}, w)
+			fo.Show()
 		}),
 	)
 	cardLocal := widget.NewCard("Local file", "Load a ROM from your local filesystem", localContent)
