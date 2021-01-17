@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
 	"o2/snes"
+	_ "o2/snes/fxpakpro"
 	"time"
 )
 
@@ -39,10 +40,20 @@ func setContent(w fyne.Window) {
 			obj.(*widget.Label).SetText(Screens[id].Title())
 		},
 	)
+	lastScreen := Screen(nil)
 
 	card := widget.NewCard("", "", nil)
 	menu.OnSelected = func(id widget.ListItemID) {
+		if lastScreen != nil {
+			// Destroy last screen:
+			if sd, ok := lastScreen.(ScreenDestroy); ok {
+				sd.Destroy(card.Content)
+			}
+		}
+
+		// set up new screen:
 		screen := Screens[id]
+		lastScreen = screen
 		card.SetTitle(screen.Title())
 		card.SetSubTitle(screen.Description())
 		v := screen.View(w)

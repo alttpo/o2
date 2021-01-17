@@ -9,7 +9,6 @@ import (
 	"fyne.io/fyne/widget"
 	"log"
 	"o2/snes"
-	_ "o2/snes/fxpakpro"
 )
 
 type SNESScreen struct {

@@ -8,6 +8,10 @@ type Screen interface {
 	View(w fyne.Window) fyne.CanvasObject
 }
 
+type ScreenDestroy interface {
+	Destroy(obj fyne.CanvasObject)
+}
+
 type GameScreen struct{}
 
 func (s *GameScreen) Title() string { return "Game" }

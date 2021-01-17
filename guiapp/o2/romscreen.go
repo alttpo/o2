@@ -5,7 +5,6 @@ import (
 )
 
 type ROMScreen struct {
-
 }
 
 func (s *ROMScreen) Title() string {
@@ -19,5 +18,3 @@ func (s *ROMScreen) Description() string {
 func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 	return nil
 }
-
-

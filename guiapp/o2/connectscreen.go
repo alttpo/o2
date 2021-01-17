@@ -65,3 +65,10 @@ func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
 		form,
 	)
 }
+
+func (s *ConnectScreen) Destroy(obj fyne.CanvasObject) {
+	a := fyne.CurrentApp()
+	preferences := a.Preferences()
+
+	preferences.SetBool("hideGroupName", s.txtGroup.Password)
+}
