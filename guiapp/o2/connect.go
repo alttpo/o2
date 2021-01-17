@@ -7,20 +7,58 @@ import (
 	"fyne.io/fyne/widget"
 )
 
-type ConnectScreen struct{
-	txtServer *widget.Entry
+type ConnectScreen struct {
+	txtHost   *widget.Entry
+	txtGroup  *widget.Entry
+	txtPlayer *widget.Entry
+	txtTeam   *widget.Entry
 }
 
 func (s *ConnectScreen) Label() string { return "Connect" }
 
 func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
-	s.txtServer = widget.NewEntry()
-	s.txtServer.SetText("alttp.online")
+	a := fyne.CurrentApp()
+	preferences := a.Preferences()
+
+	s.txtHost = widget.NewEntry()
+	s.txtHost.SetText(preferences.StringWithFallback("host", "alttp.online"))
+	s.txtHost.OnChanged = func(s string) {
+		preferences.SetString("host", s)
+	}
+
+	// allow users to hide group name e.g. for streaming
+	s.txtGroup = widget.NewPasswordEntry()
+	s.txtGroup.Password = preferences.BoolWithFallback("hideGroupName", false)
+	s.txtGroup.SetText(preferences.StringWithFallback("groupName", ""))
+	s.txtGroup.OnChanged = func(s string) {
+		preferences.SetString("groupName", s)
+	}
+
+	s.txtPlayer = widget.NewEntry()
+	s.txtPlayer.SetText(preferences.StringWithFallback("playerName", ""))
+	s.txtPlayer.OnChanged = func(s string) {
+		preferences.SetString("playerName", s)
+	}
+
+	s.txtTeam = widget.NewEntry()
+	//s.txtTeam.Validator = numeric!
+	s.txtTeam.SetText(preferences.StringWithFallback("teamNumber", "0"))
+	s.txtTeam.OnChanged = func(s string) {
+		preferences.SetString("teamNumber", s)
+	}
+
 	form := fyne.NewContainerWithLayout(
 		layout.NewFormLayout(),
-		widget.NewLabel("Server:"),
-		s.txtServer,
+		widget.NewLabel("Host:"),
+		s.txtHost,
+		widget.NewLabel("Group:"),
+		s.txtGroup,
+		widget.NewLabel("Player Name:"),
+		s.txtPlayer,
+		widget.NewLabel("Team Number:"),
+		s.txtTeam,
 	)
+
 	return container.NewVBox(
 		form,
 	)
