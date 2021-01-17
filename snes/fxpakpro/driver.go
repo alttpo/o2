@@ -37,7 +37,7 @@ func (d *Driver) DisplayName() string {
 }
 
 func (d *Driver) DisplayDescription() string {
-	return "Connect via USB to an FX Pak Pro"
+	return "Connect to an FX Pak Pro or SD2SNES via USB"
 }
 
 type DeviceDescriptor struct {
