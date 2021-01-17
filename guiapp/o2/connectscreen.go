@@ -14,7 +14,9 @@ type ConnectScreen struct {
 	txtTeam   *widget.Entry
 }
 
-func (s *ConnectScreen) Label() string { return "Connect" }
+func (s *ConnectScreen) Title() string { return "Connect" }
+
+func (s *ConnectScreen) Description() string { return "Connect to O2 server" }
 
 func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
 	a := fyne.CurrentApp()

@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
 	"o2/snes"
+	"time"
 )
 
 var (
@@ -35,34 +36,23 @@ func setContent(w fyne.Window) {
 			return widget.NewLabel("Item")
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(Screens[id].Label())
+			obj.(*widget.Label).SetText(Screens[id].Title())
 		},
 	)
 
-	content := container.NewMax()
-	title := widget.NewLabel("")
+	card := widget.NewCard("", "", nil)
 	menu.OnSelected = func(id widget.ListItemID) {
 		screen := Screens[id]
-		title.SetText(screen.Label())
+		card.SetTitle(screen.Title())
+		card.SetSubTitle(screen.Description())
 		v := screen.View(w)
-		if v != nil {
-			content.Objects = []fyne.CanvasObject{v}
-		} else {
-			content.Objects = []fyne.CanvasObject{}
-		}
-		content.Refresh()
+		card.Content = v
+		card.Refresh()
 	}
-
-	right := container.NewBorder(
-		title,
-		nil,
-		nil,
-		nil,
-		content)
 
 	split := container.NewHSplit(
 		menu,
-		right)
+		card)
 	split.Offset = 0.2
 
 	w.SetContent(split)
@@ -72,13 +62,15 @@ func setContent(w fyne.Window) {
 }
 
 func appMain() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+
 	for {
 		select {
 		case dev := <-snesC:
 			fmt.Println(dev.DisplayName())
 			break
+		case <-ticker.C:
+			break
 		}
 	}
-
-	//time.NewTicker(16700 * time.Microsecond)
 }

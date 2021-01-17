@@ -16,7 +16,9 @@ type SNESScreen struct {
 	txtServer *widget.Entry
 }
 
-func (s *SNESScreen) Label() string { return "SNES" }
+func (s *SNESScreen) Title() string { return "SNES" }
+
+func (s *SNESScreen) Description() string { return "Connect to a SNES" }
 
 func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 	vb := container.NewVBox()
