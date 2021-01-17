@@ -61,11 +61,10 @@ func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
 		s.txtTeam,
 	)
 
-	return container.NewVBox(
-		form,
-	)
+	return container.NewVBox(form)
 }
 
+// called immediately before screen view is destroyed:
 func (s *ConnectScreen) Destroy(obj fyne.CanvasObject) {
 	a := fyne.CurrentApp()
 	preferences := a.Preferences()
