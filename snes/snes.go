@@ -7,7 +7,9 @@ import (
 )
 
 // A struct that contains fields used to uniquely identify a device
-type DeviceDescriptor interface{}
+type DeviceDescriptor interface {
+	DisplayName() string
+}
 
 type Driver interface {
 	// Open a connection to a specific device
@@ -18,6 +20,12 @@ type Driver interface {
 
 	// Returns a descriptor with all fields empty or defaulted
 	Empty() DeviceDescriptor
+}
+
+type DriverDescriptor interface {
+	DisplayName() string
+
+	DisplayDescription() string
 }
 
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
@@ -106,7 +114,12 @@ func Drivers() []string {
 	return list
 }
 
-func Open(driverName, portName string) (Conn, error) {
+func DriverByName(name string) (Driver, bool) {
+	d, ok := drivers[name]
+	return d, ok
+}
+
+func Open(driverName string, desc DeviceDescriptor) (Conn, error) {
 	driversMu.RLock()
 	driveri, ok := drivers[driverName]
 	driversMu.RUnlock()
@@ -114,5 +127,5 @@ func Open(driverName, portName string) (Conn, error) {
 		return nil, fmt.Errorf("snes: unknown driver %q (forgotten import?)", driverName)
 	}
 
-	return driveri.Open(portName)
+	return driveri.Open(desc)
 }

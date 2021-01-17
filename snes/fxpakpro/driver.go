@@ -32,9 +32,23 @@ var (
 
 type Driver struct{}
 
+func (d *Driver) DisplayName() string {
+	return "FX Pak Pro"
+}
+
+func (d *Driver) DisplayDescription() string {
+	return "Connect via USB to an FX Pak Pro"
+}
+
 type DeviceDescriptor struct {
 	Port string
 	Baud *int
+	VID  string
+	PID  string
+}
+
+func (d DeviceDescriptor) DisplayName() string {
+	return fmt.Sprintf("%s (%s:%s)", d.Port, d.VID, d.PID)
 }
 
 type Conn struct {
@@ -52,11 +66,11 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 	}
 }
 
-func (d *Driver) Detect() (names []snes.DeviceDescriptor, err error) {
+func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	var ports []*enumerator.PortDetails
 
 	// It would be surprising to see more than one FX Pak Pro connected to a PC.
-	names = make([]snes.DeviceDescriptor, 0, 1)
+	devices = make([]snes.DeviceDescriptor, 0, 1)
 
 	ports, err = enumerator.GetDetailedPortsList()
 	if err != nil {
@@ -68,14 +82,16 @@ func (d *Driver) Detect() (names []snes.DeviceDescriptor, err error) {
 			continue
 		}
 
-		//log.Printf("%s: Found USB port\n", port.Name)
-		//if port.IsUSB {
-		//	log.Printf("   USB ID     %s:%s\n", port.VID, port.PID)
-		//	log.Printf("   USB serial %s\n", port.SerialNumber)
-		//}
+		//log.Printf("   USB ID     %s:%s\n", port.VID, port.PID)
+		//log.Printf("   USB serial %s\n", port.SerialNumber)
 
 		if port.SerialNumber == "DEMO00000000" {
-			names = append(names, DeviceDescriptor{port.Name, nil})
+			devices = append(devices, DeviceDescriptor{
+				port.Name,
+				nil,
+				port.VID,
+				port.PID,
+			})
 		}
 	}
 
@@ -113,7 +129,8 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 
 	// Try all the common baud rates in descending order:
 	f := serial.Port(nil)
-	for _, baud := range baudRates {
+	var baud int
+	for _, baud = range baudRates {
 		if baud > baudRequest {
 			continue
 		}
@@ -133,6 +150,11 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fxpakpro: failed to open serial port at any baud rate: %w", err)
 	}
+
+	// set baud rate on descriptor:
+	pBaud := new(int)
+	*pBaud = baud
+	dd.Baud = pBaud
 
 	// set DTR:
 	//log.Printf("serial: Set DTR on\n")
