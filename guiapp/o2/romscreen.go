@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/widget"
 	"io/ioutil"
 	"log"
+	"o2/snes"
 )
 
 type ROMScreen struct {
@@ -56,21 +57,27 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 					if rc == nil {
 						return
 					}
+					defer rc.Close()
 
 					// save last location:
 					dir, _ := storage.Parent(rc.URI())
 					a.Preferences().SetString("lastLocation", dir.String())
 
 					// load contents:
-					s.ROMContents, err = ioutil.ReadAll(rc)
+					contents, err := ioutil.ReadAll(rc)
 					if err != nil {
 						log.Println(err)
 						return
 					}
 
+					rom, err := snes.NewROM(contents)
+					if err != nil {
+						return
+					}
+
 					s.ROMURI = rc.URI()
 					s.IsLoaded = true
-					rc.Close()
+					romC <- rom
 				},
 				w,
 			)
