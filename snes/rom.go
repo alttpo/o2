@@ -37,23 +37,23 @@ type Header struct {
 }
 
 type NativeVectors struct {
-	Unused1 [4]byte
-	COP     uint16
-	BRK     uint16
-	ABORT   uint16
-	NMI     uint16
-	Unused2 uint16
-	IRQ     uint16
+	Unused1 [4]byte // $FFE0
+	COP     uint16  // $FFE4
+	BRK     uint16  // $FFE6
+	ABORT   uint16  // $FFE8
+	NMI     uint16  // $FFEA
+	Unused2 uint16  // $FFEC
+	IRQ     uint16  // $FFEE
 }
 
 type EmulatedVectors struct {
-	Unused1 [4]byte
-	COP     uint16
-	Unused2 uint16
-	ABORT   uint16
-	NMI     uint16
-	RESET   uint16
-	IRQBRK  uint16
+	Unused1 [4]byte // $FFF0
+	COP     uint16  // $FFF4
+	Unused2 uint16  // $FFF6
+	ABORT   uint16  // $FFF8
+	NMI     uint16  // $FFFA
+	RESET   uint16  // $FFFC
+	IRQBRK  uint16  // $FFFE
 }
 
 func NewROM(contents []byte) (r *ROM, err error) {
