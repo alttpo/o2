@@ -37,19 +37,19 @@ type Header struct {
 }
 
 type NativeVectors struct {
-	unused1 [4]byte
+	Unused1 [4]byte
 	COP     uint16
 	BRK     uint16
 	ABORT   uint16
 	NMI     uint16
-	unused2 uint16
+	Unused2 uint16
 	IRQ     uint16
 }
 
 type EmulatedVectors struct {
-	unused1 [4]byte
+	Unused1 [4]byte
 	COP     uint16
-	unused2 uint16
+	Unused2 uint16
 	ABORT   uint16
 	NMI     uint16
 	RESET   uint16
@@ -57,35 +57,57 @@ type EmulatedVectors struct {
 }
 
 func NewROM(contents []byte) (r *ROM, err error) {
-	r = &ROM{
-		Contents:     contents,
-		HeaderOffset: 0x7FB0,
+	if len(contents) < 0x8000 {
+		return nil, fmt.Errorf("ROM file not big enough to contain SNES header")
 	}
 
-	// Read header:
-	b := bytes.NewReader(contents[r.HeaderOffset : r.HeaderOffset+0x40])
+	headerOffset := uint32(0x007FB0)
 
-	// reflection version of below code:
-	hv := reflect.ValueOf(&r.Header).Elem()
+	r = &ROM{
+		Contents:     contents,
+		HeaderOffset: headerOffset,
+	}
+
+	// Read SNES header:
+	b := bytes.NewReader(contents[headerOffset : headerOffset+0x50])
+	err = readBinaryStruct(b, &r.Header)
+	if err != nil {
+		return
+	}
+	err = readBinaryStruct(b, &r.NativeVectors)
+	if err != nil {
+		return
+	}
+	err = readBinaryStruct(b, &r.EmulatedVectors)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func readBinaryStruct(b *bytes.Reader, into interface{}) (err error) {
+	hv := reflect.ValueOf(into).Elem()
 	for i := 0; i < hv.NumField(); i++ {
 		f := hv.Field(i)
 		var p interface{}
-		if f.CanAddr() {
-			p = f.Addr().Interface()
-			err = binary.Read(b, binary.LittleEndian, p)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", hv.Type().Field(i).Name, err)
-			}
-			//fmt.Printf("%s: %v\n", reflect.TypeOf(r.Header).Field(i).Name, f.Interface())
-		} else {
-			p = f.Interface()
-			_, err = b.Read(p.([]byte))
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", hv.Type().Field(i).Name, err)
-			}
-		}
-	}
 
+		if !f.CanAddr() {
+			panic(fmt.Errorf("error handling struct field %s of type %s; cannot take address of field", hv.Type().Field(i).Name, hv.Type().Name()))
+			//p = f.Interface()
+			//_, err = b.Read(p.([]byte))
+			//if err != nil {
+			//	return fmt.Errorf("error reading header field %s: %w", hv.Type().Field(i).Name, err)
+			//}
+		}
+
+		p = f.Addr().Interface()
+		err = binary.Read(b, binary.LittleEndian, p)
+		if err != nil {
+			return fmt.Errorf("error reading struct field %s of type %s: %w", hv.Type().Field(i).Name, hv.Type().Name(), err)
+		}
+		//fmt.Printf("%s: %v\n", reflect.TypeOf(r.Header).Field(i).Name, f.Interface())
+	}
 	return
 }
 
