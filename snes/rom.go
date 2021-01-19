@@ -3,6 +3,8 @@ package snes
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"reflect"
 )
 
 type ROM struct {
@@ -56,86 +58,32 @@ type EmulatedVectors struct {
 
 func NewROM(contents []byte) (r *ROM, err error) {
 	r = &ROM{
-		Contents: contents,
-		HeaderOffset: 0x7FC0,
+		Contents:     contents,
+		HeaderOffset: 0x7FB0,
 	}
 
 	// Read header:
-	b := bytes.NewReader(contents[r.HeaderOffset:r.HeaderOffset+0x20])
+	b := bytes.NewReader(contents[r.HeaderOffset : r.HeaderOffset+0x40])
 
 	// reflection version of below code:
-	//hv := reflect.ValueOf(r.Header)
-	//for i := 0; i < hv.NumField(); i++ {
-	//	p := hv.Field(i).Interface()
-	//	err = binary.Read(b, binary.LittleEndian, p)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
-
-	err = binary.Read(b, binary.LittleEndian, &r.Header.MakerCode)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.GameCode)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.Fixed1)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.ExpansionRAMSize)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.SpecialVersion)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.CartridgeSubType)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.Title)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.MapMode)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.CartridgeType)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.ROMSize)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.RAMSize)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.DestinationCode)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.Fixed2)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.MaskROMVersion)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.ComplementCheckSum)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(b, binary.LittleEndian, &r.Header.CheckSum)
-	if err != nil {
-		return nil, err
+	hv := reflect.ValueOf(&r.Header).Elem()
+	for i := 0; i < hv.NumField(); i++ {
+		f := hv.Field(i)
+		var p interface{}
+		if f.CanAddr() {
+			p = f.Addr().Interface()
+			err = binary.Read(b, binary.LittleEndian, p)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", hv.Type().Field(i).Name, err)
+			}
+			//fmt.Printf("%s: %v\n", reflect.TypeOf(r.Header).Field(i).Name, f.Interface())
+		} else {
+			p = f.Interface()
+			_, err = b.Read(p.([]byte))
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", hv.Type().Field(i).Name, err)
+			}
+		}
 	}
 
 	return

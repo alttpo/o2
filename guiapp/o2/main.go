@@ -12,9 +12,12 @@ import (
 )
 
 var (
-	a     fyne.App
-	w     fyne.Window
-	snesC chan snes.DeviceDescriptor = make(chan snes.DeviceDescriptor)
+	a fyne.App
+	w fyne.Window
+
+	romC            = make(chan *snes.ROM)
+	snesC           = make(chan snes.DeviceDescriptor)
+	rom   *snes.ROM = nil
 )
 
 func main() {
@@ -77,6 +80,9 @@ func appMain() {
 
 	for {
 		select {
+		case rom = <-romC:
+
+			break
 		case dev := <-snesC:
 			fmt.Println(dev.DisplayName())
 			break
