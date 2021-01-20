@@ -11,6 +11,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Set up dependencies
+      run: sudo apt-get install golang gcc libgl1-mesa-dev xorg-dev
+
     - uses: actions/checkout@v2
 
     - name: Set up Go
@@ -19,7 +22,7 @@ jobs:
         go-version: 1.15
 
     - name: Build
-      run: go build -v ./...
+      run: go build -v ./guiapp/o2
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v ./guiapp/o2
