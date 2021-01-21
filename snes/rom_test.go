@@ -3,6 +3,8 @@ package snes
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"io"
 	"testing"
 )
 
@@ -38,7 +40,7 @@ func TestNewROM(t *testing.T) {
 	}
 }
 
-func TestROM_BusReader(t *testing.T) {
+func TestROM_BusReader_Success(t *testing.T) {
 	contents := sampleROM()
 	rom, err := NewROM(contents)
 	if err != nil {
@@ -53,5 +55,35 @@ func TestROM_BusReader(t *testing.T) {
 	}
 	if p != 0x80c9 {
 		t.Fatal("expected NMI vector at $FFEA")
+	}
+}
+
+func TestROM_BusReader_Fail_Unmapped(t *testing.T) {
+	contents := sampleROM()
+	rom, err := NewROM(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := rom.BusReader(0x007FFF)
+	p := uint16(0)
+	err = binary.Read(r, binary.LittleEndian, &p)
+	if err != io.ErrUnexpectedEOF {
+		t.Fatalf("expected fail with EOF but got: %v", err)
+	}
+}
+
+func TestROM_BusReader_Fail_Boundary(t *testing.T) {
+	contents := sampleROM()
+	rom, err := NewROM(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := rom.BusReader(0x00FFFF)
+	p := uint16(0)
+	err = binary.Read(r, binary.LittleEndian, &p)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected fail with EOF but got: %v", err)
 	}
 }
