@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"reflect"
 )
 
@@ -117,4 +118,58 @@ func (r *ROM) ROMSize() uint32 {
 
 func (r *ROM) RAMSize() uint32 {
 	return 1024 << r.Header.RAMSize
+}
+
+type alwaysError struct{}
+
+func (alwaysError) Read(p []byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (alwaysError) Write(p []byte) (n int, err error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+var alwaysErrorInstance = &alwaysError{}
+
+func (r *ROM) BusReader(busAddr uint32) io.Reader {
+	page := busAddr & 0xFFFF
+	if page < 0x8000 {
+		return alwaysErrorInstance
+	}
+
+	// Return a reader over the ROM contents up to the next bank to prevent accidental overflow:
+	bank := busAddr >> 16
+	pcStart := (bank << 15) | (page - 0x8000)
+	pcEnd := (bank << 15) | 0x7FFF
+	return bytes.NewReader(r.Contents[pcStart:pcEnd])
+}
+
+type busWriter struct{
+	b []byte
+	o int64
+}
+
+func (w busWriter) Write(p []byte) (n int, err error) {
+	if int64(len(p)) >= int64(len(w.b))+w.o {
+		err = io.ErrUnexpectedEOF
+		return
+	}
+
+	n = copy(w.b[w.o:], p)
+	w.o += int64(n)
+	return
+}
+
+func (r *ROM) BusWriter(busAddr uint32) io.Writer {
+	page := busAddr & 0xFFFF
+	if page < 0x8000 {
+		return alwaysErrorInstance
+	}
+
+	// Return a reader over the ROM contents up to the next bank to prevent accidental overflow:
+	bank := busAddr >> 16
+	pcStart := (bank << 15) | (page - 0x8000)
+	pcEnd := (bank << 15) | 0x7FFF
+	return &busWriter{r.Contents[pcStart:pcEnd], 0}
 }
