@@ -35,12 +35,12 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: o2
+        name: o2-win64.exe
         path: |
           o2.exe
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v ./snes
 
   linux:
     runs-on: ubuntu-latest
@@ -73,9 +73,9 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: o2
+        name: o2-linux
         path: |
           o2
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v ./snes
