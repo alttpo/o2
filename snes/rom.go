@@ -19,42 +19,42 @@ type ROM struct {
 
 // $FFB0
 type Header struct {
-	MakerCode          uint16
-	GameCode           uint32
-	Fixed1             [7]byte
-	ExpansionRAMSize   byte
-	SpecialVersion     byte
-	CartridgeSubType   byte
-	Title              [21]byte
-	MapMode            byte
-	CartridgeType      byte
-	ROMSize            byte
-	RAMSize            byte
-	DestinationCode    byte
-	Fixed2             byte
-	MaskROMVersion     byte
-	ComplementCheckSum uint16
-	CheckSum           uint16
+	MakerCode          uint16   `rom:"FFB0"`
+	GameCode           uint32   `rom:"FFB2"`
+	Fixed1             [7]byte  //`rom:"FFB6"`
+	ExpansionRAMSize   byte     `rom:"FFBD"`
+	SpecialVersion     byte     `rom:"FFBE"`
+	CartridgeSubType   byte     `rom:"FFBF"`
+	Title              [21]byte `rom:"FFC0"`
+	MapMode            byte     `rom:"FFD5"`
+	CartridgeType      byte     `rom:"FFD6"`
+	ROMSize            byte     `rom:"FFD7"`
+	RAMSize            byte     `rom:"FFD8"`
+	DestinationCode    byte     `rom:"FFD9"`
+	Fixed2             byte     //`rom:"FFDA"`
+	MaskROMVersion     byte     `rom:"FFDB"`
+	ComplementCheckSum uint16   `rom:"FFDC"`
+	CheckSum           uint16   `rom:"FFDE"`
 }
 
 type NativeVectors struct {
-	Unused1 [4]byte // $FFE0
-	COP     uint16  // $FFE4
-	BRK     uint16  // $FFE6
-	ABORT   uint16  // $FFE8
-	NMI     uint16  // $FFEA
-	Unused2 uint16  // $FFEC
-	IRQ     uint16  // $FFEE
+	Unused1 [4]byte //`rom:"FFE0"`
+	COP     uint16  `rom:"FFE4"`
+	BRK     uint16  `rom:"FFE6"`
+	ABORT   uint16  `rom:"FFE8"`
+	NMI     uint16  `rom:"FFEA"`
+	Unused2 uint16  //`rom:"FFEC"`
+	IRQ     uint16  `rom:"FFEE"`
 }
 
 type EmulatedVectors struct {
-	Unused1 [4]byte // $FFF0
-	COP     uint16  // $FFF4
-	Unused2 uint16  // $FFF6
-	ABORT   uint16  // $FFF8
-	NMI     uint16  // $FFFA
-	RESET   uint16  // $FFFC
-	IRQBRK  uint16  // $FFFE
+	Unused1 [4]byte //`rom:"FFF0"`
+	COP     uint16  `rom:"FFF4"`
+	Unused2 uint16  //`rom:"FFF6"`
+	ABORT   uint16  `rom:"FFF8"`
+	NMI     uint16  `rom:"FFFA"`
+	RESET   uint16  `rom:"FFFC"`
+	IRQBRK  uint16  `rom:"FFFE"`
 }
 
 func NewROM(contents []byte) (r *ROM, err error) {
@@ -69,8 +69,13 @@ func NewROM(contents []byte) (r *ROM, err error) {
 		HeaderOffset: headerOffset,
 	}
 
+	err = r.ReadHeader()
+	return
+}
+
+func (r *ROM) ReadHeader() (err error) {
 	// Read SNES header:
-	b := bytes.NewReader(contents[headerOffset : headerOffset+0x50])
+	b := bytes.NewReader(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50])
 	err = readBinaryStruct(b, &r.Header)
 	if err != nil {
 		return
@@ -83,7 +88,6 @@ func NewROM(contents []byte) (r *ROM, err error) {
 	if err != nil {
 		return
 	}
-
 	return
 }
 
@@ -145,19 +149,23 @@ func (r *ROM) BusReader(busAddr uint32) io.Reader {
 	return bytes.NewReader(r.Contents[pcStart:pcEnd])
 }
 
-type busWriter struct{
-	b []byte
-	o int64
+type busWriter struct {
+	r       *ROM
+	busAddr uint32
+	start   uint32
+	end     uint32
+	o       uint32
 }
 
 func (w busWriter) Write(p []byte) (n int, err error) {
-	if int64(len(p)) >= int64(len(w.b))+w.o {
+	if uint32(len(p)) >= w.o+w.end {
 		err = io.ErrUnexpectedEOF
 		return
 	}
 
-	n = copy(w.b[w.o:], p)
-	w.o += int64(n)
+	n = copy(w.r.Contents[w.o+w.start:w.end], p)
+	w.o += uint32(n)
+
 	return
 }
 
@@ -171,5 +179,5 @@ func (r *ROM) BusWriter(busAddr uint32) io.Writer {
 	bank := busAddr >> 16
 	pcStart := (bank << 15) | (page - 0x8000)
 	pcEnd := (bank << 15) | 0x7FFF
-	return &busWriter{r.Contents[pcStart:pcEnd], 0}
+	return &busWriter{r, busAddr, pcStart, pcEnd, 0}
 }
