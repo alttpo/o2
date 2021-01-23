@@ -17,11 +17,30 @@ jobs:
       with:
         go-version: 1.15
 
+    - uses: actions/cache@v2
+      with:
+        # In order:
+        # * Module download cache
+        # * Build cache (Windows)
+        path: |
+          ~/go/pkg/mod
+          %LocalAppData%\go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
     - name: Build
       run: go build -v ./guiapp/o2
 
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: o2
+        path: |
+          guiapp/o2/o2.exe
+
     - name: Test
-      run: go test -v ./guiapp/o2
+      run: go test -v ./...
 
   linux:
     runs-on: ubuntu-latest
@@ -33,11 +52,30 @@ jobs:
       with:
         go-version: 1.15
 
-    - name: Set up dependencies
-      run: sudo apt-get install golang gcc libgl1-mesa-dev xorg-dev
+    - name: Install Linux packages
+      run: sudo apt update && sudo apt install -y --no-install-recommends golang gcc libgl1-mesa-dev xorg-dev
+
+    - uses: actions/cache@v2
+      with:
+        # In order:
+        # * Module download cache
+        # * Build cache (Linux)
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
 
     - name: Build
       run: go build -v ./guiapp/o2
 
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: o2
+        path: |
+          guiapp/o2/o2
+
     - name: Test
-      run: go test -v ./guiapp/o2
+      run: go test -v ./...
