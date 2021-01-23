@@ -7,19 +7,34 @@ on:
     branches: [ main ]
 
 jobs:
-
-  build:
-    runs-on: ubuntu-latest
+  win64:
+    runs-on: windows-latest
     steps:
-    - name: Set up dependencies
-      run: sudo apt-get install golang gcc libgl1-mesa-dev xorg-dev
-
     - uses: actions/checkout@v2
 
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
         go-version: 1.15
+
+    - name: Build
+      run: go build -v ./guiapp/o2
+
+    - name: Test
+      run: go test -v ./guiapp/o2
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.15
+
+    - name: Set up dependencies
+      run: sudo apt-get install golang gcc libgl1-mesa-dev xorg-dev
 
     - name: Build
       run: go build -v ./guiapp/o2
