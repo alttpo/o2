@@ -49,8 +49,9 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 			if i == 0 {
 				return
 			}
+
 			// send device to main loop:
-			snesC <- devices[i-1]
+			snesC <- snes.DriverDevicePair{Driver: d, Device: devices[i-1]}
 		}
 		devSelect = widget.NewSelect(options, devSelected)
 		devSelect.PlaceHolder = "(No Devices Detected)"

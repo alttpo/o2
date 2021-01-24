@@ -28,6 +28,11 @@ type DriverDescriptor interface {
 	DisplayDescription() string
 }
 
+type DriverDevicePair struct {
+	Driver Driver
+	Device DeviceDescriptor
+}
+
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
 // Communication with a physical SNES console is done via a flash cart with a USB connection.
 // Both read and write requests are both enqueued into the same request queue and are processed in the order received.

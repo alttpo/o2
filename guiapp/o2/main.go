@@ -1,11 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
+	"log"
+	"o2/game"
+	_ "o2/game/alttp"
 	"o2/snes"
 	_ "o2/snes/fxpakpro"
 	"time"
@@ -15,12 +17,13 @@ var (
 	a fyne.App
 	w fyne.Window
 
-	romC            = make(chan *snes.ROM)
-	snesC           = make(chan snes.DeviceDescriptor)
-	rom   *snes.ROM = nil
+	romC  = make(chan *snes.ROM)
+	snesC = make(chan snes.DriverDevicePair)
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
+
 	a = app.NewWithID("o2")
 
 	go appMain()
@@ -76,15 +79,71 @@ func setContent(w fyne.Window) {
 }
 
 func appMain() {
+	var rom *snes.ROM = nil
+	var dev snes.Conn = nil
+	var factory game.Factory = nil
+	var inst game.Game = nil
 	ticker := time.NewTicker(100 * time.Millisecond)
+
+	tryCreateGame := func() {
+		if dev == nil {
+			return
+		}
+		if rom == nil {
+			return
+		}
+
+		var err error
+		inst, err = factory.NewGame(rom, dev)
+		if err != nil {
+			return
+		}
+	}
 
 	for {
 		select {
 		case rom = <-romC:
+			// the user has selected a ROM file:
+			log.Printf("title:   '%s'\n", string(rom.Header.Title[:]))
+			log.Printf("region:  %d\n", rom.Header.DestinationCode)
+			log.Printf("version: 1.%d\n", rom.Header.MaskROMVersion)
+			log.Printf("maker:   %02x\n", rom.Header.MakerCode)
+			log.Printf("game :   %04x\n", rom.Header.GameCode)
 
+			oneGame := true
+			for _, f := range game.Factories() {
+				if !f.IsROMCompatible(rom) {
+					continue
+				}
+				if factory == nil {
+					factory = f
+				} else {
+					oneGame = false
+				}
+				break
+			}
+			if factory == nil {
+				// unrecognized ROM
+				break
+			}
+			if !oneGame {
+				// more than one game type matches ROM
+				break
+			}
+
+			tryCreateGame()
 			break
-		case dev := <-snesC:
-			fmt.Println(dev.DisplayName())
+		case pair := <-snesC:
+			log.Println(pair.Device.DisplayName())
+
+			var err error
+			dev, err = pair.Driver.Open(pair.Device)
+			if err != nil {
+				log.Println(err)
+				break
+			}
+
+			tryCreateGame()
 			break
 		case <-ticker.C:
 			break
