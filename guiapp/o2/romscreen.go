@@ -66,6 +66,8 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 
 		rom, err := snes.NewROM(contents)
 		if err != nil {
+			log.Println(err)
+			notify("Error loading ROM contents")
 			return
 		}
 

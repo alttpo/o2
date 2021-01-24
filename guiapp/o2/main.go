@@ -78,6 +78,13 @@ func setContent(w fyne.Window) {
 	w.Resize(fyne.NewSize(1024, 800))
 }
 
+func notify(content string) {
+	a.SendNotification(&fyne.Notification{
+		Title:   "O2",
+		Content: content,
+	})
+}
+
 func appMain() {
 	var rom *snes.ROM = nil
 	var dev snes.Conn = nil
@@ -94,6 +101,11 @@ func appMain() {
 		}
 
 		var err error
+		if inst != nil {
+			inst.Stop()
+			inst = nil
+		}
+
 		inst, err = factory.NewGame(rom, dev)
 		if err != nil {
 			return
@@ -102,17 +114,18 @@ func appMain() {
 
 	for {
 		select {
-		case rom = <-romC:
+		case newrom := <-romC:
 			// the user has selected a ROM file:
-			log.Printf("title:   '%s'\n", string(rom.Header.Title[:]))
-			log.Printf("region:  %d\n", rom.Header.DestinationCode)
-			log.Printf("version: 1.%d\n", rom.Header.MaskROMVersion)
-			log.Printf("maker:   %02x\n", rom.Header.MakerCode)
-			log.Printf("game :   %04x\n", rom.Header.GameCode)
+			log.Printf("title:   '%s'\n", string(newrom.Header.Title[:]))
+			log.Printf("region:  %d\n", newrom.Header.DestinationCode)
+			log.Printf("version: 1.%d\n", newrom.Header.MaskROMVersion)
+			log.Printf("maker:   %02x\n", newrom.Header.MakerCode)
+			log.Printf("game :   %04x\n", newrom.Header.GameCode)
 
 			oneGame := true
+			factory = nil
 			for _, f := range game.Factories() {
-				if !f.IsROMCompatible(rom) {
+				if !f.IsROMCompatible(newrom) {
 					continue
 				}
 				if factory == nil {
@@ -124,13 +137,16 @@ func appMain() {
 			}
 			if factory == nil {
 				// unrecognized ROM
+				notify("Unrecognized ROM")
 				break
 			}
 			if !oneGame {
 				// more than one game type matches ROM
+				notify("ROM matches more than one game type")
 				break
 			}
 
+			rom = newrom
 			tryCreateGame()
 			break
 		case pair := <-snesC:
@@ -140,6 +156,7 @@ func appMain() {
 			dev, err = pair.Driver.Open(pair.Device)
 			if err != nil {
 				log.Println(err)
+				notify("Could not connect to the SNES")
 				break
 			}
 
