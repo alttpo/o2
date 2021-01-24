@@ -43,42 +43,45 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 	cardROM := widget.NewCard("ROM Details", "Details found in the loaded ROM", romContent)
 	cardROM.Hide()
 
+	fileOpenCallback := func(rc fyne.URIReadCloser, err error) {
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		if rc == nil {
+			return
+		}
+		defer rc.Close()
+
+		// save last location:
+		dir, _ := storage.Parent(rc.URI())
+		a.Preferences().SetString("lastLocation", dir.String())
+
+		// load contents:
+		contents, err := ioutil.ReadAll(rc)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		rom, err := snes.NewROM(contents)
+		if err != nil {
+			return
+		}
+
+		s.ROMURI = rc.URI()
+		s.IsLoaded = true
+		romC <- rom
+	}
+
 	localContent := fyne.NewContainerWithLayout(
 		layout.NewFormLayout(),
 		widget.NewLabel("ROM:"),
 		widget.NewButtonWithIcon("Open...", theme.FolderOpenIcon(), func() {
 			var fo *dialog.FileDialog
+
 			fo = dialog.NewFileOpen(
-				func(rc fyne.URIReadCloser, err error) {
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					if rc == nil {
-						return
-					}
-					defer rc.Close()
-
-					// save last location:
-					dir, _ := storage.Parent(rc.URI())
-					a.Preferences().SetString("lastLocation", dir.String())
-
-					// load contents:
-					contents, err := ioutil.ReadAll(rc)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-
-					rom, err := snes.NewROM(contents)
-					if err != nil {
-						return
-					}
-
-					s.ROMURI = rc.URI()
-					s.IsLoaded = true
-					romC <- rom
-				},
+				fileOpenCallback,
 				w,
 			)
 
