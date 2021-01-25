@@ -12,7 +12,7 @@ func (f *Factory) IsROMCompatible(rom *snes.ROM) bool {
 }
 
 func (f *Factory) NewGame(rom *snes.ROM, conn snes.Conn) (game.Game, error) {
-	return &Game{rom, conn}, nil
+	return &Game{rom, conn, false}, nil
 }
 
 func init() {

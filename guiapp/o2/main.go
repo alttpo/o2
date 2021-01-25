@@ -110,6 +110,9 @@ func appMain() {
 		if err != nil {
 			return
 		}
+
+		// start the game instance:
+		inst.Start()
 	}
 
 	for {
@@ -137,12 +140,12 @@ func appMain() {
 			}
 			if factory == nil {
 				// unrecognized ROM
-				notify("Unrecognized ROM")
+				notify("ROM is not compatible with any game providers")
 				break
 			}
 			if !oneGame {
 				// more than one game type matches ROM
-				notify("ROM matches more than one game type")
+				notify("ROM matches more than one game provider")
 				break
 			}
 

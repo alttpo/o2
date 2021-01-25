@@ -9,6 +9,8 @@ import (
 )
 
 type ROM struct {
+	Name     string
+	Path     string
 	Contents []byte
 
 	HeaderOffset    uint32
@@ -57,7 +59,7 @@ type EmulatedVectors struct {
 	IRQBRK  uint16  `rom:"FFFE"`
 }
 
-func NewROM(contents []byte) (r *ROM, err error) {
+func NewROM(name string, path string, contents []byte) (r *ROM, err error) {
 	if len(contents) < 0x8000 {
 		return nil, fmt.Errorf("ROM file not big enough to contain SNES header")
 	}
@@ -65,6 +67,8 @@ func NewROM(contents []byte) (r *ROM, err error) {
 	headerOffset := uint32(0x007FB0)
 
 	r = &ROM{
+		Name:         name,
+		Path:         path,
 		Contents:     contents,
 		HeaderOffset: headerOffset,
 	}

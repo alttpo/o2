@@ -53,11 +53,6 @@ type Conn interface {
 	SubmitWrite(reqs []WriteRequest)
 }
 
-type ROMControl interface {
-	// Loads the given ROM into the system and resets.
-	PlayROM(name string, rom []byte)
-}
-
 type ReadOrWriteResponse struct {
 	IsWrite bool // was the request a read or write?
 	Address uint32
@@ -68,6 +63,11 @@ type ReadOrWriteResponse struct {
 type ReadOrWriteCompleted func(response ReadOrWriteResponse)
 
 type ReadRequest struct {
+	// E00000-EFFFFF = SRAM
+	// F50000-F6FFFF = WRAM
+	// F70000-F8FFFF = VRAM
+	// F90000-F901FF = CGRAM
+	// F90200-F904FF = OAM
 	Address   uint32
 	Size      uint8
 	Completed ReadOrWriteCompleted

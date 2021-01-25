@@ -14,8 +14,6 @@ import (
 )
 
 type ROMScreen struct {
-	IsLoaded    bool
-	ROMURI      fyne.URI
 	ROMContents []byte
 
 	txtURL   *widget.Entry
@@ -64,15 +62,13 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 			return
 		}
 
-		rom, err := snes.NewROM(contents)
+		rom, err := snes.NewROM(rc.URI().Name(), rc.URI().String(), contents)
 		if err != nil {
 			log.Println(err)
 			notify("Error loading ROM contents")
 			return
 		}
 
-		s.ROMURI = rc.URI()
-		s.IsLoaded = true
 		romC <- rom
 	}
 
