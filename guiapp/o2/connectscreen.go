@@ -8,6 +8,7 @@ import (
 )
 
 type ConnectScreen struct {
+	view      *fyne.Container
 	txtHost   *widget.Entry
 	txtGroup  *widget.Entry
 	txtPlayer *widget.Entry
@@ -19,6 +20,10 @@ func (s *ConnectScreen) Title() string { return "Connect" }
 func (s *ConnectScreen) Description() string { return "Connect to O2 server" }
 
 func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
+	if s.view != nil {
+		return s.view
+	}
+
 	a := fyne.CurrentApp()
 	preferences := a.Preferences()
 
@@ -61,7 +66,8 @@ func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
 		s.txtTeam,
 	)
 
-	return container.NewVBox(form)
+	s.view = container.NewVBox(form)
+	return s.view
 }
 
 // called immediately before screen view is destroyed:

@@ -12,7 +12,9 @@ import (
 )
 
 type SNESScreen struct {
-	drivers map[string]*SNESDriverView
+	view  *fyne.Container
+
+	views map[string]*SNESDriverView
 }
 
 type SNESDriverView struct {
@@ -82,10 +84,14 @@ func (v *SNESDriverView) doDetect() {
 }
 
 func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
-	// reset map:
-	s.drivers = make(map[string]*SNESDriverView)
+	if s.view != nil {
+		return s.view
+	}
 
-	vb := container.NewVBox()
+	s.view = container.NewVBox()
+
+	// reset map:
+	s.views = make(map[string]*SNESDriverView)
 	for _, name := range snes.Drivers() {
 		d, ok := snes.DriverByName(name)
 		if !ok {
@@ -96,14 +102,15 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 			DriverName: name,
 			Driver:     d,
 		}
-		s.drivers[name] = v
-		v.devices = make([]snes.DeviceDescriptor, 0, 4)
+		s.views[name] = v
+
 		v.ddlDevice = widget.NewSelect([]string{}, v.onDeviceChanged)
 		v.ddlDevice.PlaceHolder = "(No Devices Detected)"
 		v.btnConnect = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), v.doConnect)
 		v.btnDisconnect = widget.NewButtonWithIcon("Disconnect", theme.CancelIcon(), v.doDisconnect)
 		v.btnConnect.Disable()
 		v.btnDisconnect.Disable()
+		v.doDetect()
 
 		var title, subtitle string
 		if dd, ok := d.(snes.DriverDescriptor); ok {
@@ -116,9 +123,7 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 
 		form := fyne.NewContainerWithLayout(layout.NewFormLayout())
 		card := widget.NewCard(title, subtitle, form)
-		vb.Add(card)
-
-		v.doDetect()
+		s.view.Add(card)
 
 		form.Objects = []fyne.CanvasObject{
 			widget.NewLabel("Device:"),
@@ -131,5 +136,5 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 		form.Refresh()
 	}
 
-	return vb
+	return s.view
 }

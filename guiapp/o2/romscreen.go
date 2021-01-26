@@ -14,7 +14,7 @@ import (
 )
 
 type ROMScreen struct {
-	ROMContents []byte
+	view *fyne.Container
 
 	txtURL   *widget.Entry
 	txtTitle *widget.Entry
@@ -29,6 +29,10 @@ func (s *ROMScreen) Description() string {
 }
 
 func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
+	if s.view != nil {
+		return s.view
+	}
+
 	s.txtURL = widget.NewEntry()
 	s.txtTitle = widget.NewEntry()
 	romContent := fyne.NewContainerWithLayout(
@@ -101,5 +105,6 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 	)
 	cardLocal := widget.NewCard("Local file", "Load a ROM from your local filesystem", localContent)
 
-	return container.NewVBox(cardLocal, cardROM)
+	s.view = container.NewVBox(cardLocal, cardROM)
+	return s.view
 }
