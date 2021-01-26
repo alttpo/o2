@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne"
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/layout"
+	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 )
 
@@ -64,6 +65,9 @@ func (s *ConnectScreen) View(w fyne.Window) fyne.CanvasObject {
 		s.txtPlayer,
 		widget.NewLabel("Team Number:"),
 		s.txtTeam,
+		widget.NewLabel(""),
+		container.NewHBox(
+			widget.NewButtonWithIcon("Connect", theme.ComputerIcon(), s.doConnect)),
 	)
 
 	s.view = container.NewVBox(form)
@@ -76,4 +80,8 @@ func (s *ConnectScreen) Destroy(obj fyne.CanvasObject) {
 	preferences := a.Preferences()
 
 	preferences.SetBool("hideGroupName", s.txtGroup.Password)
+}
+
+func (s *ConnectScreen) doConnect() {
+
 }
