@@ -12,14 +12,16 @@ import (
 )
 
 type SNESScreen struct {
-	view  *fyne.Container
+	view *fyne.Container
 
 	views map[string]*SNESDriverView
 }
 
 type SNESDriverView struct {
-	DriverName string
-	Driver     snes.Driver
+	NamedDriver snes.NamedDriver
+
+	isDisabled  bool
+	isConnected bool
 
 	devices       []snes.DeviceDescriptor
 	ddlDevice     *widget.Select
@@ -31,13 +33,62 @@ func (s *SNESScreen) Title() string { return "SNES" }
 
 func (s *SNESScreen) Description() string { return "Connect to a SNES" }
 
-func (v *SNESDriverView) onDeviceChanged(id string) {
+func (s *SNESScreen) Refresh() {
+	isConnected := controller.IsConnected()
+
+	for _, view := range s.views {
+		if isConnected {
+			if controller.IsConnectedToDriver(view.NamedDriver) {
+				view.setConnected(true)
+				view.setDisabled(false)
+			} else {
+				// disable all other driver views when connected to a driver:
+				view.setConnected(false)
+				view.setDisabled(true)
+			}
+		} else {
+			// set all driver views to a disconnected state:
+			view.setConnected(false)
+			view.setDisabled(false)
+		}
+
+		// update view:
+		view.refresh()
+	}
+}
+
+func (v *SNESDriverView) refresh() {
+	if v.isDisabled {
+		v.btnConnect.Disable()
+		v.btnDisconnect.Disable()
+		return
+	}
+
+	if v.isConnected {
+		v.btnConnect.Disable()
+		v.btnDisconnect.Enable()
+		return
+	}
+
 	i := v.ddlDevice.SelectedIndex()
 	if i == 0 {
 		v.btnConnect.Disable()
-		return
+	} else {
+		v.btnConnect.Enable()
 	}
-	v.btnConnect.Enable()
+	v.btnDisconnect.Disable()
+}
+
+func (v *SNESDriverView) setConnected(connected bool) {
+	v.isConnected = connected
+}
+
+func (v *SNESDriverView) setDisabled(disabled bool) {
+	v.isDisabled = disabled
+}
+
+func (v *SNESDriverView) onDeviceChanged(id string) {
+	v.refresh()
 }
 
 func (v *SNESDriverView) doConnect() {
@@ -46,22 +97,17 @@ func (v *SNESDriverView) doConnect() {
 		return
 	}
 
-	v.btnConnect.Disable()
-	v.btnDisconnect.Enable()
-
 	// send device to main loop:
-	controller.SNESConnected(snes.DriverDevicePair{Driver: v.Driver, Device: v.devices[i-1]})
+	controller.SNESConnected(snes.NamedDriverDevicePair{NamedDriver: v.NamedDriver, Device: v.devices[i-1]})
 }
 
 func (v *SNESDriverView) doDisconnect() {
-	v.btnDisconnect.Disable()
-	v.btnConnect.Enable()
 	controller.SNESDisconnected()
 }
 
 func (v *SNESDriverView) doDetect() {
 	var err error
-	v.devices, err = v.Driver.Detect()
+	v.devices, err = v.NamedDriver.Driver.Detect()
 	if err != nil {
 		log.Println(err)
 		return
@@ -92,17 +138,11 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 
 	// reset map:
 	s.views = make(map[string]*SNESDriverView)
-	for _, name := range snes.Drivers() {
-		d, ok := snes.DriverByName(name)
-		if !ok {
-			continue
-		}
-
+	for _, namedDriver := range snes.Drivers() {
 		v := &SNESDriverView{
-			DriverName: name,
-			Driver:     d,
+			NamedDriver: namedDriver,
 		}
-		s.views[name] = v
+		s.views[namedDriver.Name] = v
 
 		v.ddlDevice = widget.NewSelect([]string{}, v.onDeviceChanged)
 		v.ddlDevice.PlaceHolder = "(No Devices Detected)"
@@ -113,12 +153,12 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 		v.doDetect()
 
 		var title, subtitle string
-		if dd, ok := d.(snes.DriverDescriptor); ok {
+		if dd, ok := namedDriver.Driver.(snes.DriverDescriptor); ok {
 			title = dd.DisplayName()
 			subtitle = dd.DisplayDescription()
 		} else {
-			title = name
-			subtitle = fmt.Sprintf("Driver for %s", name)
+			title = namedDriver.Name
+			subtitle = fmt.Sprintf("NamedDriver for %s", title)
 		}
 
 		form := fyne.NewContainerWithLayout(layout.NewFormLayout())

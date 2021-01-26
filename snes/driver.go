@@ -22,15 +22,20 @@ type Driver interface {
 	Empty() DeviceDescriptor
 }
 
+type NamedDriver struct {
+	Driver Driver
+	Name   string
+}
+
 type DriverDescriptor interface {
 	DisplayName() string
 
 	DisplayDescription() string
 }
 
-type DriverDevicePair struct {
-	Driver Driver
-	Device DeviceDescriptor
+type NamedDriverDevicePair struct {
+	NamedDriver NamedDriver
+	Device      DeviceDescriptor
 }
 
 var (
@@ -60,8 +65,19 @@ func unregisterAllDrivers() {
 	drivers = make(map[string]Driver)
 }
 
-// Drivers returns a sorted list of the names of the registered drivers.
-func Drivers() []string {
+// Drivers returns a list of the registered drivers.
+func Drivers() []NamedDriver {
+	driversMu.RLock()
+	defer driversMu.RUnlock()
+	list := make([]NamedDriver, 0, len(drivers))
+	for name, driver := range drivers {
+		list = append(list, NamedDriver{driver, name})
+	}
+	return list
+}
+
+// DriverNames returns a sorted list of the names of the registered drivers.
+func DriverNames() []string {
 	driversMu.RLock()
 	defer driversMu.RUnlock()
 	list := make([]string, 0, len(drivers))

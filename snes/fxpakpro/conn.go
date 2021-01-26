@@ -96,8 +96,13 @@ func (c *Conn) MakeWriteCommands(reqs []snes.WriteRequest) (cmds snes.CommandSeq
 }
 
 func (c *Conn) handleQueue() {
+	isClosed := false
 	var err error
-	defer func() {
+	doClose := func() {
+		if isClosed {
+			return
+		}
+
 		if err != nil {
 			log.Printf("fxpakpro: %v\n", err)
 		}
@@ -108,16 +113,17 @@ func (c *Conn) handleQueue() {
 		}
 
 		close(c.cq)
-	}()
+		isClosed = true
+	}
+	defer doClose()
 
-	for {
-		pair := <-c.cq
+	for pair := range c.cq {
 		cmd := pair.Command
 		if cmd == nil {
 			break
 		}
 		if _, ok := cmd.(*snes.CloseCommand); ok {
-			break
+			doClose()
 		}
 		if _, ok := cmd.(*snes.DrainQueueCommand); ok {
 			// close and recreate queue:

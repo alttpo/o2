@@ -10,7 +10,7 @@ import (
 )
 
 type Controller struct {
-	driverDevice snes.DriverDevicePair
+	driverDevice snes.NamedDriverDevicePair
 	dev          snes.Conn
 
 	rom     *snes.ROM
@@ -129,6 +129,18 @@ func (c *Controller) tryCreateGame() {
 	c.gameInst.Start()
 }
 
+func (c *Controller) IsConnected() bool {
+	return c.dev != nil
+}
+
+func (c *Controller) IsConnectedToDriver(driver snes.NamedDriver) bool {
+	if c.dev == nil {
+		return false
+	}
+
+	return c.driverDevice.NamedDriver == driver
+}
+
 func (c *Controller) ROMSelected(rom *snes.ROM) {
 	// the user has selected a ROM file:
 	log.Printf(`ROM selected
@@ -174,26 +186,41 @@ game:    %04x
 	c.nextRom = rom
 }
 
-func (c *Controller) SNESConnected(newpair snes.DriverDevicePair) {
-	if newpair == c.driverDevice && c.dev != nil {
+func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
+	defer func() {
+		c.snesScreen.Refresh()
+		// TODO: update or recreate gameInst
+	}()
+
+	if pair == c.driverDevice && c.dev != nil {
 		return
 	}
 
-	c.driverDevice = newpair
-	log.Println(newpair.Device.DisplayName())
+	log.Println(pair.Device.DisplayName())
 
 	var err error
-	c.dev, err = newpair.Driver.Open(newpair.Device)
+	c.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
 	if err != nil {
 		log.Println(err)
 		notify("Could not connect to the SNES")
 		c.dev = nil
+		c.driverDevice = snes.NamedDriverDevicePair{}
 		return
 	}
 
-	// TODO: update or recreate gameInst
+	c.driverDevice = pair
 }
 
 func (c *Controller) SNESDisconnected() {
-	// TODO
+	if c.dev == nil {
+		c.driverDevice = snes.NamedDriverDevicePair{}
+		c.snesScreen.Refresh()
+		return
+	}
+
+	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
+		c.dev = nil
+		c.driverDevice = snes.NamedDriverDevicePair{}
+		c.snesScreen.Refresh()
+	})
 }
