@@ -4,6 +4,8 @@ type Command interface {
 	Execute(conn Conn) error
 }
 
+type CommandSequence []Command
+
 type CommandWithCallback struct {
 	Command    Command
 	OnComplete func(error)
