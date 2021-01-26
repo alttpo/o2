@@ -14,8 +14,8 @@ type ScreenDestroy interface {
 
 var (
 	Screens = []Screen{
-		&ROMScreen{},
 		&SNESScreen{},
+		&ROMScreen{},
 		&ConnectScreen{},
 		&GameScreen{},
 	}
