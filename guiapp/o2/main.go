@@ -6,6 +6,7 @@ import (
 	"log"
 	_ "o2/game/alttp"
 	_ "o2/snes/fxpakpro"
+	_ "o2/snes/mock"
 )
 
 var (

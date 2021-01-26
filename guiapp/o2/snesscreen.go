@@ -158,7 +158,7 @@ func (s *SNESScreen) View(w fyne.Window) fyne.CanvasObject {
 			subtitle = dd.DisplayDescription()
 		} else {
 			title = namedDriver.Name
-			subtitle = fmt.Sprintf("NamedDriver for %s", title)
+			subtitle = fmt.Sprintf("Driver for %s", title)
 		}
 
 		form := fyne.NewContainerWithLayout(layout.NewFormLayout())
