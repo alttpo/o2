@@ -11,17 +11,17 @@ func (c *Conn) UploadROM(name string, rom []byte) (path string, err error) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	c.cq <- newMKDIR("o2")
+	c.submitCommand(newMKDIR("o2"))
 	name = strings.ToLower(name)
 	path = fmt.Sprintf("o2/%s", name)
-	c.cq <- newPUTFile(path, rom, func(sent, total int) {
+	c.submitCommand(newPUTFile(path, rom, func(sent, total int) {
 		log.Printf("%d of %d\n", sent, total)
-	})
+	}))
 
-	c.cq <- &CallbackCommand{Callback: func() error {
+	c.submitCommand(&CallbackCommand{Callback: func() error {
 		wg.Done()
 		return nil
-	}}
+	}})
 
 	// wait until last command is completed:
 	wg.Wait()
@@ -32,11 +32,11 @@ func (c *Conn) BootROM(path string) error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	c.cq <- newBOOT(path)
-	c.cq <- &CallbackCommand{Callback: func() error {
+	c.submitCommand(newBOOT(path))
+	c.submitCommand(&CallbackCommand{Callback: func() error {
 		wg.Done()
 		return nil
-	}}
+	}})
 
 	// wait until last command is completed:
 	wg.Wait()

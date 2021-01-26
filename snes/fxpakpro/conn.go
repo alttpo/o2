@@ -22,14 +22,14 @@ func (c *Conn) SubmitRead(reqs []snes.ReadRequest) {
 	for len(reqs) >= 8 {
 		// queue up a VGET command:
 		batch := reqs[:8]
-		c.cq <- c.newVGET(batch)
+		c.submitCommand(c.newVGET(batch))
 
 		// move to next batch:
 		reqs = reqs[8:]
 	}
 
 	if len(reqs) > 0 && len(reqs) <= 8 {
-		c.cq <- c.newVGET(reqs)
+		c.submitCommand(c.newVGET(reqs))
 	}
 }
 
@@ -37,13 +37,13 @@ func (c *Conn) SubmitWrite(reqs []snes.WriteRequest) {
 	for len(reqs) >= 8 {
 		// queue up a VPUT command:
 		batch := reqs[:8]
-		c.cq <- c.newVPUT(batch)
+		c.submitCommand(c.newVPUT(batch))
 
 		// move to next batch:
 		reqs = reqs[8:]
 	}
 
 	if len(reqs) > 0 && len(reqs) <= 8 {
-		c.cq <- c.newVPUT(reqs)
+		c.submitCommand(c.newVPUT(reqs))
 	}
 }
