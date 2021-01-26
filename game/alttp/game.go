@@ -47,7 +47,16 @@ func (g *Game) Start() {
 	)
 }
 
-func (g *Game) Stop() {
+func (g *Game) Stop() <-chan struct{} {
+	c := make(chan struct{})
+
 	g.stopping = true
-	g.conn.Enqueue(&snes.CloseCommand{})
+	g.conn.EnqueueWithCallback(
+		&snes.DrainQueueCommand{},
+		func(error) {
+			defer close(c)
+			c <- struct{}{}
+		})
+
+	return c
 }

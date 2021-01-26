@@ -119,6 +119,11 @@ func (c *Conn) handleQueue() {
 		if _, ok := cmd.(*snes.CloseCommand); ok {
 			break
 		}
+		if _, ok := cmd.(*snes.DrainQueueCommand); ok {
+			// close and recreate queue:
+			close(c.cq)
+			c.cq = make(chan snes.CommandWithCallback, 64)
+		}
 
 		err = cmd.Execute(c)
 		if pair.OnComplete != nil {

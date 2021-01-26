@@ -10,5 +10,5 @@ type Game interface {
 	Description() string
 
 	Start()
-	Stop()
+	Stop() <-chan struct{}
 }

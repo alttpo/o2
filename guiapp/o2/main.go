@@ -95,24 +95,29 @@ func appMain() {
 
 	tryCreateGame := func() {
 		if dev == nil {
+			log.Println("dev is nil")
 			return
 		}
 		if rom == nil {
+			log.Println("rom is nil")
 			return
 		}
 
 		var err error
 		if inst != nil {
-			inst.Stop()
+			log.Println("Stop existing game")
+			<- inst.Stop()
 			inst = nil
 		}
 
+		log.Println("Create new game")
 		inst, err = factory.NewGame(rom, dev)
 		if err != nil {
 			return
 		}
 
 		// start the game instance:
+		log.Println("Start game")
 		inst.Start()
 	}
 
@@ -154,7 +159,7 @@ func appMain() {
 			tryCreateGame()
 			break
 		case newpair := <-snesC:
-			if newpair == pair {
+			if newpair == pair && dev != nil {
 				break
 			}
 			pair = newpair
@@ -165,6 +170,7 @@ func appMain() {
 			if err != nil {
 				log.Println(err)
 				notify("Could not connect to the SNES")
+				dev = nil
 				break
 			}
 
