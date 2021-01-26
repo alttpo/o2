@@ -11,17 +11,3 @@ type Screen interface {
 type ScreenDestroy interface {
 	Destroy(obj fyne.CanvasObject)
 }
-
-var (
-	snesScreen    = &SNESScreen{}
-	romScreen     = &ROMScreen{}
-	connectScreen = &ConnectScreen{}
-	gameScreen    = &GameScreen{}
-
-	Screens = []Screen{
-		snesScreen,
-		romScreen,
-		connectScreen,
-		gameScreen,
-	}
-)

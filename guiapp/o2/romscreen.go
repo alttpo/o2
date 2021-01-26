@@ -59,17 +59,18 @@ func (s *ROMScreen) View(w fyne.Window) fyne.CanvasObject {
 		contents, err := ioutil.ReadAll(rc)
 		if err != nil {
 			log.Println(err)
+			notify("Error reading ROM file")
 			return
 		}
 
 		rom, err := snes.NewROM(rc.URI().Name(), rc.URI().String(), contents)
 		if err != nil {
 			log.Println(err)
-			notify("Error loading ROM contents")
+			notify("Error parsing ROM contents")
 			return
 		}
 
-		romC <- rom
+		controller.ROMSelected(rom)
 	}
 
 	localContent := fyne.NewContainerWithLayout(

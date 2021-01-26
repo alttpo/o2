@@ -48,13 +48,13 @@ func (v *SNESDriverView) doConnect() {
 	v.btnDisconnect.Enable()
 
 	// send device to main loop:
-	snesC <- snes.DriverDevicePair{Driver: v.Driver, Device: v.devices[i-1]}
+	controller.SNESConnected(snes.DriverDevicePair{Driver: v.Driver, Device: v.devices[i-1]})
 }
 
 func (v *SNESDriverView) doDisconnect() {
 	v.btnDisconnect.Disable()
 	v.btnConnect.Enable()
-	//snesC <- nil
+	controller.SNESDisconnected()
 }
 
 func (v *SNESDriverView) doDetect() {
