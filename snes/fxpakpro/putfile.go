@@ -2,7 +2,7 @@ package fxpakpro
 
 import (
 	"fmt"
-	"go.bug.st/serial"
+	"o2/snes"
 )
 
 type putfile struct {
@@ -19,7 +19,9 @@ func newPUTFile(path string, rom []byte, report func(int, int)) *putfile {
 	}
 }
 
-func (c *putfile) Execute(f serial.Port) error {
+func (c *putfile) Execute(conn snes.Conn) error {
+	f := conn.(*Conn).f
+
 	sb := make([]byte, 512)
 	sb[0] = byte('U')
 	sb[1] = byte('S')

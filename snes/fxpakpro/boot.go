@@ -2,7 +2,7 @@ package fxpakpro
 
 import (
 	"fmt"
-	"go.bug.st/serial"
+	"o2/snes"
 )
 
 type boot struct {
@@ -13,7 +13,9 @@ func newBOOT(path string) *boot {
 	return &boot{path: path}
 }
 
-func (c *boot) Execute(f serial.Port) error {
+func (c *boot) Execute(conn snes.Conn) error {
+	f := conn.(*Conn).f
+
 	sb := make([]byte, 512)
 	sb[0] = byte('U')
 	sb[1] = byte('S')

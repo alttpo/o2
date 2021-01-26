@@ -2,7 +2,6 @@ package fxpakpro
 
 import (
 	"fmt"
-	"go.bug.st/serial"
 	"o2/snes"
 )
 
@@ -38,7 +37,9 @@ func (c *Conn) newVGET(batch []snes.ReadRequest) *vget {
 }
 
 // Command interface:
-func (c *vget) Execute(f serial.Port) error {
+func (c *vget) Execute(conn snes.Conn) error {
+	f := conn.(*Conn).f
+
 	reqs := c.batch
 	if len(reqs) > 8 {
 		return fmt.Errorf("vget: cannot have more than 8 requests in batch")

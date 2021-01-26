@@ -3,42 +3,25 @@ package fxpakpro
 import (
 	"fmt"
 	"log"
+	"o2/snes"
 	"strings"
-	"sync"
 )
 
-func (c *Conn) UploadROM(name string, rom []byte) (path string, err error) {
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	c.submitCommand(newMKDIR("o2"))
+func (c *Conn) MakeUploadROMCommands(name string, rom []byte) (path string, cmds snes.CommandSequence) {
 	name = strings.ToLower(name)
 	path = fmt.Sprintf("o2/%s", name)
-	c.submitCommandWithCallback(
+	cmds = snes.CommandSequence{
+		newMKDIR("o2"),
 		newPUTFile(path, rom, func(sent, total int) {
 			log.Printf("%d of %d\n", sent, total)
 		}),
-		func(error) { wg.Done() },
-	)
+	}
 
-	// wait until last command is completed:
-	wg.Wait()
 	return
 }
 
-func (c *Conn) BootROM(path string) error {
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	c.submitCommandWithCallback(
+func (c *Conn) MakeBootROMCommands(path string) snes.CommandSequence {
+	return snes.CommandSequence{
 		newBOOT(path),
-		func(error) {
-			wg.Done()
-		},
-	)
-
-	// wait until last command is completed:
-	wg.Wait()
-
-	return nil
+	}
 }

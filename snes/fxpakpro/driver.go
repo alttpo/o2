@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
-	"log"
 	"o2/snes"
 )
 
@@ -49,14 +48,6 @@ type DeviceDescriptor struct {
 
 func (d DeviceDescriptor) DisplayName() string {
 	return fmt.Sprintf("%s (%s:%s)", d.Port, d.VID, d.PID)
-}
-
-type Conn struct {
-	// must be only accessed via Command.Execute
-	f serial.Port
-
-	// command execution queue:
-	cq chan CommandWithCallback
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
@@ -166,47 +157,11 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 
 	c := &Conn{
 		f:  f,
-		cq: make(chan CommandWithCallback, 64),
+		cq: make(chan snes.CommandWithCallback, 64),
 	}
 	go c.handleQueue()
 
 	return c, err
-}
-
-func (c *Conn) handleQueue() {
-	var err error
-	defer func() {
-		log.Printf("fxpakpro: %v\n", err)
-	}()
-
-	for {
-		pair := <-c.cq
-		cmd := pair.Command
-		if cmd == nil {
-			break
-		}
-
-		err = cmd.Execute(c.f)
-		if pair.OnComplete != nil {
-			pair.OnComplete(err)
-		} else if err != nil {
-			log.Println(err)
-		}
-	}
-}
-
-func (c *Conn) submitCommand(cmd Command) {
-	c.cq <- CommandWithCallback{
-		Command:    cmd,
-		OnComplete: nil,
-	}
-}
-
-func (c *Conn) submitCommandWithCallback(cmd Command, onComplete func(error)) {
-	c.cq <- CommandWithCallback{
-		Command:    cmd,
-		OnComplete: onComplete,
-	}
 }
 
 func init() {

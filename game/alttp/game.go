@@ -31,24 +31,23 @@ func (g *Game) Description() string {
 
 func (g *Game) Start() {
 	if rc, ok := g.conn.(snes.ROMControl); ok {
-		path, err := rc.UploadROM(g.rom.Name, g.rom.Contents)
-		// TODO: handle errors
-		_ = err
-		err = rc.BootROM(path)
-		// TODO: handle errors
-		_ = err
+		path, cmds := rc.MakeUploadROMCommands(g.rom.Name, g.rom.Contents)
+		g.conn.EnqueueMulti(cmds)
+		g.conn.EnqueueMulti(rc.MakeBootROMCommands(path))
 	}
 
-	g.conn.SubmitRead([]snes.ReadRequest{
-		{
-			Address:   0xF50010,
-			Size:      0xF0,
-			Completed: nil,
-		},
-	})
+	g.conn.EnqueueMulti(
+		g.conn.MakeReadCommands([]snes.ReadRequest{
+			{
+				Address:   0xF50010,
+				Size:      0xF0,
+				Completed: nil,
+			},
+		}),
+	)
 }
 
 func (g *Game) Stop() {
 	g.stopping = true
-	g.conn.Close()
+	g.conn.Enqueue(&snes.CloseCommand{})
 }

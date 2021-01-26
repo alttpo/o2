@@ -33,6 +33,8 @@ type DriverDevicePair struct {
 	Device DeviceDescriptor
 }
 
+type CommandSequence []Command
+
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
 // Communication with a physical SNES console is done via a flash cart with a USB connection.
 // Both read and write requests are both enqueued into the same request queue and are processed in the order received.
@@ -43,14 +45,23 @@ type DriverDevicePair struct {
 // Write requests can only write to ROM and SRAM. WRAM cannot be written to from flash carts on real hardware; this is a
 // hard limitation due to the design of the SNES and is not specific to any flash cart.
 type Conn interface {
-	// closes the current connection
-	Close() error
+	// Enqueues a command to be executed
+	Enqueue(cmd Command)
 
-	// Submits a batch of read requests to the device.
-	SubmitRead(reqs []ReadRequest)
+	// Enqueues a command with a callback to be executed when completed [err==nil] or errored [err!=nil]
+	EnqueueWithCallback(cmd Command, onComplete func(err error))
 
-	// Submits a batch of write requests to the device.
-	SubmitWrite(reqs []WriteRequest)
+	// Enqueues a sequence of commands to be executed in order
+	EnqueueMulti(cmds CommandSequence)
+
+	// Enqueues a sequence of commands to be executed in order with only the last command receiving the callback
+	EnqueueMultiWithCallback(cmds CommandSequence, onComplete func(err error))
+
+	// Creates a set of Commands that submits a batch of read requests to the device
+	MakeReadCommands(reqs []ReadRequest) CommandSequence
+
+	// Creates a set of Commands that submits a batch of write requests to the device
+	MakeWriteCommands(reqs []WriteRequest) CommandSequence
 }
 
 type ReadOrWriteResponse struct {
@@ -74,6 +85,11 @@ type ReadRequest struct {
 }
 
 type WriteRequest struct {
+	// E00000-EFFFFF = SRAM
+	// F50000-F6FFFF = WRAM
+	// F70000-F8FFFF = VRAM
+	// F90000-F901FF = CGRAM
+	// F90200-F904FF = OAM
 	Address   uint32
 	Size      uint8
 	Data      []byte

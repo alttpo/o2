@@ -2,7 +2,7 @@ package fxpakpro
 
 import (
 	"fmt"
-	"go.bug.st/serial"
+	"o2/snes"
 )
 
 var (
@@ -17,7 +17,9 @@ func newMKDIR(name string) *mkdir {
 	return &mkdir{name: name}
 }
 
-func (c *mkdir) Execute(f serial.Port) error {
+func (c *mkdir) Execute(conn snes.Conn) error {
+	f := conn.(*Conn).f
+
 	sb := make([]byte, 512)
 	sb[0] = byte('U')
 	sb[1] = byte('S')
