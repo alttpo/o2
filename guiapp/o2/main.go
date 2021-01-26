@@ -90,6 +90,7 @@ func appMain() {
 	var dev snes.Conn = nil
 	var factory game.Factory = nil
 	var inst game.Game = nil
+	var pair snes.DriverDevicePair
 	ticker := time.NewTicker(100 * time.Millisecond)
 
 	tryCreateGame := func() {
@@ -152,11 +153,15 @@ func appMain() {
 			rom = newrom
 			tryCreateGame()
 			break
-		case pair := <-snesC:
-			log.Println(pair.Device.DisplayName())
+		case newpair := <-snesC:
+			if newpair == pair {
+				break
+			}
+			pair = newpair
+			log.Println(newpair.Device.DisplayName())
 
 			var err error
-			dev, err = pair.Driver.Open(pair.Device)
+			dev, err = newpair.Driver.Open(newpair.Device)
 			if err != nil {
 				log.Println(err)
 				notify("Could not connect to the SNES")
