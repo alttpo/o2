@@ -4,6 +4,10 @@ import "o2/snes"
 
 type Driver struct{}
 
+func (d *Driver) DisplayOrder() int {
+	return 1000
+}
+
 func (d *Driver) DisplayName() string {
 	return "Mock Device"
 }

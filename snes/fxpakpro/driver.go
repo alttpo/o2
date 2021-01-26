@@ -31,6 +31,10 @@ var (
 
 type Driver struct{}
 
+func (d *Driver) DisplayOrder() int {
+	return 0
+}
+
 func (d *Driver) DisplayName() string {
 	return "FX Pak Pro"
 }

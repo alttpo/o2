@@ -31,6 +31,8 @@ type DriverDescriptor interface {
 	DisplayName() string
 
 	DisplayDescription() string
+
+	DisplayOrder() int
 }
 
 type NamedDriverDevicePair struct {
@@ -73,6 +75,16 @@ func Drivers() []NamedDriver {
 	for name, driver := range drivers {
 		list = append(list, NamedDriver{driver, name})
 	}
+	sort.Slice(list, func(i, j int) bool {
+		li := list[i].Driver
+		lj := list[j].Driver
+		if di, ok := li.(DriverDescriptor); ok {
+			if dj, ok := lj.(DriverDescriptor); ok {
+				return di.DisplayOrder() < dj.DisplayOrder()
+			}
+		}
+		return false
+	})
 	return list
 }
 
