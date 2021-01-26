@@ -6,17 +6,13 @@ type Command interface {
 	Execute(f serial.Port) error
 }
 
-type CommandWithCallbacks struct {
+type CommandWithCallback struct {
 	Command    Command
-	OnComplete func()
-	OnError    func(error)
+	OnComplete func(error)
 }
 
-type CallbackCommand struct {
-	Callback func() error
-}
+type DummyCommand struct {}
 
-func (c *CallbackCommand) Execute(f serial.Port) error {
-	err := c.Callback()
-	return err
+func (c *DummyCommand) Execute(f serial.Port) error {
+	return nil
 }

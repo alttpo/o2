@@ -56,7 +56,7 @@ type Conn struct {
 	f serial.Port
 
 	// command execution queue:
-	cq chan CommandWithCallbacks
+	cq chan CommandWithCallback
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
@@ -166,7 +166,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 
 	c := &Conn{
 		f:  f,
-		cq: make(chan CommandWithCallbacks, 64),
+		cq: make(chan CommandWithCallback, 64),
 	}
 	go c.handleQueue()
 
@@ -187,31 +187,25 @@ func (c *Conn) handleQueue() {
 		}
 
 		err = cmd.Execute(c.f)
-		if err != nil {
-			if pair.OnError != nil {
-				pair.OnError(err)
-			}
-		} else {
-			if pair.OnComplete != nil {
-				pair.OnComplete()
-			}
+		if pair.OnComplete != nil {
+			pair.OnComplete(err)
+		} else if err != nil {
+			log.Println(err)
 		}
 	}
 }
 
 func (c *Conn) submitCommand(cmd Command) {
-	c.cq <- CommandWithCallbacks{
+	c.cq <- CommandWithCallback{
 		Command:    cmd,
 		OnComplete: nil,
-		OnError:    nil,
 	}
 }
 
-func (c *Conn) submitCommandWithCallbacks(cmd Command, onComplete func(), onError func(error)) {
-	c.cq <- CommandWithCallbacks{
+func (c *Conn) submitCommandWithCallback(cmd Command, onComplete func(error)) {
+	c.cq <- CommandWithCallback{
 		Command:    cmd,
 		OnComplete: onComplete,
-		OnError:    onError,
 	}
 }
 
