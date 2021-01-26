@@ -13,10 +13,15 @@ type ScreenDestroy interface {
 }
 
 var (
+	snesScreen    = &SNESScreen{}
+	romScreen     = &ROMScreen{}
+	connectScreen = &ConnectScreen{}
+	gameScreen    = &GameScreen{}
+
 	Screens = []Screen{
-		&SNESScreen{},
-		&ROMScreen{},
-		&ConnectScreen{},
-		&GameScreen{},
+		snesScreen,
+		romScreen,
+		connectScreen,
+		gameScreen,
 	}
 )
