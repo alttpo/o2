@@ -11,6 +11,7 @@ import (
 type GameScreen struct {
 	view       *fyne.Container
 	btnSendROM *widget.Button
+	btnStart   *widget.Button
 }
 
 func (s *GameScreen) Title() string { return "Game" }
@@ -28,6 +29,10 @@ func (s *GameScreen) View(w fyne.Window) fyne.CanvasObject {
 	s.btnSendROM.Disable()
 	s.view.Add(s.btnSendROM)
 
+	s.btnStart = widget.NewButtonWithIcon("Start Game", theme.MediaPlayIcon(), controller.startGame)
+	s.btnStart.Enable()
+	s.view.Add(s.btnStart)
+
 	s.Refresh()
 
 	return s.view
@@ -38,11 +43,15 @@ func (s *GameScreen) Refresh() {
 		return
 	}
 
+	sendRomEnabled := false
 	s.btnSendROM.Disable()
 	if controller.IsConnected() {
-		if _, ok := controller.dev.(snes.ROMControl); ok {
-			s.btnSendROM.Enable()
-		}
+		_, ok := controller.dev.(snes.ROMControl)
+		sendRomEnabled = ok
 	}
+	setEnabled(s.btnSendROM, sendRomEnabled)
+
+	setEnabled(s.btnStart, controller.gameInst != nil)
+
 	s.view.Refresh()
 }

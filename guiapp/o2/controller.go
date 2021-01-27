@@ -244,3 +244,7 @@ func (c *Controller) loadROM() {
 	c.gameInst.Start()
 
 }
+
+func (c *Controller) startGame() {
+
+}

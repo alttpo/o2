@@ -70,12 +70,7 @@ func (v *SNESDriverView) refresh() {
 		return
 	}
 
-	i := v.ddlDevice.SelectedIndex()
-	if i == 0 {
-		v.btnConnect.Disable()
-	} else {
-		v.btnConnect.Enable()
-	}
+	setEnabled(v.btnConnect, v.ddlDevice.SelectedIndex() != 0)
 	v.btnDisconnect.Disable()
 }
 

@@ -30,3 +30,11 @@ func notify(content string) {
 		Content: content,
 	})
 }
+
+func setEnabled(widget fyne.Disableable, state bool) {
+	if state {
+		widget.Enable()
+	} else {
+		widget.Disable()
+	}
+}
