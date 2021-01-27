@@ -246,5 +246,14 @@ func (c *Controller) loadROM() {
 }
 
 func (c *Controller) startGame() {
+	if c.gameInst == nil {
+		return
+	}
+	if c.gameInst.IsRunning() {
+		return
+	}
 
+	// start the game instance:
+	log.Println("Start game")
+	c.gameInst.Start()
 }
