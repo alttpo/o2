@@ -9,6 +9,8 @@ type Game interface {
 	Title() string
 	Description() string
 
+	Load()
+
 	Start()
 	Stop() <-chan struct{}
 }

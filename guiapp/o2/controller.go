@@ -189,6 +189,7 @@ game:    %04x
 func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 	defer func() {
 		c.snesScreen.Refresh()
+		c.gameScreen.Refresh()
 		// TODO: update or recreate gameInst
 	}()
 
@@ -215,6 +216,7 @@ func (c *Controller) SNESDisconnected() {
 	if c.dev == nil {
 		c.driverDevice = snes.NamedDriverDevicePair{}
 		c.snesScreen.Refresh()
+		c.gameScreen.Refresh()
 		return
 	}
 
@@ -222,5 +224,14 @@ func (c *Controller) SNESDisconnected() {
 		c.dev = nil
 		c.driverDevice = snes.NamedDriverDevicePair{}
 		c.snesScreen.Refresh()
+		c.gameScreen.Refresh()
 	})
+}
+
+func (c *Controller) loadROM() {
+	if c.gameInst == nil {
+		return
+	}
+
+	c.gameInst.Load()
 }
