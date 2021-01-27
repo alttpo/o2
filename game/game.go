@@ -11,6 +11,8 @@ type Game interface {
 
 	Load()
 
+	IsRunning() bool
+
 	Start()
 	Stop() <-chan struct{}
 }

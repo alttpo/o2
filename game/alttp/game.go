@@ -12,7 +12,7 @@ type Game struct {
 	rom  *snes.ROM
 	conn snes.Conn
 
-	stopping bool
+	running bool
 }
 
 func (g *Game) ROM() *snes.ROM {
@@ -39,7 +39,13 @@ func (g *Game) Load() {
 	}
 }
 
+func (g *Game) IsRunning() bool {
+	return g.running
+}
+
 func (g *Game) Start() {
+	g.running = true
+
 	var lastQueued time.Time
 	var cmdReadMain snes.CommandSequence
 	cmdReadMain = g.conn.MakeReadCommands([]snes.ReadRequest{
@@ -50,8 +56,11 @@ func (g *Game) Start() {
 				now := time.Now()
 				log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
 				//log.Printf("\n%s\n", hex.Dump(rsp.Data))
-				lastQueued = now
-				g.conn.EnqueueMulti(cmdReadMain)
+
+				if g.IsRunning() {
+					lastQueued = now
+					g.conn.EnqueueMulti(cmdReadMain)
+				}
 			},
 		},
 	})
@@ -62,15 +71,20 @@ func (g *Game) Start() {
 
 func (g *Game) Stop() <-chan struct{} {
 	c := make(chan struct{})
+	complete := func(error) {
+		defer close(c)
+		c <- struct{}{}
+	}
 
-	g.stopping = true
+	if g.IsRunning() {
+		g.conn.EnqueueWithCallback(
+			&snes.DrainQueueCommand{},
+			complete)
+	} else {
+		complete(nil)
+	}
 
-	g.conn.EnqueueWithCallback(
-		&snes.DrainQueueCommand{},
-		func(error) {
-			defer close(c)
-			c <- struct{}{}
-		})
+	g.running = false
 
 	return c
 }
