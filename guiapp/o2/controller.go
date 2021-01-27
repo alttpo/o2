@@ -141,7 +141,15 @@ func (c *Controller) IsConnectedToDriver(driver snes.NamedDriver) bool {
 	return c.driverDevice.NamedDriver == driver
 }
 
+func (c *Controller) Refresh() {
+	c.snesScreen.Refresh()
+	c.gameScreen.Refresh()
+	//c.romScreen.Refresh()
+}
+
 func (c *Controller) ROMSelected(rom *snes.ROM) {
+	defer c.Refresh()
+
 	// the user has selected a ROM file:
 	log.Printf(`ROM selected
 title:   '%s'
@@ -188,11 +196,7 @@ game:    %04x
 }
 
 func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
-	defer func() {
-		c.snesScreen.Refresh()
-		c.gameScreen.Refresh()
-		// TODO: update or recreate gameInst
-	}()
+	defer c.Refresh()
 
 	if pair == c.driverDevice && c.dev != nil {
 		return
@@ -217,8 +221,7 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 func (c *Controller) SNESDisconnected() {
 	if c.dev == nil {
 		c.driverDevice = snes.NamedDriverDevicePair{}
-		c.snesScreen.Refresh()
-		c.gameScreen.Refresh()
+		c.Refresh()
 		return
 	}
 
@@ -226,12 +229,13 @@ func (c *Controller) SNESDisconnected() {
 		c.dev = nil
 		c.driverDevice = snes.NamedDriverDevicePair{}
 		c.gameInst = nil
-		c.snesScreen.Refresh()
-		c.gameScreen.Refresh()
+		c.Refresh()
 	})
 }
 
 func (c *Controller) loadROM() {
+	defer c.Refresh()
+
 	if !c.tryCreateGame() {
 		return
 	}
@@ -246,6 +250,8 @@ func (c *Controller) loadROM() {
 }
 
 func (c *Controller) startGame() {
+	defer c.Refresh()
+
 	if c.gameInst == nil {
 		return
 	}
