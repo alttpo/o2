@@ -101,14 +101,14 @@ func (c *Controller) showAndRun() {
 	c.w.ShowAndRun()
 }
 
-func (c *Controller) tryCreateGame() {
+func (c *Controller) tryCreateGame() bool {
 	if c.dev == nil {
 		log.Println("dev is nil")
-		return
+		return false
 	}
-	if c.rom == nil {
+	if c.nextRom == nil {
 		log.Println("rom is nil")
-		return
+		return false
 	}
 
 	var err error
@@ -119,14 +119,14 @@ func (c *Controller) tryCreateGame() {
 	}
 
 	log.Println("Create new game")
-	c.gameInst, err = c.factory.NewGame(c.rom, c.dev)
+	c.gameInst, err = c.nextFactory.NewGame(c.nextRom, c.dev)
 	if err != nil {
-		return
+		return false
 	}
 
-	// start the game instance:
-	log.Println("Start game")
-	c.gameInst.Start()
+	c.rom = c.nextRom
+	c.factory = c.nextFactory
+	return true
 }
 
 func (c *Controller) IsConnected() bool {
@@ -184,6 +184,7 @@ game:    %04x
 	}
 
 	c.nextRom = rom
+	c.tryCreateGame()
 }
 
 func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
@@ -210,6 +211,7 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 	}
 
 	c.driverDevice = pair
+	c.tryCreateGame()
 }
 
 func (c *Controller) SNESDisconnected() {
@@ -223,15 +225,22 @@ func (c *Controller) SNESDisconnected() {
 	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
 		c.dev = nil
 		c.driverDevice = snes.NamedDriverDevicePair{}
+		c.gameInst = nil
 		c.snesScreen.Refresh()
 		c.gameScreen.Refresh()
 	})
 }
 
 func (c *Controller) loadROM() {
-	if c.gameInst == nil {
+	if !c.tryCreateGame() {
 		return
 	}
 
+	// Load the ROM:
 	c.gameInst.Load()
+
+	// start the game instance:
+	log.Println("Start game")
+	c.gameInst.Start()
+
 }

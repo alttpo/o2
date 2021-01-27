@@ -64,6 +64,7 @@ func (g *Game) Stop() <-chan struct{} {
 	c := make(chan struct{})
 
 	g.stopping = true
+
 	g.conn.EnqueueWithCallback(
 		&snes.DrainQueueCommand{},
 		func(error) {
