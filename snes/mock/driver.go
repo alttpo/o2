@@ -2,6 +2,8 @@ package mock
 
 import "o2/snes"
 
+const driverName = "mock"
+
 type Driver struct{}
 
 func (d *Driver) DisplayOrder() int {
@@ -17,7 +19,9 @@ func (d *Driver) DisplayDescription() string {
 }
 
 func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Conn, error) {
-	return &Conn{}, nil
+	c := &Conn{}
+	c.Init(driverName)
+	return c, nil
 }
 
 func (d *Driver) Detect() ([]snes.DeviceDescriptor, error) {
@@ -31,5 +35,5 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
-	snes.Register("mock", &Driver{})
+	snes.Register(driverName, &Driver{})
 }
