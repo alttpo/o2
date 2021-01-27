@@ -1,6 +1,9 @@
 package snes
 
-import "log"
+import (
+	"fmt"
+	"log"
+)
 
 type BaseConn struct {
 	// driver name
@@ -8,6 +11,7 @@ type BaseConn struct {
 
 	// command execution queue:
 	cq chan CommandWithCallback
+	cqClosed bool
 }
 
 func (c *BaseConn) Close() (err error) {
@@ -22,6 +26,9 @@ func (c *BaseConn) Init(name string) {
 }
 
 func (c *BaseConn) Enqueue(cmd Command) {
+	if c.cqClosed {
+		return
+	}
 	c.cq <- CommandWithCallback{
 		Command:    cmd,
 		OnComplete: nil,
@@ -29,6 +36,12 @@ func (c *BaseConn) Enqueue(cmd Command) {
 }
 
 func (c *BaseConn) EnqueueWithCallback(cmd Command, onComplete func(err error)) {
+	if c.cqClosed {
+		if onComplete != nil {
+			onComplete(fmt.Errorf("%s: device connection is closed", c.name))
+		}
+		return
+	}
 	c.cq <- CommandWithCallback{
 		Command:    cmd,
 		OnComplete: onComplete,
@@ -36,6 +49,9 @@ func (c *BaseConn) EnqueueWithCallback(cmd Command, onComplete func(err error)) 
 }
 
 func (c *BaseConn) EnqueueMulti(cmds CommandSequence) {
+	if c.cqClosed {
+		return
+	}
 	for _, cmd := range cmds {
 		c.cq <- CommandWithCallback{
 			Command:    cmd,
@@ -45,6 +61,13 @@ func (c *BaseConn) EnqueueMulti(cmds CommandSequence) {
 }
 
 func (c *BaseConn) EnqueueMultiWithCallback(cmds CommandSequence, onComplete func(err error)) {
+	if c.cqClosed {
+		if onComplete != nil {
+			onComplete(fmt.Errorf("%s: device connection is closed", c.name))
+		}
+		return
+	}
+
 	// enqueue all commands except the last without a callback:
 	last := len(cmds) - 1
 	if last > 0 {
@@ -64,10 +87,10 @@ func (c *BaseConn) EnqueueMultiWithCallback(cmds CommandSequence, onComplete fun
 }
 
 func (c *BaseConn) handleQueue() {
-	isClosed := false
+	c.cqClosed = false
 	var err error
 	doClose := func() {
-		if isClosed {
+		if c.cqClosed {
 			return
 		}
 
@@ -81,7 +104,7 @@ func (c *BaseConn) handleQueue() {
 		}
 
 		close(c.cq)
-		isClosed = true
+		c.cqClosed = true
 	}
 	defer doClose()
 
