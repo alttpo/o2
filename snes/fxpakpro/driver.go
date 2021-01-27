@@ -1,15 +1,18 @@
 package fxpakpro
 
 import (
-	"errors"
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"o2/snes"
 )
 
+const (
+	driverName = "fxpakpro"
+)
+
 var (
-	ErrNoFXPakProFound = errors.New("fxpakpro: no device found among serial ports")
+	ErrNoFXPakProFound = fmt.Errorf("%s: no device found among serial ports", driverName)
 
 	baudRates = []int{
 		921600, // first rate that works on Windows
@@ -143,7 +146,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 		//log.Printf("%s: %v\n", portName, err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("fxpakpro: failed to open serial port at any baud rate: %w", err)
+		return nil, fmt.Errorf("%s: failed to open serial port at any baud rate: %w", driverName, err)
 	}
 
 	// set baud rate on descriptor:
@@ -156,18 +159,15 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 	if err = f.SetDTR(true); err != nil {
 		//log.Printf("serial: %v\n", err)
 		f.Close()
-		return nil, fmt.Errorf("fxpakpro: failed to set DTR: %w", err)
+		return nil, fmt.Errorf("%s: failed to set DTR: %w", driverName, err)
 	}
 
-	c := &Conn{
-		f:  f,
-		cq: make(chan snes.CommandWithCallback, 64),
-	}
-	go c.handleQueue()
+	c := &Conn{f:  f}
+	c.Init(driverName)
 
 	return c, err
 }
 
 func init() {
-	snes.Register("fxpakpro", &Driver{})
+	snes.Register(driverName, &Driver{})
 }
