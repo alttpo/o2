@@ -69,22 +69,6 @@ func (g *Game) Start() {
 	g.conn.EnqueueMulti(cmdReadMain)
 }
 
-func (g *Game) Stop() <-chan struct{} {
-	c := make(chan struct{})
-	complete := func(error) {
-		defer close(c)
-		c <- struct{}{}
-	}
-
-	if g.IsRunning() {
-		g.conn.EnqueueWithCallback(
-			&snes.DrainQueueCommand{},
-			complete)
-	} else {
-		complete(nil)
-	}
-
+func (g *Game) Stop() {
 	g.running = false
-
-	return c
 }

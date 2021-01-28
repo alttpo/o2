@@ -110,14 +110,12 @@ func (c *Controller) tryCreateGame() bool {
 		log.Println("rom is nil")
 		return false
 	}
-
-	var err error
 	if c.gameInst != nil {
-		log.Println("Stop existing game")
-		<-c.gameInst.Stop()
-		c.gameInst = nil
+		log.Println("game already created")
+		return false
 	}
 
+	var err error
 	log.Println("Create new game")
 	c.gameInst, err = c.nextFactory.NewGame(c.nextRom, c.dev)
 	if err != nil {
@@ -225,12 +223,18 @@ func (c *Controller) SNESDisconnected() {
 		return
 	}
 
-	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
-		c.dev = nil
-		c.driverDevice = snes.NamedDriverDevicePair{}
+	if c.gameInst != nil {
+		log.Println("Stop existing game")
+		c.gameInst.Stop()
 		c.gameInst = nil
+	}
+
+	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
 		c.Refresh()
 	})
+
+	c.dev = nil
+	c.driverDevice = snes.NamedDriverDevicePair{}
 }
 
 func (c *Controller) loadROM() {

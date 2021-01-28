@@ -14,5 +14,5 @@ type Game interface {
 	IsRunning() bool
 
 	Start()
-	Stop() <-chan struct{}
+	Stop()
 }
