@@ -16,9 +16,15 @@
 
 .idea/
 
+dist/
+
 sd2snes
 z3randomizer
 
 # Ignore any ROMs for testing
 *.smc
 *.sfc
+
+# Ignore web resources
+webui/web/node_modules/
+webui/static/app.js
