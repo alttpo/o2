@@ -19,24 +19,11 @@ jobs:
       with:
         go-version: 1.15
 
-    - uses: actions/cache@v2
-      with:
-        # In order:
-        # * Module download cache
-        # * Build cache (Windows)
-        path: |
-          ~/go/pkg/mod
-          %LocalAppData%\go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@master
       with:
         version: latest
         args: release --rm-dist
-        workDir: ./guiapp/o2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -50,26 +37,10 @@ jobs:
       with:
         go-version: 1.15
 
-    - name: Install Linux packages
-      run: sudo apt update && sudo apt install -y golang gcc libgl1-mesa-dev xorg-dev
-
-    - uses: actions/cache@v2
-      with:
-        # In order:
-        # * Module download cache
-        # * Build cache (Linux)
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@master
       with:
         version: latest
         args: release --rm-dist
-        workDir: ./guiapp/o2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
