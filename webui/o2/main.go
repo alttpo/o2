@@ -7,20 +7,49 @@ import (
 	"github.com/skratchdot/open-golang/open"
 	"io/ioutil"
 	"log"
+	"net"
 	"o2/snes"
 	"o2/snes/fxpakpro"
-	_ "o2/snes/fxpakpro"
+	_ "o2/snes/mock"
 	"o2/webui"
 	"os"
+	"strconv"
 	"sync"
 )
+
+var (
+	listenHost string
+	listenPort int
+)
+
+func orElse(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
+	// Parse env vars:
+	listenHost = os.Getenv("O2_WEB_LISTEN_HOST")
+	if listenHost == "" {
+		listenHost = "0.0.0.0"
+	}
+
+	var err error
+	listenPort, err = strconv.Atoi(orElse(os.Getenv("O2_WEB_LISTEN_PORT"), "27637"))
+	if err != nil {
+		listenPort = 27637
+	}
+	if listenPort <= 0 {
+		listenPort = 27637
+	}
+	listenAddr := net.JoinHostPort(listenHost, strconv.Itoa(listenPort))
+
 	// Start a web server:
-	listenAddr := os.Getenv("O2_WEB_LISTENADDR")
-	go webui.StartWebServer(&listenAddr, "webui/static")
+	go webui.StartWebServer(listenAddr, "webui/static")
 
 	// Start up a systray:
 	systray.Run(trayStart, trayExit)
@@ -44,7 +73,7 @@ func trayStart() {
 		for {
 			select {
 			case <-mOpenWeb.ClickedCh:
-				err := open.Start("http://127.0.0.1:27637/")
+				err := open.Start(fmt.Sprintf("http://127.0.0.1:%d/", listenPort))
 				if err != nil {
 					log.Println(err)
 				}
@@ -73,12 +102,15 @@ func test() {
 			systray.Quit()
 			return
 		}
-		rc.PlayROM("lttp.smc", rom)
+		path, seq := rc.MakeUploadROMCommands("lttp.smc", rom)
+		conn.EnqueueMulti(seq)
+		seq = rc.MakeBootROMCommands(path)
+		conn.EnqueueMulti(seq)
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	conn.SubmitRead([]snes.ReadRequest{
+	conn.EnqueueMulti(conn.MakeReadCommands([]snes.ReadRequest{
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
@@ -87,12 +119,12 @@ func test() {
 				wg.Done()
 			},
 		},
-	})
+	}))
 	wg.Wait()
 
 	wg = sync.WaitGroup{}
 	wg.Add(1)
-	conn.SubmitWrite([]snes.WriteRequest{
+	conn.EnqueueMulti(conn.MakeWriteCommands([]snes.WriteRequest{
 		{
 			Address: 0x007FEA, // NMI vector in bank 00
 			Size:    2,
@@ -102,12 +134,12 @@ func test() {
 				wg.Done()
 			},
 		},
-	})
+	}))
 	wg.Wait()
 
 	wg = sync.WaitGroup{}
 	wg.Add(1)
-	conn.SubmitRead([]snes.ReadRequest{
+	conn.EnqueueMulti(conn.MakeReadCommands([]snes.ReadRequest{
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
@@ -116,8 +148,8 @@ func test() {
 				wg.Done()
 			},
 		},
-	})
+	}))
 	wg.Wait()
 
-	conn.Close()
+	conn.Enqueue(&snes.CloseCommand{})
 }

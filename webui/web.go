@@ -10,11 +10,7 @@ import (
 )
 
 // starts a web server with websockets support to enable bidirectional communication with the UI
-func StartWebServer(listenAddr *string, staticPath string) {
-	if *listenAddr == "" {
-		*listenAddr = ":27637"
-	}
-
+func StartWebServer(listenAddr string, staticPath string) {
 	mux := http.NewServeMux()
 
 	// handle websockets:
@@ -33,7 +29,7 @@ func StartWebServer(listenAddr *string, staticPath string) {
 	mux.Handle("/", http.FileServer(http.Dir(staticPath)))
 
 	// start server:
-	log.Fatal(http.ListenAndServe(*listenAddr, mux))
+	log.Fatal(http.ListenAndServe(listenAddr, mux))
 }
 
 type CommandRequest struct {
