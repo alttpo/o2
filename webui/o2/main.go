@@ -10,7 +10,6 @@ import (
 	"o2/snes"
 	"o2/snes/fxpakpro"
 	_ "o2/snes/mock"
-	"o2/webui"
 	"os"
 	"strconv"
 	"sync"
@@ -53,7 +52,7 @@ func main() {
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
 	// Start a web server:
-	go webui.StartWebServer(listenAddr, "webui/static")
+	go StartWebServer(listenAddr, "webui/static")
 
 	// Start up a systray:
 	createSystray()
