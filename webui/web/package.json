@@ -1,6 +1,12 @@
 {
   "name": "webui",
   "version": "1.0.0",
+  "description": "O2 web UI",
+  "private": true,
+  "scripts": {
+    "watch": "webpack --watch",
+    "build": "webpack"
+  },
   "dependencies": {},
   "devDependencies": {
     "ts-loader": "^8.0.14",
