@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/skratchdot/open-golang/open"
 	"io/ioutil"
 	"log"
 	"net"
@@ -16,8 +17,10 @@ import (
 )
 
 var (
-	listenHost string
-	listenPort int
+	listenHost  string // hostname/ip to listen on for webserver
+	listenPort  int    // port number to listen on for webserver
+	browserHost string // hostname to send as part of URL to browser to connect to webserver
+	browserUrl  string // full URL that is sent to browser (composed of browserHost:listenPort)
 )
 
 func orElse(a, b string) string {
@@ -46,11 +49,21 @@ func main() {
 	}
 	listenAddr := net.JoinHostPort(listenHost, strconv.Itoa(listenPort))
 
+	browserHost = orElse(os.Getenv("O2_WEB_BROWSER_HOST"), "127.0.0.1")
+	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
+
 	// Start a web server:
 	go webui.StartWebServer(listenAddr, "webui/static")
 
 	// Start up a systray:
 	createSystray()
+}
+
+func openWebUI() {
+	err := open.Start(browserUrl)
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func test() {

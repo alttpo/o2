@@ -1,9 +1,12 @@
 package main
 
-import "os"
+import (
+	"os"
+)
 
 func createSystray() {
-	// dummy
+	// just open the browser UI on startup:
+	openWebUI()
 }
 
 func quitSystray() {

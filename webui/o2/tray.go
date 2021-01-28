@@ -5,8 +5,6 @@ package main
 import (
 	"fmt"
 	"github.com/getlantern/systray"
-	"github.com/skratchdot/open-golang/open"
-	"log"
 )
 
 func createSystray() {
@@ -36,10 +34,7 @@ func trayStart() {
 		for {
 			select {
 			case <-mOpenWeb.ClickedCh:
-				err := open.Start(fmt.Sprintf("http://127.0.0.1:%d/", listenPort))
-				if err != nil {
-					log.Println(err)
-				}
+				openWebUI()
 				break
 			case <-mQuit.ClickedCh:
 				fmt.Println("Requesting quit")
@@ -48,4 +43,7 @@ func trayStart() {
 			}
 		}
 	}()
+
+	// Open web UI by default:
+	openWebUI()
 }
