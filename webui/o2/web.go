@@ -1,5 +1,7 @@
 package main
 
+//go:generate go run github.com/go-bindata/go-bindata/go-bindata -fs -nomemcopy -prefix ../static ../static
+
 import (
 	"encoding/json"
 	"github.com/gobwas/ws"
@@ -26,7 +28,9 @@ func StartWebServer(listenAddr string, staticPath string) {
 	}))
 
 	// serve static content on /:
-	mux.Handle("/", http.FileServer(http.Dir(staticPath)))
+	//mux.Handle("/", http.FileServer(http.Dir(staticPath)))
+	// serve static content from go-bindata:
+	mux.Handle("/", http.FileServer(AssetFile()))
 
 	// start server:
 	log.Fatal(http.ListenAndServe(listenAddr, mux))

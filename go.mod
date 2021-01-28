@@ -5,6 +5,7 @@ go 1.15
 require (
 	fyne.io/fyne v1.4.3
 	github.com/getlantern/systray v1.1.0
+	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.0.4
