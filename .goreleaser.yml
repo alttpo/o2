@@ -31,3 +31,7 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+release:
+  disable: false
+  prerelease: auto
+  draft: false
