@@ -11,6 +11,8 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
 
     - name: Set up Go
       uses: actions/setup-go@v2
@@ -29,18 +31,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Build
-      run: go build -v ./guiapp/o2
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@master
       with:
-        name: o2-win64.exe
-        path: |
-          o2.exe
-
-    - name: Test
-      run: go test -v ./snes
+        version: latest
+        args: release --rm-dist
+        workDir: ./guiapp/o2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   linux:
     runs-on: ubuntu-latest
@@ -67,15 +65,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Build
-      run: go build -v ./guiapp/o2
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@master
       with:
-        name: o2-linux
-        path: |
-          o2
-
-    - name: Test
-      run: go test -v ./snes
+        version: latest
+        args: release --rm-dist
+        workDir: ./guiapp/o2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
