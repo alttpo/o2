@@ -29,3 +29,4 @@ z3randomizer
 webui/web/node_modules/
 webui/static/app.js
 webui/o2/bindata.go
+webui/o2/bindata_debug.go
