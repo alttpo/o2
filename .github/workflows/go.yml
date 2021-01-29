@@ -27,6 +27,7 @@ jobs:
     - run: cd webui/web && npm install
     - run: cd webui/web && npm run build
 
+    - run: go get github.com/go-bindata/go-bindata/v3/go-bindata@v3.1.3
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@master
       with:

@@ -1,11 +1,12 @@
 html{
     font-family: 'Jost', sans-serif;
     font-size: 1.1rem;
-    color: #000000;
+    color: lightgray;
 }
 
 body{
     margin: 0;
+    background-color: black;
 }
 
 a{

@@ -1,7 +1,5 @@
 package main
 
-//go:generate go run github.com/go-bindata/go-bindata/go-bindata -fs -nomemcopy -prefix ../static ../static
-
 import (
 	"encoding/json"
 	"github.com/gobwas/ws"
