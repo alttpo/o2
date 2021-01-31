@@ -1,4 +1,4 @@
-package game
+package games
 
 import "o2/snes"
 

@@ -5,7 +5,7 @@ import (
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
 	"log"
-	"o2/game"
+	"o2/games"
 	"o2/snes"
 )
 
@@ -16,10 +16,10 @@ type Controller struct {
 	rom     *snes.ROM
 	nextRom *snes.ROM
 
-	factory     game.Factory
-	nextFactory game.Factory
+	factory     games.Factory
+	nextFactory games.Factory
 
-	gameInst game.Game
+	game games.Game
 
 	// main app window
 	w             fyne.Window
@@ -110,14 +110,14 @@ func (c *Controller) tryCreateGame() bool {
 		log.Println("rom is nil")
 		return false
 	}
-	if c.gameInst != nil {
+	if c.game != nil {
 		log.Println("game already created")
 		return false
 	}
 
 	var err error
 	log.Println("Create new game")
-	c.gameInst, err = c.nextFactory.NewGame(c.nextRom, c.dev)
+	c.game, err = c.nextFactory.NewGame(c.nextRom, c.dev)
 	if err != nil {
 		return false
 	}
@@ -165,7 +165,7 @@ game:    %04x
 	// determine if ROM is recognizable as a game we provide support for:
 	oneGame := true
 	c.nextFactory = nil
-	for _, f := range game.Factories() {
+	for _, f := range games.Factories() {
 		if !f.IsROMCompatible(rom) {
 			continue
 		}
@@ -223,10 +223,10 @@ func (c *Controller) SNESDisconnected() {
 		return
 	}
 
-	if c.gameInst != nil {
+	if c.game != nil {
 		log.Println("Stop existing game")
-		c.gameInst.Stop()
-		c.gameInst = nil
+		c.game.Stop()
+		c.game = nil
 	}
 
 	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
@@ -245,25 +245,25 @@ func (c *Controller) loadROM() {
 	}
 
 	// Load the ROM:
-	c.gameInst.Load()
+	c.game.Load()
 
 	// start the game instance:
 	log.Println("Start game")
-	c.gameInst.Start()
+	c.game.Start()
 
 }
 
 func (c *Controller) startGame() {
 	defer c.Refresh()
 
-	if c.gameInst == nil {
+	if c.game == nil {
 		return
 	}
-	if c.gameInst.IsRunning() {
+	if c.game.IsRunning() {
 		return
 	}
 
 	// start the game instance:
 	log.Println("Start game")
-	c.gameInst.Start()
+	c.game.Start()
 }

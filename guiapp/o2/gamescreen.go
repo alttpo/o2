@@ -51,7 +51,7 @@ func (s *GameScreen) Refresh() {
 	}
 	setEnabled(s.btnSendROM, sendRomEnabled)
 
-	setEnabled(s.btnStart, controller.gameInst != nil && !controller.gameInst.IsRunning())
+	setEnabled(s.btnStart, controller.game != nil && !controller.game.IsRunning())
 
 	s.view.Refresh()
 }

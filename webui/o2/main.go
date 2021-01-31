@@ -52,7 +52,7 @@ func main() {
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
 	// Start a web server:
-	go StartWebServer(listenAddr, "webui/static")
+	go StartWebServer(listenAddr)
 
 	// Start up a systray:
 	createSystray()

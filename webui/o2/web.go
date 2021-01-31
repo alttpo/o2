@@ -10,7 +10,7 @@ import (
 )
 
 // starts a web server with websockets support to enable bidirectional communication with the UI
-func StartWebServer(listenAddr string, staticPath string) {
+func StartWebServer(listenAddr string) {
 	mux := http.NewServeMux()
 
 	// handle websockets:
@@ -25,8 +25,6 @@ func StartWebServer(listenAddr string, staticPath string) {
 		go handleWebsocket(conn, req)
 	}))
 
-	// serve static content on /:
-	//mux.Handle("/", http.FileServer(http.Dir(staticPath)))
 	// serve static content from go-bindata:
 	mux.Handle("/", http.FileServer(AssetFile()))
 
