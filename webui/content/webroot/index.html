@@ -5,19 +5,46 @@
 </head>
 <body>
 <header>
-    <section>
+    <section class="rounded darken padded squeeze">
         <h1>ALTTPO2</h1>
     </section>
-    <section>
-        <label for="device">Device</label>
-        <select id="device">
-            <option>(Select a SNES Device)</option>
-            <option>FX Pak Pro</option>
-        </select>
-    </section>
 </header>
-<div id="app">
-</div>
+<section id="view" class="squeeze">
+    <div class="tabbed">
+        <div class="tab">
+            <input name="viewtab" id="viewtab1" type="radio" checked>
+            <label for="viewtab1">SNES</label>
+            <div id="main/snes" class="content">
+                <label for="device">Device</label>
+                <select id="device">
+                    <option>(Select a SNES Device)</option>
+                    <option>FX Pak Pro</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="tab">
+            <input name="viewtab" id="viewtab2" type="radio">
+            <label for="viewtab2">ROM</label>
+            <div id="main/rom" class="content"></div>
+        </div>
+
+        <div class="tab">
+            <input name="viewtab" id="viewtab3" type="radio">
+            <label for="viewtab3">Server</label>
+            <div id="main/server" class="content"></div>
+        </div>
+
+        <div class="tab">
+            <input name="viewtab" id="viewtab4" type="radio">
+            <label for="viewtab4">Game</label>
+            <div id="main/game" class="content"></div>
+        </div>
+    </div>
+</section>
+<footer>
+    <section class="rounded darken padded squeeze"></section>
+</footer>
 <script src="/r/app.js"></script>
 </body>
 </html>

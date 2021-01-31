@@ -1,37 +1,41 @@
-@font-face{
+@font-face {
     font-family: Triforce;
     src: url(/r/Triforce.ttf) format('truetype');
 }
+
 @font-face {
     font-family: Rokkitt;
     src: url(/r/Rokkitt-VariableFont_wght.ttf) format('truetype');
 }
 
-html,select,option{
+* {
+    box-sizing: border-box;
+}
+
+html, select, option {
     font-family: Rokkitt, sans-serif;
     font-size: 1.1rem;
     color: lightgray;
-    text-shadow:
-            -1px -1px 0 #333,
-             1px -1px 0 #333,
-            -1px  1px 0 #333,
-             1px  1px 0 #333;
+    text-shadow: -1px -1px 0 #333,
+    1px -1px 0 #333,
+    -1px 1px 0 #333,
+    1px 1px 0 #333;
 }
 
-body{
+body {
     margin: 0;
-    background-image: linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)), url(/r/bg.png);
+    background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(/r/bg.png);
     background-color: black;
     background-position: center top;
     background-repeat: repeat-y;
     background-size: cover;
 }
 
-a{
+a {
     color: #ffef00;
 }
 
-button{
+button {
     font-family: sans-serif;
     font-weight: 500;
     font-size: 0.9rem;
@@ -45,7 +49,7 @@ button{
     cursor: pointer;
 }
 
-button:active{
+button:active {
     border-right: 1px solid rgba(0, 0, 0, 0.5);
     border-bottom: 1px solid rgba(0, 0, 0, 0.5);
     padding-right: 16px;
@@ -54,7 +58,7 @@ button:active{
     margin-bottom: 2px;
 }
 
-select,input{
+select, input {
     background-color: #444;
     color: lightgray;
     font-family: Rokkitt, sans-serif;
@@ -70,38 +74,115 @@ select,input{
     cursor: pointer;
 }
 
-h1, h2, h3, h4, h5, h6{
+h1, h2, h3, h4, h5, h6 {
     font-family: Triforce, sans-serif;
     font-weight: normal;
     margin: 0;
 }
 
-h1{ font-size: 3rem; text-align: center }
-h2{ font-size: 2rem; }
-h3{ font-size: 1.75rem; }
-h4{
-    font-size: 1.5rem;
-    margin-bottom:0.5rem;
+h1 {
+    font-size: 3rem;
+    text-align: center
 }
-h5, h6{
+
+h2 {
+    font-size: 2rem;
+}
+
+h3 {
+    font-size: 1.75rem;
+}
+
+h4 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+h5, h6 {
     font-size: 1.25rem;
     margin-bottom: 0.5rem;
 }
 
-header{
+header {
     margin-top: 1em;
+    width: 100%;
 }
 
-section{
-    border-style: solid;
-    border-width: 0.125em;
+footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+}
+
+.squeeze {
+    margin: 0.6em 1em;
+}
+
+.rounded {
+    border: 0.125em solid #511;
     border-radius: 0.5em;
-    border-color: #511;
-    background: linear-gradient(rgba(0,0,0,0.5),rgba(0,0,0,0.5));
-    margin-left: 4em;
-    margin-right: 4em;
-    margin-top: 0.6em;
-    margin-bottom: 0.6em;
-    padding: 0.6em;
+}
+
+.darken {
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(5px);
+}
+
+.padded {
+    padding: 0.6em;
+}
+
+/* Tabbed interface: */
+
+.tabbed {
+    min-height: 100px;
+    margin: 0.6em 0;
+    width: 100%;
+    display: flex;
+    /* allows for tabs to be next to each other */
+    position: relative;
+    /* relative here contains the width of the content */
+}
+
+.tab {
+    flex: 1;
+}
+
+.tab > label {
+    cursor: pointer;
+    font-size: 1.5rem;
+    text-transform: uppercase;
+    padding: 0.25em 0.5em 0 0.5em;
+    border: 0.125em solid #511;
+    border-radius: 0.5em 0.5em 0 0;
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
+    backdrop-filter: blur(5px);
+    display: block;
+    border-bottom: none;
+}
+
+.tab > [type='radio'] {
+    display: none;
+    /* this makes the radio buttons disappear - we are only keeping track if they are checked or not */
+}
+
+.tab > [type='radio']:not(:checked) ~ .content {
+    display: none;
+}
+
+.content {
+    padding: 10px;
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* the left and right at 0 help the tabs to overlap each other */
+    border: 0.125em solid #511;
+    border-radius: 0 0 0.5em 0.5em;
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
+    backdrop-filter: blur(5px);
+}
+
+/* This allows the selected tab to be on top */
+.tab > [type='radio']:checked ~ label ~ .content {
+    z-index: 1;
 }
