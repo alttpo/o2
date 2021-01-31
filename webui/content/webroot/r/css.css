@@ -119,8 +119,8 @@ footer {
 }
 
 .rounded {
-    border: 0.125em solid #511;
-    border-radius: 0.5em;
+    border: 0.125rem solid #511;
+    border-radius: 0.5rem;
 }
 
 .darken {
@@ -153,12 +153,12 @@ footer {
     font-size: 1.5rem;
     text-transform: uppercase;
     padding: 0.25em 0.5em 0 0.5em;
-    border: 0.125em solid #511;
-    border-radius: 0.5em 0.5em 0 0;
+    border: 0.125rem solid #511;
+    border-radius: 0.5rem 0.5rem 0 0;
+    border-bottom: none;
     background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(5px);
     display: block;
-    border-bottom: none;
 }
 
 .tab > [type='radio'] {
@@ -176,8 +176,8 @@ footer {
     left: 0;
     right: 0;
     /* the left and right at 0 help the tabs to overlap each other */
-    border: 0.125em solid #511;
-    border-radius: 0 0 0.5em 0.5em;
+    border: 0.125rem solid #511;
+    border-radius: 0 0 0.5rem 0.5rem;
     background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(5px);
 }
