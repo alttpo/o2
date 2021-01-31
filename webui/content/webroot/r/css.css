@@ -1,15 +1,30 @@
-html{
-    font-family: 'Jost', sans-serif;
+@font-face{
+    font-family: Triforce;
+    src: url(/r/Triforce.ttf) format('truetype');
+}
+@font-face {
+    font-family: Rokkitt;
+    src: url(/r/Rokkitt-VariableFont_wght.ttf) format('truetype');
+}
+
+html,select,option{
+    font-family: Rokkitt, sans-serif;
     font-size: 1.1rem;
     color: lightgray;
+    text-shadow:
+            -1px -1px 0 #333,
+             1px -1px 0 #333,
+            -1px  1px 0 #333,
+             1px  1px 0 #333;
 }
 
 body{
     margin: 0;
-    background-image: url(/r/bg.png);
+    background-image: linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)), url(/r/bg.png);
     background-color: black;
     background-position: center top;
-    background-repeat: space;
+    background-repeat: repeat-y;
+    background-size: cover;
 }
 
 a{
@@ -17,7 +32,7 @@ a{
 }
 
 button{
-    font-family: Jost, sans-serif;
+    font-family: sans-serif;
     font-weight: 500;
     font-size: 0.9rem;
     padding: 10px 17px 11px 16px; /* top right bottom left */
@@ -39,14 +54,29 @@ button:active{
     margin-bottom: 2px;
 }
 
-h1, h2, h3, h4, h5, h6{
-    font-family: HyliaSerif, sans-serif;
-    font-weight: normal;
-    margin: 0;
-    color: #032605;
+select,input{
+    background-color: #444;
+    color: lightgray;
+    font-family: Rokkitt, sans-serif;
+    font-weight: 500;
+    font-size: 1.0rem;
+    padding: 0.25em 0.25em 0.25em 0.25em; /* top right bottom left */
+    border-radius: 0.5em;
+    border-top: 1px solid rgba(0, 0, 0, 0.5);
+    border-left: 1px solid rgba(0, 0, 0, 0.5);
+    border-right: 2px solid rgba(0, 0, 0, 0.5);
+    border-bottom: 2px solid rgba(0, 0, 0, 0.5);
+    font-kerning: auto;
+    cursor: pointer;
 }
 
-h1{ font-size: 3rem; }
+h1, h2, h3, h4, h5, h6{
+    font-family: Triforce, sans-serif;
+    font-weight: normal;
+    margin: 0;
+}
+
+h1{ font-size: 3rem; text-align: center }
 h2{ font-size: 2rem; }
 h3{ font-size: 1.75rem; }
 h4{
@@ -56,4 +86,22 @@ h4{
 h5, h6{
     font-size: 1.25rem;
     margin-bottom: 0.5rem;
+}
+
+header{
+    margin-top: 1em;
+}
+
+section{
+    border-style: solid;
+    border-width: 0.125em;
+    border-radius: 0.5em;
+    border-color: #511;
+    background: linear-gradient(rgba(0,0,0,0.5),rgba(0,0,0,0.5));
+    margin-left: 4em;
+    margin-right: 4em;
+    margin-top: 0.6em;
+    margin-bottom: 0.6em;
+    padding: 0.6em;
+    backdrop-filter: blur(5px);
 }
