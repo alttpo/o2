@@ -6,7 +6,10 @@ html{
 
 body{
     margin: 0;
+    background-image: url(/r/bg.png);
     background-color: black;
+    background-position: center top;
+    background-repeat: space;
 }
 
 a{

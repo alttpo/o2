@@ -17,6 +17,7 @@
 .idea/
 
 dist/
+.DS_Store
 
 sd2snes
 z3randomizer

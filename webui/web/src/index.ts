@@ -23,7 +23,7 @@ class Host {
         let msg = JSON.parse(e.data) as O2IncomingMessage;
         switch (msg.c) {
             case "vmu": // view-model update
-                this.state.viewModel = msg.vm;
+                this.state.viewModel = msg.d;
                 break;
         }
     }
