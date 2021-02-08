@@ -3,6 +3,7 @@
 export interface ViewModel {
     [k: string]: any;
 
+    status: string;
     snes: SNESViewModel;
     rom: ROMViewModel;
     server: ServerViewModel;

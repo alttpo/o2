@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <link rel="stylesheet" href="/r/css.css"/>
+    <title>ALTTPO2</title>
 </head>
 <body>
 <header>
@@ -14,39 +15,44 @@
         <div class="tab">
             <input name="viewtab" id="viewtab1" type="radio" checked>
             <label for="viewtab1">SNES</label>
-            <div id="main/snes" class="content">
-                <label for="device">Device</label>
-                <select id="device">
-                    <option>(Select a SNES Device)</option>
-                    <option>FX Pak Pro</option>
-                </select>
-            </div>
+            <div v-view="snes" class="content"></div>
         </div>
 
         <div class="tab">
             <input name="viewtab" id="viewtab2" type="radio">
             <label for="viewtab2">ROM</label>
-            <div id="main/rom" class="content"></div>
+            <div v-view="rom" class="content"></div>
         </div>
 
         <div class="tab">
             <input name="viewtab" id="viewtab3" type="radio">
             <label for="viewtab3">Server</label>
-            <div id="main/server" class="content"></div>
+            <div v-view="server" class="content"></div>
         </div>
 
         <div class="tab">
             <input name="viewtab" id="viewtab4" type="radio">
             <label for="viewtab4">Game</label>
-            <div id="main/game" class="content"></div>
+            <div v-view="game" class="content"></div>
         </div>
     </div>
 </section>
 <footer>
-    <section class="rounded darken padded-lr squeeze">
+    <section class="rounded darken padded-lr squeeze" v-view="status">
         <span id="status">Not connected</span>
     </section>
 </footer>
+<template id="tmplSnes">
+    <span>Hello world!</span>
+</template>
+<template id="tmplSnesDriver">
+    <label for="device">Device</label>
+    <select id="device">
+        <option>(Select a SNES Device)</option>
+        <option>FX Pak Pro</option>
+    </select>
+    <button type="button" v-command="connect">Connect</button>
+</template>
 <script src="/r/app.js"></script>
 </body>
 </html>

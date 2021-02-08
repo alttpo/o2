@@ -1,15 +1,12 @@
 import {ViewModel} from './viewmodel';
+import {View, Views} from './views';
 
-type ViewModelUpdate = {
-    v: string;
-    m: object;
-}
-
-class State {
-    public viewModel: ViewModel;
+export class State {
+    viewModel: ViewModel;
 
     constructor() {
         this.viewModel = {
+            status: "",
             snes: {},
             server: {},
             rom: {},
@@ -18,13 +15,30 @@ class State {
     }
 }
 
-class Host {
-    private state: State;
+interface ViewModelUpdate {
+    v: string;
+    m: object;
+}
+
+export class Host {
     private ws: WebSocket;
+    private readonly viewModelObservers: { [viewModel: string]: View[] };
 
-    constructor(state: State) {
+    state: State;
+    views: Views;
+
+    constructor(state: State, views: Views) {
         this.state = state;
+        this.views = views;
 
+        // map describing which views observe which view models:
+        this.viewModelObservers = {
+            'status': [],
+            'snes': [this.views.snes]
+        };
+    }
+
+    connect() {
         const {protocol, host} = window.location;
         const url = (protocol === "https:" ? "wss:" : "ws:") + "//" + host + "/ws/";
 
@@ -35,16 +49,37 @@ class Host {
     onmessage(e: MessageEvent<string>) {
         let msg = JSON.parse(e.data) as ViewModelUpdate;
         this.state.viewModel[msg.v] = msg.m;
-        this.updateView(msg.v);
+        this.updateViewsObservingViewModel(msg.v);
     }
 
-    updateView(view: string) {
-        
+    bind(root: ParentNode) {
+        for (let viewName in this.views) {
+            if (!this.views.hasOwnProperty(viewName)) {
+                continue;
+            }
+
+            let view = this.views[viewName];
+            view.bind(root);
+        }
+    }
+
+    private updateViewsObservingViewModel(viewModelName: string) {
+        let observers = this.viewModelObservers[viewModelName];
+        if (!observers) {
+            return;
+        }
+
+        for (const view of observers) {
+            view.render(this.state.viewModel);
+        }
     }
 }
 
 document.addEventListener("DOMContentLoaded", ev => {
     console.log("DOMContentLoaded");
     let state = new State();
-    let host = new Host(state);
+    let views = new Views();
+    let host = new Host(state, views);
+    host.bind(document);
+    host.connect();
 });
