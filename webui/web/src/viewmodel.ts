@@ -8,6 +8,7 @@ export interface ViewModel {
 }
 
 export interface SNESViewModel {
+
 }
 
 export interface ROMViewModel {

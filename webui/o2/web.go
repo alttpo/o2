@@ -7,14 +7,49 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 )
 
+type WebServer struct {
+	listenAddr string
+
+	commandHandler ViewCommandHandler
+
+	mux *http.ServeMux
+
+	socketsRw sync.RWMutex
+	sockets   []*Socket
+
+	// broadcast channel to all sockets:
+	q chan ViewModelUpdate
+}
+
+type Socket struct {
+	ws   *WebServer
+	req  *http.Request
+	conn net.Conn
+
+	// write channel:
+	q chan ViewModelUpdate
+}
+
+type ViewModelUpdate struct {
+	View      string `json:"v"`
+	ViewModel Object `json:"m"`
+}
+
 // starts a web server with websockets support to enable bidirectional communication with the UI
-func StartWebServer(listenAddr string) {
-	mux := http.NewServeMux()
+func NewWebServer(listenAddr string) *WebServer {
+	s := &WebServer{
+		listenAddr: listenAddr,
+		mux:        http.NewServeMux(),
+		socketsRw:  sync.RWMutex{},
+		sockets:    make([]*Socket, 0, 2),
+		q:          make(chan ViewModelUpdate, 10),
+	}
 
 	// handle websockets:
-	mux.Handle("/ws/", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+	s.mux.Handle("/ws/", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		conn, _, _, err := ws.UpgradeHTTP(req, rw)
 		if err != nil {
 			log.Println(err)
@@ -22,29 +57,101 @@ func StartWebServer(listenAddr string) {
 			return
 		}
 
-		go handleWebsocket(conn, req)
+		// create the Socket to handle bidirectional communication:
+		socket := NewSocket(s, req, conn)
+		s.appendSocket(socket)
 	}))
 
 	// serve static content from go-bindata:
-	mux.Handle("/", http.FileServer(AssetFile()))
+	s.mux.Handle("/", http.FileServer(AssetFile()))
 
+	// handle the broadcast channel:
+	go s.handleBroadcast()
+
+	return s
+}
+
+func (s *WebServer) appendSocket(socket *Socket) {
+	s.socketsRw.Lock()
+	defer s.socketsRw.Unlock()
+	s.sockets = append(s.sockets, socket)
+}
+
+func (s *WebServer) removeSocket(k *Socket) {
+	s.socketsRw.Lock()
+	defer s.socketsRw.Unlock()
+
+	for i, sk := range s.sockets {
+		if sk == k {
+			s.sockets = append(s.sockets[:i], s.sockets[i+1:]...)
+			break
+		}
+	}
+}
+
+func (s *WebServer) Serve() error {
 	// start server:
-	log.Fatal(http.ListenAndServe(listenAddr, mux))
+	return http.ListenAndServe(s.listenAddr, s.mux)
+}
+
+func (s *WebServer) PushViewModel(view string, viewModel Object) {
+	// send to the broadcast channel so that all connected websockets get the update:
+	s.q <- ViewModelUpdate{
+		View:      view,
+		ViewModel: viewModel,
+	}
+}
+
+func (s *WebServer) ProvideViewCommandHandler(commandHandler ViewCommandHandler) {
+	s.commandHandler = commandHandler
+}
+
+func (s *WebServer) handleBroadcast() {
+	// read updates from the broadcast channel:
+	for u := range s.q {
+		s.socketsRw.RLock()
+		sockets := s.sockets
+		s.socketsRw.RUnlock()
+
+		// broadcast to all connected sockets:
+		for _, k := range sockets {
+			k.q <- u
+		}
+	}
 }
 
 type CommandRequest struct {
-	Command string      `json:"c"`
-	Data    interface{} `json:"d"`
+	View    string `json:"v"`
+	Command string `json:"c"`
+	Args    Object `json:"a"`
 }
 
-func handleWebsocket(conn net.Conn, req *http.Request) {
-	defer conn.Close()
+func NewSocket(s *WebServer, req *http.Request, conn net.Conn) *Socket {
+	k := &Socket{
+		ws:   s,
+		req:  req,
+		conn: conn,
+		q:    make(chan ViewModelUpdate, 10),
+	}
+
+	go k.readHandler()
+	go k.writeHandler()
+
+	return k
+}
+
+func (k *Socket) readHandler() {
+	// the reader is in control of the lifetime of the socket:
+	defer func() {
+		_ = k.conn.Close()
+
+		// remove self from sockets array:
+		k.ws.removeSocket(k)
+	}()
 
 	var (
-		r       = wsutil.NewReader(conn, ws.StateServerSide)
-		w       = wsutil.NewWriter(conn, ws.StateServerSide, ws.OpText)
+		r       = wsutil.NewReader(k.conn, ws.StateServerSide)
 		decoder = json.NewDecoder(r)
-		encoder = json.NewEncoder(w)
 	)
 
 	for {
@@ -59,24 +166,35 @@ func handleWebsocket(conn net.Conn, req *http.Request) {
 
 		// read a command request:
 		var creq CommandRequest
-		var crsp struct {
-			Command  string      `json:"c"`
-			Response interface{} `json:"r"`
-		}
 		if err := decoder.Decode(&creq); err != nil {
 			log.Println(err)
 			continue
 		}
 
 		// command handler:
-		crsp.Command = creq.Command
-		crsp.Response, err = handleCommand(&creq)
+		if k.ws.commandHandler == nil {
+			log.Println("no view command handler provided!")
+			continue
+		}
+
+		err = k.ws.commandHandler.HandleCommand(creq.View, creq.Command, creq.Args)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
+	}
+}
 
-		if err = encoder.Encode(&crsp); err != nil {
+func (k *Socket) writeHandler() {
+	var (
+		w       = wsutil.NewWriter(k.conn, ws.StateServerSide, ws.OpText)
+		encoder = json.NewEncoder(w)
+	)
+
+	// wait for ViewModelUpdates on the channel:
+	for u := range k.q {
+		var err error
+		if err = encoder.Encode(&u); err != nil {
 			log.Println(err)
 			continue
 		}
@@ -84,22 +202,5 @@ func handleWebsocket(conn net.Conn, req *http.Request) {
 			log.Println(err)
 			continue
 		}
-	}
-}
-
-func handleCommand(creq *CommandRequest) (rsp interface{}, err error) {
-	switch creq.Command {
-	case "r": // request update
-		rsp =  struct {
-		}{
-		}
-		return
-	case "devices": // request device list
-		rsp = struct {
-		}{
-		}
-		return
-	default:
-		return
 	}
 }
