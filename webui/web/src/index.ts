@@ -1,5 +1,9 @@
 import {ViewModel} from './viewmodel';
-import {O2IncomingMessage} from './messages';
+
+type ViewModelUpdate = {
+    v: string;
+    m: object;
+}
 
 class State {
     public viewModel: ViewModel;
@@ -20,16 +24,15 @@ class Host {
     }
 
     onmessage(e: MessageEvent<string>) {
-        let msg = JSON.parse(e.data) as O2IncomingMessage;
-        switch (msg.c) {
-            case "vmu": // view-model update
-                this.state.viewModel = msg.d;
-                break;
-        }
+        let msg = JSON.parse(e.data) as ViewModelUpdate;
+        this.state.viewModel[msg.v] = msg.m;
     }
 }
 
-document.addEventListener("load", ev => {
+document.addEventListener("DOMContentLoaded", ev => {
+    console.log("DOMContentLoaded");
     let state = new State();
     let host = new Host(state);
+
+
 });

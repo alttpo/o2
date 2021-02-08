@@ -28,6 +28,6 @@ z3randomizer
 
 # Ignore web resources
 webui/web/node_modules/
-webui/static/app.js
+webui/content/webroot/r/app.js
 webui/o2/bindata.go
 webui/o2/bindata_debug.go

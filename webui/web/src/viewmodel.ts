@@ -1,6 +1,8 @@
 
 // this view-model data comes from websocket JSON:
 export interface ViewModel {
+    [k: string]: any;
+
     snes: SNESViewModel;
     rom: ROMViewModel;
     server: ServerViewModel;
