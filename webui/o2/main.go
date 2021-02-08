@@ -51,18 +51,23 @@ func main() {
 	browserHost = orElse(os.Getenv("O2_WEB_BROWSER_HOST"), "127.0.0.1")
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
+	// construct our controller and web server:
 	controller := NewController()
 	webServer := NewWebServer(listenAddr)
 
-	controller.ProvideViewModelPusher(webServer)
+	// inform controller of web server and vice versa:
+	controller.ProvideViewNotifier(webServer)
 	webServer.ProvideViewCommandHandler(controller)
 
-	// Start a web server:
+	// start the web server:
 	go func() {
 		log.Fatal(webServer.Serve())
 	}()
 
-	// Start up a systray app (or just open web UI):
+	// initialize controller now that all dependencies are set up:
+	controller.Init()
+
+	// start up a systray app (or just open web UI):
 	createSystray()
 }
 

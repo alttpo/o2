@@ -34,8 +34,8 @@ type Socket struct {
 }
 
 type ViewModelUpdate struct {
-	View      string `json:"v"`
-	ViewModel Object `json:"m"`
+	View      string      `json:"v"`
+	ViewModel interface{} `json:"m"`
 }
 
 // starts a web server with websockets support to enable bidirectional communication with the UI
@@ -60,6 +60,9 @@ func NewWebServer(listenAddr string) *WebServer {
 		// create the Socket to handle bidirectional communication:
 		socket := NewSocket(s, req, conn)
 		s.appendSocket(socket)
+
+		// start by sending all view models to this new socket:
+		s.commandHandler.NotifyViewTo(socket)
 	}))
 
 	// serve static content from go-bindata:
@@ -94,7 +97,7 @@ func (s *WebServer) Serve() error {
 	return http.ListenAndServe(s.listenAddr, s.mux)
 }
 
-func (s *WebServer) PushViewModel(view string, viewModel Object) {
+func (s *WebServer) NotifyView(view string, viewModel interface{}) {
 	// send to the broadcast channel so that all connected websockets get the update:
 	s.q <- ViewModelUpdate{
 		View:      view,
@@ -138,6 +141,13 @@ func NewSocket(s *WebServer, req *http.Request, conn net.Conn) *Socket {
 	go k.writeHandler()
 
 	return k
+}
+
+func (k *Socket) NotifyView(view string, viewModel interface{}) {
+	k.q <- ViewModelUpdate{
+		View:      view,
+		ViewModel: viewModel,
+	}
 }
 
 func (k *Socket) readHandler() {
