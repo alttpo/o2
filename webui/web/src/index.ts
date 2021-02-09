@@ -70,7 +70,7 @@ export class Host {
         }
 
         for (const view of observers) {
-            view.render(this.state.viewModel);
+            view.render();
         }
     }
 }
@@ -78,7 +78,7 @@ export class Host {
 document.addEventListener("DOMContentLoaded", ev => {
     console.log("DOMContentLoaded");
     let state = new State();
-    let views = new Views();
+    let views = new Views(state);
     let host = new Host(state, views);
     host.bind(document);
     host.connect();

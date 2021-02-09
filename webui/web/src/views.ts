@@ -1,4 +1,5 @@
 import {ViewModel} from "./viewmodel";
+import {State} from "./index";
 
 export interface View {
     // each root HTML element that is bound to this view:
@@ -11,37 +12,48 @@ export interface View {
     bind(root: ParentNode): void;
 
     // renders each viewElement using the view model:
-    render(vm: ViewModel): void;
+    render(): void;
 }
 
 abstract class AbstractView implements View {
-    viewElements: NodeListOf<Element>;
-
-    templateElement: HTMLTemplateElement;
-
-    cloneTemplate(el: Element): void {
-        let cloned = this.templateElement.content.cloneNode(true);
-        while (el.firstChild) {
-            el.removeChild(el.firstChild);
-        }
-        el.appendChild(cloned);
+    state: State;
+    get model(): ViewModel {
+        return this.state.viewModel;
     }
+
+    viewElements: NodeListOf<Element>;
+    templateElement: HTMLTemplateElement;
 
     abstract bind(root: ParentNode): void;
 
-    abstract render(vm: ViewModel): void;
+    abstract render(): void;
 }
 
 export class SNESView extends AbstractView {
+    constructor(state: State) {
+        super();
+        this.state = state;
+    }
+
     bind(root: ParentNode): void {
         this.templateElement = root.querySelector('#tmplSnes');
         this.viewElements = root.querySelectorAll(`[v-view=snes]`);
     }
 
-    render(vm: ViewModel): void {
+    render(): void {
         for (let el of this.viewElements) {
-            this.cloneTemplate(el);
+            this.renderView(el);
         }
+    }
+
+    renderView(el: Element): void {
+        // clear contents of destination element:
+        while (el.firstChild) {
+            el.removeChild(el.firstChild);
+        }
+
+        //
+        this.templateElement.childNodes
     }
 }
 
@@ -49,7 +61,7 @@ export class Views {
     [k: string]: View;
     snes: SNESView;
 
-    constructor() {
-        this.snes = new SNESView();
+    constructor(state: State) {
+        this.snes = new SNESView(state);
     }
 }

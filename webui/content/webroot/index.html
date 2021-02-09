@@ -43,15 +43,14 @@
     </section>
 </footer>
 <template id="tmplSnes">
-    <span>Hello world!</span>
-</template>
-<template id="tmplSnesDriver">
-    <label for="device">Device</label>
-    <select id="device">
-        <option>(Select a SNES Device)</option>
-        <option>FX Pak Pro</option>
-    </select>
-    <button type="button" v-command="connect">Connect</button>
+    <v-repeat iterable="model.snes.drivers" iterator="$">
+        <label for="device">Device</label>
+        <select id="device">
+            <option>(Select a SNES Device)</option>
+            <option>FX Pak Pro</option>
+        </select>
+        <button type="button" v-command="connect({driver:$.name,device:})">Connect</button>
+    </v-repeat>
 </template>
 <script src="/r/app.js"></script>
 </body>
