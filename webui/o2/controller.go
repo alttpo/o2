@@ -222,19 +222,20 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 		c.dev = nil
 		c.driverDevice = snes.NamedDriverDevicePair{}
 		c.Update()
-		c.NotifyView()
 		return
 	}
 
 	c.driverDevice = pair
+
+	c.Update()
+
 	c.tryCreateGame()
 }
 
 func (c *Controller) SNESDisconnected() {
-	defer c.NotifyView()
-
 	if c.dev == nil {
 		c.driverDevice = snes.NamedDriverDevicePair{}
+		c.Update()
 		c.NotifyView()
 		return
 	}
@@ -246,6 +247,7 @@ func (c *Controller) SNESDisconnected() {
 	}
 
 	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
+		c.Update()
 		c.NotifyView()
 	})
 

@@ -15,16 +15,30 @@ export default ({ch, snes}: SNESProps) => {
         e.preventDefault();
         ch.command('snes', 'connect', {driver: drv.name, device: deviceIndex});
     }
+    const cmdDisconnect = (drv: DriverViewModel, e: Event) => {
+        e.preventDefault();
+        ch.command('snes', 'disconnect', {driver: drv.name});
+    }
 
-    return <Fragment>
+    const connectButton = (drv: DriverViewModel) => {
+        if (drv.isConnected) {
+            return <button type="button" onClick={cmdDisconnect.bind(this, drv)}>Disconnect</button>;
+        } else {
+            return <button type="button" onClick={cmdConnect.bind(this, drv)}>Connect</button>;
+        }
+    };
+
+    return <div>
         {(snes.drivers || []).map(drv => <Fragment key={drv.name}>
+            <h4>{drv.displayName}</h4>
+            <h5>{drv.displayDescription}</h5>
             <label for="device">Device</label>
-            <select id="device" onChange={(e) => setDeviceIndex(e.currentTarget.selectedIndex - 1)}>
+            <select id="device" onChange={(e) => setDeviceIndex(e.currentTarget.selectedIndex)}>
                 <option>(Select a SNES Device)</option>
                 {(drv.devices || []).map((dev, i) =>
-                    <option selected={i == drv.selectedDevice}>{dev}</option>)}
+                    <option selected={(i+1) == drv.selectedDevice}>{dev}</option>)}
             </select>
-            <button type="button" onClick={cmdConnect.bind(this, drv)}>Connect</button>
+            {connectButton(drv)}
         </Fragment>)}
-    </Fragment>;
+    </div>;
 };

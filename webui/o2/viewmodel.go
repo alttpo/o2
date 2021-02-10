@@ -35,9 +35,13 @@ type DriverViewModel struct {
 
 func NewSNESViewModel(c *Controller) *SNESViewModel {
 	v := &SNESViewModel{controller: c}
+
+	// supported commands:
 	v.commands = map[string]CommandExecutor{
-		"connect": &ConnectCommandExecutor{v},
+		"connect":    &ConnectCommandExecutor{v},
+		"disconnect": &DisconnectCommandExecutor{v},
 	}
+
 	return v
 }
 
@@ -87,9 +91,13 @@ func (v *SNESViewModel) Init() {
 
 func (v *SNESViewModel) Update() {
 	v.IsConnected = v.controller.IsConnected()
-	for _, d := range v.Drivers {
-		d.IsConnected = v.controller.IsConnectedToDriver(d.namedDriver)
+	for _, dvm := range v.Drivers {
+		dvm.IsConnected = v.controller.IsConnectedToDriver(dvm.namedDriver)
+		if !dvm.IsConnected {
+			dvm.SelectedDevice = 0
+		}
 	}
+
 	v.isClean = false
 }
 
@@ -114,14 +122,13 @@ type ConnectCommandExecutor struct {
 func (c *ConnectCommandExecutor) CreateArgs() CommandArgs {
 	return &ConnectCommandArgs{}
 }
-
 func (c *ConnectCommandExecutor) Execute(args CommandArgs) error {
 	return c.v.Connect(args.(*ConnectCommandArgs))
 }
 
 func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 	driverName := args.Driver
-	deviceIndex := args.Device
+	deviceIndex := args.Device - 1
 
 	var dvm *DriverViewModel = nil
 	for _, dvm = range v.Drivers {
@@ -138,13 +145,30 @@ func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 	if deviceIndex < 0 || deviceIndex >= len(dvm.devices) {
 		return fmt.Errorf("device index out of range")
 	}
-	dvm.SelectedDevice = deviceIndex
+	dvm.SelectedDevice = deviceIndex + 1
 
 	v.controller.SNESConnected(snes.NamedDriverDevicePair{
 		NamedDriver: dvm.namedDriver,
 		Device:      dvm.devices[deviceIndex],
 	})
-	v.isClean = false
+
+	return nil
+}
+
+type NullArgs struct{}
+type DisconnectCommandExecutor struct {
+	v *SNESViewModel
+}
+
+func (c *DisconnectCommandExecutor) CreateArgs() CommandArgs {
+	return &NullArgs{}
+}
+func (c *DisconnectCommandExecutor) Execute(args CommandArgs) error {
+	return c.v.Disconnect(args.(*NullArgs))
+}
+
+func (v *SNESViewModel) Disconnect(args *NullArgs) error {
+	v.controller.SNESDisconnected()
 
 	return nil
 }
