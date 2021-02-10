@@ -32,7 +32,7 @@ func NewController() *Controller {
 	c := &Controller{}
 
 	// instantiate each view model:
-	c.snesViewModel = &SNESViewModel{controller: c}
+	c.snesViewModel = NewSNESViewModel(c)
 	//c.romScreen =     &ROMScreen{controller: c}
 	//c.connectScreen = &ConnectScreen{controller: c}
 	//c.gameScreen =    &GameScreen{controller: c}
@@ -87,29 +87,35 @@ func (c *Controller) NotifyViewTo(viewNotifier ViewNotifier) {
 	}
 }
 
-// Reflects over ViewModels to find a command method to execute by name. Binds argument data by name.
 // Implements ViewCommandHandler
-func (c *Controller) HandleCommand(view, command string, data Object) error {
+func (c *Controller) CommandExecutor(view, command string) (ce CommandExecutor, err error) {
 	vm, ok := c.viewModels[view]
 	if !ok {
-		return fmt.Errorf("no view model '%s' found", view)
+		return nil, fmt.Errorf("no view model '%s' found", view)
 	}
 
-	commandHandler, ok := vm.(CommandHandler)
+	commandHandler, ok := vm.(ViewModelCommandHandler)
 	if !ok {
-		return fmt.Errorf("view model '%s' does not handle commands", view)
+		return nil, fmt.Errorf("view model '%s' does not handle commands", view)
 	}
 
-	return commandHandler.HandleCommand(command, data)
+	ce, err = commandHandler.CommandExecutor(command)
+	if err != nil {
+		err = fmt.Errorf("view model '%s': %w", view, err)
+	}
+	return
 }
 
 func (c *Controller) setStatus(msg string) {
+	defer c.NotifyView()
+
 	log.Printf("notify: %s\n", msg)
 	c.viewModels["status"] = msg
-	c.NotifyView()
 }
 
 func (c *Controller) tryCreateGame() bool {
+	defer c.NotifyView()
+
 	if c.dev == nil {
 		log.Println("dev is nil")
 		return false
@@ -199,6 +205,8 @@ game:    %04x
 }
 
 func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
+	defer c.NotifyView()
+
 	if pair == c.driverDevice && c.dev != nil {
 		// no change
 		return
@@ -223,6 +231,8 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 }
 
 func (c *Controller) SNESDisconnected() {
+	defer c.NotifyView()
+
 	if c.dev == nil {
 		c.driverDevice = snes.NamedDriverDevicePair{}
 		c.NotifyView()

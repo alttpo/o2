@@ -8,27 +8,37 @@ import (
 
 // Must be JSON serializable
 type SNESViewModel struct {
+	commands map[string]CommandExecutor
+
 	controller *Controller
 	isClean    bool
 
-	Drivers     []*DriverViewModel
-	IsConnected bool
+	Drivers     []*DriverViewModel `json:"drivers"`
+	IsConnected bool               `json:"isConnected"`
 }
 
 type DriverViewModel struct {
 	namedDriver snes.NamedDriver
 	devices     []snes.DeviceDescriptor
 
-	Name string
+	Name string `json:"name"`
 
-	DisplayName        string
-	DisplayDescription string
-	DisplayOrder       int
+	DisplayName        string `json:"displayName"`
+	DisplayDescription string `json:"displayDescription"`
+	DisplayOrder       int    `json:"displayOrder"`
 
-	Devices        []string
-	SelectedDevice int
+	Devices        []string `json:"devices"`
+	SelectedDevice int      `json:"selectedDevice"`
 
-	IsConnected bool
+	IsConnected bool `json:"isConnected"`
+}
+
+func NewSNESViewModel(c *Controller) *SNESViewModel {
+	v := &SNESViewModel{controller: c}
+	v.commands = map[string]CommandExecutor{
+		"connect": &ConnectCommandExecutor{v},
+	}
+	return v
 }
 
 func (v *SNESViewModel) IsDirty() bool {
@@ -84,24 +94,34 @@ func (v *SNESViewModel) Update() {
 }
 
 // Commands:
-func (v *SNESViewModel) HandleCommand(name string, args Object) error {
-	switch name {
-	case "connect":
-		return v.Connect(args)
-	default:
-		return fmt.Errorf("unrecognized command name '%s'", name)
+func (v *SNESViewModel) CommandExecutor(command string) (ce CommandExecutor, err error) {
+	var ok bool
+	ce, ok = v.commands[command]
+	if !ok {
+		err = fmt.Errorf("no command '%s' found", command)
 	}
+	return ce, err
 }
 
-func (v *SNESViewModel) Connect(args Object) error {
-	driverName, ok := args["driver"].(string)
-	if !ok {
-		return fmt.Errorf("expected string value for 'driver'")
-	}
-	i, ok := args["device"].(int)
-	if !ok {
-		return fmt.Errorf("expected int value for 'device'")
-	}
+type ConnectCommandArgs struct {
+	Driver string `json:"driver"`
+	Device int    `json:"device"`
+}
+type ConnectCommandExecutor struct {
+	v *SNESViewModel
+}
+
+func (c *ConnectCommandExecutor) CreateArgs() CommandArgs {
+	return &ConnectCommandArgs{}
+}
+
+func (c *ConnectCommandExecutor) Execute(args CommandArgs) error {
+	return c.v.Connect(args.(*ConnectCommandArgs))
+}
+
+func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
+	driverName := args.Driver
+	deviceIndex := args.Device
 
 	var dvm *DriverViewModel = nil
 	for _, dvm = range v.Drivers {
@@ -115,14 +135,14 @@ func (v *SNESViewModel) Connect(args Object) error {
 		return fmt.Errorf("driver not found by name")
 	}
 
-	if i < 0 || i >= len(dvm.devices) {
+	if deviceIndex < 0 || deviceIndex >= len(dvm.devices) {
 		return fmt.Errorf("device index out of range")
 	}
-	dvm.SelectedDevice = i
+	dvm.SelectedDevice = deviceIndex
 
 	v.controller.SNESConnected(snes.NamedDriverDevicePair{
 		NamedDriver: dvm.namedDriver,
-		Device:      dvm.devices[i],
+		Device:      dvm.devices[deviceIndex],
 	})
 	v.isClean = false
 

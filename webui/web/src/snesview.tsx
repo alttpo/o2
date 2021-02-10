@@ -16,18 +16,15 @@ export default ({ch, snes}: SNESProps) => {
         ch.command('snes', 'connect', {driver: drv.name, device: deviceIndex});
     }
 
-    return (
-        <Fragment>
-            {(snes.drivers || []).map(drv => (
-                <Fragment key={drv.name}>
-                    <label for="device">Device</label>
-                    <select id="device" onChange={(e) => setDeviceIndex(e.currentTarget.selectedIndex)}>
-                        <option>(Select a SNES Device)</option>
-                        {(drv.devices || []).map(dev => (<option>{dev}</option>))}
-                    </select>
-                    <button type="button" onClick={cmdConnect.bind(this, drv)}>Connect</button>
-                </Fragment>
-            ))}
-        </Fragment>
-    );
+    return <Fragment>
+        {(snes.drivers || []).map(drv => <Fragment key={drv.name}>
+            <label for="device">Device</label>
+            <select id="device" onChange={(e) => setDeviceIndex(e.currentTarget.selectedIndex - 1)}>
+                <option>(Select a SNES Device)</option>
+                {(drv.devices || []).map((dev, i) =>
+                    <option selected={i == drv.selectedDevice}>{dev}</option>)}
+            </select>
+            <button type="button" onClick={cmdConnect.bind(this, drv)}>Connect</button>
+        </Fragment>)}
+    </Fragment>;
 };

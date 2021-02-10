@@ -4,7 +4,7 @@ type Object map[string]interface{}
 
 // must be json serializable
 type ViewModel interface {
-	CommandHandler
+	ViewModelCommandHandler
 	Dirtyable
 	Initializable
 	Updateable
@@ -18,18 +18,26 @@ type Updateable interface {
 	Update()
 }
 
-type CommandHandler interface {
-	HandleCommand(name string, args Object) error
-}
-
 type Dirtyable interface {
 	IsDirty() bool
 	ClearDirty()
 }
 
+type CommandArgs interface{}
+type CommandExecutor interface {
+	CreateArgs() CommandArgs
+	Execute(args CommandArgs) error
+}
+
+// ViewModel implements this
+type ViewModelCommandHandler interface {
+	CommandExecutor(command string) (CommandExecutor, error)
+}
+
 // Controller implements this
 type ViewCommandHandler interface {
-	HandleCommand(view, command string, data Object) error
+	CommandExecutor(view, command string) (CommandExecutor, error)
+
 	NotifyViewTo(viewNotifier ViewNotifier)
 }
 

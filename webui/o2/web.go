@@ -124,9 +124,9 @@ func (s *WebServer) handleBroadcast() {
 }
 
 type CommandRequest struct {
-	View    string `json:"v"`
-	Command string `json:"c"`
-	Args    Object `json:"a"`
+	View    string          `json:"v"`
+	Command string          `json:"c"`
+	Args    json.RawMessage `json:"a"`
 }
 
 func NewSocket(s *WebServer, req *http.Request, conn net.Conn) *Socket {
@@ -187,7 +187,24 @@ func (k *Socket) readHandler() {
 			continue
 		}
 
-		err = k.ws.commandHandler.HandleCommand(creq.View, creq.Command, creq.Args)
+		ce, err := k.ws.commandHandler.CommandExecutor(creq.View, creq.Command)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// instantiate a specific args type for the command:
+		args := ce.CreateArgs()
+
+		// deserialize json:
+		err = json.Unmarshal(creq.Args, args)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// execute the command:
+		err = ce.Execute(args)
 		if err != nil {
 			log.Println(err)
 			continue
