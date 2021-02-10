@@ -7,7 +7,10 @@
     "watch": "webpack --watch",
     "build": "webpack"
   },
-  "dependencies": {},
+  "dependencies": {
+    "htm": "^3.0.4",
+    "preact": "^10.5.12"
+  },
   "devDependencies": {
     "ts-loader": "^8.0.14",
     "typescript": "^4.1.3",

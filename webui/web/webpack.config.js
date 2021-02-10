@@ -1,19 +1,19 @@
 const path = require('path');
 
 module.exports = {
-    entry: './src/index.ts',
+    entry: './src/index.tsx',
     devtool: 'inline-source-map',
     module: {
         rules: [
             {
-                test: /\.ts$/,
-                use: 'ts-loader',
+                test: /\.tsx?$/,
                 exclude: /node_modules/,
+                use: 'ts-loader',
             },
         ],
     },
     resolve: {
-        extensions: [ '.ts', '.js' ],
+        extensions: [ '.ts', '.tsx', '.js' ],
     },
     output: {
         filename: 'app.js',

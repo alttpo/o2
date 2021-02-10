@@ -1,4 +1,3 @@
-
 // this view-model data comes from websocket JSON:
 export interface ViewModel {
     [k: string]: any;
@@ -11,7 +10,21 @@ export interface ViewModel {
 }
 
 export interface SNESViewModel {
+    drivers?: DriverViewModel[];
+    isConnected?: boolean;
+}
 
+export interface DriverViewModel {
+    name: string;
+
+    displayName: string;
+    displayDescription: string;
+    displayOrder: number;
+
+    devices: string[];
+    selectedDevice: number;
+
+    isConnected: boolean;
 }
 
 export interface ROMViewModel {

@@ -5,53 +5,7 @@
     <title>ALTTPO2</title>
 </head>
 <body>
-<header>
-    <section class="rounded darken padded squeeze">
-        <h1>ALTTPO2</h1>
-    </section>
-</header>
-<section id="view" class="squeeze">
-    <div class="tabbed">
-        <div class="tab">
-            <input name="viewtab" id="viewtab1" type="radio" checked>
-            <label for="viewtab1">SNES</label>
-            <div v-view="snes" class="content"></div>
-        </div>
-
-        <div class="tab">
-            <input name="viewtab" id="viewtab2" type="radio">
-            <label for="viewtab2">ROM</label>
-            <div v-view="rom" class="content"></div>
-        </div>
-
-        <div class="tab">
-            <input name="viewtab" id="viewtab3" type="radio">
-            <label for="viewtab3">Server</label>
-            <div v-view="server" class="content"></div>
-        </div>
-
-        <div class="tab">
-            <input name="viewtab" id="viewtab4" type="radio">
-            <label for="viewtab4">Game</label>
-            <div v-view="game" class="content"></div>
-        </div>
-    </div>
-</section>
-<footer>
-    <section class="rounded darken padded-lr squeeze" v-view="status">
-        <span id="status">Not connected</span>
-    </section>
-</footer>
-<template id="tmplSnes">
-    <v-repeat iterable="model.snes.drivers" iterator="$">
-        <label for="device">Device</label>
-        <select id="device">
-            <option>(Select a SNES Device)</option>
-            <option>FX Pak Pro</option>
-        </select>
-        <button type="button" v-command="connect({driver:$.name,device:})">Connect</button>
-    </v-repeat>
-</template>
+<div id="app"></div>
 <script src="/r/app.js"></script>
 </body>
 </html>

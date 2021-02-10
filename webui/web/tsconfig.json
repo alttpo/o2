@@ -4,7 +4,10 @@
     "noImplicitAny": true,
     "module": "es6",
     "target": "es6",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "allowJs": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "moduleResolution": "node"
   }
 }
