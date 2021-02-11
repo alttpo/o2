@@ -1,7 +1,6 @@
 import {DriverViewModel, SNESViewModel} from "./viewmodel";
 import {CommandHandler} from "./index";
 import {Component, Fragment} from 'preact';
-import {useState} from "preact/hooks";
 
 type SNESDriverProps = {
     ch: CommandHandler;
@@ -10,18 +9,21 @@ type SNESDriverProps = {
 };
 type SNESDriverState = {
     deviceIndex: number;
+    selectedDevice: number;
 };
 
 class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     constructor() {
         super();
-        this.state = { deviceIndex: 0 };
+        this.state = {deviceIndex: 0, selectedDevice: 0};
     }
 
-    getDerivedStateFromProps(nextProps: SNESDriverProps) {
-        return ({
-            deviceIndex: nextProps.drv.selectedDevice
-        });
+    static getDerivedStateFromProps(props: SNESDriverProps, state: SNESDriverState): SNESDriverState {
+        if (props.drv.selectedDevice != state.selectedDevice) {
+            return {deviceIndex: props.drv.selectedDevice, selectedDevice: props.drv.selectedDevice};
+        } else {
+            return {deviceIndex: state.deviceIndex, selectedDevice: props.drv.selectedDevice};
+        }
     }
 
     render({ch, snes, drv}: SNESDriverProps, state: SNESDriverState) {
@@ -54,7 +56,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
             <select
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}
-                onChange={(e) => this.setState({ deviceIndex: (e.currentTarget.selectedIndex) })}>
+                onChange={(e) => this.setState({deviceIndex: (e.currentTarget.selectedIndex)})}>
                 <option selected={0 == drv.selectedDevice}>(Select a SNES Device)</option>
                 {(drv.devices || []).map((dev, i) =>
                     <option selected={(i + 1) == drv.selectedDevice}>{dev}</option>
@@ -73,7 +75,7 @@ type SNESProps = {
 export default ({ch, snes}: SNESProps) => {
     return (
         <Fragment> {
-            (snes.drivers || []).map(drv => <SNESDriverView ch={ch} snes={snes} drv={drv} />)
+            (snes.drivers || []).map(drv => <SNESDriverView ch={ch} snes={snes} drv={drv}/>)
         }
         </Fragment>
     );
