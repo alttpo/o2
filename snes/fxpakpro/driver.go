@@ -46,17 +46,6 @@ func (d *Driver) DisplayDescription() string {
 	return "Connect to an FX Pak Pro or SD2SNES via USB"
 }
 
-type DeviceDescriptor struct {
-	Port string
-	Baud *int
-	VID  string
-	PID  string
-}
-
-func (d DeviceDescriptor) DisplayName() string {
-	return fmt.Sprintf("%s (%s:%s)", d.Port, d.VID, d.PID)
-}
-
 func (d *Driver) Empty() snes.DeviceDescriptor {
 	return DeviceDescriptor{
 		Port: "",
@@ -163,7 +152,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 	}
 
 	c := &Conn{f:  f}
-	c.Init(driverName)
+	c.Init(driverName, c)
 
 	return c, err
 }

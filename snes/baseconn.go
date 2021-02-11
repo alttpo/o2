@@ -2,6 +2,7 @@ package snes
 
 import (
 	"fmt"
+	"io"
 	"log"
 )
 
@@ -12,15 +13,14 @@ type BaseConn struct {
 	// command execution queue:
 	cq chan CommandWithCallback
 	cqClosed bool
+
+	closer io.Closer
 }
 
-func (c *BaseConn) Close() (err error) {
-	return nil
-}
-
-func (c *BaseConn) Init(name string) {
+func (c *BaseConn) Init(name string, closer io.Closer) {
 	c.name = name
 	c.cq = make(chan CommandWithCallback, 64)
+	c.closer = closer
 
 	go c.handleQueue()
 }
@@ -91,6 +91,7 @@ func (c *BaseConn) handleQueue() {
 	var err error
 	doClose := func() {
 		if c.cqClosed {
+			log.Printf("%s: already closed\n", c.name)
 			return
 		}
 
@@ -98,11 +99,15 @@ func (c *BaseConn) handleQueue() {
 			log.Printf("%s: %v\n", c.name, err)
 		}
 
-		err = c.Close()
-		if err != nil {
-			log.Printf("%s: %v\n", c.name, err)
+		log.Printf("%s: calling Close()\n", c.name)
+		if c.closer != nil {
+			err = c.closer.Close()
+			if err != nil {
+				log.Printf("%s: %v\n", c.name, err)
+			}
 		}
 
+		log.Printf("%s: closing chan\n", c.name)
 		close(c.cq)
 		c.cqClosed = true
 	}
@@ -114,10 +119,12 @@ func (c *BaseConn) handleQueue() {
 			break
 		}
 		if _, ok := cmd.(*CloseCommand); ok {
+			log.Printf("%s: processing CloseCommand\n", c.name)
 			doClose()
 		}
 		if _, ok := cmd.(*DrainQueueCommand); ok {
 			// close and recreate queue:
+			log.Printf("%s: processing DrainQueueCommand\n", c.name)
 			close(c.cq)
 			c.cq = make(chan CommandWithCallback, 64)
 		}

@@ -20,18 +20,18 @@ func (d *Driver) DisplayDescription() string {
 
 func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Conn, error) {
 	c := &Conn{}
-	c.Init(driverName)
+	c.Init(driverName, nil)
 	return c, nil
 }
 
 func (d *Driver) Detect() ([]snes.DeviceDescriptor, error) {
 	return []snes.DeviceDescriptor{
-		&MockDeviceDescriptor{},
+		DeviceDescriptor{},
 	}, nil
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
-	return &MockDeviceDescriptor{}
+	return DeviceDescriptor{}
 }
 
 func init() {

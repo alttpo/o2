@@ -3,6 +3,7 @@ package fxpakpro
 import (
 	"fmt"
 	"go.bug.st/serial"
+	"log"
 	"o2/snes"
 )
 
@@ -53,9 +54,11 @@ func (c *Conn) MakeWriteCommands(reqs []snes.WriteRequest) (cmds snes.CommandSeq
 
 func (c *Conn) Close() (err error) {
 	// Clear DTR (ignore any errors since we're closing):
+	log.Println("fxpakpro: clear DTR")
 	c.f.SetDTR(false)
 
 	// Close the port:
+	log.Println("fxpakpro: close port")
 	err = c.f.Close()
 	if err != nil {
 		return fmt.Errorf("fxpakpro: could not close serial port: %w", err)

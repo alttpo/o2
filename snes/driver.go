@@ -9,6 +9,8 @@ import (
 // A struct that contains fields used to uniquely identify a device
 type DeviceDescriptor interface {
 	DisplayName() string
+
+	Equals(other DeviceDescriptor) bool
 }
 
 type Driver interface {
