@@ -1,8 +1,10 @@
 import 'preact/debug';
-import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel} from './viewmodel';
 import {Fragment, render} from "preact";
-import SNESView from "./snesview";
 import {StateUpdater, useState} from "preact/hooks";
+
+import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
+import SNESView from "./snesview";
+import ROMView from "./romview";
 
 interface ViewModelUpdate {
     v: string;
@@ -24,6 +26,11 @@ export class CommandHandler {
             a: args
         }));
     }
+}
+
+export class TopLevelProps {
+    ch: CommandHandler;
+    vm: ViewModel;
 }
 
 const App = () => {
@@ -78,14 +85,16 @@ const App = () => {
                         <input name="viewtab" id="viewtab1" type="radio" checked/>
                         <label for="viewtab1">SNES</label>
                         <div class="content">
-                            <SNESView ch={ch} snes={viewModel.snes}/>
+                            <SNESView ch={ch} vm={viewModel}/>
                         </div>
                     </div>
 
                     <div class="tab">
                         <input name="viewtab" id="viewtab2" type="radio"/>
                         <label for="viewtab2">ROM</label>
-                        <div v-view="rom" class="content"></div>
+                        <div class="content">
+                            <ROMView ch={ch} vm={viewModel}/>
+                        </div>
                     </div>
 
                     <div class="tab">

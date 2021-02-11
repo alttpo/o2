@@ -1,5 +1,5 @@
 // this view-model data comes from websocket JSON:
-export interface ViewModel {
+export class ViewModel {
     [k: string]: any;
 
     status: string;

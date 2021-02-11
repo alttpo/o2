@@ -1,5 +1,5 @@
 import {DriverViewModel, SNESViewModel, ViewModel} from "./viewmodel";
-import {CommandHandler} from "./index";
+import {CommandHandler, TopLevelProps} from "./index";
 import {Component, Fragment} from 'preact';
 
 type SNESDriverProps = {
@@ -67,12 +67,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     }
 }
 
-type SNESProps = {
-    ch: CommandHandler;
-    vm: ViewModel;
-};
-
-export default ({ch, vm}: SNESProps) => {
+export default ({ch, vm}: TopLevelProps) => {
     return (
         <Fragment>{
             (vm.snes?.drivers || []).map(drv => (
