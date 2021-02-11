@@ -1,4 +1,4 @@
-import {DriverViewModel, SNESViewModel} from "./viewmodel";
+import {DriverViewModel, SNESViewModel, ViewModel} from "./viewmodel";
 import {CommandHandler} from "./index";
 import {Component, Fragment} from 'preact';
 
@@ -58,9 +58,9 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
                 id={`device-${name}`}
                 onChange={(e) => this.setState({deviceIndex: (e.currentTarget.selectedIndex)})}>
                 <option selected={0 == drv.selectedDevice}>(Select a SNES Device)</option>
-                {(drv.devices || []).map((dev, i) =>
-                    <option selected={(i + 1) == drv.selectedDevice}>{dev}</option>
-                )}
+            {(drv.devices || []).map((dev, i) =>
+                <option selected={(i + 1) == drv.selectedDevice}>{dev}</option>
+            )}
             </select>
             {connectButton(drv)}
         </div>;
@@ -69,14 +69,15 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 
 type SNESProps = {
     ch: CommandHandler;
-    snes: SNESViewModel;
+    vm: ViewModel;
 };
 
-export default ({ch, snes}: SNESProps) => {
+export default ({ch, vm}: SNESProps) => {
     return (
-        <Fragment> {
-            (snes.drivers || []).map(drv => <SNESDriverView ch={ch} snes={snes} drv={drv}/>)
-        }
-        </Fragment>
+        <Fragment>{
+            (vm.snes?.drivers || []).map(drv => (
+                <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
+            ))
+        }</Fragment>
     );
 };
