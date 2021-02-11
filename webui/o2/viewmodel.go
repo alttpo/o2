@@ -95,9 +95,9 @@ func (v *SNESViewModel) Init() {
 		dvm.IsConnected = false
 	}
 
-	// background goroutine to auto-detect new devices every 5 seconds:
+	// background goroutine to auto-detect new devices every 2 seconds:
 	go func() {
-		for range time.NewTicker(time.Second * 5).C {
+		for range time.NewTicker(time.Second * 2).C {
 			needUpdate := false
 
 			for _, dvm := range v.Drivers {
