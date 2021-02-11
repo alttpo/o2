@@ -21,6 +21,7 @@ type Updateable interface {
 type Dirtyable interface {
 	IsDirty() bool
 	ClearDirty()
+	MarkDirty()
 }
 
 type CommandArgs interface{}

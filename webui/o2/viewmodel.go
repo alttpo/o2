@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"log"
 	"o2/snes"
+	"time"
 )
 
 // Must be JSON serializable
 type SNESViewModel struct {
 	commands map[string]CommandExecutor
 
-	controller *Controller
-	isClean    bool
+	c       *Controller
+	isClean bool
 
 	Drivers     []*DriverViewModel `json:"drivers"`
 	IsConnected bool               `json:"isConnected"`
@@ -34,7 +35,7 @@ type DriverViewModel struct {
 }
 
 func NewSNESViewModel(c *Controller) *SNESViewModel {
-	v := &SNESViewModel{controller: c}
+	v := &SNESViewModel{c: c}
 
 	// supported commands:
 	v.commands = map[string]CommandExecutor{
@@ -53,6 +54,11 @@ func (v *SNESViewModel) ClearDirty() {
 	v.isClean = true
 }
 
+func (v *SNESViewModel) MarkDirty() {
+	v.isClean = false
+	v.c.NotifyViewOf("snes", v)
+}
+
 func (v *SNESViewModel) Init() {
 	dvs := snes.Drivers()
 	v.Drivers = make([]*DriverViewModel, len(dvs))
@@ -60,6 +66,7 @@ func (v *SNESViewModel) Init() {
 		devices, err := dv.Driver.Detect()
 		if err != nil {
 			log.Println(err)
+			devices = make([]snes.DeviceDescriptor, 0)
 		}
 
 		dvm := &DriverViewModel{
@@ -87,12 +94,57 @@ func (v *SNESViewModel) Init() {
 		dvm.SelectedDevice = 0
 		dvm.IsConnected = false
 	}
+
+	// background goroutine to auto-detect new devices every 5 seconds:
+	go func() {
+		for range time.NewTicker(time.Second * 5).C {
+			needUpdate := false
+
+			for _, dvm := range v.Drivers {
+				devices, err := dvm.namedDriver.Driver.Detect()
+				if err != nil {
+					log.Println(err)
+					devices = make([]snes.DeviceDescriptor, 0)
+				}
+
+				replace := false
+				if len(dvm.devices) != len(devices) {
+					replace = true
+				} else {
+					// check if all devices are equivalent:
+					for i := 0; i < len(devices); i++ {
+						if !devices[i].Equals(dvm.devices[i]) {
+							replace = true
+							break
+						}
+					}
+				}
+
+				if !replace {
+					continue
+				}
+
+				// swap out the array and recreate the view models:
+				dvm.devices = devices
+				dvm.Devices = make([]string, len(devices))
+				for j := 0; j < len(devices); j++ {
+					dvm.Devices[j] = devices[j].DisplayName()
+				}
+				needUpdate = true
+			}
+
+			if needUpdate {
+				v.Update()
+				v.MarkDirty()
+			}
+		}
+	}()
 }
 
 func (v *SNESViewModel) Update() {
-	v.IsConnected = v.controller.IsConnected()
+	v.IsConnected = v.c.IsConnected()
 	for _, dvm := range v.Drivers {
-		dvm.IsConnected = v.controller.IsConnectedToDriver(dvm.namedDriver)
+		dvm.IsConnected = v.c.IsConnectedToDriver(dvm.namedDriver)
 		if !dvm.IsConnected {
 			dvm.SelectedDevice = 0
 		}
@@ -147,7 +199,7 @@ func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 	}
 	dvm.SelectedDevice = deviceIndex + 1
 
-	v.controller.SNESConnected(snes.NamedDriverDevicePair{
+	v.c.SNESConnected(snes.NamedDriverDevicePair{
 		NamedDriver: dvm.namedDriver,
 		Device:      dvm.devices[deviceIndex],
 	})
@@ -168,7 +220,7 @@ func (c *DisconnectCommandExecutor) Execute(args CommandArgs) error {
 }
 
 func (v *SNESViewModel) Disconnect(args *NullArgs) error {
-	v.controller.SNESDisconnected()
+	v.c.SNESDisconnected()
 
 	return nil
 }

@@ -64,19 +64,44 @@ func (c *Controller) Update() {
 	}
 }
 
+// updates all view models and notifies view:
+func (c *Controller) UpdateAndNotifyView() {
+	for view, model := range c.viewModels {
+		if i, ok := model.(Updateable); ok {
+			i.Update()
+		}
+		c.NotifyViewOf(view, model)
+	}
+}
+
 // notifies the view of any updated view models:
 func (c *Controller) NotifyView() {
 	for view, model := range c.viewModels {
-		dirtyable, isDirtyable := model.(Dirtyable)
-		if isDirtyable && !dirtyable.IsDirty() {
-			continue
-		}
+		c.NotifyViewOf(view, model)
+	}
+}
 
-		c.viewNotifier.NotifyView(view, model)
+func (c *Controller) ForceNotifyViewOf(view string, model interface{}) {
+	dirtyable, isDirtyable := model.(Dirtyable)
+	// ignore IsDirty() check
 
-		if isDirtyable {
-			dirtyable.ClearDirty()
-		}
+	c.viewNotifier.NotifyView(view, model)
+
+	if isDirtyable {
+		dirtyable.ClearDirty()
+	}
+}
+
+func (c *Controller) NotifyViewOf(view string, model interface{}) {
+	dirtyable, isDirtyable := model.(Dirtyable)
+	if isDirtyable && !dirtyable.IsDirty() {
+		return
+	}
+
+	c.viewNotifier.NotifyView(view, model)
+
+	if isDirtyable {
+		dirtyable.ClearDirty()
 	}
 }
 
@@ -107,14 +132,12 @@ func (c *Controller) CommandExecutor(view, command string) (ce CommandExecutor, 
 }
 
 func (c *Controller) setStatus(msg string) {
-	defer c.NotifyView()
-
 	log.Printf("notify: %s\n", msg)
 	c.viewModels["status"] = msg
 }
 
 func (c *Controller) tryCreateGame() bool {
-	defer c.NotifyView()
+	defer c.UpdateAndNotifyView()
 
 	if c.dev == nil {
 		log.Println("dev is nil")
@@ -128,8 +151,6 @@ func (c *Controller) tryCreateGame() bool {
 		log.Println("game already created")
 		return false
 	}
-
-	defer c.Update()
 
 	var err error
 	log.Println("Create new game")
@@ -157,7 +178,7 @@ func (c *Controller) IsConnectedToDriver(driver snes.NamedDriver) bool {
 }
 
 func (c *Controller) ROMSelected(rom *snes.ROM) {
-	defer c.NotifyView()
+	defer c.UpdateAndNotifyView()
 
 	// the user has selected a ROM file:
 	log.Printf(`ROM selected
@@ -205,7 +226,7 @@ game:    %04x
 }
 
 func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
-	defer c.NotifyView()
+	defer c.UpdateAndNotifyView()
 
 	if pair == c.driverDevice && c.dev != nil {
 		// no change
@@ -221,22 +242,20 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 		c.setStatus("Could not connect to the SNES")
 		c.dev = nil
 		c.driverDevice = snes.NamedDriverDevicePair{}
-		c.Update()
 		return
 	}
 
 	c.driverDevice = pair
-
-	c.Update()
+	c.setStatus("Connected to SNES")
 
 	c.tryCreateGame()
 }
 
 func (c *Controller) SNESDisconnected() {
+	defer c.UpdateAndNotifyView()
+
 	if c.dev == nil {
 		c.driverDevice = snes.NamedDriverDevicePair{}
-		c.Update()
-		c.NotifyView()
 		return
 	}
 
@@ -246,13 +265,18 @@ func (c *Controller) SNESDisconnected() {
 		c.game = nil
 	}
 
+	lastDev := c.driverDevice
+	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
 	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
-		c.Update()
-		c.NotifyView()
+		log.Printf("Closed %s\n", lastDev.Device.DisplayName())
+		c.setStatus("Disconnected from SNES")
+		lastDev = snes.NamedDriverDevicePair{}
+		c.UpdateAndNotifyView()
 	})
 
 	c.dev = nil
 	c.driverDevice = snes.NamedDriverDevicePair{}
+	c.setStatus("Disconnecting from SNES...")
 }
 
 func (c *Controller) loadROM() {
