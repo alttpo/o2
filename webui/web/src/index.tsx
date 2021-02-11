@@ -1,3 +1,4 @@
+import 'preact/debug';
 import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel} from './viewmodel';
 import {Fragment, render} from "preact";
 import SNESView from "./snesview";
