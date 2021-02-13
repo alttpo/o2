@@ -11,7 +11,7 @@ import (
 type SNESViewModel struct {
 	commands map[string]CommandExecutor
 
-	c       *Controller
+	c       *ViewModel
 	isClean bool
 
 	Drivers     []*DriverViewModel `json:"drivers"`
@@ -34,7 +34,7 @@ type DriverViewModel struct {
 	IsConnected bool `json:"isConnected"`
 }
 
-func NewSNESViewModel(c *Controller) *SNESViewModel {
+func NewSNESViewModel(c *ViewModel) *SNESViewModel {
 	v := &SNESViewModel{c: c}
 
 	// supported commands:

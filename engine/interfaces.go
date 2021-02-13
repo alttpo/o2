@@ -2,14 +2,6 @@ package engine
 
 type Object map[string]interface{}
 
-// must be json serializable
-type ViewModel interface {
-	ViewModelCommandHandler
-	Dirtyable
-	Initializable
-	Updateable
-}
-
 type Initializable interface {
 	Init()
 }
@@ -30,12 +22,11 @@ type CommandExecutor interface {
 	Execute(args CommandArgs) error
 }
 
-// ViewModel implements this
 type ViewModelCommandHandler interface {
 	CommandExecutor(command string) (CommandExecutor, error)
 }
 
-// Controller implements this
+// ViewModel implements this
 type ViewCommandHandler interface {
 	CommandExecutor(view, command string) (CommandExecutor, error)
 

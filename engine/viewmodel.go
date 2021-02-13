@@ -7,7 +7,7 @@ import (
 	"o2/snes"
 )
 
-type Controller struct {
+type ViewModel struct {
 	// state:
 	driverDevice snes.NamedDriverDevicePair
 	dev          snes.Conn
@@ -28,10 +28,10 @@ type Controller struct {
 	snesViewModel *SNESViewModel
 }
 
-func NewController() *Controller {
-	c := &Controller{}
+func NewViewModel() *ViewModel {
+	c := &ViewModel{}
 
-	// instantiate each view model:
+	// instantiate each child view model:
 	c.snesViewModel = NewSNESViewModel(c)
 	//c.romScreen =     &ROMScreen{controller: c}
 	//c.connectScreen = &ConnectScreen{controller: c}
@@ -46,8 +46,8 @@ func NewController() *Controller {
 	return c
 }
 
-// initializes controller and all view models:
-func (c *Controller) Init() {
+// initializes all view models:
+func (c *ViewModel) Init() {
 	for _, model := range c.viewModels {
 		if i, ok := model.(Initializable); ok {
 			i.Init()
@@ -56,7 +56,7 @@ func (c *Controller) Init() {
 }
 
 // updates all view models:
-func (c *Controller) Update() {
+func (c *ViewModel) Update() {
 	for _, model := range c.viewModels {
 		if i, ok := model.(Updateable); ok {
 			i.Update()
@@ -65,7 +65,7 @@ func (c *Controller) Update() {
 }
 
 // updates all view models and notifies view:
-func (c *Controller) UpdateAndNotifyView() {
+func (c *ViewModel) UpdateAndNotifyView() {
 	for view, model := range c.viewModels {
 		if i, ok := model.(Updateable); ok {
 			i.Update()
@@ -75,13 +75,13 @@ func (c *Controller) UpdateAndNotifyView() {
 }
 
 // notifies the view of any updated view models:
-func (c *Controller) NotifyView() {
+func (c *ViewModel) NotifyView() {
 	for view, model := range c.viewModels {
 		c.NotifyViewOf(view, model)
 	}
 }
 
-func (c *Controller) ForceNotifyViewOf(view string, model interface{}) {
+func (c *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
 	if c.viewNotifier == nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (c *Controller) ForceNotifyViewOf(view string, model interface{}) {
 	}
 }
 
-func (c *Controller) NotifyViewOf(view string, model interface{}) {
+func (c *ViewModel) NotifyViewOf(view string, model interface{}) {
 	if c.viewNotifier == nil {
 		return
 	}
@@ -113,7 +113,7 @@ func (c *Controller) NotifyViewOf(view string, model interface{}) {
 	}
 }
 
-func (c *Controller) NotifyViewTo(viewNotifier ViewNotifier) {
+func (c *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 	if viewNotifier == nil {
 		return
 	}
@@ -125,7 +125,7 @@ func (c *Controller) NotifyViewTo(viewNotifier ViewNotifier) {
 }
 
 // Implements ViewCommandHandler
-func (c *Controller) CommandExecutor(view, command string) (ce CommandExecutor, err error) {
+func (c *ViewModel) CommandExecutor(view, command string) (ce CommandExecutor, err error) {
 	vm, ok := c.viewModels[view]
 	if !ok {
 		return nil, fmt.Errorf("no view model '%s' found", view)
@@ -143,12 +143,12 @@ func (c *Controller) CommandExecutor(view, command string) (ce CommandExecutor, 
 	return
 }
 
-func (c *Controller) setStatus(msg string) {
+func (c *ViewModel) setStatus(msg string) {
 	log.Printf("notify: %s\n", msg)
 	c.viewModels["status"] = msg
 }
 
-func (c *Controller) tryCreateGame() bool {
+func (c *ViewModel) tryCreateGame() bool {
 	defer c.UpdateAndNotifyView()
 
 	if c.dev == nil {
@@ -177,11 +177,11 @@ func (c *Controller) tryCreateGame() bool {
 	return true
 }
 
-func (c *Controller) IsConnected() bool {
+func (c *ViewModel) IsConnected() bool {
 	return c.dev != nil
 }
 
-func (c *Controller) IsConnectedToDriver(driver snes.NamedDriver) bool {
+func (c *ViewModel) IsConnectedToDriver(driver snes.NamedDriver) bool {
 	if c.dev == nil {
 		return false
 	}
@@ -189,7 +189,7 @@ func (c *Controller) IsConnectedToDriver(driver snes.NamedDriver) bool {
 	return c.driverDevice.NamedDriver == driver
 }
 
-func (c *Controller) ROMSelected(rom *snes.ROM) {
+func (c *ViewModel) ROMSelected(rom *snes.ROM) {
 	defer c.UpdateAndNotifyView()
 
 	// the user has selected a ROM file:
@@ -237,7 +237,7 @@ game:    %04x
 	c.tryCreateGame()
 }
 
-func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
+func (c *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	defer c.UpdateAndNotifyView()
 
 	if pair == c.driverDevice && c.dev != nil {
@@ -263,7 +263,7 @@ func (c *Controller) SNESConnected(pair snes.NamedDriverDevicePair) {
 	c.tryCreateGame()
 }
 
-func (c *Controller) SNESDisconnected() {
+func (c *ViewModel) SNESDisconnected() {
 	defer c.UpdateAndNotifyView()
 
 	if c.dev == nil {
@@ -291,7 +291,7 @@ func (c *Controller) SNESDisconnected() {
 	c.setStatus("Disconnecting from SNES...")
 }
 
-func (c *Controller) loadROM() {
+func (c *ViewModel) loadROM() {
 	defer c.NotifyView()
 
 	if !c.tryCreateGame() {
@@ -307,7 +307,7 @@ func (c *Controller) loadROM() {
 
 }
 
-func (c *Controller) startGame() {
+func (c *ViewModel) startGame() {
 	defer c.NotifyView()
 
 	if c.game == nil {
@@ -322,6 +322,6 @@ func (c *Controller) startGame() {
 	c.game.Start()
 }
 
-func (c *Controller) ProvideViewNotifier(viewNotifier ViewNotifier) {
+func (c *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
 	c.viewNotifier = viewNotifier
 }

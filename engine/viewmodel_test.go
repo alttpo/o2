@@ -8,7 +8,7 @@ import (
 )
 
 func TestController_HandleCommand(t *testing.T) {
-	c := NewController()
+	c := NewViewModel()
 	c.Init()
 	ce, err := c.CommandExecutor("snes", "connect")
 	if err != nil {
