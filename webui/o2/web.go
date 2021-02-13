@@ -7,13 +7,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"o2/engine"
 	"sync"
 )
 
 type WebServer struct {
 	listenAddr string
 
-	commandHandler ViewCommandHandler
+	commandHandler engine.ViewCommandHandler
 
 	mux *http.ServeMux
 
@@ -105,7 +106,7 @@ func (s *WebServer) NotifyView(view string, viewModel interface{}) {
 	}
 }
 
-func (s *WebServer) ProvideViewCommandHandler(commandHandler ViewCommandHandler) {
+func (s *WebServer) ProvideViewCommandHandler(commandHandler engine.ViewCommandHandler) {
 	s.commandHandler = commandHandler
 }
 

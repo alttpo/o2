@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"o2/engine"
 	"o2/snes"
 	"o2/snes/fxpakpro"
 	_ "o2/snes/mock"
@@ -52,7 +53,7 @@ func main() {
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
 	// construct our controller and web server:
-	controller := NewController()
+	controller := engine.NewController()
 	webServer := NewWebServer(listenAddr)
 
 	// inform controller of web server and vice versa:

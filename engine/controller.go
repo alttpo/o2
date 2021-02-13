@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"fmt"
@@ -82,6 +82,10 @@ func (c *Controller) NotifyView() {
 }
 
 func (c *Controller) ForceNotifyViewOf(view string, model interface{}) {
+	if c.viewNotifier == nil {
+		return
+	}
+
 	dirtyable, isDirtyable := model.(Dirtyable)
 	// ignore IsDirty() check
 
@@ -93,6 +97,10 @@ func (c *Controller) ForceNotifyViewOf(view string, model interface{}) {
 }
 
 func (c *Controller) NotifyViewOf(view string, model interface{}) {
+	if c.viewNotifier == nil {
+		return
+	}
+
 	dirtyable, isDirtyable := model.(Dirtyable)
 	if isDirtyable && !dirtyable.IsDirty() {
 		return
@@ -106,6 +114,10 @@ func (c *Controller) NotifyViewOf(view string, model interface{}) {
 }
 
 func (c *Controller) NotifyViewTo(viewNotifier ViewNotifier) {
+	if viewNotifier == nil {
+		return
+	}
+
 	// send all view models to this notifier regardless of dirty state:
 	for view, model := range c.viewModels {
 		viewNotifier.NotifyView(view, model)
