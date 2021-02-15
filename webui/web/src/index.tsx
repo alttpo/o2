@@ -5,6 +5,8 @@ import {StateUpdater, useState} from "preact/hooks";
 import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
 import SNESView from "./snesview";
 import ROMView from "./romview";
+import {JSXInternal} from "preact/src/jsx";
+import TargetedEvent = JSXInternal.TargetedEvent;
 
 interface ViewModelUpdate {
     v: string;
@@ -19,7 +21,7 @@ export class CommandHandler {
     }
 
     command(view: string, command: string, args: object) {
-        console.log(`command: ${view}.${command} args=${args}`);
+        console.log(`json command: ${view}.${command}`);
         this.ws.send(JSON.stringify({
             v: view,
             c: command,
@@ -28,6 +30,8 @@ export class CommandHandler {
     }
 
     binaryCommand(view: string, command: string, data: ArrayBuffer) {
+        console.log(`binary command: ${view}.${command}`);
+
         const te = new TextEncoder();
         const dataArr = new Uint8Array(data);
 
@@ -52,8 +56,11 @@ export class TopLevelProps {
 }
 
 const App = () => {
+    type TabName = "snes" | "rom" | "server" | "game";
+
     const [ws, setWs] = useState<WebSocket>(null);
     const [ch, setCh] = useState<CommandHandler>(null);
+    const [tabSelected, setTabSelected] = useState<TabName>("snes");
 
     const viewModelState: { [k: string]: [any, StateUpdater<any>] } = {
         status: useState<string>(""),
@@ -69,6 +76,11 @@ const App = () => {
         server: viewModelState.server[0],
         rom: viewModelState.rom[0],
         game: viewModelState.game[0],
+    };
+
+    const tabChanged = (e: TargetedEvent<HTMLInputElement, Event>) => {
+        console.log(e.currentTarget.value);
+        setTabSelected(e.currentTarget.value as TabName);
     };
 
     const connect = () => {
@@ -100,7 +112,11 @@ const App = () => {
             <section class="squeeze">
                 <div class="tabbed">
                     <div class="tab">
-                        <input name="viewtab" id="viewtab1" type="radio" checked/>
+                        <input name="viewtab" id="viewtab1" type="radio"
+                               value="snes"
+                               checked={tabSelected == "snes"}
+                               onChange={tabChanged}
+                        />
                         <label for="viewtab1">SNES</label>
                         <div class="content">
                             <SNESView ch={ch} vm={viewModel}/>
@@ -108,7 +124,10 @@ const App = () => {
                     </div>
 
                     <div class="tab">
-                        <input name="viewtab" id="viewtab2" type="radio"/>
+                        <input name="viewtab" id="viewtab2" type="radio"
+                               value="rom"
+                               checked={tabSelected == "rom"}
+                               onChange={tabChanged}/>
                         <label for="viewtab2">ROM</label>
                         <div class="content">
                             <ROMView ch={ch} vm={viewModel}/>
@@ -116,15 +135,21 @@ const App = () => {
                     </div>
 
                     <div class="tab">
-                        <input name="viewtab" id="viewtab3" type="radio"/>
+                        <input name="viewtab" id="viewtab3" type="radio"
+                               value="server"
+                               checked={tabSelected == "server"}
+                               onChange={tabChanged}/>
                         <label for="viewtab3">Server</label>
-                        <div v-view="server" class="content"></div>
+                        <div class="content"></div>
                     </div>
 
                     <div class="tab">
-                        <input name="viewtab" id="viewtab4" type="radio"/>
+                        <input name="viewtab" id="viewtab4" type="radio"
+                               value="game"
+                               checked={tabSelected == "game"}
+                               onChange={tabChanged}/>
                         <label for="viewtab4">Game</label>
-                        <div v-view="game" class="content"></div>
+                        <div class="content"></div>
                     </div>
                 </div>
             </section>
