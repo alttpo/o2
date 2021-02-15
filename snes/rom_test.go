@@ -24,7 +24,7 @@ func sampleROM() []byte {
 
 func TestNewROM(t *testing.T) {
 	contents := sampleROM()
-	gotR, err := NewROM("", "", contents)
+	gotR, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestNewROM(t *testing.T) {
 
 func TestROM_BusReader_Success(t *testing.T) {
 	contents := sampleROM()
-	rom, err := NewROM("", "", contents)
+	rom, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestROM_BusReader_Success(t *testing.T) {
 
 func TestROM_BusReader_Fail_Unmapped(t *testing.T) {
 	contents := sampleROM()
-	rom, err := NewROM("", "", contents)
+	rom, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestROM_BusReader_Fail_Unmapped(t *testing.T) {
 
 func TestROM_BusReader_Fail_Boundary(t *testing.T) {
 	contents := sampleROM()
-	rom, err := NewROM("", "", contents)
+	rom, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestROM_BusReader_Fail_Boundary(t *testing.T) {
 
 func TestROM_BusWriter_Bank00_Success(t *testing.T) {
 	contents := sampleROM()
-	rom, err := NewROM("", "", contents)
+	rom, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestROM_BusWriter_Bank00_Success(t *testing.T) {
 
 func TestROM_BusWriter_Bank01_Success(t *testing.T) {
 	contents := sampleROM()
-	rom, err := NewROM("", "", contents)
+	rom, err := NewROM("", contents)
 	if err != nil {
 		t.Fatal(err)
 	}
