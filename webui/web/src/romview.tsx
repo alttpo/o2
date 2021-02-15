@@ -4,8 +4,11 @@ import TargetedEvent = JSXInternal.TargetedEvent;
 
 export default ({ch, vm}: TopLevelProps) => {
     function fileChosen(e: TargetedEvent<HTMLInputElement, Event>) {
-        e.currentTarget.files[0].arrayBuffer().then(buf => {
-            ch.binaryCommand('rom', 'chosen', buf);
+        // send ROM filename and contents:
+        let file = e.currentTarget.files[0];
+        file.arrayBuffer().then(buf => {
+            ch.command('rom', 'name', {name: file.name});
+            ch.binaryCommand('rom', 'data', buf);
         });
     }
 
