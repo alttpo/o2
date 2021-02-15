@@ -7,6 +7,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -233,11 +234,13 @@ func (k *Socket) readHandler() {
 				log.Println(fmt.Errorf("error reading binary command command name: %w", err))
 				goto discard
 			}
-			data := make([]byte, hdr.Length)
-			if _, err := r.Read(data); err != nil {
+
+			data, err := ioutil.ReadAll(r)
+			if err != nil {
 				log.Println(fmt.Errorf("error reading binary command payload: %w", err))
 				goto discard
 			}
+			log.Printf("data len=%d", len(data))
 
 			// command handler:
 			if k.ws.commandHandler == nil {
