@@ -26,6 +26,7 @@ type ViewModel struct {
 	// View Models:
 	viewModels    map[string]interface{}
 	snesViewModel *SNESViewModel
+	romViewModel  *ROMViewModel
 }
 
 func NewViewModel() *ViewModel {
@@ -33,7 +34,7 @@ func NewViewModel() *ViewModel {
 
 	// instantiate each child view model:
 	c.snesViewModel = NewSNESViewModel(c)
-	//c.romScreen =     &ROMScreen{controller: c}
+	c.romViewModel = NewROMViewModel(c)
 	//c.connectScreen = &ConnectScreen{controller: c}
 	//c.gameScreen =    &GameScreen{controller: c}
 
@@ -41,6 +42,7 @@ func NewViewModel() *ViewModel {
 	c.viewModels = map[string]interface{}{
 		"status": "Not connected",
 		"snes":   c.snesViewModel,
+		"rom":    c.romViewModel,
 	}
 
 	return c
@@ -189,7 +191,7 @@ func (c *ViewModel) IsConnectedToDriver(driver snes.NamedDriver) bool {
 	return c.driverDevice.NamedDriver == driver
 }
 
-func (c *ViewModel) ROMSelected(rom *snes.ROM) {
+func (c *ViewModel) ROMSelected(rom *snes.ROM) error {
 	defer c.UpdateAndNotifyView()
 
 	// the user has selected a ROM file:
@@ -224,17 +226,17 @@ game:    %04x
 	if c.nextFactory == nil {
 		// unrecognized ROM
 		c.setStatus("ROM is not compatible with any game providers")
-		return
+		return nil
 	}
 	if !oneGame {
 		// more than one game type matches ROM
 		c.setStatus("ROM matches more than one game provider")
 		c.nextFactory = nil
-		return
+		return nil
 	}
 
 	c.nextRom = rom
-	c.tryCreateGame()
+	return nil
 }
 
 func (c *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {

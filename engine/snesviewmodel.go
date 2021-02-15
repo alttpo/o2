@@ -160,7 +160,7 @@ func (v *SNESViewModel) CommandExecutor(command string) (ce CommandExecutor, err
 	if !ok {
 		err = fmt.Errorf("no command '%s' found", command)
 	}
-	return ce, err
+	return
 }
 
 type ConnectCommandArgs struct {
