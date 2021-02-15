@@ -5,7 +5,7 @@ package main
 import (
 	"fmt"
 	"github.com/getlantern/systray"
-	"github.com/getlantern/systray/example/icon"
+	"o2/webui/o2/icon"
 )
 
 func createSystray() {
@@ -24,7 +24,7 @@ func trayExit() {
 func trayStart() {
 	// Set up the systray:
 	systray.SetTemplateIcon(icon.Data, icon.Data)
-	systray.SetTitle("O2")
+	//systray.SetTitle("O2")
 	systray.SetTooltip("O2 - SNES Online 2.0")
 	mOpenWeb := systray.AddMenuItem("Web UI", "Opens the web UI in the default browser")
 	systray.AddSeparator()
