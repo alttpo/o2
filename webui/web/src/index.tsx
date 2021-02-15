@@ -79,7 +79,6 @@ const App = () => {
     };
 
     const tabChanged = (e: TargetedEvent<HTMLInputElement, Event>) => {
-        console.log(e.currentTarget.value);
         setTabSelected(e.currentTarget.value as TabName);
     };
 
