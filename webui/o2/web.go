@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -124,12 +127,6 @@ func (s *WebServer) handleBroadcast() {
 	}
 }
 
-type CommandRequest struct {
-	View    string          `json:"v"`
-	Command string          `json:"c"`
-	Args    json.RawMessage `json:"a"`
-}
-
 func NewSocket(s *WebServer, req *http.Request, conn net.Conn) *Socket {
 	k := &Socket{
 		ws:   s,
@@ -151,6 +148,12 @@ func (k *Socket) NotifyView(view string, viewModel interface{}) {
 	}
 }
 
+type CommandRequest struct {
+	View    string          `json:"v"`
+	Command string          `json:"c"`
+	Args    json.RawMessage `json:"a"`
+}
+
 func (k *Socket) readHandler() {
 	// the reader is in control of the lifetime of the socket:
 	defer func() {
@@ -168,49 +171,123 @@ func (k *Socket) readHandler() {
 	for {
 		hdr, err := r.NextFrame()
 		if err != nil {
-			log.Println(err)
+			log.Println(fmt.Errorf("error reading next websocket frame: %w", err))
 			break
 		}
 		if hdr.OpCode == ws.OpClose {
 			break
 		}
 
-		// read a command request:
-		var creq CommandRequest
-		if err := decoder.Decode(&creq); err != nil {
-			log.Println(err)
-			continue
+		switch hdr.OpCode {
+		case ws.OpText:
+			// read a JSON command request:
+			var creq CommandRequest
+			if err := decoder.Decode(&creq); err != nil {
+				log.Println(fmt.Errorf("error reading json command request: %w", err))
+				goto discard
+			}
+
+			// command handler:
+			if k.ws.commandHandler == nil {
+				log.Println("no view command handler provided!")
+				goto discard
+			}
+
+			ce, err := k.ws.commandHandler.CommandExecutor(creq.View, creq.Command)
+			if err != nil {
+				log.Println(fmt.Errorf("error handling json command: %w", err))
+				goto discard
+			}
+
+			// instantiate a specific args type for the command:
+			args := ce.CreateArgs()
+
+			// deserialize json:
+			err = json.Unmarshal(creq.Args, args)
+			if err != nil {
+				log.Println(fmt.Errorf("error deserializing json command args: %w", err))
+				goto discard
+			}
+
+			// execute the command:
+			err = ce.Execute(args)
+			if err != nil {
+				log.Println(fmt.Errorf("error handling json command within executor: %w", err))
+				goto discard
+			}
+			break
+		case ws.OpBinary:
+			// data format:
+			// [1] view name string length
+			// [n] view name string
+			// [1] command name string length
+			// [n] command name string
+			// [...] remaining data sent directly as []byte arg to command executor
+			viewName, err := readTinyString(r)
+			if err != nil {
+				log.Println(fmt.Errorf("error reading binary command view name: %w", err))
+				goto discard
+			}
+			commandName, err := readTinyString(r)
+			if err != nil {
+				log.Println(fmt.Errorf("error reading binary command command name: %w", err))
+				goto discard
+			}
+			data := make([]byte, hdr.Length)
+			if _, err := r.Read(data); err != nil {
+				log.Println(fmt.Errorf("error reading binary command payload: %w", err))
+				goto discard
+			}
+
+			// command handler:
+			if k.ws.commandHandler == nil {
+				log.Println("no view command handler provided!")
+				goto discard
+			}
+
+			ce, err := k.ws.commandHandler.CommandExecutor(viewName, commandName)
+			if err != nil {
+				log.Println(fmt.Errorf("error handling binary command: %w", err))
+				goto discard
+			}
+
+			// execute the command:
+			err = ce.Execute(data)
+			if err != nil {
+				log.Println(fmt.Errorf("error handling binary command within executor: %w", err))
+				goto discard
+			}
+			break
 		}
 
-		// command handler:
-		if k.ws.commandHandler == nil {
-			log.Println("no view command handler provided!")
-			continue
-		}
+		continue
 
-		ce, err := k.ws.commandHandler.CommandExecutor(creq.View, creq.Command)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		// instantiate a specific args type for the command:
-		args := ce.CreateArgs()
-
-		// deserialize json:
-		err = json.Unmarshal(creq.Args, args)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		// execute the command:
-		err = ce.Execute(args)
-		if err != nil {
-			log.Println(err)
-			continue
+	discard:
+		if err := r.Discard(); err != nil {
+			log.Println(fmt.Errorf("discard: %w", err))
 		}
 	}
+}
+
+
+func readTinyString(buf io.Reader) (value string, err error) {
+	var valueLength uint8
+	if err = binary.Read(buf, binary.LittleEndian, &valueLength); err != nil {
+		return
+	}
+
+	valueBytes := make([]byte, valueLength)
+	var n int
+	n, err = buf.Read(valueBytes)
+	if err != nil {
+		return
+	}
+	if n < int(valueLength) {
+		return
+	}
+
+	value = string(valueBytes)
+	return
 }
 
 func (k *Socket) writeHandler() {

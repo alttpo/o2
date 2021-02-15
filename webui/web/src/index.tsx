@@ -26,6 +26,24 @@ export class CommandHandler {
             a: args
         }));
     }
+
+    binaryCommand(view: string, command: string, data: ArrayBuffer) {
+        const te = new TextEncoder();
+        const dataArr = new Uint8Array(data);
+
+        // encode view and command names as Pascal strings and append `data`:
+        const buf = new Uint8Array(view.length+1 + command.length+1 + dataArr.length);
+        let i = 0;
+        buf[i++] = view.length;
+        i += te.encodeInto(view, buf.subarray(i)).written;
+
+        buf[i++] = command.length;
+        i += te.encodeInto(command, buf.subarray(i)).written;
+
+        buf.set(dataArr, i);
+
+        this.ws.send(buf);
+    }
 }
 
 export class TopLevelProps {
