@@ -64,9 +64,9 @@ const App = () => {
 
     const viewModelState: { [k: string]: [any, StateUpdater<any>] } = {
         status: useState<string>(""),
-        snes: useState<SNESViewModel>({}),
+        snes: useState<SNESViewModel>({drivers: [], isConnected: false}),
+        rom: useState<ROMViewModel>({isLoaded: false, region: "", name: "", title: "", version: ""}),
         server: useState<ServerViewModel>({}),
-        rom: useState<ROMViewModel>({}),
         game: useState<GameViewModel>({})
     };
 
@@ -84,7 +84,7 @@ const App = () => {
 
     const connect = () => {
         const {protocol, host} = window.location;
-        const url = (protocol === "https:" ? "wss:" : "ws:") + "//" + host + "/ws/";
+        const url = `${protocol === "https:" ? "wss:" : "ws:"}//${host}/ws/`;
 
         console.log("connect");
         const ws = new WebSocket(url);

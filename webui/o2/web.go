@@ -240,7 +240,6 @@ func (k *Socket) readHandler() {
 				log.Println(fmt.Errorf("error reading binary command payload: %w", err))
 				goto discard
 			}
-			log.Printf("data len=%d", len(data))
 
 			// command handler:
 			if k.ws.commandHandler == nil {

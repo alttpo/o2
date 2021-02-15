@@ -197,12 +197,13 @@ func (c *ViewModel) ROMSelected(rom *snes.ROM) error {
 	// the user has selected a ROM file:
 	log.Printf(`ROM selected
 title:   '%s'
-region:  %d
+region:  %s (code %02X)
 version: 1.%d
 maker:   %02x
 game:    %04x
 `,
 		string(rom.Header.Title[:]),
+		regions[rom.Header.DestinationCode],
 		rom.Header.DestinationCode,
 		rom.Header.MaskROMVersion,
 		rom.Header.MakerCode,

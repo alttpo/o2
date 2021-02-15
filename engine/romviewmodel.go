@@ -10,8 +10,51 @@ type ROMViewModel struct {
 
 	c *ViewModel
 
-	romName  string
-	romImage []byte
+	// public fields for JSON:
+	IsLoaded bool   `json:"isLoaded"`
+	Name     string `json:"name"` // filename loaded from (no path)
+	Title    string `json:"title"`
+	Region   string `json:"region"`
+	Version  string `json:"version"`
+}
+
+var regions = map[byte]string{
+	0x00: "Japan",
+	0x01: "North America",
+	0x02: "Europe",
+	0x03: "Sweden/Scandinavia",
+	0x04: "Finland",
+	0x05: "Denmark",
+	0x06: "France",
+	0x07: "Netherlands",
+	0x08: "Spain",
+	0x09: "Germany",
+	0x0A: "Italy",
+	0x0B: "China",
+	0x0C: "Indonesia",
+	0x0D: "Korea",
+	0x0E: "Global (?)",
+	0x0F: "Canada",
+	0x10: "Brazil",
+	0x11: "Australia",
+	0x12: "Other (1)",
+	0x13: "Other (2)",
+	0x14: "Other (3)",
+}
+
+func (v *ROMViewModel) Update() {
+	rom := v.c.nextRom
+	v.IsLoaded = rom != nil
+
+	if v.IsLoaded {
+		v.Title = string(rom.Header.Title[:])
+		v.Region = regions[rom.Header.DestinationCode]
+		v.Version = fmt.Sprintf("1.%d", rom.Header.MaskROMVersion)
+	} else {
+		v.Title = ""
+		v.Region = ""
+		v.Version = ""
+	}
 }
 
 func (v *ROMViewModel) CommandExecutor(command string) (ce CommandExecutor, err error) {
@@ -54,7 +97,7 @@ func (ce *NameCommand) Execute(args CommandArgs) error {
 }
 
 func (v *ROMViewModel) NameProvided(args *NameCommandArgs) error {
-	v.romName = args.Name
+	v.Name = args.Name
 	return nil
 }
 
@@ -70,8 +113,7 @@ func (ce *DataCommand) Execute(args CommandArgs) error {
 }
 
 func (v *ROMViewModel) DataProvided(romImage []byte) error {
-	v.romImage = romImage
-	rom, err := snes.NewROM(v.romName, v.romImage)
+	rom, err := snes.NewROM(v.Name, romImage)
 	if err != nil {
 		return err
 	}

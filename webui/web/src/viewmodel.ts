@@ -10,8 +10,8 @@ export class ViewModel {
 }
 
 export interface SNESViewModel {
-    drivers?: DriverViewModel[];
-    isConnected?: boolean;
+    drivers: DriverViewModel[];
+    isConnected: boolean;
 }
 
 export interface DriverViewModel {
@@ -28,6 +28,12 @@ export interface DriverViewModel {
 }
 
 export interface ROMViewModel {
+    isLoaded: boolean;
+
+    name: string;
+    title: string;
+    region: string;
+    version: string;
 }
 
 export interface ServerViewModel {
