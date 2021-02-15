@@ -128,17 +128,17 @@ func (c *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 func (c *ViewModel) CommandExecutor(view, command string) (ce CommandExecutor, err error) {
 	vm, ok := c.viewModels[view]
 	if !ok {
-		return nil, fmt.Errorf("no view model '%s' found", view)
+		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
 	}
 
 	commandHandler, ok := vm.(ViewModelCommandHandler)
 	if !ok {
-		return nil, fmt.Errorf("view model '%s' does not handle commands", view)
+		return nil, fmt.Errorf("view=%s,cmd=%s: view model does not handle commands", view, command)
 	}
 
 	ce, err = commandHandler.CommandExecutor(command)
 	if err != nil {
-		err = fmt.Errorf("view model '%s': %w", view, err)
+		err = fmt.Errorf("view=%s,cmd=%s: error from command handler: %w", view, command, err)
 	}
 	return
 }
