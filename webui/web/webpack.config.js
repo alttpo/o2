@@ -12,6 +12,10 @@ module.exports = {
             },
         ],
     },
+    watchOptions: {
+        poll: true,
+        ignored: /node_modules/
+    },
     resolve: {
         extensions: [ '.ts', '.tsx', '.js' ],
     },
