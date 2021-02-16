@@ -7,9 +7,19 @@ import (
 )
 
 type Factory interface {
-	IsROMCompatible(rom *snes.ROM) bool
+	// determines if this is the best game provider for the given ROM among all other providers
+	IsBestProvider(rom *snes.ROM) bool
+
+	// determines if the specific ROM is supported by the provider with a reason why not
+	IsROMSupported(rom *snes.ROM) (ok bool, whyNot string)
+
+	Patcher(rom *snes.ROM) Patcher
 
 	NewGame(rom *snes.ROM, conn snes.Conn) (Game, error)
+}
+
+type Patcher interface {
+	Patch() error
 }
 
 var (

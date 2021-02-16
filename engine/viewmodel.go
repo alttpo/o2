@@ -210,29 +210,45 @@ game:    %04x
 		rom.Header.GameCode)
 
 	// determine if ROM is recognizable as a game we provide support for:
-	oneGame := true
 	c.nextFactory = nil
-	for _, f := range games.Factories() {
-		if !f.IsROMCompatible(rom) {
+
+	allFactories := games.Factories()
+	factories := make([]games.Factory, 0, len(allFactories))
+	for _, f := range allFactories {
+		if !f.IsBestProvider(rom) {
 			continue
 		}
-		if c.nextFactory == nil {
-			c.nextFactory = f
-		} else {
-			oneGame = false
-		}
+		factories = append(factories, f)
 		break
 	}
 
-	if c.nextFactory == nil {
+	if len(factories) == 0 {
 		// unrecognized ROM
 		c.setStatus("ROM is not compatible with any game providers")
 		return nil
-	}
-	if !oneGame {
+	} else if len(factories) > 1 {
 		// more than one game type matches ROM
+		// TODO: could loop through factories and filter by IsROMSupported
 		c.setStatus("ROM matches more than one game provider")
 		c.nextFactory = nil
+		return nil
+	}
+
+	c.nextFactory = factories[0]
+
+	// check if the ROM is supported:
+	ok, reason := c.nextFactory.IsROMSupported(rom)
+	if !ok {
+		c.setStatus(fmt.Sprintf("ROM not supported: %s", reason))
+		return nil
+	}
+
+	// attempt to patch the ROM file:
+	patcher := c.nextFactory.Patcher(rom)
+	if err := patcher.Patch(); err != nil {
+		err = fmt.Errorf("error patching ROM: %w", err)
+		log.Println(err)
+		c.setStatus(err.Error())
 		return nil
 	}
 

@@ -1,0 +1,110 @@
+package alttp
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"o2/snes"
+	"o2/snes/asm"
+)
+
+type Patcher struct {
+	rom *snes.ROM
+	r   io.Reader
+	w   io.Writer
+}
+
+// patches the ROM for O2 support
+func (p *Patcher) Patch() (err error) {
+	var d []byte
+
+	// free bytes in JP 1.0 rom:
+	// $00:89C2 - 30 bytes
+	// $00:E892 - 30 bytes
+	// $00:F7E1 - 31 bytes
+	// $00:FFB7 - 9 bytes
+
+	// $1B:B1D7 - 1577 bytes free
+	// the last valid SPC data is at $1B:B1D3: dw 0, $0800
+	// if you do go looking for that 5.8k free space, you'll see this sequence of bytes most likely
+	// $C0, $00, $00, $00, $00, $01, $FF, $00, $00
+	// I can assure you it's garbage
+
+	// read from $00:802F which is where NMI should be enabled at reset vector:
+	p.readAt(0x00802F)
+	d, err = p.read(5)
+	if err != nil {
+		return
+	}
+
+	// this is what code at 802F should look like:
+	expected802F := []byte{
+		// CODE_00802F:	A9 81       LDA #$81   ;\ Enable NMI, Auto-Joypad read enable.
+		// CODE_008031:	8D 00 42    STA $4200  ;/
+		0xA9, 0x81,
+		0x8D, 0x00, 0x42,
+	}
+	if !bytes.Equal(d, expected802F) {
+		return fmt.Errorf("unexpected code at $00:802F")
+	}
+
+	// overwrite $00:802F with JSL instruction
+	p.writeAt(0x00802F)
+	if err = p.write([]byte{0x22, 0xD7, 0xB1, 0x1B}); err != nil {
+		return
+	}
+
+	var a asm.Assembler
+	a.JSL(0x1BB1D7)
+	if err = a.WriteTo(p.w); err != nil {
+		return
+	}
+
+	// write the original 802F code to our custom init hook:
+	p.writeAt(0x1BB1D7)
+	if err = p.write(expected802F); err != nil {
+		return
+	}
+	a.Reset()
+	a.JSL(0x008031)
+	if err = a.WriteTo(p.w); err != nil {
+		return
+	}
+
+	return nil
+}
+
+func (p *Patcher) readAt(busAddr uint32) {
+	p.r = p.rom.BusReader(busAddr)
+}
+
+func (p *Patcher) writeAt(busAddr uint32) {
+	p.w = p.rom.BusWriter(busAddr)
+}
+
+func (p *Patcher) read(length int) (d []byte, err error) {
+	d = make([]byte, length)
+	t := 0
+	for t < len(d) {
+		var n int
+		n, err = p.r.Read(d[t:])
+		if err != nil {
+			return
+		}
+		t += n
+	}
+	return
+}
+
+func (p *Patcher) write(d []byte) (err error) {
+	t := 0
+	for t < len(d) {
+		var n int
+		n, err = p.w.Write(d[t:])
+		if err != nil {
+			return
+		}
+		t += n
+	}
+	return
+}
