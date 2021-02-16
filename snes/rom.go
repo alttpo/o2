@@ -185,7 +185,7 @@ type busWriter struct {
 	o       uint32
 }
 
-func (w busWriter) Write(p []byte) (n int, err error) {
+func (w *busWriter) Write(p []byte) (n int, err error) {
 	if uint32(len(p)) >= w.o+w.end {
 		err = io.ErrUnexpectedEOF
 		return
