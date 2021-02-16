@@ -91,7 +91,7 @@ func (r *ROM) ReadHeader() (err error) {
 }
 
 func (r *ROM) WriteHeader() (err error) {
-	b := bytes.NewBuffer(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50])
+	var b = &bytes.Buffer{}
 	if err = writeBinaryStruct(b, &r.Header); err != nil {
 		return
 	}
@@ -101,6 +101,7 @@ func (r *ROM) WriteHeader() (err error) {
 	if err = writeBinaryStruct(b, &r.EmulatedVectors); err != nil {
 		return
 	}
+	copy(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50], b.Bytes())
 	return
 }
 
