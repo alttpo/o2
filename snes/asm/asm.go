@@ -22,7 +22,7 @@ func (a *Assembler) writeByte(d byte) {
 }
 
 func imm24(v uint32) (byte, byte, byte) {
-	return byte(v >> 16), byte(v >> 8), byte(v)
+	return byte(v), byte(v >> 8), byte(v >> 16)
 }
 
 func (a *Assembler) JSL(addr uint32) {
