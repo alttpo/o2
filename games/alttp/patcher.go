@@ -14,6 +14,10 @@ type Patcher struct {
 	w   io.Writer
 }
 
+func NewPatcher(rom *snes.ROM) *Patcher {
+	return &Patcher{rom: rom}
+}
+
 // patches the ROM for O2 support
 func (p *Patcher) Patch() (err error) {
 	var d []byte
@@ -48,7 +52,7 @@ func (p *Patcher) Patch() (err error) {
 		return fmt.Errorf("unexpected code at $00:802F")
 	}
 
-	// overwrite $00:802F with JSL instruction
+	// overwrite $00:802F with `JSL $1BB1D7`
 	p.writeAt(0x00802F)
 	if err = p.write([]byte{0x22, 0xD7, 0xB1, 0x1B}); err != nil {
 		return
@@ -56,7 +60,11 @@ func (p *Patcher) Patch() (err error) {
 
 	var a asm.Assembler
 	a.JSL(0x1BB1D7)
-	if err = a.WriteTo(p.w); err != nil {
+	a.NOP()
+	if a.Len() != len(expected802F) {
+		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
+	}
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 

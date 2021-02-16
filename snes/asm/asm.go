@@ -2,29 +2,23 @@ package asm
 
 import (
 	"bytes"
-	"io"
 )
 
 // 65816 immediate assembler
 type Assembler struct {
-	w bytes.Buffer
+	bytes.Buffer
 }
 
 func NewAssembler() *Assembler {
 	return &Assembler{}
 }
 
-func (a *Assembler) Reset() {
-	a.w.Reset()
-}
-
-func (a *Assembler) WriteTo(w io.Writer) (err error) {
-	_, err = a.w.WriteTo(w)
-	return
-}
-
 func (a *Assembler) write(d []byte) {
-	_, _ = a.w.Write(d)
+	_, _ = a.Write(d)
+}
+
+func (a *Assembler) writeByte(d byte) {
+	_ = a.WriteByte(d)
 }
 
 func imm24(v uint32) (byte, byte, byte) {
@@ -36,4 +30,12 @@ func (a *Assembler) JSL(addr uint32) {
 	d[0] = 0x22
 	d[1], d[2], d[3] = imm24(addr)
 	a.write(d)
+}
+
+func (a *Assembler) RTL() {
+	a.writeByte(0x6B)
+}
+
+func (a *Assembler) NOP() {
+	a.writeByte(0xEA)
 }
