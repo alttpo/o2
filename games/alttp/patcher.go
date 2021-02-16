@@ -76,7 +76,6 @@ func (p *Patcher) Patch() (err error) {
 
 	// write the original 802F code to our custom init hook:
 	p.writeAt(0x1BB1D7)
-	a.Reset()
 	if err = p.write(expected802F); err != nil {
 		return
 	}

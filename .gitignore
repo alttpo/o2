@@ -21,10 +21,12 @@
 
 sd2snes
 z3randomizer
+alttpo-patcher
 
 # Ignore any ROMs for testing
 *.smc
 *.sfc
+*.srm
 
 # Ignore web resources
 webui/web/node_modules/
