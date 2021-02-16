@@ -78,16 +78,27 @@ func NewROM(name string, contents []byte) (r *ROM, err error) {
 func (r *ROM) ReadHeader() (err error) {
 	// Read SNES header:
 	b := bytes.NewReader(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50])
-	err = readBinaryStruct(b, &r.Header)
-	if err != nil {
+	if err = readBinaryStruct(b, &r.Header); err != nil {
 		return
 	}
-	err = readBinaryStruct(b, &r.NativeVectors)
-	if err != nil {
+	if err = readBinaryStruct(b, &r.NativeVectors); err != nil {
 		return
 	}
-	err = readBinaryStruct(b, &r.EmulatedVectors)
-	if err != nil {
+	if err = readBinaryStruct(b, &r.EmulatedVectors); err != nil {
+		return
+	}
+	return
+}
+
+func (r *ROM) WriteHeader() (err error) {
+	b := bytes.NewBuffer(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50])
+	if err = writeBinaryStruct(b, &r.Header); err != nil {
+		return
+	}
+	if err = writeBinaryStruct(b, &r.NativeVectors); err != nil {
+		return
+	}
+	if err = writeBinaryStruct(b, &r.EmulatedVectors); err != nil {
 		return
 	}
 	return
@@ -101,17 +112,32 @@ func readBinaryStruct(b *bytes.Reader, into interface{}) (err error) {
 
 		if !f.CanAddr() {
 			panic(fmt.Errorf("error handling struct field %s of type %s; cannot take address of field", hv.Type().Field(i).Name, hv.Type().Name()))
-			//p = f.Interface()
-			//_, err = b.Read(p.([]byte))
-			//if err != nil {
-			//	return fmt.Errorf("error reading header field %s: %w", hv.Type().Field(i).Name, err)
-			//}
 		}
 
 		p = f.Addr().Interface()
 		err = binary.Read(b, binary.LittleEndian, p)
 		if err != nil {
 			return fmt.Errorf("error reading struct field %s of type %s: %w", hv.Type().Field(i).Name, hv.Type().Name(), err)
+		}
+		//fmt.Printf("%s: %v\n", reflect.TypeOf(r.Header).Field(i).Name, f.Interface())
+	}
+	return
+}
+
+func writeBinaryStruct(w io.Writer, from interface{}) (err error) {
+	hv := reflect.ValueOf(from).Elem()
+	for i := 0; i < hv.NumField(); i++ {
+		f := hv.Field(i)
+		var p interface{}
+
+		if !f.CanAddr() {
+			panic(fmt.Errorf("error handling struct field %s of type %s; cannot take address of field", hv.Type().Field(i).Name, hv.Type().Name()))
+		}
+
+		p = f.Addr().Interface()
+		err = binary.Write(w, binary.LittleEndian, p)
+		if err != nil {
+			return fmt.Errorf("error writing struct field %s of type %s: %w", hv.Type().Field(i).Name, hv.Type().Name(), err)
 		}
 		//fmt.Printf("%s: %v\n", reflect.TypeOf(r.Header).Field(i).Name, f.Interface())
 	}
