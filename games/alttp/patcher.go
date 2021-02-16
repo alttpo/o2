@@ -64,8 +64,9 @@ func (p *Patcher) Patch() (err error) {
 
 	// overwrite $00:802F with `JSL $1BB1D7`
 	p.writeAt(0x00802F)
+	const initHook = 0x1BB1D7
 	var a asm.Assembler
-	a.JSL(0x1BB1D7)
+	a.JSL(initHook)
 	a.NOP()
 	if a.Len() != len(expected802F) {
 		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
@@ -74,8 +75,19 @@ func (p *Patcher) Patch() (err error) {
 		return
 	}
 
+	// start writing at the end of the ROM after music data:
+	p.writeAt(initHook)
+
+	// initialize the end of SRAM with a tiny routine:
+	a.REP(0x20)
+	a.LDA_imm16(0x006B) // RTL
+	a.STA_long(0x70FFFC)
+	a.SEP(0x20)
+	if _, err = a.WriteTo(p.w); err != nil {
+		return
+	}
+
 	// write the original 802F code to our custom init hook:
-	p.writeAt(0x1BB1D7)
 	if err = p.write(expected802F); err != nil {
 		return
 	}
