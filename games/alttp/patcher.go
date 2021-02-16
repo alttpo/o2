@@ -34,6 +34,16 @@ func (p *Patcher) Patch() (err error) {
 	// $C0, $00, $00, $00, $00, $01, $FF, $00, $00
 	// I can assure you it's garbage
 
+	// patch header to expand SRAM size:
+	hdr := &p.rom.Header
+	if hdr.RAMSize < 6 {
+		// 1024 << 6 = 65536 bytes, aka 1 full bank in $70:0000
+		hdr.RAMSize = 6
+		if err = p.rom.WriteHeader(); err != nil {
+			return
+		}
+	}
+
 	// read from $00:802F which is where NMI should be enabled at reset vector:
 	p.readAt(0x00802F)
 	d, err = p.read(5)
@@ -54,10 +64,6 @@ func (p *Patcher) Patch() (err error) {
 
 	// overwrite $00:802F with `JSL $1BB1D7`
 	p.writeAt(0x00802F)
-	if err = p.write([]byte{0x22, 0xD7, 0xB1, 0x1B}); err != nil {
-		return
-	}
-
 	var a asm.Assembler
 	a.JSL(0x1BB1D7)
 	a.NOP()
@@ -70,12 +76,13 @@ func (p *Patcher) Patch() (err error) {
 
 	// write the original 802F code to our custom init hook:
 	p.writeAt(0x1BB1D7)
+	a.Reset()
 	if err = p.write(expected802F); err != nil {
 		return
 	}
-	a.Reset()
-	a.JSL(0x008031)
-	if err = a.WriteTo(p.w); err != nil {
+	// follow by `RTL`
+	a.RTL()
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 
