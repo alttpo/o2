@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"o2/snes"
