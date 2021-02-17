@@ -75,13 +75,39 @@ func (p *Patcher) Patch() (err error) {
 		return
 	}
 
+	// frame hook:
+	const frameHook = 0x008056
+	// 008056 is 22 B5 80 00   JSL GameModes
+	p.readAt(frameHook)
+	var frameJSL []byte
+	frameJSL, err = p.read(4)
+	if err != nil {
+		return
+	}
+	if frameJSL[0] != 0x22 {
+		return fmt.Errorf("frame hook $008056 does not contain a JSL instruction")
+	}
+
+	// overwrite the frame hook with a JSL to the end of SRAM:
+	p.writeAt(frameHook)
+	a.JSL(0x717FFA)
+	if _, err = a.WriteTo(p.w); err != nil {
+		return
+	}
+
 	// start writing at the end of the ROM after music data:
 	p.writeAt(initHook)
-
-	// initialize the end of SRAM with a tiny routine:
+	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
 	a.REP(0x20)
-	a.LDA_imm16(0x006B) // RTL
-	a.STA_long(0x70FFFC)
+	// 22 B5 80 00    JSL GameModes
+	// 6B             RTL
+	// EA             NOP
+	a.LDA_imm16(uint16(frameJSL[0]) | uint16(frameJSL[1]) << 8)
+	a.STA_long(0x717FFA)
+	a.LDA_imm16(uint16(frameJSL[2]) | uint16(frameJSL[3]) << 8)
+	a.STA_long(0x717FFC)
+	a.LDA_imm16(0xEA6B)
+	a.STA_long(0x717FFE)
 	a.SEP(0x20)
 	if _, err = a.WriteTo(p.w); err != nil {
 		return

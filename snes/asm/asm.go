@@ -65,3 +65,10 @@ func (a *Assembler) REP(c uint8) {
 func (a *Assembler) SEP(c uint8) {
 	a.write([]byte{0xE2, c})
 }
+
+func (a *Assembler) JML(addr uint32) {
+	d := make([]byte, 4)
+	d[0] = 0x5C
+	d[1], d[2], d[3] = imm24(addr)
+	a.write(d)
+}
