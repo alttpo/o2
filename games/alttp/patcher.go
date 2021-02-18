@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"o2/snes"
@@ -20,8 +21,6 @@ func NewPatcher(rom *snes.ROM) *Patcher {
 
 // patches the ROM for O2 support
 func (p *Patcher) Patch() (err error) {
-	var d []byte
-
 	// free bytes in JP 1.0 rom:
 	// $00:89C2 - 30 bytes
 	// $00:E892 - 30 bytes
@@ -44,9 +43,10 @@ func (p *Patcher) Patch() (err error) {
 		}
 	}
 
-	// read from $00:802F which is where NMI should be enabled at reset vector:
+	// read from $00:802F which is where NMI should be enabled in the reset routine:
 	p.readAt(0x00802F)
-	d, err = p.read(5)
+	var code802F []byte
+	code802F, err = p.read(5)
 	if err != nil {
 		return
 	}
@@ -58,8 +58,13 @@ func (p *Patcher) Patch() (err error) {
 		0xA9, 0x81,
 		0x8D, 0x00, 0x42,
 	}
-	if !bytes.Equal(d, expected802F) {
-		return fmt.Errorf("unexpected code at $00:802F")
+
+	if !bytes.Equal(code802F, expected802F) {
+		// let's at least check that it's a JSL followed by a NOP:
+		if code802F[0] != 0x22 || code802F[4] != 0xEA {
+			// it's not vanilla code nor is it a JSL / NOP combo:
+			return fmt.Errorf("unexpected code at $00:802F: %s", hex.Dump(code802F))
+		}
 	}
 
 	// overwrite $00:802F with `JSL $1BB1D7`
@@ -85,36 +90,39 @@ func (p *Patcher) Patch() (err error) {
 		return
 	}
 	if frameJSL[0] != 0x22 {
-		return fmt.Errorf("frame hook $008056 does not contain a JSL instruction")
+		return fmt.Errorf("frame hook $008056 does not contain a JSL instruction: %s", hex.Dump(frameJSL))
 	}
 
 	// overwrite the frame hook with a JSL to the end of SRAM:
 	p.writeAt(frameHook)
 	a.JSL(0x717FFA)
+	// emit asm code:
 	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 
 	// start writing at the end of the ROM after music data:
 	p.writeAt(initHook)
+	// we can't write to SRAM from this program because we only have access to the ROM contents,
+	// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
 	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
 	a.REP(0x20)
 	// 22 B5 80 00    JSL GameModes
 	// 6B             RTL
 	// EA             NOP
-	a.LDA_imm16(uint16(frameJSL[0]) | uint16(frameJSL[1]) << 8)
+	a.LDA_imm16(uint16(frameJSL[0]) | uint16(frameJSL[1])<<8)
 	a.STA_long(0x717FFA)
-	a.LDA_imm16(uint16(frameJSL[2]) | uint16(frameJSL[3]) << 8)
+	a.LDA_imm16(uint16(frameJSL[2]) | uint16(frameJSL[3])<<8)
 	a.STA_long(0x717FFC)
 	a.LDA_imm16(0xEA6B)
 	a.STA_long(0x717FFE)
 	a.SEP(0x20)
+	// emit asm code:
 	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
-
-	// write the original 802F code to our custom init hook:
-	if err = p.write(expected802F); err != nil {
+	// append the original 802F code to our custom init hook:
+	if err = p.write(code802F); err != nil {
 		return
 	}
 	// follow by `RTL`

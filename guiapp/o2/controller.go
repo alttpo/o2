@@ -166,7 +166,7 @@ game:    %04x
 	oneGame := true
 	c.nextFactory = nil
 	for _, f := range games.Factories() {
-		if !f.IsBestProvider(rom) {
+		if !f.IsROMSupported(rom) {
 			continue
 		}
 		if c.nextFactory == nil {

@@ -7,11 +7,11 @@ import (
 )
 
 type Factory interface {
-	// determines if this is the best game provider for the given ROM among all other providers
-	IsBestProvider(rom *snes.ROM) bool
+	// determines if this ROM is or should be supported by this provider
+	IsROMSupported(rom *snes.ROM) bool
 
-	// determines if the specific ROM is supported by the provider with a reason why not
-	IsROMSupported(rom *snes.ROM) (ok bool, whyNot string)
+	// determines if the provider can play the specific ROM with a reason why not
+	CanPlay(rom *snes.ROM) (ok bool, whyNot string)
 
 	Patcher(rom *snes.ROM) Patcher
 

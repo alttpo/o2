@@ -215,7 +215,7 @@ game:    %04x
 	allFactories := games.Factories()
 	factories := make([]games.Factory, 0, len(allFactories))
 	for _, f := range allFactories {
-		if !f.IsBestProvider(rom) {
+		if !f.IsROMSupported(rom) {
 			continue
 		}
 		factories = append(factories, f)
@@ -228,7 +228,7 @@ game:    %04x
 		return nil
 	} else if len(factories) > 1 {
 		// more than one game type matches ROM
-		// TODO: could loop through factories and filter by IsROMSupported
+		// TODO: could loop through factories and filter by CanPlay
 		c.setStatus("ROM matches more than one game provider")
 		c.nextFactory = nil
 		return nil
@@ -237,7 +237,7 @@ game:    %04x
 	c.nextFactory = factories[0]
 
 	// check if the ROM is supported:
-	ok, reason := c.nextFactory.IsROMSupported(rom)
+	ok, reason := c.nextFactory.CanPlay(rom)
 	if !ok {
 		c.setStatus(fmt.Sprintf("ROM not supported: %s", reason))
 		return nil

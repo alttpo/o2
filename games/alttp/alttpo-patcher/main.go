@@ -30,6 +30,20 @@ func main() {
 		panic(err)
 	}
 
+	// check what the alttp Factory instance thinks of this ROM:
+	factoryInstance := alttp.FactoryInstance()
+	isBestProvider := factoryInstance.IsROMSupported(rom)
+	supported, whyNot := factoryInstance.CanPlay(rom)
+	fmt.Printf(    "ROM is/should be supported? %v\n", isBestProvider)
+	fmt.Printf(    "ROM can be played as ALTTP? %v\n", supported)
+	if !supported {
+		fmt.Printf("  Why not? %v\n", whyNot)
+	}
+
+	if !isBestProvider || !supported {
+		return
+	}
+
 	// patch the ROM:
 	patcher := alttp.NewPatcher(rom)
 	err = patcher.Patch()
@@ -42,4 +56,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("wrote to patched.smc")
 }
