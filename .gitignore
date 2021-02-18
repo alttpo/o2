@@ -14,13 +14,16 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Video
+*.mov
+
+/links/
 /dist/
+
 .idea/
 
 .DS_Store
 
-sd2snes
-z3randomizer
 alttpo-patcher
 
 # Ignore any ROMs for testing
@@ -29,7 +32,7 @@ alttpo-patcher
 *.srm
 
 # Ignore web resources
-webui/web/node_modules/
-webui/dist/r/app.js
-webui/o2/bindata.go
-webui/o2/bindata_debug.go
+/webui/web/node_modules/
+/webui/dist/r/app.js
+/webui/o2/bindata.go
+/webui/o2/bindata_debug.go
