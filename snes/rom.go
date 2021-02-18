@@ -20,23 +20,30 @@ type ROM struct {
 
 // $FFB0
 type Header struct {
-	MakerCode          uint16   `rom:"FFB0"`
-	GameCode           uint32   `rom:"FFB2"`
-	Fixed1             [7]byte  //`rom:"FFB6"`
-	ExpansionRAMSize   byte     `rom:"FFBD"`
-	SpecialVersion     byte     `rom:"FFBE"`
-	CartridgeSubType   byte     `rom:"FFBF"`
+	version int // 1, 2, or 3
+
+	// ver 2&3 header:
+	MakerCode        uint16  `rom:"FFB0"`
+	GameCode         uint32  `rom:"FFB2"`
+	Fixed1           [6]byte //`rom:"FFB6"`
+	FlashSize        byte    `rom:"FFBC"`
+	ExpansionRAMSize byte    `rom:"FFBD"`
+	SpecialVersion   byte    `rom:"FFBE"`
+	CoCPUType        byte    `rom:"FFBF"`
+	// ver 1 header:
 	Title              [21]byte `rom:"FFC0"`
 	MapMode            byte     `rom:"FFD5"`
 	CartridgeType      byte     `rom:"FFD6"`
 	ROMSize            byte     `rom:"FFD7"`
 	RAMSize            byte     `rom:"FFD8"`
 	DestinationCode    byte     `rom:"FFD9"`
-	Fixed2             byte     //`rom:"FFDA"`
+	OldMakerCode       byte     `rom:"FFDA"` // = $33 to indicate ver 3 header
 	MaskROMVersion     byte     `rom:"FFDB"`
 	ComplementCheckSum uint16   `rom:"FFDC"`
 	CheckSum           uint16   `rom:"FFDE"`
 }
+
+func (h *Header) Version() int { return h.version }
 
 type NativeVectors struct {
 	Unused1 [4]byte //`rom:"FFE0"`
@@ -81,6 +88,15 @@ func (r *ROM) ReadHeader() (err error) {
 	if err = readBinaryStruct(b, &r.Header); err != nil {
 		return
 	}
+
+	if r.Header.OldMakerCode == 0x33 {
+		r.Header.version = 3
+	} else if r.Header.Title[20] == 0x00 {
+		r.Header.version = 2
+	} else {
+		r.Header.version = 1
+	}
+
 	if err = readBinaryStruct(b, &r.NativeVectors); err != nil {
 		return
 	}
@@ -101,7 +117,13 @@ func (r *ROM) WriteHeader() (err error) {
 	if err = writeBinaryStruct(b, &r.EmulatedVectors); err != nil {
 		return
 	}
-	copy(r.Contents[r.HeaderOffset : r.HeaderOffset+0x50], b.Bytes())
+	if r.Header.version <= 1 {
+		// overwrite FFC0 if version 1 (leave FFB0-BF untouched):
+		copy(r.Contents[r.HeaderOffset+0x10:r.HeaderOffset+0x50], b.Bytes()[0x10:])
+	} else {
+		// overwrite FFB0 if version 2 or 3:
+		copy(r.Contents[r.HeaderOffset:r.HeaderOffset+0x50], b.Bytes())
+	}
 	return
 }
 
@@ -109,6 +131,11 @@ func readBinaryStruct(b *bytes.Reader, into interface{}) (err error) {
 	hv := reflect.ValueOf(into).Elem()
 	for i := 0; i < hv.NumField(); i++ {
 		f := hv.Field(i)
+		// skip unexported fields:
+		if !f.CanInterface() {
+			continue
+		}
+
 		var p interface{}
 
 		if !f.CanAddr() {
@@ -129,12 +156,16 @@ func writeBinaryStruct(w io.Writer, from interface{}) (err error) {
 	hv := reflect.ValueOf(from).Elem()
 	for i := 0; i < hv.NumField(); i++ {
 		f := hv.Field(i)
-		var p interface{}
+		// skip unexported fields:
+		if !f.CanInterface() {
+			continue
+		}
 
 		if !f.CanAddr() {
 			panic(fmt.Errorf("error handling struct field %s of type %s; cannot take address of field", hv.Type().Field(i).Name, hv.Type().Name()))
 		}
 
+		var p interface{}
 		p = f.Addr().Interface()
 		err = binary.Write(w, binary.LittleEndian, p)
 		if err != nil {
