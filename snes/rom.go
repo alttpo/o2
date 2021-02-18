@@ -95,6 +95,14 @@ func (r *ROM) ReadHeader() (err error) {
 		r.Header.version = 2
 	} else {
 		r.Header.version = 1
+		// Zero-out all the version 2&3 fields:
+		r.Header.MakerCode = 0
+		r.Header.GameCode = 0
+		r.Header.Fixed1 = [6]byte{}
+		r.Header.FlashSize = 0
+		r.Header.ExpansionRAMSize = 0
+		r.Header.SpecialVersion = 0
+		r.Header.CoCPUType = 0
 	}
 
 	if err = readBinaryStruct(b, &r.NativeVectors); err != nil {
