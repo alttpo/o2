@@ -9,7 +9,7 @@ package snes
 // to shadow WRAM for reading.
 // Write requests can only write to ROM and SRAM. WRAM cannot be written to from flash carts on real hardware; this is a
 // hard limitation due to the design of the SNES and is not specific to any flash cart.
-type Conn interface {
+type Queue interface {
 	// Enqueues a command to be executed
 	Enqueue(cmd Command)
 

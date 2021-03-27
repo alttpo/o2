@@ -10,7 +10,7 @@ import (
 type ViewModel struct {
 	// state:
 	driverDevice snes.NamedDriverDevicePair
-	dev          snes.Conn
+	dev          snes.Queue
 
 	rom     *snes.ROM
 	nextRom *snes.ROM

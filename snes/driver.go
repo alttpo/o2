@@ -15,7 +15,7 @@ type DeviceDescriptor interface {
 
 type Driver interface {
 	// Open a connection to a specific device
-	Open(desc DeviceDescriptor) (Conn, error)
+	Open(desc DeviceDescriptor) (Queue, error)
 
 	// Detect any present devices
 	Detect() ([]DeviceDescriptor, error)
@@ -107,7 +107,7 @@ func DriverByName(name string) (Driver, bool) {
 	return d, ok
 }
 
-func Open(driverName string, desc DeviceDescriptor) (Conn, error) {
+func Open(driverName string, desc DeviceDescriptor) (Queue, error) {
 	driversMu.RLock()
 	driveri, ok := drivers[driverName]
 	driversMu.RUnlock()

@@ -19,8 +19,8 @@ func newPUTFile(path string, rom []byte, report func(int, int)) *putfile {
 	}
 }
 
-func (c *putfile) Execute(conn snes.Conn) error {
-	f := conn.(*Conn).f
+func (c *putfile) Execute(queue snes.Queue) error {
+	f := queue.(*Queue).f
 
 	sb := make([]byte, 512)
 	sb[0] = byte('U')

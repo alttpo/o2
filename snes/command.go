@@ -1,7 +1,7 @@
 package snes
 
 type Command interface {
-	Execute(conn Conn) error
+	Execute(queue Queue) error
 }
 
 type CommandSequence []Command
@@ -13,20 +13,20 @@ type CommandWithCompletion struct {
 
 type NoOpCommand struct{}
 
-func (c *NoOpCommand) Execute(conn Conn) error {
+func (c *NoOpCommand) Execute(queue Queue) error {
 	return nil
 }
 
 // Special Command to close the device connection
 type CloseCommand struct{}
 
-func (c *CloseCommand) Execute(conn Conn) error {
+func (c *CloseCommand) Execute(queue Queue) error {
 	return nil
 }
 
 // Special Command to drain any subsequent Commands from the queue without executing them
 type DrainQueueCommand struct{}
 
-func (c *DrainQueueCommand) Execute(conn Conn) error {
+func (c *DrainQueueCommand) Execute(queue Queue) error {
 	return nil
 }

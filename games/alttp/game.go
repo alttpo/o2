@@ -9,8 +9,8 @@ import (
 
 // implements game.Game
 type Game struct {
-	rom  *snes.ROM
-	conn snes.Conn
+	rom   *snes.ROM
+	queue snes.Queue
 
 	running bool
 }
@@ -19,8 +19,8 @@ func (g *Game) ROM() *snes.ROM {
 	return g.rom
 }
 
-func (g *Game) SNES() snes.Conn {
-	return g.conn
+func (g *Game) SNES() snes.Queue {
+	return g.queue
 }
 
 func (g *Game) Title() string {
@@ -32,10 +32,10 @@ func (g *Game) Description() string {
 }
 
 func (g *Game) Load() {
-	if rc, ok := g.conn.(snes.ROMControl); ok {
+	if rc, ok := g.queue.(snes.ROMControl); ok {
 		path, cmds := rc.MakeUploadROMCommands(g.rom.Name, g.rom.Contents)
-		g.conn.EnqueueMulti(cmds)
-		g.conn.EnqueueMulti(rc.MakeBootROMCommands(path))
+		g.queue.EnqueueMulti(cmds)
+		g.queue.EnqueueMulti(rc.MakeBootROMCommands(path))
 	}
 }
 
@@ -58,7 +58,7 @@ func (g *Game) run() {
 
 	var lastQueued time.Time
 	var cmdReadMain snes.CommandSequence
-	cmdReadMain = g.conn.MakeReadCommands([]snes.ReadRequest{
+	cmdReadMain = g.queue.MakeReadCommands([]snes.ReadRequest{
 		{
 			Address:    0xF50010,
 			Size:       0xF0,
@@ -67,7 +67,7 @@ func (g *Game) run() {
 	})
 
 	lastQueued = time.Now()
-	g.conn.EnqueueMulti(cmdReadMain)
+	g.queue.EnqueueMulti(cmdReadMain)
 
 	for {
 		select {
@@ -78,7 +78,7 @@ func (g *Game) run() {
 
 			if g.IsRunning() {
 				lastQueued = now
-				g.conn.EnqueueMulti(cmdReadMain)
+				g.queue.EnqueueMulti(cmdReadMain)
 			}
 			break
 		}

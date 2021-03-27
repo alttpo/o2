@@ -9,13 +9,13 @@ type vget struct {
 	batch      []snes.ReadRequest
 }
 
-func (c *Conn) newVGET(batch []snes.ReadRequest) *vget {
+func (q *Queue) newVGET(batch []snes.ReadRequest) *vget {
 	return &vget{batch: batch}
 }
 
 // Command interface:
-func (c *vget) Execute(conn snes.Conn) error {
-	f := conn.(*Conn).f
+func (c *vget) Execute(queue snes.Queue) error {
+	f := queue.(*Queue).f
 
 	reqs := c.batch
 	if len(reqs) > 8 {

@@ -86,7 +86,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	return
 }
 
-func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
+func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 	var err error
 
 	dd := ddg.(DeviceDescriptor)
@@ -151,7 +151,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Conn, error) {
 		return nil, fmt.Errorf("%s: failed to set DTR: %w", driverName, err)
 	}
 
-	c := &Conn{f:  f}
+	c := &Queue{f: f}
 	c.Init(driverName, c)
 
 	return c, err

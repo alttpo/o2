@@ -9,13 +9,13 @@ type vput struct {
 	batch []snes.WriteRequest
 }
 
-func (c *Conn) newVPUT(batch []snes.WriteRequest) *vput {
+func (q *Queue) newVPUT(batch []snes.WriteRequest) *vput {
 	return &vput{batch: batch}
 }
 
 // Command interface:
-func (c *vput) Execute(conn snes.Conn) error {
-	f := conn.(*Conn).f
+func (c *vput) Execute(queue snes.Queue) error {
+	f := queue.(*Queue).f
 
 	reqs := c.batch
 	if len(reqs) > 8 {

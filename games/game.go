@@ -4,7 +4,7 @@ import "o2/snes"
 
 type Game interface {
 	ROM() *snes.ROM
-	SNES() snes.Conn
+	SNES() snes.Queue
 
 	Title() string
 	Description() string

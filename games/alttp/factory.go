@@ -36,10 +36,10 @@ func (f *Factory) Patcher(rom *snes.ROM) games.Patcher {
 	return &Patcher{rom: rom}
 }
 
-func (f *Factory) NewGame(rom *snes.ROM, conn snes.Conn) (games.Game, error) {
+func (f *Factory) NewGame(rom *snes.ROM, queue snes.Queue) (games.Game, error) {
 	return &Game{
 		rom:     rom,
-		conn:    conn,
+		queue:   queue,
 		running: false,
 	}, nil
 }

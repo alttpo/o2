@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func (c *Conn) MakeUploadROMCommands(name string, rom []byte) (path string, cmds snes.CommandSequence) {
+func (q *Queue) MakeUploadROMCommands(name string, rom []byte) (path string, cmds snes.CommandSequence) {
 	name = strings.ToLower(name)
 	path = fmt.Sprintf("o2/%s", name)
 	cmds = snes.CommandSequence{
@@ -20,7 +20,7 @@ func (c *Conn) MakeUploadROMCommands(name string, rom []byte) (path string, cmds
 	return
 }
 
-func (c *Conn) MakeBootROMCommands(path string) snes.CommandSequence {
+func (q *Queue) MakeBootROMCommands(path string) snes.CommandSequence {
 	return snes.CommandSequence{
 		newBOOT(path),
 	}

@@ -15,7 +15,7 @@ type Factory interface {
 
 	Patcher(rom *snes.ROM) Patcher
 
-	NewGame(rom *snes.ROM, conn snes.Conn) (Game, error)
+	NewGame(rom *snes.ROM, queue snes.Queue) (Game, error)
 }
 
 type Patcher interface {

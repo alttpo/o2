@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-type Conn struct {
-	snes.BaseConn
+type Queue struct {
+	snes.BaseQueue
 }
 
-func (c *Conn) MakeReadCommands(reqs []snes.ReadRequest) snes.CommandSequence {
+func (c *Queue) MakeReadCommands(reqs []snes.ReadRequest) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, &readCommand{req})
@@ -17,7 +17,7 @@ func (c *Conn) MakeReadCommands(reqs []snes.ReadRequest) snes.CommandSequence {
 	return seq
 }
 
-func (c *Conn) MakeWriteCommands(reqs []snes.WriteRequest) snes.CommandSequence {
+func (c *Queue) MakeWriteCommands(reqs []snes.WriteRequest) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, &writeCommand{req})
@@ -29,7 +29,7 @@ type readCommand struct {
 	Request snes.ReadRequest
 }
 
-func (r *readCommand) Execute(conn snes.Conn) error {
+func (r *readCommand) Execute(_ snes.Queue) error {
 	<-time.After(time.Millisecond*2)
 	completed := r.Request.Completion
 	if completed != nil {
@@ -47,7 +47,7 @@ type writeCommand struct {
 	Request snes.WriteRequest
 }
 
-func (r *writeCommand) Execute(conn snes.Conn) error {
+func (r *writeCommand) Execute(_ snes.Queue) error {
 	<-time.After(time.Millisecond*2)
 	completed := r.Request.Completion
 	if completed != nil {

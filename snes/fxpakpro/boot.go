@@ -13,8 +13,8 @@ func newBOOT(path string) *boot {
 	return &boot{path: path}
 }
 
-func (c *boot) Execute(conn snes.Conn) error {
-	f := conn.(*Conn).f
+func (c *boot) Execute(queue snes.Queue) error {
+	f := queue.(*Queue).f
 
 	sb := make([]byte, 512)
 	sb[0] = byte('U')
