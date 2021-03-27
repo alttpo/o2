@@ -44,8 +44,16 @@ func (g *Game) IsRunning() bool {
 }
 
 func (g *Game) Start() {
+	if g.running {
+		return
+	}
 	g.running = true
 
+	go g.run()
+}
+
+// run in a separate goroutine
+func (g *Game) run() {
 	readResponse := make(chan snes.ReadOrWriteResponse)
 
 	var lastQueued time.Time
