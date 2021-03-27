@@ -58,13 +58,13 @@ func (g *Game) run() {
 
 	var lastQueued time.Time
 	var cmdReadMain snes.CommandSequence
-	cmdReadMain = g.queue.MakeReadCommands([]snes.ReadRequest{
-		{
+	cmdReadMain = g.queue.MakeReadCommands(
+		snes.ReadRequest{
 			Address:    0xF50010,
 			Size:       0xF0,
 			Completion: readResponse,
 		},
-	})
+	)
 
 	lastQueued = time.Now()
 	g.queue.EnqueueMulti(cmdReadMain)

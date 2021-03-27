@@ -9,7 +9,7 @@ type Queue struct {
 	snes.BaseQueue
 }
 
-func (c *Queue) MakeReadCommands(reqs []snes.ReadRequest) snes.CommandSequence {
+func (c *Queue) MakeReadCommands(reqs ...snes.ReadRequest) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, &readCommand{req})
@@ -17,7 +17,7 @@ func (c *Queue) MakeReadCommands(reqs []snes.ReadRequest) snes.CommandSequence {
 	return seq
 }
 
-func (c *Queue) MakeWriteCommands(reqs []snes.WriteRequest) snes.CommandSequence {
+func (c *Queue) MakeWriteCommands(reqs ...snes.WriteRequest) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, &writeCommand{req})

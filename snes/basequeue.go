@@ -138,10 +138,10 @@ func (q *BaseQueue) handleQueue() {
 	}
 }
 
-func (q *BaseQueue) MakeReadCommands(reqs []ReadRequest) CommandSequence {
+func (q *BaseQueue) MakeReadCommands(reqs ...ReadRequest) CommandSequence {
 	panic("implement me")
 }
 
-func (q *BaseQueue) MakeWriteCommands(reqs []WriteRequest) CommandSequence {
+func (q *BaseQueue) MakeWriteCommands(reqs ...WriteRequest) CommandSequence {
 	panic("implement me")
 }

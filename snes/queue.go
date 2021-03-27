@@ -23,8 +23,8 @@ type Queue interface {
 	EnqueueMultiWithCompletion(cmds CommandSequence, complete chan<- error)
 
 	// Creates a set of Commands that submits a batch of read requests to the device
-	MakeReadCommands(reqs []ReadRequest) CommandSequence
+	MakeReadCommands(reqs ...ReadRequest) CommandSequence
 
 	// Creates a set of Commands that submits a batch of write requests to the device
-	MakeWriteCommands(reqs []WriteRequest) CommandSequence
+	MakeWriteCommands(reqs ...WriteRequest) CommandSequence
 }
