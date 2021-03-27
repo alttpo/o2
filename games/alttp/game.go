@@ -46,27 +46,35 @@ func (g *Game) IsRunning() bool {
 func (g *Game) Start() {
 	g.running = true
 
+	readResponse := make(chan snes.ReadOrWriteResponse)
+
 	var lastQueued time.Time
 	var cmdReadMain snes.CommandSequence
 	cmdReadMain = g.conn.MakeReadCommands([]snes.ReadRequest{
 		{
-			Address: 0xF50010,
-			Size:    0xF0,
-			Completed: func(rsp snes.ReadOrWriteResponse) {
-				now := time.Now()
-				log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
-				//log.Printf("\n%s\n", hex.Dump(rsp.Data))
-
-				if g.IsRunning() {
-					lastQueued = now
-					g.conn.EnqueueMulti(cmdReadMain)
-				}
-			},
+			Address:   0xF50010,
+			Size:      0xF0,
+			Completed: readResponse,
 		},
 	})
 
 	lastQueued = time.Now()
 	g.conn.EnqueueMulti(cmdReadMain)
+
+	for {
+		select {
+		case rsp := <-readResponse:
+			now := time.Now()
+			log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
+			//log.Printf("\n%s\n", hex.Dump(rsp.Data))
+
+			if g.IsRunning() {
+				lastQueued = now
+				g.conn.EnqueueMulti(cmdReadMain)
+			}
+			break
+		}
+	}
 }
 
 func (g *Game) Stop() {

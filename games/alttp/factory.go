@@ -37,7 +37,11 @@ func (f *Factory) Patcher(rom *snes.ROM) games.Patcher {
 }
 
 func (f *Factory) NewGame(rom *snes.ROM, conn snes.Conn) (games.Game, error) {
-	return &Game{rom, conn, false}, nil
+	return &Game{
+		rom:     rom,
+		conn:    conn,
+		running: false,
+	}, nil
 }
 
 func init() {

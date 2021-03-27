@@ -6,29 +6,11 @@ import (
 )
 
 type vput struct {
-	batch      []snes.WriteRequest
-	onResponse func()
+	batch []snes.WriteRequest
 }
 
 func (c *Conn) newVPUT(batch []snes.WriteRequest) *vput {
-	return &vput{
-		batch: batch,
-		onResponse: func() {
-			// make completed callbacks:
-			for i := 0; i < len(batch); i++ {
-				// make response callback:
-				cb := batch[i].Completed
-				if cb != nil {
-					cb(snes.ReadOrWriteResponse{
-						IsWrite: false,
-						Address: batch[i].Address,
-						Size:    batch[i].Size,
-						Data:    batch[i].Data,
-					})
-				}
-			}
-		},
-	}
+	return &vput{batch: batch}
 }
 
 // Command interface:
@@ -86,10 +68,18 @@ func (c *vput) Execute(conn snes.Conn) error {
 		return err
 	}
 
-	// callback:
-	cb := c.onResponse
-	if cb != nil {
-		cb()
+	// make completed callbacks:
+	for i := 0; i < len(reqs); i++ {
+		// make response callback:
+		completed := reqs[i].Completed
+		if completed != nil {
+			completed <- snes.ReadOrWriteResponse{
+				IsWrite: false,
+				Address: reqs[i].Address,
+				Size:    reqs[i].Size,
+				Data:    reqs[i].Data,
+			}
+		}
 	}
 
 	return nil

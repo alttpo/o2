@@ -7,8 +7,6 @@ type ReadOrWriteResponse struct {
 	Data    []byte // the data that was read or written
 }
 
-type ReadOrWriteCompleted func(response ReadOrWriteResponse)
-
 type ReadRequest struct {
 	// E00000-EFFFFF = SRAM
 	// F50000-F6FFFF = WRAM
@@ -17,7 +15,7 @@ type ReadRequest struct {
 	// F90200-F904FF = OAM
 	Address   uint32
 	Size      uint8
-	Completed ReadOrWriteCompleted
+	Completed chan<- ReadOrWriteResponse
 }
 
 type WriteRequest struct {
@@ -29,5 +27,5 @@ type WriteRequest struct {
 	Address   uint32
 	Size      uint8
 	Data      []byte
-	Completed ReadOrWriteCompleted
+	Completed chan<- ReadOrWriteResponse
 }

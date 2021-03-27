@@ -33,12 +33,12 @@ func (r *readCommand) Execute(conn snes.Conn) error {
 	<-time.After(time.Millisecond*2)
 	completed := r.Request.Completed
 	if completed != nil {
-		completed(snes.ReadOrWriteResponse{
+		completed <- snes.ReadOrWriteResponse{
 			IsWrite: false,
 			Address: r.Request.Address,
 			Size:    r.Request.Size,
 			Data:    make([]byte, r.Request.Size),
-		})
+		}
 	}
 	return nil
 }
@@ -51,12 +51,12 @@ func (r *writeCommand) Execute(conn snes.Conn) error {
 	<-time.After(time.Millisecond*2)
 	completed := r.Request.Completed
 	if completed != nil {
-		completed(snes.ReadOrWriteResponse{
+		completed <- snes.ReadOrWriteResponse{
 			IsWrite: true,
 			Address: r.Request.Address,
 			Size:    r.Request.Size,
 			Data:    r.Request.Data,
-		})
+		}
 	}
 	return nil
 }

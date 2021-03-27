@@ -7,33 +7,10 @@ import (
 
 type vget struct {
 	batch      []snes.ReadRequest
-	onResponse func(rsp []byte)
 }
 
 func (c *Conn) newVGET(batch []snes.ReadRequest) *vget {
-	return &vget{
-		batch: batch,
-		onResponse: func(rsp []byte) {
-			// make completed callbacks:
-			o := 0
-			for i := 0; i < len(batch); i++ {
-				size := int(batch[i].Size)
-
-				// make response callback:
-				cb := batch[i].Completed
-				if cb != nil {
-					cb(snes.ReadOrWriteResponse{
-						IsWrite: false,
-						Address: batch[i].Address,
-						Size:    batch[i].Size,
-						Data:    rsp[o : o+size],
-					})
-				}
-
-				o += size
-			}
-		},
-	}
+	return &vget{batch: batch}
 }
 
 // Command interface:
@@ -87,10 +64,23 @@ func (c *vget) Execute(conn snes.Conn) error {
 	// shrink down to exact size:
 	rsp = rsp[0:total]
 
-	// callback:
-	cb := c.onResponse
-	if cb != nil {
-		cb(rsp)
+	// make completed callbacks:
+	o := 0
+	for i := 0; i < len(reqs); i++ {
+		size := int(reqs[i].Size)
+
+		// make response callback:
+		completed := reqs[i].Completed
+		if completed != nil {
+			completed <- snes.ReadOrWriteResponse{
+				IsWrite: false,
+				Address: reqs[i].Address,
+				Size:    reqs[i].Size,
+				Data:    rsp[o : o+size],
+			}
+		}
+
+		o += size
 	}
 
 	return nil
