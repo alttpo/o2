@@ -31,7 +31,7 @@ type readCommand struct {
 
 func (r *readCommand) Execute(conn snes.Conn) error {
 	<-time.After(time.Millisecond*2)
-	completed := r.Request.Completed
+	completed := r.Request.Completion
 	if completed != nil {
 		completed <- snes.ReadOrWriteResponse{
 			IsWrite: false,
@@ -49,7 +49,7 @@ type writeCommand struct {
 
 func (r *writeCommand) Execute(conn snes.Conn) error {
 	<-time.After(time.Millisecond*2)
-	completed := r.Request.Completed
+	completed := r.Request.Completion
 	if completed != nil {
 		completed <- snes.ReadOrWriteResponse{
 			IsWrite: true,

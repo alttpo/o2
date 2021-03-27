@@ -13,9 +13,9 @@ type ReadRequest struct {
 	// F70000-F8FFFF = VRAM
 	// F90000-F901FF = CGRAM
 	// F90200-F904FF = OAM
-	Address   uint32
-	Size      uint8
-	Completed chan<- ReadOrWriteResponse
+	Address    uint32
+	Size       uint8
+	Completion chan<- ReadOrWriteResponse
 }
 
 type WriteRequest struct {
@@ -24,8 +24,8 @@ type WriteRequest struct {
 	// F70000-F8FFFF = VRAM
 	// F90000-F901FF = CGRAM
 	// F90200-F904FF = OAM
-	Address   uint32
-	Size      uint8
-	Data      []byte
-	Completed chan<- ReadOrWriteResponse
+	Address    uint32
+	Size       uint8
+	Data       []byte
+	Completion chan<- ReadOrWriteResponse
 }

@@ -71,7 +71,7 @@ func (c *vput) Execute(conn snes.Conn) error {
 	// make completed callbacks:
 	for i := 0; i < len(reqs); i++ {
 		// make response callback:
-		completed := reqs[i].Completed
+		completed := reqs[i].Completion
 		if completed != nil {
 			completed <- snes.ReadOrWriteResponse{
 				IsWrite: false,

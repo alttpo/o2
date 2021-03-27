@@ -37,7 +37,7 @@ func test() {
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
-			Completed: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.ReadOrWriteResponse) {
 				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},
@@ -52,7 +52,7 @@ func test() {
 			Address: 0x007FEA, // NMI vector in bank 00
 			Size:    2,
 			Data:    []byte{0xC9, 0x80},
-			Completed: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.ReadOrWriteResponse) {
 				fmt.Printf("write %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},
@@ -66,7 +66,7 @@ func test() {
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
-			Completed: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.ReadOrWriteResponse) {
 				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},

@@ -70,7 +70,7 @@ func (c *vget) Execute(conn snes.Conn) error {
 		size := int(reqs[i].Size)
 
 		// make response callback:
-		completed := reqs[i].Completed
+		completed := reqs[i].Completion
 		if completed != nil {
 			completed <- snes.ReadOrWriteResponse{
 				IsWrite: false,

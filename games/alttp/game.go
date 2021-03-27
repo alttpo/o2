@@ -60,9 +60,9 @@ func (g *Game) run() {
 	var cmdReadMain snes.CommandSequence
 	cmdReadMain = g.conn.MakeReadCommands([]snes.ReadRequest{
 		{
-			Address:   0xF50010,
-			Size:      0xF0,
-			Completed: readResponse,
+			Address:    0xF50010,
+			Size:       0xF0,
+			Completion: readResponse,
 		},
 	})
 
