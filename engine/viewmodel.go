@@ -176,6 +176,13 @@ func (c *ViewModel) tryCreateGame() bool {
 	c.rom = c.nextRom
 	c.factory = c.nextFactory
 
+	// Load the ROM:
+	c.game.Load()
+
+	// start the game instance:
+	log.Println("Start game")
+	c.game.Start()
+
 	return true
 }
 
@@ -253,6 +260,8 @@ game:    %04x
 	}
 
 	c.nextRom = rom
+	c.tryCreateGame()
+
 	return nil
 }
 
@@ -316,37 +325,6 @@ func (c *ViewModel) SNESDisconnected() {
 	c.setStatus("Disconnected from SNES")
 	lastDev = snes.NamedDriverDevicePair{}
 	c.UpdateAndNotifyView()
-}
-
-func (c *ViewModel) loadROM() {
-	defer c.NotifyView()
-
-	if !c.tryCreateGame() {
-		return
-	}
-
-	// Load the ROM:
-	c.game.Load()
-
-	// start the game instance:
-	log.Println("Start game")
-	c.game.Start()
-
-}
-
-func (c *ViewModel) startGame() {
-	defer c.NotifyView()
-
-	if c.game == nil {
-		return
-	}
-	if c.game.IsRunning() {
-		return
-	}
-
-	// start the game instance:
-	log.Println("Start game")
-	c.game.Start()
 }
 
 func (c *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
