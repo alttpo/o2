@@ -13,14 +13,14 @@ type Conn interface {
 	// Enqueues a command to be executed
 	Enqueue(cmd Command)
 
-	// Enqueues a command with a callback to be executed when completed [err==nil] or errored [err!=nil]
-	EnqueueWithCallback(cmd Command, onComplete func(err error))
+	// Enqueues a command with a channel to be sent to when completed [err==nil] or errored [err!=nil]
+	EnqueueWithCompletion(cmd Command, complete chan<- error)
 
 	// Enqueues a sequence of commands to be executed in order
 	EnqueueMulti(cmds CommandSequence)
 
-	// Enqueues a sequence of commands to be executed in order with only the last command receiving the callback
-	EnqueueMultiWithCallback(cmds CommandSequence, onComplete func(err error))
+	// Enqueues a sequence of commands to be executed in order with only the last command receiving the completion channel
+	EnqueueMultiWithCompletion(cmds CommandSequence, complete chan<- error)
 
 	// Creates a set of Commands that submits a batch of read requests to the device
 	MakeReadCommands(reqs []ReadRequest) CommandSequence

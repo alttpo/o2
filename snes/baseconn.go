@@ -11,7 +11,7 @@ type BaseConn struct {
 	name string
 
 	// command execution queue:
-	cq chan CommandWithCallback
+	cq       chan CommandWithCompletion
 	cqClosed bool
 
 	closer io.Closer
@@ -19,7 +19,7 @@ type BaseConn struct {
 
 func (c *BaseConn) Init(name string, closer io.Closer) {
 	c.name = name
-	c.cq = make(chan CommandWithCallback, 64)
+	c.cq = make(chan CommandWithCompletion, 64)
 	c.closer = closer
 
 	go c.handleQueue()
@@ -29,22 +29,22 @@ func (c *BaseConn) Enqueue(cmd Command) {
 	if c.cqClosed {
 		return
 	}
-	c.cq <- CommandWithCallback{
+	c.cq <- CommandWithCompletion{
 		Command:    cmd,
-		OnComplete: nil,
+		Completion: nil,
 	}
 }
 
-func (c *BaseConn) EnqueueWithCallback(cmd Command, onComplete func(err error)) {
+func (c *BaseConn) EnqueueWithCompletion(cmd Command, completion chan<- error) {
 	if c.cqClosed {
-		if onComplete != nil {
-			onComplete(fmt.Errorf("%s: device connection is closed", c.name))
+		if completion != nil {
+			completion <- fmt.Errorf("%s: device connection is closed", c.name)
 		}
 		return
 	}
-	c.cq <- CommandWithCallback{
+	c.cq <- CommandWithCompletion{
 		Command:    cmd,
-		OnComplete: onComplete,
+		Completion: completion,
 	}
 }
 
@@ -53,17 +53,17 @@ func (c *BaseConn) EnqueueMulti(cmds CommandSequence) {
 		return
 	}
 	for _, cmd := range cmds {
-		c.cq <- CommandWithCallback{
+		c.cq <- CommandWithCompletion{
 			Command:    cmd,
-			OnComplete: nil,
+			Completion: nil,
 		}
 	}
 }
 
-func (c *BaseConn) EnqueueMultiWithCallback(cmds CommandSequence, onComplete func(err error)) {
+func (c *BaseConn) EnqueueMultiWithCompletion(cmds CommandSequence, completion chan<- error) {
 	if c.cqClosed {
-		if onComplete != nil {
-			onComplete(fmt.Errorf("%s: device connection is closed", c.name))
+		if completion != nil {
+			completion <- fmt.Errorf("%s: device connection is closed", c.name)
 		}
 		return
 	}
@@ -72,17 +72,17 @@ func (c *BaseConn) EnqueueMultiWithCallback(cmds CommandSequence, onComplete fun
 	last := len(cmds) - 1
 	if last > 0 {
 		for _, cmd := range cmds[0 : last-1] {
-			c.cq <- CommandWithCallback{
+			c.cq <- CommandWithCompletion{
 				Command:    cmd,
-				OnComplete: nil,
+				Completion: nil,
 			}
 		}
 	}
 
 	// only supply a callback to the last command in the sequence:
-	c.cq <- CommandWithCallback{
+	c.cq <- CommandWithCompletion{
 		Command:    cmds[last],
-		OnComplete: onComplete,
+		Completion: completion,
 	}
 }
 
@@ -126,12 +126,12 @@ func (c *BaseConn) handleQueue() {
 			// close and recreate queue:
 			log.Printf("%s: processing DrainQueueCommand\n", c.name)
 			close(c.cq)
-			c.cq = make(chan CommandWithCallback, 64)
+			c.cq = make(chan CommandWithCompletion, 64)
 		}
 
 		err = cmd.Execute(c)
-		if pair.OnComplete != nil {
-			pair.OnComplete(err)
+		if pair.Completion != nil {
+			pair.Completion <- err
 		} else if err != nil {
 			log.Println(err)
 		}

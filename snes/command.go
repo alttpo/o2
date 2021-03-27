@@ -6,9 +6,9 @@ type Command interface {
 
 type CommandSequence []Command
 
-type CommandWithCallback struct {
+type CommandWithCompletion struct {
 	Command    Command
-	OnComplete func(error)
+	Completion chan<- error
 }
 
 type NoOpCommand struct{}

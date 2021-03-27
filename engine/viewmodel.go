@@ -296,18 +296,26 @@ func (c *ViewModel) SNESDisconnected() {
 		c.game = nil
 	}
 
+	// enqueue the close operation:
+	snesClosed := make(chan error)
 	lastDev := c.driverDevice
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
-	c.dev.EnqueueWithCallback(&snes.CloseCommand{}, func(err error) {
-		log.Printf("Closed %s\n", lastDev.Device.DisplayName())
-		c.setStatus("Disconnected from SNES")
-		lastDev = snes.NamedDriverDevicePair{}
-		c.UpdateAndNotifyView()
-	})
+	c.dev.EnqueueWithCompletion(&snes.CloseCommand{}, snesClosed)
 
 	c.dev = nil
 	c.driverDevice = snes.NamedDriverDevicePair{}
 	c.setStatus("Disconnecting from SNES...")
+	c.UpdateAndNotifyView()
+
+	// wait until snes is closed:
+	err := <-snesClosed
+	if err != nil {
+		log.Println(err)
+	}
+	log.Printf("Closed %s\n", lastDev.Device.DisplayName())
+	c.setStatus("Disconnected from SNES")
+	lastDev = snes.NamedDriverDevicePair{}
+	c.UpdateAndNotifyView()
 }
 
 func (c *ViewModel) loadROM() {
