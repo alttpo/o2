@@ -5,6 +5,7 @@ import {StateUpdater, useState} from "preact/hooks";
 import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
 import SNESView from "./snesview";
 import ROMView from "./romview";
+import ServerView from "./serverview";
 import {JSXInternal} from "preact/src/jsx";
 import TargetedEvent = JSXInternal.TargetedEvent;
 
@@ -36,7 +37,7 @@ export class CommandHandler {
         const dataArr = new Uint8Array(data);
 
         // encode view and command names as Pascal strings and append `data`:
-        const buf = new Uint8Array(view.length+1 + command.length+1 + dataArr.length);
+        const buf = new Uint8Array(view.length + 1 + command.length + 1 + dataArr.length);
         let i = 0;
         buf[i++] = view.length;
         i += te.encodeInto(view, buf.subarray(i)).written;
@@ -66,7 +67,7 @@ const App = () => {
         status: useState<string>(""),
         snes: useState<SNESViewModel>({drivers: [], isConnected: false}),
         rom: useState<ROMViewModel>({isLoaded: false, region: "", name: "", title: "", version: ""}),
-        server: useState<ServerViewModel>({}),
+        server: useState<ServerViewModel>({isConnected: false, hostName: "", groupName: "", playerName: "", teamNumber: 0}),
         game: useState<GameViewModel>({})
     };
 
@@ -139,7 +140,9 @@ const App = () => {
                                checked={tabSelected == "server"}
                                onChange={tabChanged}/>
                         <label for="viewtab3">Server</label>
-                        <div class="content"></div>
+                        <div class="content">
+                            <ServerView ch={ch} vm={viewModel}/>
+                        </div>
                     </div>
 
                     <div class="tab">
@@ -161,7 +164,9 @@ const App = () => {
     );
 }
 
-document.addEventListener("DOMContentLoaded", ev => {
+document.addEventListener(
+    "DOMContentLoaded",
+    ev => {
         console.log("DOMContentLoaded");
         render(<App/>, document.querySelector('#app'));
     }

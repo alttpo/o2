@@ -7,24 +7,44 @@ type ServerViewModel struct {
 
 	c *ViewModel
 
-	HostName   string `json:"hostName"`
-	GroupName  string `json:"groupName"`
-	PlayerName string `json:"playerName"`
-	TeamNumber uint16 `json:"teamNumber"`
+	isDirty bool
+
+	IsConnected bool   `json:"isConnected"`
+	HostName    string `json:"hostName"`
+	GroupName   string `json:"groupName"`
+	PlayerName  string `json:"playerName"`
+	TeamNumber  uint16 `json:"teamNumber"`
 }
 
 func NewServerViewModel(c *ViewModel) *ServerViewModel {
 	v := &ServerViewModel{
 		c: c,
+		IsConnected: false,
+		HostName: "alttp.online",
+		GroupName: "group",
+		PlayerName: "player",
+		TeamNumber: 0,
 	}
 
 	v.commands = map[string]Command{
 		"connect":    &ServerConnectCommand{v},
 		"disconnect": &ServerDisconnectCommand{v},
-		"update":     &ServerUpdateCommand{v}, // update group, player, team name
+		"update":     &ServerUpdateCommand{v}, // update host, group, player, team
 	}
 
 	return v
+}
+
+func (v *ServerViewModel) IsDirty() bool {
+	return v.isDirty
+}
+
+func (v *ServerViewModel) ClearDirty() {
+	v.isDirty = false
+}
+
+func (v *ServerViewModel) MarkDirty() {
+	v.isDirty = true
 }
 
 func (v *ServerViewModel) CommandFor(command string) (ce Command, err error) {
@@ -62,17 +82,28 @@ func (ce *ServerUpdateCommand) Execute(args CommandArgs) error {
 }
 
 func (v *ServerViewModel) Connect() error {
+	defer v.c.UpdateAndNotifyView()
+
+	v.IsConnected = true
+	v.MarkDirty()
 	return nil
 }
 
 func (v *ServerViewModel) Disconnect() error {
+	defer v.c.UpdateAndNotifyView()
+
+	v.IsConnected = false
+	v.MarkDirty()
 	return nil
 }
 
 func (v *ServerViewModel) UpdateData(args *ServerUpdateCommandArgs) error {
+	defer v.c.UpdateAndNotifyView()
+
 	v.HostName = args.HostName
 	v.GroupName = args.GroupName
 	v.PlayerName = args.PlayerName
 	v.TeamNumber = args.TeamNumber
+	v.MarkDirty()
 	return nil
 }

@@ -37,6 +37,12 @@ export interface ROMViewModel {
 }
 
 export interface ServerViewModel {
+    isConnected: boolean;
+
+    hostName: string;
+    groupName: string;
+    playerName: string;
+    teamNumber: number;
 }
 
 export interface GameViewModel {
