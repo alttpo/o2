@@ -1,10 +1,8 @@
 package alttp
 
 import (
-	"log"
 	"o2/snes"
 	"strings"
-	"time"
 )
 
 // implements game.Game
@@ -13,6 +11,9 @@ type Game struct {
 	queue snes.Queue
 
 	running bool
+
+	wram [0x20000]byte
+
 }
 
 func (g *Game) ROM() *snes.ROM {
@@ -52,34 +53,38 @@ func (g *Game) Start() {
 	go g.run()
 }
 
+func (g *Game) handleRead(rsp snes.ReadOrWriteResponse) {
+	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
+
+	// copy data read into our wram array:
+	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
+		copy(g.wram[rsp.Address-0xF50000:], rsp.Data)
+	}
+}
+
 // run in a separate goroutine
 func (g *Game) run() {
-	readResponse := make(chan snes.ReadOrWriteResponse)
+	readCompletion := make(chan snes.ReadOrWriteResponse)
 
-	var lastQueued time.Time
-	var cmdReadMain snes.CommandSequence
-	cmdReadMain = g.queue.MakeReadCommands(
-		snes.ReadRequest{
-			Address:    0xF50010,
-			Size:       0xF0,
-			Completion: readResponse,
-		},
-	)
+	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+	cmdReadMain := g.queue.MakeReadCommands(snes.ReadRequest{Address: 0xF50010, Size: 0xF0, Completion: readCompletion})
+	//cmdReadItems := g.queue.MakeReadCommands(snes.ReadRequest{Address: 0xF5F340, Size: 0xF0, Completion: readCompletion})
 
-	lastQueued = time.Now()
 	g.queue.EnqueueMulti(cmdReadMain)
 
 	for {
 		select {
-		case rsp := <-readResponse:
-			now := time.Now()
-			log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
-			//log.Printf("\n%s\n", hex.Dump(rsp.Data))
-
-			if g.IsRunning() {
-				lastQueued = now
-				g.queue.EnqueueMulti(cmdReadMain)
+		case rsp := <-readCompletion:
+			g.handleRead(rsp)
+			if !g.IsRunning() {
+				break
 			}
+
+			//now := time.Now()
+			//log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
+
+			g.queue.EnqueueMulti(cmdReadMain)
 			break
 		}
 	}
