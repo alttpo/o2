@@ -152,7 +152,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 	}
 
 	c := &Queue{f: f}
-	c.Init(driverName, c)
+	c.BaseInit(driverName, c)
 
 	return c, err
 }

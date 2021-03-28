@@ -1,5 +1,7 @@
 package snes
 
+import "io"
+
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
 // Communication with a physical SNES console is done via a flash cart with a USB connection.
 // Both read and write requests are both enqueued into the same request queue and are processed in the order received.
@@ -10,6 +12,8 @@ package snes
 // Write requests can only write to ROM and SRAM. WRAM cannot be written to from flash carts on real hardware; this is a
 // hard limitation due to the design of the SNES and is not specific to any flash cart.
 type Queue interface {
+	io.Closer
+
 	// Enqueues a command to be executed
 	Enqueue(cmd Command)
 

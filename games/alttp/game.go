@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"log"
 	"o2/snes"
 	"strings"
 )
@@ -14,6 +15,9 @@ type Game struct {
 
 	wram [0x20000]byte
 
+	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
+	localFrame    uint64 // total frame count since start of local game
+	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
 }
 
 func (g *Game) ROM() *snes.ROM {
@@ -76,15 +80,29 @@ func (g *Game) run() {
 	for {
 		select {
 		case rsp := <-readCompletion:
-			g.handleRead(rsp)
 			if !g.IsRunning() {
 				break
+			}
+
+			// requeue the main read:
+			g.queue.EnqueueMulti(cmdReadMain)
+			g.handleRead(rsp)
+
+			// increment frame timer:
+			if g.wram[0x1A] != g.lastGameFrame {
+				lastFrame := uint64(g.lastGameFrame)
+				nextFrame := uint64(g.wram[0x1A])
+				if nextFrame < lastFrame {
+					nextFrame += 256
+				}
+				g.localFrame += nextFrame - lastFrame
+				g.lastGameFrame = g.wram[0x1A]
+				log.Printf("%08x\n", g.localFrame)
 			}
 
 			//now := time.Now()
 			//log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
 
-			g.queue.EnqueueMulti(cmdReadMain)
 			break
 		}
 	}

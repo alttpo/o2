@@ -20,7 +20,8 @@ func (d *Driver) DisplayDescription() string {
 
 func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Queue, error) {
 	c := &Queue{}
-	c.Init(driverName, nil)
+	c.BaseInit(driverName, c)
+	c.Init()
 	return c, nil
 }
 

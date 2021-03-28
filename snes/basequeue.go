@@ -2,7 +2,6 @@ package snes
 
 import (
 	"fmt"
-	"io"
 	"log"
 )
 
@@ -14,56 +13,61 @@ type BaseQueue struct {
 	cq       chan CommandWithCompletion
 	cqClosed bool
 
-	closer io.Closer
+	// derived Queue struct:
+	queue Queue
 }
 
-func (q *BaseQueue) Init(name string, closer io.Closer) {
-	q.name = name
-	q.cq = make(chan CommandWithCompletion, 64)
-	q.closer = closer
+func (b *BaseQueue) BaseInit(name string, queue Queue) {
+	if queue == nil {
+		panic("queue must not be nil")
+	}
 
-	go q.handleQueue()
+	b.name = name
+	b.cq = make(chan CommandWithCompletion, 64)
+	b.queue = queue
+
+	go b.handleQueue()
 }
 
-func (q *BaseQueue) Enqueue(cmd Command) {
-	if q.cqClosed {
+func (b *BaseQueue) Enqueue(cmd Command) {
+	if b.cqClosed {
 		return
 	}
-	q.cq <- CommandWithCompletion{
+	b.cq <- CommandWithCompletion{
 		Command:    cmd,
 		Completion: nil,
 	}
 }
 
-func (q *BaseQueue) EnqueueWithCompletion(cmd Command, completion chan<- error) {
-	if q.cqClosed {
+func (b *BaseQueue) EnqueueWithCompletion(cmd Command, completion chan<- error) {
+	if b.cqClosed {
 		if completion != nil {
-			completion <- fmt.Errorf("%s: device connection is closed", q.name)
+			completion <- fmt.Errorf("%s: device connection is closed", b.name)
 		}
 		return
 	}
-	q.cq <- CommandWithCompletion{
+	b.cq <- CommandWithCompletion{
 		Command:    cmd,
 		Completion: completion,
 	}
 }
 
-func (q *BaseQueue) EnqueueMulti(cmds CommandSequence) {
-	if q.cqClosed {
+func (b *BaseQueue) EnqueueMulti(cmds CommandSequence) {
+	if b.cqClosed {
 		return
 	}
 	for _, cmd := range cmds {
-		q.cq <- CommandWithCompletion{
+		b.cq <- CommandWithCompletion{
 			Command:    cmd,
 			Completion: nil,
 		}
 	}
 }
 
-func (q *BaseQueue) EnqueueMultiWithCompletion(cmds CommandSequence, completion chan<- error) {
-	if q.cqClosed {
+func (b *BaseQueue) EnqueueMultiWithCompletion(cmds CommandSequence, completion chan<- error) {
+	if b.cqClosed {
 		if completion != nil {
-			completion <- fmt.Errorf("%s: device connection is closed", q.name)
+			completion <- fmt.Errorf("%s: device connection is closed", b.name)
 		}
 		return
 	}
@@ -72,7 +76,7 @@ func (q *BaseQueue) EnqueueMultiWithCompletion(cmds CommandSequence, completion 
 	last := len(cmds) - 1
 	if last > 0 {
 		for _, cmd := range cmds[0 : last-1] {
-			q.cq <- CommandWithCompletion{
+			b.cq <- CommandWithCompletion{
 				Command:    cmd,
 				Completion: nil,
 			}
@@ -80,53 +84,55 @@ func (q *BaseQueue) EnqueueMultiWithCompletion(cmds CommandSequence, completion 
 	}
 
 	// only supply a callback to the last command in the sequence:
-	q.cq <- CommandWithCompletion{
+	b.cq <- CommandWithCompletion{
 		Command:    cmds[last],
 		Completion: completion,
 	}
 }
 
-func (q *BaseQueue) handleQueue() {
-	q.cqClosed = false
+func (b *BaseQueue) handleQueue() {
+	q := b.queue
+
+	b.cqClosed = false
 	var err error
 	doClose := func() {
-		if q.cqClosed {
-			log.Printf("%s: already closed\n", q.name)
+		if b.cqClosed {
+			log.Printf("%s: already closed\n", b.name)
 			return
 		}
 
 		if err != nil {
-			log.Printf("%s: %v\n", q.name, err)
+			log.Printf("%s: %v\n", b.name, err)
 		}
 
-		log.Printf("%s: calling Close()\n", q.name)
-		if q.closer != nil {
-			err = q.closer.Close()
+		log.Printf("%s: calling Close()\n", b.name)
+		if q != nil {
+			err = q.Close()
 			if err != nil {
-				log.Printf("%s: %v\n", q.name, err)
+				log.Printf("%s: %v\n", b.name, err)
 			}
 		}
 
-		log.Printf("%s: closing chan\n", q.name)
-		close(q.cq)
-		q.cqClosed = true
+		log.Printf("%s: closing chan\n", b.name)
+		close(b.cq)
+		b.cqClosed = true
 	}
 	defer doClose()
 
-	for pair := range q.cq {
+	for pair := range b.cq {
 		cmd := pair.Command
 		if cmd == nil {
 			break
 		}
 		if _, ok := cmd.(*CloseCommand); ok {
-			log.Printf("%s: processing CloseCommand\n", q.name)
+			log.Printf("%s: processing CloseCommand\n", b.name)
 			doClose()
 		}
 		if _, ok := cmd.(*DrainQueueCommand); ok {
 			// close and recreate queue:
-			log.Printf("%s: processing DrainQueueCommand\n", q.name)
-			close(q.cq)
-			q.cq = make(chan CommandWithCompletion, 64)
+			log.Printf("%s: processing DrainQueueCommand\n", b.name)
+			close(b.cq)
+			b.cq = make(chan CommandWithCompletion, 64)
 		}
 
 		err = cmd.Execute(q)
@@ -138,10 +144,10 @@ func (q *BaseQueue) handleQueue() {
 	}
 }
 
-func (q *BaseQueue) MakeReadCommands(reqs ...ReadRequest) CommandSequence {
+func (b *BaseQueue) MakeReadCommands(reqs ...ReadRequest) CommandSequence {
 	panic("implement me")
 }
 
-func (q *BaseQueue) MakeWriteCommands(reqs ...WriteRequest) CommandSequence {
+func (b *BaseQueue) MakeWriteCommands(reqs ...WriteRequest) CommandSequence {
 	panic("implement me")
 }
