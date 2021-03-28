@@ -6,10 +6,10 @@ import (
 )
 
 type vput struct {
-	batch []snes.WriteRequest
+	batch []snes.Write
 }
 
-func (q *Queue) newVPUT(batch []snes.WriteRequest) *vput {
+func (q *Queue) newVPUT(batch []snes.Write) *vput {
 	return &vput{batch: batch}
 }
 
@@ -73,11 +73,12 @@ func (c *vput) Execute(queue snes.Queue) error {
 		// make response callback:
 		completed := reqs[i].Completion
 		if completed != nil {
-			completed <- snes.ReadOrWriteResponse{
-				IsWrite: false,
+			completed <- snes.Response{
+				IsWrite: true,
 				Address: reqs[i].Address,
 				Size:    reqs[i].Size,
 				Data:    reqs[i].Data,
+				Extra:   reqs[i].Extra,
 			}
 		}
 	}

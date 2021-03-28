@@ -5,7 +5,7 @@ import "io"
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
 // Communication with a physical SNES console is done via a flash cart with a USB connection.
 // Both read and write requests are both enqueued into the same request queue and are processed in the order received.
-// For reads, the read data is sent via the Completion callback specified in the ReadRequest struct.
+// For reads, the read data is sent via the Completion callback specified in the Read struct.
 // Depending on the implementation, reads and writes may be broken up into fixed-size batches.
 // Read requests can read from ROM, SRAM, and WRAM. Flash carts can listen to the SNES address and data buses in order
 // to shadow WRAM for reading.
@@ -27,8 +27,8 @@ type Queue interface {
 	EnqueueMultiWithCompletion(cmds CommandSequence, complete chan<- error)
 
 	// Creates a set of Commands that submits a batch of read requests to the device
-	MakeReadCommands(reqs ...ReadRequest) CommandSequence
+	MakeReadCommands(reqs ...Read) CommandSequence
 
 	// Creates a set of Commands that submits a batch of write requests to the device
-	MakeWriteCommands(reqs ...WriteRequest) CommandSequence
+	MakeWriteCommands(reqs ...Write) CommandSequence
 }

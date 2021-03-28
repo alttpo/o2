@@ -33,11 +33,11 @@ func test() {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	queue.EnqueueMulti(queue.MakeReadCommands([]snes.ReadRequest{
+	queue.EnqueueMulti(queue.MakeReadCommands([]snes.Read{
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
-			Completion: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.Response) {
 				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},
@@ -47,12 +47,12 @@ func test() {
 
 	wg = sync.WaitGroup{}
 	wg.Add(1)
-	queue.EnqueueMulti(queue.MakeWriteCommands([]snes.WriteRequest{
+	queue.EnqueueMulti(queue.MakeWriteCommands([]snes.Write{
 		{
 			Address: 0x007FEA, // NMI vector in bank 00
 			Size:    2,
 			Data:    []byte{0xC9, 0x80},
-			Completion: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.Response) {
 				fmt.Printf("write %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},
@@ -62,11 +62,11 @@ func test() {
 
 	wg = sync.WaitGroup{}
 	wg.Add(1)
-	queue.EnqueueMulti(queue.MakeReadCommands([]snes.ReadRequest{
+	queue.EnqueueMulti(queue.MakeReadCommands([]snes.Read{
 		{
 			Address: 0x007FC0,
 			Size:    0x40,
-			Completion: func(b snes.ReadOrWriteResponse) {
+			Completion: func(b snes.Response) {
 				fmt.Printf("read  %06x %02x\n%s\n", b.Address, b.Size, hex.Dump(b.Data))
 				wg.Done()
 			},

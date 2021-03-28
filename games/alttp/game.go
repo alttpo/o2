@@ -6,12 +6,24 @@ import (
 	"strings"
 )
 
+type ReadOp int
+
+const (
+	ReadMain ReadOp = iota
+	ReadInventory
+
+	ReadCount
+)
+
 // implements game.Game
 type Game struct {
 	rom   *snes.ROM
 	queue snes.Queue
 
 	running bool
+
+	reads   [ReadCount]snes.Read
+	cmdSeqs [ReadCount]snes.CommandSequence
 
 	wram [0x20000]byte
 
@@ -57,7 +69,7 @@ func (g *Game) Start() {
 	go g.run()
 }
 
-func (g *Game) handleRead(rsp snes.ReadOrWriteResponse) {
+func (g *Game) handleRead(rsp snes.Response) {
 	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
 
 	// copy data read into our wram array:
@@ -69,13 +81,20 @@ func (g *Game) handleRead(rsp snes.ReadOrWriteResponse) {
 
 // run in a separate goroutine
 func (g *Game) run() {
-	readCompletion := make(chan snes.ReadOrWriteResponse)
+	q := g.queue
+
+	readCompletion := make(chan snes.Response)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	cmdReadMain := g.queue.MakeReadCommands(snes.ReadRequest{Address: 0xF50010, Size: 0xF0, Completion: readCompletion})
-	//cmdReadItems := g.queue.MakeReadCommands(snes.ReadRequest{Address: 0xF5F340, Size: 0xF0, Completion: readCompletion})
+	g.reads[ReadMain] = snes.Read{Address: 0xF50010, Size: 0xF0, Extra: g.readMainComplete}
+	g.reads[ReadInventory] = snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
 
-	g.queue.EnqueueMulti(cmdReadMain)
+	for i, r := range g.reads {
+		r.Completion = readCompletion
+		g.cmdSeqs[i] = q.MakeReadCommands(r)
+	}
+
+	q.EnqueueMulti(g.cmdSeqs[ReadMain])
 
 	for {
 		select {
@@ -84,30 +103,57 @@ func (g *Game) run() {
 				break
 			}
 
-			// requeue the main read:
-			g.queue.EnqueueMulti(cmdReadMain)
+			// copy the data into our wram shadow:
 			g.handleRead(rsp)
 
-			// increment frame timer:
-			if g.wram[0x1A] != g.lastGameFrame {
-				lastFrame := uint64(g.lastGameFrame)
-				nextFrame := uint64(g.wram[0x1A])
-				if nextFrame < lastFrame {
-					nextFrame += 256
-				}
-				g.localFrame += nextFrame - lastFrame
-				g.lastGameFrame = g.wram[0x1A]
-				log.Printf("%08x\n", g.localFrame)
+			complete := rsp.Extra.(func())
+			if complete != nil {
+				complete()
 			}
 
-			//now := time.Now()
-			//log.Printf("%v, %v\n", now.Sub(lastQueued).Microseconds(), rsp.Data[0x0A])
-
 			break
+
+			//case net.receive:
+			//// TODO: receive updates from other players
+			//g.queue.Enqueue(g.queue.MakeWriteCommands(snes.Write{
+			//	Address:    0,
+			//	Size:       0,
+			//	Data:       nil,
+			//	Extra:      nil,
+			//	Completion: nil,
+			//}))
+			//break
 		}
 	}
 }
 
 func (g *Game) Stop() {
 	g.running = false
+}
+
+func (g *Game) readMainComplete() {
+	q := g.queue
+
+	// requeue the main read:
+	q.EnqueueMulti(g.cmdSeqs[ReadMain])
+
+	// did game frame change?
+	if g.wram[0x1A] == g.lastGameFrame {
+		return
+	}
+
+	// increment frame timer:
+	lastFrame := uint64(g.lastGameFrame)
+	nextFrame := uint64(g.wram[0x1A])
+	if nextFrame < lastFrame {
+		nextFrame += 256
+	}
+	g.localFrame += nextFrame - lastFrame
+	g.lastGameFrame = g.wram[0x1A]
+
+	log.Printf("%08x\n", g.localFrame)
+
+	if g.localFrame&31 == 0 {
+		// TODO: send inventory update to server
+	}
 }

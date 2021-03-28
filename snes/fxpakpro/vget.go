@@ -6,10 +6,10 @@ import (
 )
 
 type vget struct {
-	batch      []snes.ReadRequest
+	batch      []snes.Read
 }
 
-func (q *Queue) newVGET(batch []snes.ReadRequest) *vget {
+func (q *Queue) newVGET(batch []snes.Read) *vget {
 	return &vget{batch: batch}
 }
 
@@ -72,10 +72,11 @@ func (c *vget) Execute(queue snes.Queue) error {
 		// make response callback:
 		completed := reqs[i].Completion
 		if completed != nil {
-			completed <- snes.ReadOrWriteResponse{
+			completed <- snes.Response{
 				IsWrite: false,
 				Address: reqs[i].Address,
 				Size:    reqs[i].Size,
+				Extra:   reqs[i].Extra,
 				Data:    rsp[o : o+size],
 			}
 		}
