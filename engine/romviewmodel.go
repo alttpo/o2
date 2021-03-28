@@ -6,7 +6,7 @@ import (
 )
 
 type ROMViewModel struct {
-	commands map[string]CommandExecutor
+	commands map[string]Command
 
 	c *ViewModel
 
@@ -57,7 +57,7 @@ func (v *ROMViewModel) Update() {
 	}
 }
 
-func (v *ROMViewModel) CommandExecutor(command string) (ce CommandExecutor, err error) {
+func (v *ROMViewModel) CommandFor(command string) (ce Command, err error) {
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
@@ -71,9 +71,9 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 		c: c,
 	}
 
-	v.commands = map[string]CommandExecutor{
-		"name": &NameCommand{v},
-		"data": &DataCommand{v},
+	v.commands = map[string]Command{
+		"name": &ROMNameCommand{v},
+		"data": &ROMDataCommand{v},
 	}
 
 	return v
@@ -81,34 +81,28 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 
 // Commands:
 
-type NameCommand struct {
-	v *ROMViewModel
-}
+type ROMNameCommand struct{ v *ROMViewModel }
 
-type NameCommandArgs struct {
+type ROMNameCommandArgs struct {
 	Name string `json:"name"`
 }
 
-func (ce *NameCommand) CreateArgs() CommandArgs {
-	return &NameCommandArgs{}
-}
-func (ce *NameCommand) Execute(args CommandArgs) error {
-	return ce.v.NameProvided(args.(*NameCommandArgs))
+func (ce *ROMNameCommand) CreateArgs() CommandArgs { return &ROMNameCommandArgs{} }
+func (ce *ROMNameCommand) Execute(args CommandArgs) error {
+	return ce.v.NameProvided(args.(*ROMNameCommandArgs))
 }
 
-func (v *ROMViewModel) NameProvided(args *NameCommandArgs) error {
+func (v *ROMViewModel) NameProvided(args *ROMNameCommandArgs) error {
 	v.Name = args.Name
 	return nil
 }
 
-type DataCommand struct {
-	v *ROMViewModel
-}
+type ROMDataCommand struct{ v *ROMViewModel }
 
-func (ce *DataCommand) CreateArgs() CommandArgs {
+func (ce *ROMDataCommand) CreateArgs() CommandArgs {
 	panic("this is a binary command")
 }
-func (ce *DataCommand) Execute(args CommandArgs) error {
+func (ce *ROMDataCommand) Execute(args CommandArgs) error {
 	return ce.v.DataProvided(args.([]byte))
 }
 

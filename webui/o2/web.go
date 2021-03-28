@@ -194,7 +194,7 @@ func (k *Socket) readHandler() {
 				goto discard
 			}
 
-			ce, err := k.ws.commandHandler.CommandExecutor(creq.View, creq.Command)
+			ce, err := k.ws.commandHandler.CommandFor(creq.View, creq.Command)
 			if err != nil {
 				log.Println(fmt.Errorf("error handling json command: %w", err))
 				goto discard
@@ -202,12 +202,13 @@ func (k *Socket) readHandler() {
 
 			// instantiate a specific args type for the command:
 			args := ce.CreateArgs()
-
-			// deserialize json:
-			err = json.Unmarshal(creq.Args, args)
-			if err != nil {
-				log.Println(fmt.Errorf("error deserializing json command args: %w", err))
-				goto discard
+			if args != nil {
+				// deserialize json:
+				err = json.Unmarshal(creq.Args, args)
+				if err != nil {
+					log.Println(fmt.Errorf("error deserializing json command args: %w", err))
+					goto discard
+				}
 			}
 
 			// execute the command:
@@ -247,7 +248,7 @@ func (k *Socket) readHandler() {
 				goto discard
 			}
 
-			ce, err := k.ws.commandHandler.CommandExecutor(viewName, commandName)
+			ce, err := k.ws.commandHandler.CommandFor(viewName, commandName)
 			if err != nil {
 				log.Println(fmt.Errorf("error handling binary command: %w", err))
 				goto discard

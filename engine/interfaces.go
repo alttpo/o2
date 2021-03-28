@@ -17,18 +17,19 @@ type Dirtyable interface {
 }
 
 type CommandArgs interface{}
-type CommandExecutor interface {
+type Command interface {
 	CreateArgs() CommandArgs
 	Execute(args CommandArgs) error
 }
 
+// Specific ViewModel implements this
 type ViewModelCommandHandler interface {
-	CommandExecutor(command string) (CommandExecutor, error)
+	CommandFor(command string) (Command, error)
 }
 
-// ViewModel implements this
+// Root ViewModel implements this
 type ViewCommandHandler interface {
-	CommandExecutor(view, command string) (CommandExecutor, error)
+	CommandFor(view, command string) (Command, error)
 
 	NotifyViewTo(viewNotifier ViewNotifier)
 }

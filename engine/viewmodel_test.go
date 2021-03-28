@@ -10,7 +10,7 @@ import (
 func TestController_HandleCommand(t *testing.T) {
 	c := NewViewModel()
 	c.Init()
-	ce, err := c.CommandExecutor("snes", "connect")
+	ce, err := c.CommandFor("snes", "connect")
 	if err != nil {
 		t.Fatal(err)
 	}

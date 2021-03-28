@@ -24,9 +24,10 @@ type ViewModel struct {
 	viewNotifier ViewNotifier
 
 	// View Models:
-	viewModels    map[string]interface{}
-	snesViewModel *SNESViewModel
-	romViewModel  *ROMViewModel
+	viewModels      map[string]interface{}
+	snesViewModel   *SNESViewModel
+	romViewModel    *ROMViewModel
+	serverViewModel *ServerViewModel
 }
 
 func NewViewModel() *ViewModel {
@@ -35,7 +36,7 @@ func NewViewModel() *ViewModel {
 	// instantiate each child view model:
 	c.snesViewModel = NewSNESViewModel(c)
 	c.romViewModel = NewROMViewModel(c)
-	//c.connectScreen = &ConnectScreen{controller: c}
+	c.serverViewModel = NewServerViewModel(c)
 	//c.gameScreen =    &GameScreen{controller: c}
 
 	// assign unique names to each view for easy binding with html/js UI:
@@ -43,6 +44,7 @@ func NewViewModel() *ViewModel {
 		"status": "Not connected",
 		"snes":   c.snesViewModel,
 		"rom":    c.romViewModel,
+		"server": c.serverViewModel,
 	}
 
 	return c
@@ -127,7 +129,7 @@ func (c *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 }
 
 // Implements ViewCommandHandler
-func (c *ViewModel) CommandExecutor(view, command string) (ce CommandExecutor, err error) {
+func (c *ViewModel) CommandFor(view, command string) (ce Command, err error) {
 	vm, ok := c.viewModels[view]
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
@@ -138,7 +140,7 @@ func (c *ViewModel) CommandExecutor(view, command string) (ce CommandExecutor, e
 		return nil, fmt.Errorf("view=%s,cmd=%s: view model does not handle commands", view, command)
 	}
 
-	ce, err = commandHandler.CommandExecutor(command)
+	ce, err = commandHandler.CommandFor(command)
 	if err != nil {
 		err = fmt.Errorf("view=%s,cmd=%s: error from command handler: %w", view, command, err)
 	}

@@ -9,7 +9,7 @@ import (
 
 // Must be JSON serializable
 type SNESViewModel struct {
-	commands map[string]CommandExecutor
+	commands map[string]Command
 
 	c       *ViewModel
 	isClean bool
@@ -38,7 +38,7 @@ func NewSNESViewModel(c *ViewModel) *SNESViewModel {
 	v := &SNESViewModel{c: c}
 
 	// supported commands:
-	v.commands = map[string]CommandExecutor{
+	v.commands = map[string]Command{
 		"connect":    &ConnectCommandExecutor{v},
 		"disconnect": &DisconnectCommandExecutor{v},
 	}
@@ -154,7 +154,7 @@ func (v *SNESViewModel) Update() {
 }
 
 // Commands:
-func (v *SNESViewModel) CommandExecutor(command string) (ce CommandExecutor, err error) {
+func (v *SNESViewModel) CommandFor(command string) (ce Command, err error) {
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
@@ -163,17 +163,13 @@ func (v *SNESViewModel) CommandExecutor(command string) (ce CommandExecutor, err
 	return
 }
 
+type ConnectCommandExecutor struct{ v *SNESViewModel }
 type ConnectCommandArgs struct {
 	Driver string `json:"driver"`
 	Device int    `json:"device"`
 }
-type ConnectCommandExecutor struct {
-	v *SNESViewModel
-}
 
-func (c *ConnectCommandExecutor) CreateArgs() CommandArgs {
-	return &ConnectCommandArgs{}
-}
+func (c *ConnectCommandExecutor) CreateArgs() CommandArgs { return &ConnectCommandArgs{} }
 func (c *ConnectCommandExecutor) Execute(args CommandArgs) error {
 	return c.v.Connect(args.(*ConnectCommandArgs))
 }
@@ -207,19 +203,14 @@ func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 	return nil
 }
 
-type NullArgs struct{}
-type DisconnectCommandExecutor struct {
-	v *SNESViewModel
+type DisconnectCommandExecutor struct{ v *SNESViewModel }
+
+func (c *DisconnectCommandExecutor) CreateArgs() CommandArgs { return nil }
+func (c *DisconnectCommandExecutor) Execute(_ CommandArgs) error {
+	return c.v.Disconnect()
 }
 
-func (c *DisconnectCommandExecutor) CreateArgs() CommandArgs {
-	return &NullArgs{}
-}
-func (c *DisconnectCommandExecutor) Execute(args CommandArgs) error {
-	return c.v.Disconnect(args.(*NullArgs))
-}
-
-func (v *SNESViewModel) Disconnect(args *NullArgs) error {
+func (v *SNESViewModel) Disconnect() error {
 	v.c.SNESDisconnected()
 
 	return nil
