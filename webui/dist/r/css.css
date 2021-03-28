@@ -71,7 +71,13 @@ select, input {
     border-right: 2px solid rgba(0, 0, 0, 0.5);
     border-bottom: 2px solid rgba(0, 0, 0, 0.5);
     font-kerning: auto;
-    cursor: pointer;
+}
+
+select:disabled, input:disabled {
+    background-color: #333;
+    color: #666;
+    border-color: #666;
+    cursor: not-allowed;
 }
 
 h2, h3, h4, h5, h6 {
@@ -209,32 +215,13 @@ footer {
 }
 
 
-dl {
-    border: 1px solid #511;
+.input-grid {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
 }
-dt,
-dd {
-    box-sizing: border-box;
-    padding: 10px;
+.input-grid > label {
+    grid-column: 1;
 }
-dd ~ dt,
-dd ~ dd {
-    border-top: 1px solid #511;
-}
-dt {
-    float: left;
-    width: 35%;
-    padding-bottom: 0;
-}
-dd {
-    margin-left: 35%;
-    border-left: 1px dotted #511;
-}
-dd:after {
-    content: "";
-    display: block;
-    clear: both;
-}
-/*dt*/.row2 + dd:after {
-    content:none;
+.input-grid > input,button {
+    grid-column: 2;
 }

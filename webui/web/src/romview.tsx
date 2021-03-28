@@ -20,18 +20,16 @@ export default ({ch, vm}: TopLevelProps) => {
             <label for="romFile">ROM:</label><input id="romFile" type="file" onChange={(e) => fileChosen(e)}/>
         </div>
         {rom.isLoaded &&
-            <div class="card">
-                <dl>
-                    <dt>Name:</dt>
-                    <dd class="mono">{rom.name}</dd>
-                    <dt>Title:</dt>
-                    <dd class="mono">{rom.title}</dd>
-                    <dt>Region:</dt>
-                    <dd class="mono">{rom.region}</dd>
-                    <dt>Version:</dt>
-                    <dd class="mono">{rom.version}</dd>
-                </dl>
+            <div class="card input-grid">
+                <label>Name:</label>
+                <input class="mono" readonly value={rom.name} />
+                <label>Title:</label>
+                <input class="mono" readonly value={rom.title} />
+                <label>Region:</label>
+                <input class="mono" readonly value={rom.region} />
+                <label>Version:</label>
+                <input class="mono" readonly value={rom.version} />
             </div>
         }
     </Fragment>);
-};
+}

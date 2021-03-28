@@ -59,11 +59,11 @@ class ServerView extends Component<ServerProps> {
             }
         };
 
-        return <div class="card">
+        return <div class="card input-grid">
             <label for="hostName">Hostname:</label>
-            <input type="text" value={server.hostName} id="hostName" onChange={onChanged.bind(this, 'hostName')}/>
+            <input type="text" value={server.hostName} disabled={server.isConnected} id="hostName" onChange={onChanged.bind(this, 'hostName')}/>
             <label for="groupName">Group:</label>
-            <input type="text" value={server.groupName} id="groupName" onChange={onChanged.bind(this, 'groupName')}/>
+            <input type="text" value={server.groupName} disabled={server.isConnected} id="groupName" onChange={onChanged.bind(this, 'groupName')}/>
             <label for="teamNumber">Team:</label>
             <input type="number" value={server.teamNumber} id="teamNumber" onChange={onChanged.bind(this, 'teamNumber')}/>
             <label for="playerName">Player:</label>
