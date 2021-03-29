@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
+	"o2/client"
 	"o2/games"
 	"o2/snes"
 )
@@ -18,7 +19,8 @@ type ViewModel struct {
 	factory     games.Factory
 	nextFactory games.Factory
 
-	game games.Game
+	game   games.Game
+	client *client.Client
 
 	// dependency that notifies view of updated view model:
 	viewNotifier ViewNotifier
@@ -31,28 +33,30 @@ type ViewModel struct {
 }
 
 func NewViewModel() *ViewModel {
-	c := &ViewModel{}
-
-	// instantiate each child view model:
-	c.snesViewModel = NewSNESViewModel(c)
-	c.romViewModel = NewROMViewModel(c)
-	c.serverViewModel = NewServerViewModel(c)
-	//c.gameScreen =    &GameScreen{controller: c}
-
-	// assign unique names to each view for easy binding with html/js UI:
-	c.viewModels = map[string]interface{}{
-		"status": "Not connected",
-		"snes":   c.snesViewModel,
-		"rom":    c.romViewModel,
-		"server": c.serverViewModel,
+	vm := &ViewModel{
+		client: client.NewClient(),
 	}
 
-	return c
+	// instantiate each child view model:
+	vm.snesViewModel = NewSNESViewModel(vm)
+	vm.romViewModel = NewROMViewModel(vm)
+	vm.serverViewModel = NewServerViewModel(vm)
+	//vm.gameScreen =    &GameScreen{controller: vm}
+
+	// assign unique names to each view for easy binding with html/js UI:
+	vm.viewModels = map[string]interface{}{
+		"status": "Not connected",
+		"snes":   vm.snesViewModel,
+		"rom":    vm.romViewModel,
+		"server": vm.serverViewModel,
+	}
+
+	return vm
 }
 
 // initializes all view models:
-func (c *ViewModel) Init() {
-	for _, model := range c.viewModels {
+func (vm *ViewModel) Init() {
+	for _, model := range vm.viewModels {
 		if i, ok := model.(Initializable); ok {
 			i.Init()
 		}
@@ -60,8 +64,8 @@ func (c *ViewModel) Init() {
 }
 
 // updates all view models:
-func (c *ViewModel) Update() {
-	for _, model := range c.viewModels {
+func (vm *ViewModel) Update() {
+	for _, model := range vm.viewModels {
 		if i, ok := model.(Updateable); ok {
 			i.Update()
 		}
@@ -69,39 +73,39 @@ func (c *ViewModel) Update() {
 }
 
 // updates all view models and notifies view:
-func (c *ViewModel) UpdateAndNotifyView() {
-	for view, model := range c.viewModels {
+func (vm *ViewModel) UpdateAndNotifyView() {
+	for view, model := range vm.viewModels {
 		if i, ok := model.(Updateable); ok {
 			i.Update()
 		}
-		c.NotifyViewOf(view, model)
+		vm.NotifyViewOf(view, model)
 	}
 }
 
 // notifies the view of any updated view models:
-func (c *ViewModel) NotifyView() {
-	for view, model := range c.viewModels {
-		c.NotifyViewOf(view, model)
+func (vm *ViewModel) NotifyView() {
+	for view, model := range vm.viewModels {
+		vm.NotifyViewOf(view, model)
 	}
 }
 
-func (c *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
-	if c.viewNotifier == nil {
+func (vm *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
+	if vm.viewNotifier == nil {
 		return
 	}
 
 	dirtyable, isDirtyable := model.(Dirtyable)
 	// ignore IsDirty() check
 
-	c.viewNotifier.NotifyView(view, model)
+	vm.viewNotifier.NotifyView(view, model)
 
 	if isDirtyable {
 		dirtyable.ClearDirty()
 	}
 }
 
-func (c *ViewModel) NotifyViewOf(view string, model interface{}) {
-	if c.viewNotifier == nil {
+func (vm *ViewModel) NotifyViewOf(view string, model interface{}) {
+	if vm.viewNotifier == nil {
 		return
 	}
 
@@ -110,32 +114,32 @@ func (c *ViewModel) NotifyViewOf(view string, model interface{}) {
 		return
 	}
 
-	c.viewNotifier.NotifyView(view, model)
+	vm.viewNotifier.NotifyView(view, model)
 
 	if isDirtyable {
 		dirtyable.ClearDirty()
 	}
 }
 
-func (c *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
+func (vm *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 	if viewNotifier == nil {
 		return
 	}
 
 	// send all view models to this notifier regardless of dirty state:
-	for view, model := range c.viewModels {
+	for view, model := range vm.viewModels {
 		viewNotifier.NotifyView(view, model)
 	}
 }
 
 // Implements ViewCommandHandler
-func (c *ViewModel) CommandFor(view, command string) (ce Command, err error) {
-	vm, ok := c.viewModels[view]
+func (vm *ViewModel) CommandFor(view, command string) (ce Command, err error) {
+	svm, ok := vm.viewModels[view]
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
 	}
 
-	commandHandler, ok := vm.(ViewModelCommandHandler)
+	commandHandler, ok := svm.(ViewModelCommandHandler)
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: view model does not handle commands", view, command)
 	}
@@ -147,61 +151,65 @@ func (c *ViewModel) CommandFor(view, command string) (ce Command, err error) {
 	return
 }
 
-func (c *ViewModel) setStatus(msg string) {
+func (vm *ViewModel) setStatus(msg string) {
 	log.Printf("notify: %s\n", msg)
-	c.viewModels["status"] = msg
+	vm.viewModels["status"] = msg
 }
 
-func (c *ViewModel) tryCreateGame() bool {
-	defer c.UpdateAndNotifyView()
+func (vm *ViewModel) tryCreateGame() bool {
+	defer vm.UpdateAndNotifyView()
 
-	if c.dev == nil {
+	if vm.dev == nil {
 		log.Println("dev is nil")
 		return false
 	}
-	if c.nextRom == nil {
+	if vm.nextRom == nil {
 		log.Println("rom is nil")
 		return false
 	}
-	if c.game != nil {
+	if vm.game != nil {
 		log.Println("game already created")
 		return false
 	}
 
 	var err error
 	log.Println("Create new game")
-	c.game, err = c.nextFactory.NewGame(c.nextRom, c.dev)
+	vm.game, err = vm.nextFactory.NewGame(
+		vm.dev,
+		vm.nextRom,
+		vm.client,
+	)
 	if err != nil {
 		return false
 	}
 
-	c.rom = c.nextRom
-	c.factory = c.nextFactory
+	vm.rom = vm.nextRom
+	vm.factory = vm.nextFactory
 
 	// Load the ROM:
-	c.game.Load()
+	vm.game.Load()
 
 	// start the game instance:
 	log.Println("Start game")
-	c.game.Start()
+	vm.game.Start()
 
 	return true
 }
 
-func (c *ViewModel) IsConnected() bool {
-	return c.dev != nil
+func (vm *ViewModel) IsConnected() bool {
+	return vm.dev != nil
 }
 
-func (c *ViewModel) IsConnectedToDriver(driver snes.NamedDriver) bool {
-	if c.dev == nil {
+func (vm *ViewModel) IsConnectedToDriver(driver snes.NamedDriver) bool {
+	if vm.dev == nil {
 		return false
 	}
 
-	return c.driverDevice.NamedDriver == driver
+	return vm.driverDevice.NamedDriver == driver
 }
 
-func (c *ViewModel) ROMSelected(rom *snes.ROM) error {
-	defer c.UpdateAndNotifyView()
+func (vm *ViewModel) ROMSelected(rom *snes.ROM) error {
+	defer vm.UpdateAndNotifyView()
 
 	// the user has selected a ROM file:
 	log.Printf(`ROM selected
@@ -219,7 +227,7 @@ game:    %04x
 		rom.Header.GameCode)
 
 	// determine if ROM is recognizable as a game we provide support for:
-	c.nextFactory = nil
+	vm.nextFactory = nil
 
 	allFactories := games.Factories()
 	factories := make([]games.Factory, 0, len(allFactories))
@@ -233,44 +241,44 @@ game:    %04x
 
 	if len(factories) == 0 {
 		// unrecognized ROM
-		c.setStatus("ROM is not compatible with any game providers")
+		vm.setStatus("ROM is not compatible with any game providers")
 		return nil
 	} else if len(factories) > 1 {
 		// more than one game type matches ROM
 		// TODO: could loop through factories and filter by CanPlay
-		c.setStatus("ROM matches more than one game provider")
-		c.nextFactory = nil
+		vm.setStatus("ROM matches more than one game provider")
+		vm.nextFactory = nil
 		return nil
 	}
 
-	c.nextFactory = factories[0]
+	vm.nextFactory = factories[0]
 
 	// check if the ROM is supported:
-	ok, reason := c.nextFactory.CanPlay(rom)
+	ok, reason := vm.nextFactory.CanPlay(rom)
 	if !ok {
-		c.setStatus(fmt.Sprintf("ROM not supported: %s", reason))
+		vm.setStatus(fmt.Sprintf("ROM not supported: %s", reason))
 		return nil
 	}
 
 	// attempt to patch the ROM file:
-	patcher := c.nextFactory.Patcher(rom)
+	patcher := vm.nextFactory.Patcher(rom)
 	if err := patcher.Patch(); err != nil {
 		err = fmt.Errorf("error patching ROM: %w", err)
 		log.Println(err)
-		c.setStatus(err.Error())
+		vm.setStatus(err.Error())
 		return nil
 	}
 
-	c.nextRom = rom
-	c.tryCreateGame()
+	vm.nextRom = rom
+	vm.tryCreateGame()
 
 	return nil
 }
 
-func (c *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
-	defer c.UpdateAndNotifyView()
+func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
+	defer vm.UpdateAndNotifyView()
 
-	if pair == c.driverDevice && c.dev != nil {
+	if pair == vm.driverDevice && vm.dev != nil {
 		// no change
 		return
 	}
@@ -278,45 +286,45 @@ func (c *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	log.Println(pair.Device.DisplayName())
 
 	var err error
-	c.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
+	vm.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
 	if err != nil {
 		log.Println(err)
-		c.setStatus("Could not connect to the SNES")
-		c.dev = nil
-		c.driverDevice = snes.NamedDriverDevicePair{}
+		vm.setStatus("Could not connect to the SNES")
+		vm.dev = nil
+		vm.driverDevice = snes.NamedDriverDevicePair{}
 		return
 	}
 
-	c.driverDevice = pair
-	c.setStatus("Connected to SNES")
+	vm.driverDevice = pair
+	vm.setStatus("Connected to SNES")
 
-	c.tryCreateGame()
+	vm.tryCreateGame()
 }
 
-func (c *ViewModel) SNESDisconnected() {
-	defer c.UpdateAndNotifyView()
+func (vm *ViewModel) SNESDisconnected() {
+	defer vm.UpdateAndNotifyView()
 
-	if c.dev == nil {
-		c.driverDevice = snes.NamedDriverDevicePair{}
+	if vm.dev == nil {
+		vm.driverDevice = snes.NamedDriverDevicePair{}
 		return
 	}
 
-	if c.game != nil {
+	if vm.game != nil {
 		log.Println("Stop existing game")
-		c.game.Stop()
-		c.game = nil
+		vm.game.Stop()
+		vm.game = nil
 	}
 
 	// enqueue the close operation:
 	snesClosed := make(chan error)
-	lastDev := c.driverDevice
+	lastDev := vm.driverDevice
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
-	c.dev.EnqueueWithCompletion(&snes.CloseCommand{}, snesClosed)
+	vm.dev.EnqueueWithCompletion(&snes.CloseCommand{}, snesClosed)
 
-	c.dev = nil
-	c.driverDevice = snes.NamedDriverDevicePair{}
-	c.setStatus("Disconnecting from SNES...")
-	c.UpdateAndNotifyView()
+	vm.dev = nil
+	vm.driverDevice = snes.NamedDriverDevicePair{}
+	vm.setStatus("Disconnecting from SNES...")
+	vm.UpdateAndNotifyView()
 
 	// wait until snes is closed:
 	err := <-snesClosed
@@ -324,11 +332,28 @@ func (c *ViewModel) SNESDisconnected() {
 		log.Println(err)
 	}
 	log.Printf("Closed %s\n", lastDev.Device.DisplayName())
-	c.setStatus("Disconnected from SNES")
+	vm.setStatus("Disconnected from SNES")
 	lastDev = snes.NamedDriverDevicePair{}
-	c.UpdateAndNotifyView()
+	vm.UpdateAndNotifyView()
 }
 
-func (c *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
-	c.viewNotifier = viewNotifier
+func (vm *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
+	vm.viewNotifier = viewNotifier
+}
+
+func (vm *ViewModel) ConnectServer() {
+	defer vm.serverViewModel.MarkDirty()
+
+	err := vm.client.Connect(vm.serverViewModel.HostName + ":4590")
+	vm.serverViewModel.IsConnected = vm.client.IsConnected()
+	if err != nil {
+		log.Print(err)
+	}
+}
+
+func (vm *ViewModel) DisconnectServer() {
+	defer vm.serverViewModel.MarkDirty()
+
+	vm.client.Disconnect()
+	vm.serverViewModel.IsConnected = vm.client.IsConnected()
 }

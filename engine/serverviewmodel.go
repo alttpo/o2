@@ -84,16 +84,14 @@ func (ce *ServerUpdateCommand) Execute(args CommandArgs) error {
 func (v *ServerViewModel) Connect() error {
 	defer v.c.UpdateAndNotifyView()
 
-	v.IsConnected = true
-	v.MarkDirty()
+	v.c.ConnectServer()
 	return nil
 }
 
 func (v *ServerViewModel) Disconnect() error {
 	defer v.c.UpdateAndNotifyView()
 
-	v.IsConnected = false
-	v.MarkDirty()
+	v.c.DisconnectServer()
 	return nil
 }
 
