@@ -217,7 +217,9 @@ footer {
 
 .input-grid {
     display: grid;
-    grid-template-columns: 1fr 3fr;
+    grid-template-columns: 1fr 4fr;
+    grid-auto-rows: 2em;
+    grid-row-gap: 0.1em;
 }
 .input-grid > label {
     grid-column: 1;

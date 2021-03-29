@@ -1,7 +1,6 @@
 import {ServerViewModel} from "./viewmodel";
 import {CommandHandler, TopLevelProps} from "./index";
 import {Component} from 'preact';
-import {StateUpdater, useState} from "preact/hooks";
 
 type ServerProps = {
     ch: CommandHandler;
@@ -9,8 +8,8 @@ type ServerProps = {
 };
 
 interface ServerState {
-    hostName:   string;
-    groupName:  string;
+    hostName: string;
+    groupName: string;
     teamNumber: string;
     playerName: string;
 }
@@ -22,8 +21,8 @@ class ServerView extends Component<ServerProps> {
 
     render({ch, server}: ServerProps) {
         const state: ServerState = {
-            hostName:   server.hostName,
-            groupName:  server.groupName,
+            hostName: server.hostName,
+            groupName: server.groupName,
             teamNumber: server.teamNumber.toString(),
             playerName: server.playerName,
         };
@@ -38,8 +37,8 @@ class ServerView extends Component<ServerProps> {
         };
         const cmdUpdate = () => {
             ch.command('server', 'update', {
-                hostName:   state.hostName,
-                groupName:  state.groupName,
+                hostName: state.hostName,
+                groupName: state.groupName,
                 teamNumber: parseInt(state.teamNumber, 10),
                 playerName: state.playerName,
             });
@@ -61,11 +60,14 @@ class ServerView extends Component<ServerProps> {
 
         return <div class="card input-grid">
             <label for="hostName">Hostname:</label>
-            <input type="text" value={server.hostName} disabled={server.isConnected} id="hostName" onChange={onChanged.bind(this, 'hostName')}/>
+            <input type="text" value={server.hostName} disabled={server.isConnected} id="hostName"
+                   onChange={onChanged.bind(this, 'hostName')}/>
             <label for="groupName">Group:</label>
-            <input type="text" value={server.groupName} disabled={server.isConnected} id="groupName" onChange={onChanged.bind(this, 'groupName')}/>
+            <input type="text" value={server.groupName} disabled={server.isConnected} id="groupName"
+                   onChange={onChanged.bind(this, 'groupName')}/>
             <label for="teamNumber">Team:</label>
-            <input type="number" value={server.teamNumber} id="teamNumber" onChange={onChanged.bind(this, 'teamNumber')}/>
+            <input type="number" value={server.teamNumber} id="teamNumber"
+                   onChange={onChanged.bind(this, 'teamNumber')}/>
             <label for="playerName">Player:</label>
             <input type="text" value={server.playerName} id="playerName" onChange={onChanged.bind(this, 'playerName')}/>
             {connectButton()}

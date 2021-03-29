@@ -16,11 +16,11 @@ export default ({ch, vm}: TopLevelProps) => {
     }
 
     return (<Fragment>
-        <div class="card">
-            <label for="romFile">ROM:</label><input id="romFile" type="file" onChange={(e) => fileChosen(e)}/>
-        </div>
+        <div class="card input-grid">
+            <label for="romFile">ROM:</label>
+            <input id="romFile" type="file" onChange={(e) => fileChosen(e)}/>
         {rom.isLoaded &&
-            <div class="card input-grid">
+            <Fragment>
                 <label>Name:</label>
                 <input class="mono" readonly value={rom.name} />
                 <label>Title:</label>
@@ -29,7 +29,8 @@ export default ({ch, vm}: TopLevelProps) => {
                 <input class="mono" readonly value={rom.region} />
                 <label>Version:</label>
                 <input class="mono" readonly value={rom.version} />
-            </div>
+            </Fragment>
         }
+        </div>
     </Fragment>);
 }
