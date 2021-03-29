@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"log"
+	"o2/client"
 	"o2/snes"
 	"strings"
 )
@@ -19,6 +20,7 @@ const (
 type Game struct {
 	rom   *snes.ROM
 	queue snes.Queue
+	client *client.Client
 
 	running bool
 
@@ -30,14 +32,6 @@ type Game struct {
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
-}
-
-func (g *Game) ROM() *snes.ROM {
-	return g.rom
-}
-
-func (g *Game) SNES() snes.Queue {
-	return g.queue
 }
 
 func (g *Game) Title() string {
