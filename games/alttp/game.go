@@ -3,6 +3,8 @@ package alttp
 import (
 	"log"
 	"o2/client"
+	"o2/client/protocol01"
+	"o2/client/protocol02"
 	"o2/snes"
 	"strings"
 )
@@ -88,10 +90,13 @@ func (g *Game) run() {
 		g.cmdSeqs[i] = q.MakeReadCommands(r)
 	}
 
+	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
+	// 0x1EA5D = 01 (was 02)
 	q.EnqueueMulti(g.cmdSeqs[ReadMain])
 
 	for {
 		select {
+		// wait for SNES memory read completion:
 		case rsp := <-readCompletion:
 			if !g.IsRunning() {
 				break
@@ -107,8 +112,13 @@ func (g *Game) run() {
 
 			break
 
-			//case net.receive:
-			//// TODO: receive updates from other players
+		// wait for network message from server:
+		case msg := <-g.client.Read():
+			err := g.handleNetMessage(msg)
+			if err != nil {
+				break
+			}
+
 			//g.queue.Enqueue(g.queue.MakeWriteCommands(snes.Write{
 			//	Address:    0,
 			//	Size:       0,
@@ -116,7 +126,7 @@ func (g *Game) run() {
 			//	Extra:      nil,
 			//	Completion: nil,
 			//}))
-			//break
+			break
 		}
 	}
 }
@@ -149,5 +159,33 @@ func (g *Game) readMainComplete() {
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
+	}
+}
+
+func (g *Game) handleNetMessage(msg []byte) (err error) {
+	var protocol uint8
+
+	r, err := client.ParseHeader(msg, &protocol)
+	if err != nil {
+		return
+	}
+
+	switch protocol {
+	case 1:
+		var header protocol01.Header
+		err = protocol01.Parse(r, &header)
+		if err != nil {
+			return
+		}
+		return
+	case 2:
+		var header protocol02.Header
+		err = protocol02.Parse(r, &header)
+		if err != nil {
+			return
+		}
+		return
+	default:
+		return
 	}
 }

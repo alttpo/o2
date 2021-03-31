@@ -1,19 +1,19 @@
-package client
+package protocol02
 
 import (
 	"bytes"
 	"encoding/binary"
 )
 
-type P02Kind byte
+type Kind byte
 
 const (
-	RequestIndex      = P02Kind(0x00)
-	Broadcast         = P02Kind(0x01)
-	BroadcastToSector = P02Kind(0x02)
+	RequestIndex      = Kind(0x00)
+	Broadcast         = Kind(0x01)
+	BroadcastToSector = Kind(0x02)
 )
 
-func (k P02Kind) String() string {
+func (k Kind) String() string {
 	switch k {
 	case RequestIndex:
 		return "request_index"
@@ -25,7 +25,7 @@ func (k P02Kind) String() string {
 	return "unknown"
 }
 
-func make02Packet(groupBuf []byte, kind P02Kind) (buf *bytes.Buffer) {
+func MakePacket(groupBuf []byte, kind Kind) (buf *bytes.Buffer) {
 	// construct message:
 	buf = &bytes.Buffer{}
 	header := uint16(25887)
