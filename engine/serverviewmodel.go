@@ -98,10 +98,15 @@ func (v *ServerViewModel) Disconnect() error {
 func (v *ServerViewModel) UpdateData(args *ServerUpdateCommandArgs) error {
 	defer v.c.UpdateAndNotifyView()
 
-	v.HostName = args.HostName
-	v.GroupName = args.GroupName
+	if !v.IsConnected {
+		v.HostName = args.HostName
+		v.GroupName = args.GroupName
+	}
+
+	// TODO: transfer to Game instance
 	v.PlayerName = args.PlayerName
 	v.TeamNumber = args.TeamNumber
 	v.MarkDirty()
+
 	return nil
 }
