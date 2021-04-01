@@ -3,31 +3,20 @@ package alttp
 import (
 	"log"
 	"o2/client"
-	"o2/client/protocol01"
-	"o2/client/protocol02"
 	"o2/snes"
 	"strings"
 )
 
-type ReadOp int
-
-const (
-	ReadMain ReadOp = iota
-	ReadInventory
-
-	ReadCount
-)
-
 // implements game.Game
 type Game struct {
-	rom   *snes.ROM
-	queue snes.Queue
+	rom    *snes.ROM
+	queue  snes.Queue
 	client *client.Client
 
 	running bool
 
-	reads   [ReadCount]snes.Read
-	cmdSeqs [ReadCount]snes.CommandSequence
+	readQueue             []snes.Read
+	readCompletionChannel chan snes.Response
 
 	wram [0x20000]byte
 
@@ -65,7 +54,28 @@ func (g *Game) Start() {
 	go g.run()
 }
 
-func (g *Game) handleRead(rsp snes.Response) {
+func (g *Game) Stop() {
+	g.running = false
+}
+
+func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
+	g.readQueue = append(g.readQueue, snes.Read{
+		Address:    addr,
+		Size:       size,
+		Extra:      complete,
+		Completion: g.readCompletionChannel,
+	})
+}
+
+func (g *Game) readSubmit() {
+	sequence := g.queue.MakeReadCommands(g.readQueue...)
+	g.queue.EnqueueMulti(sequence)
+
+	// TODO: consider just clearing length instead to avoid realloc
+	g.readQueue = nil
+}
+
+func (g *Game) handleSNESRead(rsp snes.Response) {
 	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
 
 	// copy data read into our wram array:
@@ -77,33 +87,26 @@ func (g *Game) handleRead(rsp snes.Response) {
 
 // run in a separate goroutine
 func (g *Game) run() {
-	q := g.queue
-
-	readCompletion := make(chan snes.Response)
-
-	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.reads[ReadMain] = snes.Read{Address: 0xF50010, Size: 0xF0, Extra: g.readMainComplete}
-	g.reads[ReadInventory] = snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
-
-	for i, r := range g.reads {
-		r.Completion = readCompletion
-		g.cmdSeqs[i] = q.MakeReadCommands(r)
-	}
-
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
-	q.EnqueueMulti(g.cmdSeqs[ReadMain])
+	g.readCompletionChannel = make(chan snes.Response)
+
+	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+	g.readEnqueue(0xF50010, 0xF0, g.readMainComplete)
+	g.readSubmit()
+
+	//readInventory: snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
 
 	for {
 		select {
 		// wait for SNES memory read completion:
-		case rsp := <-readCompletion:
+		case rsp := <-g.readCompletionChannel:
 			if !g.IsRunning() {
 				break
 			}
 
 			// copy the data into our wram shadow:
-			g.handleRead(rsp)
+			g.handleSNESRead(rsp)
 
 			complete := rsp.Extra.(func())
 			if complete != nil {
@@ -131,15 +134,11 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) Stop() {
-	g.running = false
-}
-
 func (g *Game) readMainComplete() {
-	q := g.queue
+	defer g.readSubmit()
 
 	// requeue the main read:
-	q.EnqueueMulti(g.cmdSeqs[ReadMain])
+	g.readEnqueue(0xF50010, 0xF0, g.readMainComplete)
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
@@ -159,33 +158,5 @@ func (g *Game) readMainComplete() {
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
-	}
-}
-
-func (g *Game) handleNetMessage(msg []byte) (err error) {
-	var protocol uint8
-
-	r, err := client.ParseHeader(msg, &protocol)
-	if err != nil {
-		return
-	}
-
-	switch protocol {
-	case 1:
-		var header protocol01.Header
-		err = protocol01.Parse(r, &header)
-		if err != nil {
-			return
-		}
-		return
-	case 2:
-		var header protocol02.Header
-		err = protocol02.Parse(r, &header)
-		if err != nil {
-			return
-		}
-		return
-	default:
-		return
 	}
 }
