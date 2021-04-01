@@ -3,6 +3,7 @@ package alttp
 import (
 	"log"
 	"o2/client"
+	"o2/client/protocol02"
 	"o2/games"
 	"o2/snes"
 	"strings"
@@ -16,6 +17,8 @@ type Game struct {
 	rom    *snes.ROM
 	queue  snes.Queue
 	client *client.Client
+	// TODO: receive from viewModel
+	group  [20]byte
 
 	localIndex int // index into the players array that local points to (or -1 if not connected)
 	local      *Player
@@ -183,6 +186,12 @@ func (g *Game) readMainComplete() {
 	g.lastGameFrame = g.wram[0x1A]
 
 	log.Printf("%08x\n", g.localFrame)
+
+	if g.localIndex < 0 {
+		// request our player index:
+		p := protocol02.MakePacket(g.group, protocol02.RequestIndex, uint16(0))
+		g.client.Write() <- p.Bytes()
+	}
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
