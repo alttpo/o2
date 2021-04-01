@@ -3,15 +3,23 @@ package alttp
 import (
 	"log"
 	"o2/client"
+	"o2/games"
 	"o2/snes"
 	"strings"
 )
+
+// can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
+const MaxPlayers = 256
 
 // implements game.Game
 type Game struct {
 	rom    *snes.ROM
 	queue  snes.Queue
 	client *client.Client
+
+	localIndex int // index into the players array that local points to (or -1 if not connected)
+	local      *Player
+	players    [MaxPlayers]Player // theoretically can extend this to 65536 players
 
 	running bool
 
@@ -23,6 +31,23 @@ type Game struct {
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
+}
+
+func (f *Factory) NewGame(queue snes.Queue, rom *snes.ROM, client *client.Client) (games.Game, error) {
+	g := &Game{
+		rom:                   rom,
+		queue:                 queue,
+		client:                client,
+		running:               false,
+		readCompletionChannel: make(chan snes.Response, 8),
+	}
+
+	// initialize WRAM to non-zero values:
+	for i := range g.wram {
+		g.wram[i] = 0xFF
+	}
+
+	return g, nil
 }
 
 func (g *Game) Title() string {
@@ -50,6 +75,10 @@ func (g *Game) Start() {
 		return
 	}
 	g.running = true
+
+	// create a temporary Player instance until we get our Index assigned from the server:
+	g.localIndex = -1
+	g.local = &Player{Index: -1}
 
 	go g.run()
 }
@@ -89,7 +118,6 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
-	g.readCompletionChannel = make(chan snes.Response)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	g.readEnqueue(0xF50010, 0xF0, g.readMainComplete)

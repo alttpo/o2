@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"o2/client"
 	"o2/games"
 	"o2/snes"
 )
@@ -35,15 +34,6 @@ func (f *Factory) CanPlay(rom *snes.ROM) (ok bool, whyNot string) {
 
 func (f *Factory) Patcher(rom *snes.ROM) games.Patcher {
 	return &Patcher{rom: rom}
-}
-
-func (f *Factory) NewGame(queue snes.Queue, rom *snes.ROM, client *client.Client) (games.Game, error) {
-	return &Game{
-		rom:     rom,
-		queue:   queue,
-		client:  client,
-		running: false,
-	}, nil
 }
 
 func init() {
