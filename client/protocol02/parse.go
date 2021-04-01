@@ -12,18 +12,15 @@ type Header struct {
 }
 
 func Parse(r io.Reader, header *Header) (err error) {
-	_, err = r.Read(header.Group[:])
-	if err != nil {
+	if _, err = r.Read(header.Group[:]); err != nil {
 		return
 	}
 
-	var kind Kind
-	if err = binary.Read(r, binary.LittleEndian, &kind); err != nil {
+	if err = binary.Read(r, binary.LittleEndian, &header.Kind); err != nil {
 		return
 	}
 
-	var index uint16
-	if err = binary.Read(r, binary.LittleEndian, &index); err != nil {
+	if err = binary.Read(r, binary.LittleEndian, &header.Index); err != nil {
 		return
 	}
 

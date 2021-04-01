@@ -3,12 +3,12 @@ package protocol01
 import (
 	"encoding/binary"
 	"io"
-	"log"
 )
 
 type Header struct {
 	Group      string
 	Name       string
+	Index      uint16
 	ClientType uint8
 }
 
@@ -33,20 +33,19 @@ func readTinyString(r io.Reader) (value string, err error) {
 }
 
 func Parse(r io.Reader, header *Header) (err error) {
-	header.Group, err = readTinyString(r)
-	if err != nil {
-		log.Print(err)
+	if header.Group, err = readTinyString(r); err != nil {
 		return
 	}
 
-	header.Name, err = readTinyString(r)
-	if err != nil {
-		log.Print(err)
+	if header.Name, err = readTinyString(r); err != nil {
+		return
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &header.Index); err != nil {
 		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &header.ClientType); err != nil {
-		log.Print(err)
 		return
 	}
 
