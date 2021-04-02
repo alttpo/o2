@@ -2,11 +2,12 @@ package engine
 
 import (
 	"fmt"
+	"o2/interfaces"
 	"o2/snes"
 )
 
 type ROMViewModel struct {
-	commands map[string]Command
+	commands map[string]interfaces.Command
 
 	c *ViewModel
 
@@ -57,7 +58,7 @@ func (v *ROMViewModel) Update() {
 	}
 }
 
-func (v *ROMViewModel) CommandFor(command string) (ce Command, err error) {
+func (v *ROMViewModel) CommandFor(command string) (ce interfaces.Command, err error) {
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
@@ -71,7 +72,7 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 		c: c,
 	}
 
-	v.commands = map[string]Command{
+	v.commands = map[string]interfaces.Command{
 		"name": &ROMNameCommand{v},
 		"data": &ROMDataCommand{v},
 	}
@@ -87,8 +88,8 @@ type ROMNameCommandArgs struct {
 	Name string `json:"name"`
 }
 
-func (ce *ROMNameCommand) CreateArgs() CommandArgs { return &ROMNameCommandArgs{} }
-func (ce *ROMNameCommand) Execute(args CommandArgs) error {
+func (ce *ROMNameCommand) CreateArgs() interfaces.CommandArgs { return &ROMNameCommandArgs{} }
+func (ce *ROMNameCommand) Execute(args interfaces.CommandArgs) error {
 	return ce.v.NameProvided(args.(*ROMNameCommandArgs))
 }
 
@@ -99,10 +100,10 @@ func (v *ROMViewModel) NameProvided(args *ROMNameCommandArgs) error {
 
 type ROMDataCommand struct{ v *ROMViewModel }
 
-func (ce *ROMDataCommand) CreateArgs() CommandArgs {
+func (ce *ROMDataCommand) CreateArgs() interfaces.CommandArgs {
 	panic("this is a binary command")
 }
-func (ce *ROMDataCommand) Execute(args CommandArgs) error {
+func (ce *ROMDataCommand) Execute(args interfaces.CommandArgs) error {
 	return ce.v.DataProvided(args.([]byte))
 }
 

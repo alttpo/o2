@@ -3,13 +3,14 @@ package engine
 import (
 	"fmt"
 	"log"
+	"o2/interfaces"
 	"o2/snes"
 	"time"
 )
 
 // Must be JSON serializable
 type SNESViewModel struct {
-	commands map[string]Command
+	commands map[string]interfaces.Command
 
 	c       *ViewModel
 	isClean bool
@@ -38,7 +39,7 @@ func NewSNESViewModel(c *ViewModel) *SNESViewModel {
 	v := &SNESViewModel{c: c}
 
 	// supported commands:
-	v.commands = map[string]Command{
+	v.commands = map[string]interfaces.Command{
 		"connect":    &ConnectCommandExecutor{v},
 		"disconnect": &DisconnectCommandExecutor{v},
 	}
@@ -154,7 +155,7 @@ func (v *SNESViewModel) Update() {
 }
 
 // Commands:
-func (v *SNESViewModel) CommandFor(command string) (ce Command, err error) {
+func (v *SNESViewModel) CommandFor(command string) (ce interfaces.Command, err error) {
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
@@ -169,8 +170,8 @@ type ConnectCommandArgs struct {
 	Device int    `json:"device"`
 }
 
-func (c *ConnectCommandExecutor) CreateArgs() CommandArgs { return &ConnectCommandArgs{} }
-func (c *ConnectCommandExecutor) Execute(args CommandArgs) error {
+func (c *ConnectCommandExecutor) CreateArgs() interfaces.CommandArgs { return &ConnectCommandArgs{} }
+func (c *ConnectCommandExecutor) Execute(args interfaces.CommandArgs) error {
 	return c.v.Connect(args.(*ConnectCommandArgs))
 }
 
@@ -205,8 +206,8 @@ func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 
 type DisconnectCommandExecutor struct{ v *SNESViewModel }
 
-func (c *DisconnectCommandExecutor) CreateArgs() CommandArgs { return nil }
-func (c *DisconnectCommandExecutor) Execute(_ CommandArgs) error {
+func (c *DisconnectCommandExecutor) CreateArgs() interfaces.CommandArgs { return nil }
+func (c *DisconnectCommandExecutor) Execute(_ interfaces.CommandArgs) error {
 	return c.v.Disconnect()
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/client"
 	"o2/games"
+	"o2/interfaces"
 	"o2/snes"
 )
 
@@ -23,7 +24,7 @@ type ViewModel struct {
 	client *client.Client
 
 	// dependency that notifies view of updated view model:
-	viewNotifier ViewNotifier
+	viewNotifier interfaces.ViewNotifier
 
 	// View Models:
 	viewModels      map[string]interface{}
@@ -59,7 +60,7 @@ func NewViewModel() *ViewModel {
 // initializes all view models:
 func (vm *ViewModel) Init() {
 	for _, model := range vm.viewModels {
-		if i, ok := model.(Initializable); ok {
+		if i, ok := model.(interfaces.Initializable); ok {
 			i.Init()
 		}
 	}
@@ -68,7 +69,7 @@ func (vm *ViewModel) Init() {
 // updates all view models:
 func (vm *ViewModel) Update() {
 	for _, model := range vm.viewModels {
-		if i, ok := model.(Updateable); ok {
+		if i, ok := model.(interfaces.Updateable); ok {
 			i.Update()
 		}
 	}
@@ -77,7 +78,7 @@ func (vm *ViewModel) Update() {
 // updates all view models and notifies view:
 func (vm *ViewModel) UpdateAndNotifyView() {
 	for view, model := range vm.viewModels {
-		if i, ok := model.(Updateable); ok {
+		if i, ok := model.(interfaces.Updateable); ok {
 			i.Update()
 		}
 		vm.NotifyViewOf(view, model)
@@ -91,9 +92,9 @@ func (vm *ViewModel) NotifyView() {
 	}
 }
 
-func notifyView(viewNotifier ViewNotifier, view string, model interface{}) {
+func notifyView(viewNotifier interfaces.ViewNotifier, view string, model interface{}) {
 	viewModel := model
-	if viewModeler, ok := model.(ViewModeler); ok {
+	if viewModeler, ok := model.(interfaces.ViewModeler); ok {
 		viewModel = viewModeler.ViewModel()
 	}
 	viewNotifier.NotifyView(view, viewModel)
@@ -104,7 +105,7 @@ func (vm *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
 		return
 	}
 
-	dirtyable, isDirtyable := model.(Dirtyable)
+	dirtyable, isDirtyable := model.(interfaces.Dirtyable)
 	// ignore IsDirty() check
 
 	notifyView(vm.viewNotifier, view, model)
@@ -119,7 +120,7 @@ func (vm *ViewModel) NotifyViewOf(view string, model interface{}) {
 		return
 	}
 
-	dirtyable, isDirtyable := model.(Dirtyable)
+	dirtyable, isDirtyable := model.(interfaces.Dirtyable)
 	if isDirtyable && !dirtyable.IsDirty() {
 		return
 	}
@@ -131,7 +132,7 @@ func (vm *ViewModel) NotifyViewOf(view string, model interface{}) {
 	}
 }
 
-func (vm *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
+func (vm *ViewModel) NotifyViewTo(viewNotifier interfaces.ViewNotifier) {
 	if viewNotifier == nil {
 		return
 	}
@@ -143,13 +144,13 @@ func (vm *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 }
 
 // Implements ViewCommandHandler
-func (vm *ViewModel) CommandFor(view, command string) (ce Command, err error) {
+func (vm *ViewModel) CommandFor(view, command string) (ce interfaces.Command, err error) {
 	svm, ok := vm.viewModels[view]
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
 	}
 
-	commandHandler, ok := svm.(ViewModelCommandHandler)
+	commandHandler, ok := svm.(interfaces.ViewModelCommandHandler)
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: view model does not handle commands", view, command)
 	}
@@ -349,7 +350,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	vm.UpdateAndNotifyView()
 }
 
-func (vm *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
+func (vm *ViewModel) ProvideViewNotifier(viewNotifier interfaces.ViewNotifier) {
 	vm.viewNotifier = viewNotifier
 }
 

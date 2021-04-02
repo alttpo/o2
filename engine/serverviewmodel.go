@@ -1,9 +1,12 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+	"o2/interfaces"
+)
 
 type ServerViewModel struct {
-	commands map[string]Command
+	commands map[string]interfaces.Command
 
 	c *ViewModel
 
@@ -26,7 +29,7 @@ func NewServerViewModel(c *ViewModel) *ServerViewModel {
 		TeamNumber: 0,
 	}
 
-	v.commands = map[string]Command{
+	v.commands = map[string]interfaces.Command{
 		"connect":    &ServerConnectCommand{v},
 		"disconnect": &ServerDisconnectCommand{v},
 		"update":     &ServerUpdateCommand{v}, // update host, group, player, team
@@ -47,7 +50,7 @@ func (v *ServerViewModel) MarkDirty() {
 	v.isDirty = true
 }
 
-func (v *ServerViewModel) CommandFor(command string) (ce Command, err error) {
+func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err error) {
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
@@ -60,13 +63,13 @@ func (v *ServerViewModel) CommandFor(command string) (ce Command, err error) {
 
 type ServerConnectCommand struct{ v *ServerViewModel }
 
-func (ce *ServerConnectCommand) CreateArgs() CommandArgs     { return nil }
-func (ce *ServerConnectCommand) Execute(_ CommandArgs) error { return ce.v.Connect() }
+func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs     { return nil }
+func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Connect() }
 
 type ServerDisconnectCommand struct{ v *ServerViewModel }
 
-func (ce *ServerDisconnectCommand) CreateArgs() CommandArgs     { return nil }
-func (ce *ServerDisconnectCommand) Execute(_ CommandArgs) error { return ce.v.Disconnect() }
+func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs     { return nil }
+func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Disconnect() }
 
 type ServerUpdateCommand struct{ v *ServerViewModel }
 type ServerUpdateCommandArgs struct {
@@ -76,8 +79,8 @@ type ServerUpdateCommandArgs struct {
 	TeamNumber uint16 `json:"teamNumber"`
 }
 
-func (ce *ServerUpdateCommand) CreateArgs() CommandArgs { return &ServerUpdateCommandArgs{} }
-func (ce *ServerUpdateCommand) Execute(args CommandArgs) error {
+func (ce *ServerUpdateCommand) CreateArgs() interfaces.CommandArgs { return &ServerUpdateCommandArgs{} }
+func (ce *ServerUpdateCommand) Execute(args interfaces.CommandArgs) error {
 	return ce.v.UpdateData(args.(*ServerUpdateCommandArgs))
 }
 

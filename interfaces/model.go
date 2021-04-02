@@ -1,4 +1,4 @@
-package engine
+package interfaces
 
 type Object map[string]interface{}
 

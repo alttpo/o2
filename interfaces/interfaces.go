@@ -1,10 +1,11 @@
-package engine
+package interfaces
+
+type CommandArgs interface{}
 
 type ViewModeler interface {
 	ViewModel() interface{}
 }
 
-type CommandArgs interface{}
 type Command interface {
 	CreateArgs() CommandArgs
 	Execute(args CommandArgs) error
