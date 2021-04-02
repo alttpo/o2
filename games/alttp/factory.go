@@ -5,6 +5,8 @@ import (
 	"o2/snes"
 )
 
+var gameName = "ALTTP"
+
 type Factory struct{}
 
 var factory *Factory
@@ -38,5 +40,5 @@ func (f *Factory) Patcher(rom *snes.ROM) games.Patcher {
 
 func init() {
 	factory = &Factory{}
-	games.Register("ALTTP", factory)
+	games.Register(gameName, factory)
 }

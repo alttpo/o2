@@ -16,15 +16,14 @@ const MaxPlayers = 256
 
 // implements game.Game
 type Game struct {
-	rom    *snes.ROM
-	queue  snes.Queue
-	client *client.Client
-
-	observers interfaces.ObserverList
+	rom          *snes.ROM
+	queue        snes.Queue
+	client       *client.Client
+	viewNotifier interfaces.ViewNotifier
 
 	localIndex int // index into the players array that local points to (or -1 if not connected)
 	local      *Player
-	players    [MaxPlayers]Player // theoretically can extend this to 65536 players
+	players    [MaxPlayers]Player
 
 	running bool
 
@@ -38,16 +37,22 @@ type Game struct {
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
 
 	// serializable ViewModel:
-	TeamNumber int    `json:"teamNumber"`
+	clean      bool
+	Team       int    `json:"team"`
 	PlayerName string `json:"playerName"`
 }
 
-func (f *Factory) NewGame(queue snes.Queue, rom *snes.ROM, client *client.Client) (games.Game, error) {
+func (f *Factory) NewGame(
+	queue snes.Queue,
+	rom *snes.ROM,
+	client *client.Client,
+	viewNotifier interfaces.ViewNotifier,
+) (games.Game, error) {
 	g := &Game{
 		rom:                   rom,
 		queue:                 queue,
 		client:                client,
-		observers:             make(interfaces.ObserverList),
+		viewNotifier:          viewNotifier,
 		running:               false,
 		readCompletionChannel: make(chan snes.Response, 8),
 	}
@@ -95,25 +100,6 @@ func (g *Game) Start() {
 
 func (g *Game) Stop() {
 	g.running = false
-}
-
-func (g *Game) Subscribe(observer interfaces.Observer) {
-	g.observers[observer] = observer
-}
-
-func (g *Game) Unsubscribe(observer interfaces.Observer) {
-	delete(g.observers, observer)
-}
-
-func (g *Game) notify() {
-	// update the public serializable ViewModel:
-	g.TeamNumber = g.local.Team
-	g.PlayerName = g.local.Name
-
-	// notify observers of changes:
-	for _, notifier := range g.observers {
-		notifier.Notify(g)
-	}
 }
 
 func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
@@ -222,9 +208,6 @@ func (g *Game) readMainComplete() {
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
 	}
-
-	// send ViewModel:
-	g.notify()
 }
 
 func (g *Game) Send(m *bytes.Buffer) {

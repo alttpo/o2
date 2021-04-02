@@ -31,7 +31,6 @@ type ViewModel struct {
 	snesViewModel   *SNESViewModel
 	romViewModel    *ROMViewModel
 	serverViewModel *ServerViewModel
-	gameViewModel   *GameViewModel
 }
 
 func NewViewModel() *ViewModel {
@@ -43,7 +42,6 @@ func NewViewModel() *ViewModel {
 	vm.snesViewModel = NewSNESViewModel(vm)
 	vm.romViewModel = NewROMViewModel(vm)
 	vm.serverViewModel = NewServerViewModel(vm)
-	vm.gameViewModel = NewGameViewModel(vm)
 
 	// assign unique names to each view for easy binding with html/js UI:
 	vm.viewModels = map[string]interface{}{
@@ -51,7 +49,6 @@ func NewViewModel() *ViewModel {
 		"snes":   vm.snesViewModel,
 		"rom":    vm.romViewModel,
 		"server": vm.serverViewModel,
-		"game":   vm.gameViewModel,
 	}
 
 	return vm
@@ -145,7 +142,17 @@ func (vm *ViewModel) NotifyViewTo(viewNotifier interfaces.ViewNotifier) {
 
 // Implements ViewCommandHandler
 func (vm *ViewModel) CommandFor(view, command string) (ce interfaces.Command, err error) {
-	svm, ok := vm.viewModels[view]
+	var svm interface{}
+	var ok bool
+
+	if view == "game" {
+		if vm.game == nil {
+			return nil, fmt.Errorf("view=%s,cmd=%s: game view model not available yet", view, command)
+		}
+		svm, ok = vm.game, true
+	} else {
+		svm, ok = vm.viewModels[view]
+	}
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
 	}
@@ -189,6 +196,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 		vm.dev,
 		vm.nextRom,
 		vm.client,
+		vm.viewNotifier,
 	)
 	if err != nil {
 		return false
@@ -196,8 +204,6 @@ func (vm *ViewModel) tryCreateGame() bool {
 
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
-
-	vm.gameViewModel.GameCreated()
 
 	// Load the ROM:
 	vm.game.Load()

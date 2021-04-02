@@ -2,6 +2,7 @@ package games
 
 import (
 	"o2/client"
+	"o2/interfaces"
 	"o2/snes"
 	"sort"
 	"sync"
@@ -20,7 +21,7 @@ type Factory interface {
 		queue snes.Queue,
 		rom *snes.ROM,
 		client *client.Client,
-	) (Game, error)
+		viewNotifier interfaces.ViewNotifier) (Game, error)
 }
 
 type Patcher interface {
