@@ -30,6 +30,7 @@ type ViewModel struct {
 	snesViewModel   *SNESViewModel
 	romViewModel    *ROMViewModel
 	serverViewModel *ServerViewModel
+	gameViewModel   *GameViewModel
 }
 
 func NewViewModel() *ViewModel {
@@ -41,7 +42,7 @@ func NewViewModel() *ViewModel {
 	vm.snesViewModel = NewSNESViewModel(vm)
 	vm.romViewModel = NewROMViewModel(vm)
 	vm.serverViewModel = NewServerViewModel(vm)
-	//vm.gameScreen =    &GameScreen{controller: vm}
+	vm.gameViewModel = NewGameViewModel(vm)
 
 	// assign unique names to each view for easy binding with html/js UI:
 	vm.viewModels = map[string]interface{}{
@@ -49,6 +50,7 @@ func NewViewModel() *ViewModel {
 		"snes":   vm.snesViewModel,
 		"rom":    vm.romViewModel,
 		"server": vm.serverViewModel,
+		"game":   vm.gameViewModel,
 	}
 
 	return vm
@@ -89,6 +91,14 @@ func (vm *ViewModel) NotifyView() {
 	}
 }
 
+func notifyView(viewNotifier ViewNotifier, view string, model interface{}) {
+	viewModel := model
+	if viewModeler, ok := model.(ViewModeler); ok {
+		viewModel = viewModeler.ViewModel()
+	}
+	viewNotifier.NotifyView(view, viewModel)
+}
+
 func (vm *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
 	if vm.viewNotifier == nil {
 		return
@@ -97,7 +107,7 @@ func (vm *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
 	dirtyable, isDirtyable := model.(Dirtyable)
 	// ignore IsDirty() check
 
-	vm.viewNotifier.NotifyView(view, model)
+	notifyView(vm.viewNotifier, view, model)
 
 	if isDirtyable {
 		dirtyable.ClearDirty()
@@ -114,7 +124,7 @@ func (vm *ViewModel) NotifyViewOf(view string, model interface{}) {
 		return
 	}
 
-	vm.viewNotifier.NotifyView(view, model)
+	notifyView(vm.viewNotifier, view, model)
 
 	if isDirtyable {
 		dirtyable.ClearDirty()
@@ -128,7 +138,7 @@ func (vm *ViewModel) NotifyViewTo(viewNotifier ViewNotifier) {
 
 	// send all view models to this notifier regardless of dirty state:
 	for view, model := range vm.viewModels {
-		viewNotifier.NotifyView(view, model)
+		notifyView(viewNotifier, view, model)
 	}
 }
 
@@ -185,6 +195,8 @@ func (vm *ViewModel) tryCreateGame() bool {
 
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
+
+	vm.gameViewModel.GameCreated()
 
 	// Load the ROM:
 	vm.game.Load()
@@ -344,10 +356,11 @@ func (vm *ViewModel) ProvideViewNotifier(viewNotifier ViewNotifier) {
 func (vm *ViewModel) ConnectServer() {
 	defer vm.serverViewModel.MarkDirty()
 
-	err := vm.client.Connect(vm.serverViewModel.HostName + ":4590")
+	err := vm.client.Connect(vm.serverViewModel.HostName, vm.serverViewModel.GroupName)
 	vm.serverViewModel.IsConnected = vm.client.IsConnected()
 	if err != nil {
 		log.Print(err)
+		return
 	}
 }
 

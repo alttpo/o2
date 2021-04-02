@@ -14,30 +14,33 @@ type Client struct {
 	isConnected bool
 	read        chan []byte
 	write       chan []byte
+
+	// model state:
+	hostname string
+	group    [20]byte
 }
 
 func NewClient() *Client {
 	return &Client{}
 }
 
-func (c *Client) Write() chan<- []byte {
-	return c.write
-}
+func (c *Client) Group() []byte    { return c.group[:] }
+func (c *Client) Hostname() string { return c.hostname }
 
-func (c *Client) Read() <-chan []byte {
-	return c.read
-}
+func (c *Client) Write() chan<- []byte { return c.write }
+func (c *Client) Read() <-chan []byte  { return c.read }
 
-func (c *Client) IsConnected() bool {
-	return c.isConnected
-}
+func (c *Client) IsConnected() bool { return c.isConnected }
 
-func (c *Client) Connect(hostname string) (err error) {
+func (c *Client) Connect(hostname string, group string) (err error) {
 	if c.isConnected {
 		return fmt.Errorf("already connected")
 	}
 
-	raddr, err := net.ResolveUDPAddr("udp", hostname)
+	c.hostname = hostname
+	copy(c.group[:], group)
+
+	raddr, err := net.ResolveUDPAddr("udp", hostname+":4590")
 	if err != nil {
 		return
 	}

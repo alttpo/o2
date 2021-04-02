@@ -1,10 +1,12 @@
 package alttp
 
 import (
+	"bytes"
 	"log"
 	"o2/client"
 	"o2/client/protocol02"
 	"o2/games"
+	"o2/interfaces"
 	"o2/snes"
 	"strings"
 )
@@ -17,8 +19,8 @@ type Game struct {
 	rom    *snes.ROM
 	queue  snes.Queue
 	client *client.Client
-	// TODO: receive from viewModel
-	group  [20]byte
+
+	observers interfaces.ObserverList
 
 	localIndex int // index into the players array that local points to (or -1 if not connected)
 	local      *Player
@@ -34,6 +36,10 @@ type Game struct {
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
+
+	// serializable ViewModel:
+	TeamNumber int    `json:"teamNumber"`
+	PlayerName string `json:"playerName"`
 }
 
 func (f *Factory) NewGame(queue snes.Queue, rom *snes.ROM, client *client.Client) (games.Game, error) {
@@ -41,6 +47,7 @@ func (f *Factory) NewGame(queue snes.Queue, rom *snes.ROM, client *client.Client
 		rom:                   rom,
 		queue:                 queue,
 		client:                client,
+		observers:             make(interfaces.ObserverList),
 		running:               false,
 		readCompletionChannel: make(chan snes.Response, 8),
 	}
@@ -88,6 +95,25 @@ func (g *Game) Start() {
 
 func (g *Game) Stop() {
 	g.running = false
+}
+
+func (g *Game) Subscribe(observer interfaces.Observer) {
+	g.observers[observer] = observer
+}
+
+func (g *Game) Unsubscribe(observer interfaces.Observer) {
+	delete(g.observers, observer)
+}
+
+func (g *Game) notify() {
+	// update the public serializable ViewModel:
+	g.TeamNumber = g.local.Team
+	g.PlayerName = g.local.Name
+
+	// notify observers of changes:
+	for _, notifier := range g.observers {
+		notifier.Notify(g)
+	}
 }
 
 func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
@@ -189,11 +215,22 @@ func (g *Game) readMainComplete() {
 
 	if g.localIndex < 0 {
 		// request our player index:
-		p := protocol02.MakePacket(g.group, protocol02.RequestIndex, uint16(0))
-		g.client.Write() <- p.Bytes()
+		m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
+		g.Send(m)
 	}
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
 	}
+
+	// send ViewModel:
+	g.notify()
+}
+
+func (g *Game) Send(m *bytes.Buffer) {
+	if !g.client.IsConnected() {
+		return
+	}
+
+	g.client.Write() <- m.Bytes()
 }

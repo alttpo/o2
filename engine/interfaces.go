@@ -1,19 +1,7 @@
 package engine
 
-type Object map[string]interface{}
-
-type Initializable interface {
-	Init()
-}
-
-type Updateable interface {
-	Update()
-}
-
-type Dirtyable interface {
-	IsDirty() bool
-	ClearDirty()
-	MarkDirty()
+type ViewModeler interface {
+	ViewModel() interface{}
 }
 
 type CommandArgs interface{}

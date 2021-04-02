@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-func MakePacket(groupBuf [20]byte, kind Kind, index uint16) (buf *bytes.Buffer) {
+func MakePacket(group []byte, kind Kind, index uint16) (buf *bytes.Buffer) {
 	// construct message:
 	buf = &bytes.Buffer{}
 	header := uint16(25887)
@@ -14,7 +14,7 @@ func MakePacket(groupBuf [20]byte, kind Kind, index uint16) (buf *bytes.Buffer) 
 	buf.WriteByte(protocol)
 
 	// protocol packet:
-	buf.Write(groupBuf[:])
+	buf.Write(group[:])
 	buf.WriteByte(byte(kind))
 	_ = binary.Write(buf, binary.LittleEndian, &index)
 
