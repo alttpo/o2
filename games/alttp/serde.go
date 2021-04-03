@@ -100,7 +100,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		// read message type or expect an EOF:
 		var msgType MessageType
 		if err = binary.Read(r, binary.LittleEndian, &msgType); err != nil {
-			log.Println(err)
+			//log.Println(err)
 			return
 		}
 
@@ -112,9 +112,9 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		}
 
 		// call deserializer for the message type:
-		log.Printf("deserializing message type %02x\n", msgType)
+		//log.Printf("deserializing message type %02x\n", msgType)
 		if err = deserTable[msgType](p, r); err != nil {
-			log.Println(err)
+			//log.Println(err)
 			return
 		}
 	}
@@ -202,7 +202,7 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		return
 	}
 
-	log.Printf("%04x, %04x\n", p.X, p.Y)
+	log.Printf("[%02x]: %04x, %04x\n", uint8(p.Index), p.X, p.Y)
 
 	return
 }
@@ -450,6 +450,10 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing name: %w", err))
 		return
 	}
+	lastName := p.Name
 	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
+	if lastName != p.Name {
+		log.Printf("[%02x]: %s joined\n", uint8(p.Index), p.Name)
+	}
 	return
 }

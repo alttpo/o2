@@ -83,7 +83,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		case protocol02.BroadcastToSector:
 			fallthrough
 		case protocol02.Broadcast:
-			log.Printf("%s\n", header.Kind.String())
+			//log.Printf("%s\n", header.Kind.String())
 			return g.players[header.Index].Deserialize(r)
 		default:
 			// TODO: diagnostics
