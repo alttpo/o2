@@ -2,7 +2,9 @@ package alttp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
+	"log"
 )
 
 // NOTE: increment this when the serialization code changes in an incompatible way
@@ -53,22 +55,23 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 	)
 
 	if err = binary.Read(r, binary.LittleEndian, &serializationVersion); err != nil {
-		return
+		panic(err)
 	}
 
 	if serializationVersion != SerializationVersion {
-		return
+		panic(fmt.Errorf("serializationVersion mismatch"))
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.Team); err != nil {
-		return
+		panic(err)
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
-		return
+		panic(err)
 	}
 	// discard stale frame data:
 	if frame < p.Frame {
+		log.Println("discard stale frame data")
 		return
 	}
 	p.Frame = frame
@@ -77,17 +80,21 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		// read message type or expect an EOF:
 		var msgType MessageType
 		if err = binary.Read(r, binary.LittleEndian, &msgType); err != nil {
+			log.Println(err)
 			return
 		}
 
 		// check bounds for message type:
 		if msgType == 0 || msgType >= MsgMaxMessageType {
+			log.Println("msgType out of bounds")
 			// no good recourse to be able to skip over the message
 			return
 		}
 
 		// call deserializer for the message type:
+		log.Printf("deserializing message type %02x\n", msgType)
 		if err = deserTable[msgType](p, r); err != nil {
+			log.Println(err)
 			return
 		}
 	}
@@ -98,61 +105,93 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 
 func DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.Module); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.SubModule); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.SubSubModule); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	var locationLo uint8
 	if err = binary.Read(r, binary.LittleEndian, &locationLo); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	var locationHi uint16
 	if err = binary.Read(r, binary.LittleEndian, &locationHi); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	p.Location = uint32(locationLo) | (uint32(locationHi) << 16)
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.Y); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.Dungeon); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldX); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldY); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.XOffs); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.YOffs); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.PlayerColor); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
 
 	var inSM uint8
 	if err = binary.Read(r, binary.LittleEndian, &inSM); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
+
+	log.Printf("%04x, %04x\n", p.X, p.Y)
 
 	return
 }

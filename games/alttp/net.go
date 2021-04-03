@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"o2/client"
 	"o2/client/protocol01"
@@ -21,6 +22,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 
 	r, err := client.ParseHeader(msg, &protocol)
 	if err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error parsing message header: %w", err))
 		return
 	}
 
@@ -30,6 +33,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		var header protocol01.Header
 		err = protocol01.Parse(r, &header)
 		if err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error parsing protocol 01 header: %w", err))
 			return
 		}
 		if header.ClientType != 1 {
@@ -42,6 +47,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		var header protocol02.Header
 		err = protocol02.Parse(r, &header)
 		if err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error parsing protocol 02 header: %w", err))
 			return
 		}
 
@@ -58,6 +65,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
+			log.Println("requestIndex response")
 			if (g.localIndex < 0) || (g.localIndex != g.local.Index) {
 				g.localIndex = int(header.Index)
 				// copy local player data into players array at the appropriate index:
@@ -68,13 +76,18 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				// repoint local into the array:
 				g.local = &g.players[g.localIndex]
 				g.local.Index = g.localIndex
+				log.Printf("local.index = %d\n", g.localIndex)
 			}
-			break
+			return
 
 		case protocol02.BroadcastToSector:
 			fallthrough
 		case protocol02.Broadcast:
+			log.Printf("%s\n", header.Kind.String())
 			return g.players[header.Index].Deserialize(r)
+		default:
+			// TODO: diagnostics
+			panic(fmt.Errorf("unknown message kind %02x", header.Kind))
 		}
 		return
 	default:

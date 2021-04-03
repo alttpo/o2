@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"log"
 	"o2/client/protocol02"
 	"o2/snes"
 )
@@ -98,7 +97,7 @@ func (g *Game) readMainComplete() {
 	g.localFrame += nextFrame - lastFrame
 	g.lastGameFrame = g.wram[0x1A]
 
-	log.Printf("%08x\n", g.localFrame)
+	//log.Printf("%08x\n", g.localFrame)
 
 	if g.localIndex < 0 {
 		// request our player index:
