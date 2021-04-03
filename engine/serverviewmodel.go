@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"o2/interfaces"
 )
 
@@ -15,24 +16,19 @@ type ServerViewModel struct {
 	IsConnected bool   `json:"isConnected"`
 	HostName    string `json:"hostName"`
 	GroupName   string `json:"groupName"`
-	PlayerName  string `json:"playerName"`
-	TeamNumber  uint16 `json:"teamNumber"`
 }
 
 func NewServerViewModel(c *ViewModel) *ServerViewModel {
 	v := &ServerViewModel{
-		c: c,
+		c:           c,
 		IsConnected: false,
-		HostName: "alttp.online",
-		GroupName: "group",
-		PlayerName: "player",
-		TeamNumber: 0,
+		HostName:    "alttp.online",
+		GroupName:   "group",
 	}
 
 	v.commands = map[string]interfaces.Command{
 		"connect":    &ServerConnectCommand{v},
 		"disconnect": &ServerDisconnectCommand{v},
-		"update":     &ServerUpdateCommand{v}, // update host, group, player, team
 	}
 
 	return v
@@ -62,27 +58,47 @@ func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err
 // Commands
 
 type ServerConnectCommand struct{ v *ServerViewModel }
+type ServerConnectCommandArgs struct {
+	HostName  string `json:"hostName"`
+	GroupName string `json:"groupName"`
+}
 
-func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs     { return nil }
-func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Connect() }
+func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs {
+	return &ServerConnectCommandArgs{}
+}
+func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
+	v := ce.v
+
+	if v.IsConnected {
+		return nil
+	}
+
+	ca, ok := args.(*ServerConnectCommandArgs)
+	if !ok {
+		return fmt.Errorf("command args not of expected type")
+	}
+	v.HostName = ca.HostName
+	v.GroupName = ca.GroupName
+	v.MarkDirty()
+
+	vm := v.c
+
+	err := vm.client.Connect(v.HostName, v.GroupName)
+	v.IsConnected = vm.client.IsConnected()
+	vm.UpdateAndNotifyView()
+
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+
+	return nil
+}
 
 type ServerDisconnectCommand struct{ v *ServerViewModel }
 
 func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs     { return nil }
 func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Disconnect() }
-
-type ServerUpdateCommand struct{ v *ServerViewModel }
-type ServerUpdateCommandArgs struct {
-	HostName   string `json:"hostName"`
-	GroupName  string `json:"groupName"`
-	PlayerName string `json:"playerName"`
-	TeamNumber uint16 `json:"teamNumber"`
-}
-
-func (ce *ServerUpdateCommand) CreateArgs() interfaces.CommandArgs { return &ServerUpdateCommandArgs{} }
-func (ce *ServerUpdateCommand) Execute(args interfaces.CommandArgs) error {
-	return ce.v.UpdateData(args.(*ServerUpdateCommandArgs))
-}
 
 func (v *ServerViewModel) Connect() error {
 	defer v.c.UpdateAndNotifyView()
@@ -95,21 +111,5 @@ func (v *ServerViewModel) Disconnect() error {
 	defer v.c.UpdateAndNotifyView()
 
 	v.c.DisconnectServer()
-	return nil
-}
-
-func (v *ServerViewModel) UpdateData(args *ServerUpdateCommandArgs) error {
-	defer v.c.UpdateAndNotifyView()
-
-	if !v.IsConnected {
-		v.HostName = args.HostName
-		v.GroupName = args.GroupName
-	}
-
-	// TODO: transfer to Game instance
-	v.PlayerName = args.PlayerName
-	v.TeamNumber = args.TeamNumber
-	v.MarkDirty()
-
 	return nil
 }

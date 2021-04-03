@@ -1,78 +1,52 @@
 import {ServerViewModel} from "./viewmodel";
 import {CommandHandler, TopLevelProps} from "./index";
-import {Component} from 'preact';
+import {useEffect, useState} from "preact/hooks";
 
 type ServerProps = {
     ch: CommandHandler;
     server: ServerViewModel;
 };
 
-interface ServerState {
-    hostName: string;
-    groupName: string;
-    teamNumber: string;
-    playerName: string;
-}
+function ServerView({ch, server}: ServerProps) {
+    const [hostName, setHostName] = useState('');
+    const [groupName, setGroupName] = useState('');
 
-class ServerView extends Component<ServerProps> {
-    constructor() {
-        super();
-    }
+    useEffect(() => {
+        setHostName(server.hostName);
+        setGroupName(server.groupName);
+    }, [server]);
 
-    render({ch, server}: ServerProps) {
-        const state: ServerState = {
-            hostName: server.hostName,
-            groupName: server.groupName,
-            teamNumber: server.teamNumber.toString(),
-            playerName: server.playerName,
-        };
+    const cmdConnect = (e: Event) => {
+        e.preventDefault();
+        ch.command('server', 'connect', {
+            hostName,
+            groupName
+        });
+    };
+    const cmdDisconnect = (e: Event) => {
+        e.preventDefault();
+        ch.command('server', 'disconnect', {});
+    };
 
-        const cmdConnect = (e: Event) => {
-            e.preventDefault();
-            ch.command('server', 'connect', {});
-        };
-        const cmdDisconnect = (e: Event) => {
-            e.preventDefault();
-            ch.command('server', 'disconnect', {});
-        };
-        const cmdUpdate = () => {
-            ch.command('server', 'update', {
-                hostName: state.hostName,
-                groupName: state.groupName,
-                teamNumber: parseInt(state.teamNumber, 10),
-                playerName: state.playerName,
-            });
-        };
-        const onChanged = (key: keyof ServerState, e: Event) => {
-            state[key] = ((e.currentTarget as HTMLInputElement).value);
-            cmdUpdate();
-        };
+    const connectButton = () => {
+        if (server.isConnected) {
+            return <button type="button"
+                           onClick={cmdDisconnect.bind(this)}>Disconnect</button>;
+        } else {
+            return <button type="button"
+                           onClick={cmdConnect.bind(this)}>Connect</button>;
+        }
+    };
 
-        const connectButton = () => {
-            if (server.isConnected) {
-                return <button type="button"
-                               onClick={cmdDisconnect.bind(this)}>Disconnect</button>;
-            } else {
-                return <button type="button"
-                               onClick={cmdConnect.bind(this)}>Connect</button>;
-            }
-        };
-
-        return <div class="card input-grid">
-            <label for="hostName">Hostname:</label>
-            <input type="text" value={server.hostName} disabled={server.isConnected} id="hostName"
-                   onChange={onChanged.bind(this, 'hostName')}/>
-            <label for="groupName">Group:</label>
-            <input type="text" value={server.groupName} disabled={server.isConnected} id="groupName"
-                   onChange={onChanged.bind(this, 'groupName')}/>
-            <label for="teamNumber">Team:</label>
-            <input type="number" value={server.teamNumber} id="teamNumber"
-                   onChange={onChanged.bind(this, 'teamNumber')}/>
-            <label for="playerName">Player:</label>
-            <input type="text" value={server.playerName} id="playerName" onChange={onChanged.bind(this, 'playerName')}/>
-            {connectButton()}
-        </div>;
-    }
+    return <div class="card input-grid">
+        <label for="hostName">Hostname:</label>
+        <input type="text" value={hostName} disabled={server.isConnected} id="hostName"
+               onInput={e => setHostName((e.target as HTMLInputElement).value)}/>
+        <label for="groupName">Group:</label>
+        <input type="text" value={groupName} disabled={server.isConnected} id="groupName"
+               onInput={e => setGroupName((e.target as HTMLInputElement).value)}/>
+        {connectButton()}
+    </div>;
 }
 
 export default ({ch, vm}: TopLevelProps) => (<ServerView ch={ch} server={vm.server}/>);
