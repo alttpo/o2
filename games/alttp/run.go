@@ -3,6 +3,7 @@ package alttp
 import (
 	"o2/client/protocol02"
 	"o2/snes"
+	"time"
 )
 
 func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
@@ -42,6 +43,7 @@ func (g *Game) run() {
 	g.readSubmit()
 
 	//readInventory: snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
+	heartbeat := time.NewTicker(250 * time.Millisecond)
 
 	for {
 		select {
@@ -73,6 +75,29 @@ func (g *Game) run() {
 				break
 			}
 			break
+
+		// periodically send basic messages to the server to maintain our connection:
+		case <-heartbeat.C:
+			if g.localIndex < 0 {
+				// request our player index:
+				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
+				g.send(m)
+				break
+			}
+
+			// broadcast player name:
+			{
+				m := protocol02.MakePacket(g.client.Group(), protocol02.Broadcast, uint16(g.local.Index))
+				m.WriteByte(0x0C)
+				var name [20]byte
+				n := copy(name[:], g.local.Name)
+				for ; n < 20; n++ {
+					name[n] = ' '
+				}
+				m.Write(name[:])
+				g.send(m)
+			}
+			break
 		}
 	}
 }
@@ -98,12 +123,6 @@ func (g *Game) readMainComplete() {
 	g.lastGameFrame = g.wram[0x1A]
 
 	//log.Printf("%08x\n", g.localFrame)
-
-	if g.localIndex < 0 {
-		// request our player index:
-		m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
-		g.send(m)
-	}
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
