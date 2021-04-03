@@ -21,7 +21,10 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return &Client{}
+	return &Client{
+		read:  make(chan []byte, 64),
+		write: make(chan []byte, 64),
+	}
 }
 
 func (c *Client) Group() []byte    { return c.group[:] }
@@ -53,10 +56,8 @@ func (c *Client) Connect(hostname string, group string) (err error) {
 		return
 	}
 
-	c.read = make(chan []byte, 64)
-	c.write = make(chan []byte, 64)
-
 	c.isConnected = true
+
 	go c.readLoop()
 	go c.writeLoop()
 
@@ -79,15 +80,33 @@ func (c *Client) Disconnect() {
 		log.Print(err)
 	}
 
-	close(c.read)
-	close(c.write)
+	// signal a disconnect took place:
+	c.read <- nil
+	c.write <- nil
 
+	// empty the write channel:
+	for more := true; more; {
+		select {
+		case <-c.write:
+		default:
+			more = false
+		}
+	}
+
+	// close the underlying connection:
 	err = c.c.Close()
 	if err != nil {
 		log.Print(err)
 	}
 
 	c.c = nil
+}
+
+func (c *Client) Close() {
+	close(c.read)
+	close(c.write)
+	c.read = nil
+	c.write = nil
 }
 
 // must run in a goroutine
@@ -120,6 +139,10 @@ func (c *Client) writeLoop() {
 	defer c.Disconnect()
 
 	for w := range c.write {
+		if w == nil {
+			return
+		}
+
 		// wait for a packet from UDP socket:
 		var _, err = c.c.Write(w)
 		if err != nil {
