@@ -41,9 +41,9 @@ export interface ServerViewModel {
 
     hostName: string;
     groupName: string;
-    playerName: string;
-    teamNumber: number;
 }
 
 export interface GameViewModel {
+    playerName: string;
+    team: number;
 }

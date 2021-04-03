@@ -6,6 +6,7 @@ import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} 
 import SNESView from "./snesview";
 import ROMView from "./romview";
 import ServerView from "./serverview";
+import GameView from "./gameview";
 import {JSXInternal} from "preact/src/jsx";
 import TargetedEvent = JSXInternal.TargetedEvent;
 
@@ -67,8 +68,8 @@ const App = () => {
         status: useState<string>(""),
         snes: useState<SNESViewModel>({drivers: [], isConnected: false}),
         rom: useState<ROMViewModel>({isLoaded: false, region: "", name: "", title: "", version: ""}),
-        server: useState<ServerViewModel>({isConnected: false, hostName: "", groupName: "", playerName: "", teamNumber: 0}),
-        game: useState<GameViewModel>({})
+        server: useState<ServerViewModel>({isConnected: false, hostName: "", groupName: ""}),
+        game: useState<GameViewModel>({playerName: "", team: 0})
     };
 
     const viewModel = {
@@ -151,7 +152,9 @@ const App = () => {
                                checked={tabSelected == "game"}
                                onChange={tabChanged}/>
                         <label for="viewtab4">Game</label>
-                        <div class="content"></div>
+                        <div class="content">
+                            <GameView ch={ch} vm={viewModel}/>
+                        </div>
                     </div>
                 </div>
             </section>
