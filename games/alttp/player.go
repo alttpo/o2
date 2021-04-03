@@ -27,4 +27,6 @@ type Player struct {
 	YOffs uint16
 
 	PlayerColor uint16
+
+	SRAM [0x500]byte
 }

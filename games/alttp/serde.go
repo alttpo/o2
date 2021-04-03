@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 )
 
 // NOTE: increment this when the serialization code changes in an incompatible way
@@ -197,56 +198,138 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeSfx(p *Player, r io.Reader) (err error) {
-
+	var dummy [2]byte
+	_, err = r.Read(dummy[:])
 	return
 }
 
 func DeserializeSprites1(p *Player, r io.Reader) (err error) {
+	var (
+		length uint8
+	)
+	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
+		panic(fmt.Errorf("error deserializing sprites: %w", err))
+	}
+
+	for i := uint8(0); i < length; i++ {
+		var spr [6]byte
+		if _, err = r.Read(spr[:]); err != nil {
+			panic(fmt.Errorf("error deserializing sprite %d: %w", i, err))
+		}
+		if spr[0]&0x80 != 0 {
+			// sprite graphics data 4bpp:
+			var gfx [32]byte
+			if _, err = r.Read(gfx[:]); err != nil {
+				panic(fmt.Errorf("error deserializing sprite %d gfx 0: %w", i, err))
+			}
+			size := (spr[5] >> 1) & 1
+			if size != 0 {
+				if _, err = r.Read(gfx[:]); err != nil {
+					panic(fmt.Errorf("error deserializing sprite %d gfx 1: %w", i, err))
+				}
+				if _, err = r.Read(gfx[:]); err != nil {
+					panic(fmt.Errorf("error deserializing sprite %d gfx 2: %w", i, err))
+				}
+				if _, err = r.Read(gfx[:]); err != nil {
+					panic(fmt.Errorf("error deserializing sprite %d gfx 3: %w", i, err))
+				}
+			}
+		}
+		if spr[5]&0x80 != 0 {
+			// palette data:
+			var pal [32]byte
+			if _, err = r.Read(pal[:]); err != nil {
+				panic(fmt.Errorf("error deserializing sprite %d palette: %w", i, err))
+			}
+		}
+	}
 
 	return
 }
 
 func DeserializeSprites2(p *Player, r io.Reader) (err error) {
-
-	return
+	var dummy [1]byte
+	if _, err = r.Read(dummy[:]); err != nil {
+		panic(fmt.Errorf("error deserializing sprite2: %w", err))
+	}
+	// TODO: pass in start flag
+	return DeserializeSprites1(p, r)
 }
 
 func DeserializeWRAM(p *Player, r io.Reader) (err error) {
-
+	var dummy [3]byte
+	if _, err = r.Read(dummy[:]); err != nil {
+		panic(fmt.Errorf("error deserializing wram: %w", err))
+	}
+	for i := uint8(0); i < dummy[0]; i++ {
+		var syncableByte [4 + 2]byte
+		if _, err = r.Read(syncableByte[:]); err != nil {
+			panic(fmt.Errorf("error deserializing wram syncableByte %d: %w", i, err))
+		}
+	}
 	return
 }
 
 func DeserializeSRAM(p *Player, r io.Reader) (err error) {
+	// something about SM:
+	var dummy [2]byte
+	if _, err = r.Read(dummy[:]); err != nil {
+		panic(fmt.Errorf("error deserializing sram: %w", err))
+	}
 
+	var (
+		start uint16
+		count uint16
+	)
+	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing sram: %w", err))
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing sram: %w", err))
+		return
+	}
+
+	if _, err = r.Read(p.SRAM[start:start+count]); err != nil {
+		panic(fmt.Errorf("error deserializing sram: %w", err))
+	}
 	return
 }
 
 func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
-
+	panic(fmt.Errorf("not implemented"))
 	return
 }
 
 func DeserializeObjects(p *Player, r io.Reader) (err error) {
-
+	panic(fmt.Errorf("not implemented"))
 	return
 }
 
 func DeserializeAncillae(p *Player, r io.Reader) (err error) {
-
+	panic(fmt.Errorf("not implemented"))
 	return
 }
 
 func DeserializeTorches(p *Player, r io.Reader) (err error) {
-
+	panic(fmt.Errorf("not implemented"))
 	return
 }
 
 func DeserializePvP(p *Player, r io.Reader) (err error) {
-
+	panic(fmt.Errorf("not implemented"))
 	return
 }
 
 func DeserializePlayerName(p *Player, r io.Reader) (err error) {
-
+	var name [20]byte
+	if _, err = r.Read(name[:]); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing name: %w", err))
+		return
+	}
+	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
 	return
 }
