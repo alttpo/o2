@@ -38,7 +38,10 @@ func (c *Client) Connect(hostname string, group string) (err error) {
 	}
 
 	c.hostname = hostname
-	copy(c.group[:], group)
+	n := copy(c.group[:], group)
+	for ; n < 20; n++ {
+		c.group[n] = ' '
+	}
 
 	raddr, err := net.ResolveUDPAddr("udp", hostname+":4590")
 	if err != nil {
