@@ -11,6 +11,7 @@ func (g *Game) notifyView() {
 	}
 
 	// update the public serializable ViewModel:
+	g.IsCreated = true
 	g.Team = g.local.Team
 	g.PlayerName = g.local.Name
 	g.clean = true

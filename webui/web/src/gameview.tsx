@@ -36,10 +36,10 @@ function GameView({ch, game}: GameProps) {
 
     return <div class="card input-grid">
         <label for="playerName">Name:</label>
-        <input type="text" value={playerName} id="playerName"
+        <input disabled={!game.isCreated} type="text" value={playerName} id="playerName"
                onInput={onInput.bind(this, setPlayerName, "playerName", (v: string) => v)}/>
         <label for="team">Team:</label>
-        <input type="number" min={0} max={255} value={team} id="team"
+        <input disabled={!game.isCreated} type="number" min={0} max={255} value={team} id="team"
                onInput={onInput.bind(this, setTeam, "team", (v: string) => parseInt(v, 10))}/>
     </div>;
 }

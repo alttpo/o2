@@ -44,6 +44,7 @@ export interface ServerViewModel {
 }
 
 export interface GameViewModel {
+    isCreated: boolean;
     playerName: string;
     team: number;
 }

@@ -38,6 +38,7 @@ type Game struct {
 
 	// serializable ViewModel:
 	clean      bool
+	IsCreated  bool   `json:"isCreated"`
 	Team       int    `json:"team"`
 	PlayerName string `json:"playerName"`
 }
@@ -94,6 +95,9 @@ func (g *Game) Start() {
 	// create a temporary Player instance until we get our Index assigned from the server:
 	g.localIndex = -1
 	g.local = &Player{Index: -1}
+
+	// inform the view that the game is created:
+	g.notifyView()
 
 	go g.run()
 }
