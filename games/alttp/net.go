@@ -17,6 +17,24 @@ func (g *Game) send(m *bytes.Buffer) {
 	g.client.Write() <- m.Bytes()
 }
 
+func (g *Game) makeGamePacket(kind protocol02.Kind) (m *bytes.Buffer) {
+	m = protocol02.MakePacket(
+		g.client.Group(),
+		kind,
+		uint16(g.localIndex),
+	)
+
+	// script protocol:
+	m.WriteByte(SerializationVersion)
+
+	// protocol starts with team number:
+	m.WriteByte(g.local.Team)
+	// frame number to correlate separate packets together:
+	m.WriteByte(g.lastGameFrame)
+
+	return
+}
+
 func (g *Game) handleNetMessage(msg []byte) (err error) {
 	var protocol uint8
 

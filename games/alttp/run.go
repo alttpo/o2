@@ -87,7 +87,7 @@ func (g *Game) run() {
 
 			// broadcast player name:
 			{
-				m := protocol02.MakePacket(g.client.Group(), protocol02.Broadcast, uint16(g.local.Index))
+				m := g.makeGamePacket(protocol02.Broadcast)
 				m.WriteByte(0x0C)
 				var name [20]byte
 				n := copy(name[:], g.local.Name)
