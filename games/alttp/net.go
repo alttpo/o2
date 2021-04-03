@@ -1,11 +1,20 @@
 package alttp
 
 import (
+	"bytes"
 	"log"
 	"o2/client"
 	"o2/client/protocol01"
 	"o2/client/protocol02"
 )
+
+func (g *Game) send(m *bytes.Buffer) {
+	if !g.client.IsConnected() {
+		return
+	}
+
+	g.client.Write() <- m.Bytes()
+}
 
 func (g *Game) handleNetMessage(msg []byte) (err error) {
 	var protocol uint8
