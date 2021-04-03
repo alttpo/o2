@@ -64,18 +64,15 @@ func (g *Game) run() {
 
 		// wait for network message from server:
 		case msg := <-g.client.Read():
+			if msg == nil {
+				// disconnected from server; reset state:
+				g.Reset()
+				break
+			}
 			err := g.handleNetMessage(msg)
 			if err != nil {
 				break
 			}
-
-			//g.queue.Enqueue(g.queue.MakeWriteCommands(snes.Write{
-			//	Address:    0,
-			//	Size:       0,
-			//	Data:       nil,
-			//	Extra:      nil,
-			//	Completion: nil,
-			//}))
 			break
 		}
 	}

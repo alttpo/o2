@@ -79,18 +79,37 @@ func (g *Game) IsRunning() bool {
 	return g.running
 }
 
+func (g *Game) Reset() {
+	g.clean = false
+
+	// clear out players array:
+	for i := range g.players {
+		g.players[i] = Player{}
+	}
+
+	// create a temporary Player instance until we get our Index assigned from the server:
+	g.localIndex = -1
+	g.local = &Player{Index: -1}
+	// preserve last-set info:
+	g.local.Name = g.PlayerName
+	g.local.Team = g.Team
+
+	// initialize WRAM to non-zero values:
+	for i := range g.wram {
+		g.wram[i] = 0xFF
+	}
+
+	// inform the view:
+	g.notifyView()
+}
+
 func (g *Game) Start() {
 	if g.running {
 		return
 	}
 	g.running = true
 
-	// create a temporary Player instance until we get our Index assigned from the server:
-	g.localIndex = -1
-	g.local = &Player{Index: -1}
-
-	// inform the view that the game is created:
-	g.notifyView()
+	g.Reset()
 
 	go g.run()
 }
