@@ -53,11 +53,7 @@ func (f *Factory) NewGame(
 		viewNotifier:          viewNotifier,
 		running:               false,
 		readCompletionChannel: make(chan snes.Response, 8),
-	}
-
-	// initialize WRAM to non-zero values:
-	for i := range g.wram {
-		g.wram[i] = 0xFF
+		IsCreated:             true,
 	}
 
 	return g, nil
