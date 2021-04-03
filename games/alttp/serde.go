@@ -292,7 +292,7 @@ func DeserializeSRAM(p *Player, r io.Reader) (err error) {
 		return
 	}
 
-	if _, err = r.Read(p.SRAM[start:start+count]); err != nil {
+	if _, err = r.Read(p.SRAM[start : start+count]); err != nil {
 		panic(fmt.Errorf("error deserializing sram: %w", err))
 	}
 	return
@@ -309,7 +309,37 @@ func DeserializeObjects(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeAncillae(p *Player, r io.Reader) (err error) {
-	panic(fmt.Errorf("not implemented"))
+	var (
+		count uint8
+		index uint8
+	)
+	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing ancillae: %w", err))
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &index); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing ancillae: %w", err))
+		return
+	}
+	index = index & 0x7F
+
+	var facts [0x20]byte
+	if index < 5 {
+		if _, err = r.Read(facts[:0x20]); err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error deserializing ancillae: %w", err))
+			return
+		}
+	} else {
+		if _, err = r.Read(facts[:0x16]); err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error deserializing ancillae: %w", err))
+			return
+		}
+	}
+
 	return
 }
 
