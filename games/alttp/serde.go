@@ -83,8 +83,14 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
 		panic(err)
 	}
+
 	// discard stale frame data:
-	if frame < p.Frame {
+	nextFrame := int(frame)
+	lastFrame := int(p.Frame)
+	if lastFrame - nextFrame >= 128 {
+		lastFrame -= 256
+	}
+	if nextFrame < lastFrame {
 		log.Println("discard stale frame data")
 		return
 	}
@@ -334,7 +340,7 @@ func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 
 	for i := uint8(0); i < length; i++ {
 		var (
-			offs uint16
+			offs  uint16
 			count uint8
 		)
 		if err = binary.Read(r, binary.LittleEndian, &offs); err != nil {
@@ -377,34 +383,35 @@ func DeserializeObjects(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeAncillae(p *Player, r io.Reader) (err error) {
-	var (
-		count uint8
-		index uint8
-	)
+	var count uint8
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
 		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing ancillae: %w", err))
 		return
 	}
-	if err = binary.Read(r, binary.LittleEndian, &index); err != nil {
-		// TODO: diagnostics
-		panic(fmt.Errorf("error deserializing ancillae: %w", err))
-		return
-	}
-	index = index & 0x7F
 
-	var facts [0x20]byte
-	if index < 5 {
-		if _, err = r.Read(facts[:0x20]); err != nil {
+	for i := uint8(0); i < count; i++ {
+		var index uint8
+		if err = binary.Read(r, binary.LittleEndian, &index); err != nil {
 			// TODO: diagnostics
 			panic(fmt.Errorf("error deserializing ancillae: %w", err))
 			return
 		}
-	} else {
-		if _, err = r.Read(facts[:0x16]); err != nil {
-			// TODO: diagnostics
-			panic(fmt.Errorf("error deserializing ancillae: %w", err))
-			return
+		index = index & 0x7F
+
+		var facts [0x20]byte
+		if index < 5 {
+			if _, err = r.Read(facts[:0x20]); err != nil {
+				// TODO: diagnostics
+				panic(fmt.Errorf("error deserializing ancillae: %w", err))
+				return
+			}
+		} else {
+			if _, err = r.Read(facts[:0x16]); err != nil {
+				// TODO: diagnostics
+				panic(fmt.Errorf("error deserializing ancillae: %w", err))
+				return
+			}
 		}
 	}
 
@@ -412,7 +419,22 @@ func DeserializeAncillae(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeTorches(p *Player, r io.Reader) (err error) {
-	panic(fmt.Errorf("not implemented"))
+	var (
+		count uint8
+	)
+	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing torches: %w", err))
+		return
+	}
+	for i := uint8(0); i < count; i++ {
+		var torch [2]byte
+		if _, err = r.Read(torch[:]); err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error deserializing torches: %w", err))
+			return
+		}
+	}
 	return
 }
 
