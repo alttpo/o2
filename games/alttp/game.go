@@ -36,7 +36,7 @@ type Game struct {
 	// serializable ViewModel:
 	clean      bool
 	IsCreated  bool   `json:"isCreated"`
-	Team       int    `json:"team"`
+	Team       uint8  `json:"team"`
 	PlayerName string `json:"playerName"`
 }
 

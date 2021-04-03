@@ -4,7 +4,7 @@ type Player struct {
 	Index int
 	TTL   uint8
 
-	Team int
+	Team uint8
 	Name string
 
 	Frame uint8

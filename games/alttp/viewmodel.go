@@ -31,7 +31,7 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 
 type setFieldCmd struct{ g *Game }
 type setFieldArgs struct {
-	Team       *int    `json:"team"`
+	Team       *uint8  `json:"team"`
 	PlayerName *string `json:"playerName"`
 }
 
