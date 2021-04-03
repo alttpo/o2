@@ -9,8 +9,9 @@ import (
 const SerializationVersion = 0x13
 
 type MessageType uint8
+
 const (
-	_                    = iota
+	_                       = iota
 	MsgLocation MessageType = iota
 	MsgSfx
 	MsgSprites1
@@ -28,6 +29,7 @@ const (
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
+
 var deserTable = []DeserializeFunc{
 	nil,
 	DeserializeLocation,
@@ -95,6 +97,62 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 }
 
 func DeserializeLocation(p *Player, r io.Reader) (err error) {
+	if err = binary.Read(r, binary.LittleEndian, &p.Module); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.SubModule); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.SubSubModule); err != nil {
+		return
+	}
+
+	var locationLo uint8
+	if err = binary.Read(r, binary.LittleEndian, &locationLo); err != nil {
+		return
+	}
+	var locationHi uint16
+	if err = binary.Read(r, binary.LittleEndian, &locationHi); err != nil {
+		return
+	}
+	p.Location = uint32(locationLo) | (uint32(locationHi) << 16)
+
+	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.Y); err != nil {
+		return
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &p.Dungeon); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
+		return
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldX); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldY); err != nil {
+		return
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &p.XOffs); err != nil {
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &p.YOffs); err != nil {
+		return
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &p.PlayerColor); err != nil {
+		return
+	}
+
+	var inSM uint8
+	if err = binary.Read(r, binary.LittleEndian, &inSM); err != nil {
+		return
+	}
 
 	return
 }
