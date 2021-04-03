@@ -49,6 +49,19 @@ var deserTable = []DeserializeFunc{
 	DeserializePlayerName,
 }
 
+func readU24(r io.Reader) (value uint32, err error) {
+	var valueLo uint8
+	if err = binary.Read(r, binary.LittleEndian, &valueLo); err != nil {
+		return
+	}
+	var valueHi uint16
+	if err = binary.Read(r, binary.LittleEndian, &valueHi); err != nil {
+		return
+	}
+	value = uint32(valueLo) | (uint32(valueHi) << 16)
+	return
+}
+
 func (p *Player) Deserialize(r io.Reader) (err error) {
 	var (
 		serializationVersion uint8
@@ -120,20 +133,11 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
-
-	var locationLo uint8
-	if err = binary.Read(r, binary.LittleEndian, &locationLo); err != nil {
+	if p.Location, err = readU24(r); err != nil {
 		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
 		return
 	}
-	var locationHi uint16
-	if err = binary.Read(r, binary.LittleEndian, &locationHi); err != nil {
-		// TODO: diagnostics
-		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
-	}
-	p.Location = uint32(locationLo) | (uint32(locationHi) << 16)
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
 		// TODO: diagnostics
@@ -299,7 +303,71 @@ func DeserializeSRAM(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
-	panic(fmt.Errorf("not implemented"))
+	var (
+		timestamp uint32
+		location  uint32
+		start     uint8
+		length    uint8
+	)
+	if err = binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+		return
+	}
+	if location, err = readU24(r); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+		return
+	}
+	_ = location
+
+	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+		return
+	}
+	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
+		// TODO: diagnostics
+		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+		return
+	}
+
+	for i := uint8(0); i < length; i++ {
+		var (
+			offs uint16
+			count uint8
+		)
+		if err = binary.Read(r, binary.LittleEndian, &offs); err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+			return
+		}
+		if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
+			// TODO: diagnostics
+			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+			return
+		}
+
+		same := (offs & 0x8000) != 0
+		if same {
+			var tile [3]byte
+			if _, err = r.Read(tile[:]); err != nil {
+				// TODO: diagnostics
+				panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+				return
+			}
+		} else {
+			for j := uint8(0); j < count; j++ {
+				var tile [3]byte
+				if _, err = r.Read(tile[:]); err != nil {
+					// TODO: diagnostics
+					panic(fmt.Errorf("error deserializing tilemaps: %w", err))
+					return
+				}
+			}
+		}
+	}
+
 	return
 }
 
