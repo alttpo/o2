@@ -9,13 +9,17 @@ const (
 )
 
 func (k Kind) String() string {
-	switch k {
-	case RequestIndex:
-		return "request_index"
-	case Broadcast:
-		return "broadcast"
-	case BroadcastToSector:
-		return "broadcast_to_sector"
+	var rsp string = ""
+	if k & 0x80 != 0 {
+		rsp = " response"
 	}
-	return "unknown"
+	switch k & 0x7F {
+	case RequestIndex:
+		return "request_index" + rsp
+	case Broadcast:
+		return "broadcast" + rsp
+	case BroadcastToSector:
+		return "broadcast_to_sector" + rsp
+	}
+	return "unknown" + rsp
 }

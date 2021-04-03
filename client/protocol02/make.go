@@ -20,4 +20,3 @@ func MakePacket(group []byte, kind Kind, index uint16) (buf *bytes.Buffer) {
 
 	return
 }
-
