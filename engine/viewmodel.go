@@ -338,7 +338,10 @@ func (vm *ViewModel) SNESDisconnected() {
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
-	vm.dev.EnqueueWithCompletion(&snes.CloseCommand{}, snesClosed)
+	vm.dev.Enqueue(snes.CommandWithCompletion{
+		Command:    &snes.CloseCommand{},
+		Completion: func(err error) { snesClosed <- err },
+	})
 
 	vm.dev = nil
 	vm.driverDevice = snes.NamedDriverDevicePair{}

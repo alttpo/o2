@@ -6,7 +6,7 @@ import (
 )
 
 type vget struct {
-	batch      []snes.Read
+	batch []snes.Read
 }
 
 func (q *Queue) newVGET(batch []snes.Read) *vget {

@@ -17,8 +17,8 @@ func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
 }
 
 func (g *Game) readSubmit() {
-	sequence := g.queue.MakeReadCommands(g.readQueue...)
-	g.queue.EnqueueMulti(sequence)
+	sequence := g.queue.MakeReadCommands(g.readQueue, nil)
+	sequence.EnqueueTo(g.queue)
 
 	// TODO: consider just clearing length instead to avoid realloc
 	g.readQueue = nil
@@ -131,7 +131,7 @@ func (g *Game) read0010Complete() {
 
 	// TODO: fix this calculation to be compatible with alttpo
 	inDarkWorld := uint32(0)
-	if overworldArea & 0x40 != 0 {
+	if overworldArea&0x40 != 0 {
 		inDarkWorld = 1 << 17
 	}
 

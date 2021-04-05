@@ -14,21 +14,12 @@ import "io"
 type Queue interface {
 	io.Closer
 
-	// Enqueues a command to be executed
-	Enqueue(cmd Command)
+	// Enqueues a command with an optional completion callback
+	Enqueue(cmd CommandWithCompletion) error
 
-	// Enqueues a command with a channel to be sent to when completed [err==nil] or errored [err!=nil]
-	EnqueueWithCompletion(cmd Command, complete chan<- error)
+	// Creates a sequence of Commands which submit possibly multiple batches of read requests to the device
+	MakeReadCommands(reqs []Read, batchComplete func(error)) CommandSequence
 
-	// Enqueues a sequence of commands to be executed in order
-	EnqueueMulti(cmds CommandSequence)
-
-	// Enqueues a sequence of commands to be executed in order with only the last command receiving the completion channel
-	EnqueueMultiWithCompletion(cmds CommandSequence, complete chan<- error)
-
-	// Creates a set of Commands that submits a batch of read requests to the device
-	MakeReadCommands(reqs ...Read) CommandSequence
-
-	// Creates a set of Commands that submits a batch of write requests to the device
-	MakeWriteCommands(reqs ...Write) CommandSequence
+	// Creates a sequence of Commands which submit possibly multiple batches of write requests to the device
+	MakeWriteCommands(reqs []Write, batchComplete func(error)) CommandSequence
 }

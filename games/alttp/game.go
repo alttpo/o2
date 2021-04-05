@@ -71,8 +71,8 @@ func (g *Game) Description() string {
 func (g *Game) Load() {
 	if rc, ok := g.queue.(snes.ROMControl); ok {
 		path, cmds := rc.MakeUploadROMCommands(g.rom.Name, g.rom.Contents)
-		g.queue.EnqueueMulti(cmds)
-		g.queue.EnqueueMulti(rc.MakeBootROMCommands(path))
+		cmds.EnqueueTo(g.queue)
+		rc.MakeBootROMCommands(path).EnqueueTo(g.queue)
 	}
 }
 

@@ -42,7 +42,7 @@ func test() {
 				wg.Done()
 			},
 		},
-	}))
+	}, nil))
 	wg.Wait()
 
 	wg = sync.WaitGroup{}
@@ -57,7 +57,7 @@ func test() {
 				wg.Done()
 			},
 		},
-	}))
+	}, nil))
 	wg.Wait()
 
 	wg = sync.WaitGroup{}
@@ -71,8 +71,8 @@ func test() {
 				wg.Done()
 			},
 		},
-	}))
+	}, nil))
 	wg.Wait()
 
-	queue.Enqueue(&snes.CloseCommand{})
+	queue.Enqueue(snes.CommandWithCompletion{Command: &snes.CloseCommand{}})
 }

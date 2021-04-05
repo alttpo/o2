@@ -29,65 +29,12 @@ func (b *BaseQueue) BaseInit(name string, queue Queue) {
 	go b.handleQueue()
 }
 
-func (b *BaseQueue) Enqueue(cmd Command) {
+func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) error {
 	if b.cqClosed {
-		return
+		return fmt.Errorf("%s: device connection is closed", b.name)
 	}
-	b.cq <- CommandWithCompletion{
-		Command:    cmd,
-		Completion: nil,
-	}
-}
-
-func (b *BaseQueue) EnqueueWithCompletion(cmd Command, completion chan<- error) {
-	if b.cqClosed {
-		if completion != nil {
-			completion <- fmt.Errorf("%s: device connection is closed", b.name)
-		}
-		return
-	}
-	b.cq <- CommandWithCompletion{
-		Command:    cmd,
-		Completion: completion,
-	}
-}
-
-func (b *BaseQueue) EnqueueMulti(cmds CommandSequence) {
-	if b.cqClosed {
-		return
-	}
-	for _, cmd := range cmds {
-		b.cq <- CommandWithCompletion{
-			Command:    cmd,
-			Completion: nil,
-		}
-	}
-}
-
-func (b *BaseQueue) EnqueueMultiWithCompletion(cmds CommandSequence, completion chan<- error) {
-	if b.cqClosed {
-		if completion != nil {
-			completion <- fmt.Errorf("%s: device connection is closed", b.name)
-		}
-		return
-	}
-
-	// enqueue all commands except the last without a callback:
-	last := len(cmds) - 1
-	if last > 0 {
-		for _, cmd := range cmds[0 : last-1] {
-			b.cq <- CommandWithCompletion{
-				Command:    cmd,
-				Completion: nil,
-			}
-		}
-	}
-
-	// only supply a callback to the last command in the sequence:
-	b.cq <- CommandWithCompletion{
-		Command:    cmds[last],
-		Completion: completion,
-	}
+	b.cq <- cmd
+	return nil
 }
 
 func (b *BaseQueue) handleQueue() {
@@ -137,17 +84,17 @@ func (b *BaseQueue) handleQueue() {
 
 		err = cmd.Execute(q)
 		if pair.Completion != nil {
-			pair.Completion <- err
+			pair.Completion(err)
 		} else if err != nil {
 			log.Println(err)
 		}
 	}
 }
 
-func (b *BaseQueue) MakeReadCommands(reqs ...Read) CommandSequence {
+func (b *BaseQueue) MakeReadCommands(reqs []Read, complete func(error)) CommandSequence {
 	panic("implement me")
 }
 
-func (b *BaseQueue) MakeWriteCommands(reqs ...Write) CommandSequence {
+func (b *BaseQueue) MakeWriteCommands(reqs []Write, complete func(error)) CommandSequence {
 	panic("implement me")
 }

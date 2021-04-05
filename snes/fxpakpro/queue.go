@@ -14,39 +14,51 @@ type Queue struct {
 	f serial.Port
 }
 
-func (q *Queue) MakeReadCommands(reqs ...snes.Read) (cmds snes.CommandSequence) {
+func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) (cmds snes.CommandSequence) {
 	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
 
 	for len(reqs) >= 8 {
 		// queue up a VGET command:
 		batch := reqs[:8]
-		cmds = append(cmds, q.newVGET(batch))
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    q.newVGET(batch),
+			Completion: batchComplete,
+		})
 
 		// move to next batch:
 		reqs = reqs[8:]
 	}
 
 	if len(reqs) > 0 && len(reqs) <= 8 {
-		cmds = append(cmds, q.newVGET(reqs))
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    q.newVGET(reqs),
+			Completion: batchComplete,
+		})
 	}
 
 	return
 }
 
-func (q *Queue) MakeWriteCommands(reqs ...snes.Write) (cmds snes.CommandSequence) {
+func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete func(error)) (cmds snes.CommandSequence) {
 	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
 
 	for len(reqs) >= 8 {
 		// queue up a VPUT command:
 		batch := reqs[:8]
-		cmds = append(cmds, q.newVPUT(batch))
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    q.newVPUT(batch),
+			Completion: batchComplete,
+		})
 
 		// move to next batch:
 		reqs = reqs[8:]
 	}
 
 	if len(reqs) > 0 && len(reqs) <= 8 {
-		cmds = append(cmds, q.newVPUT(reqs))
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    q.newVPUT(reqs),
+			Completion: batchComplete,
+		})
 	}
 
 	return

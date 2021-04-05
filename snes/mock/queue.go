@@ -32,18 +32,24 @@ func (q *Queue) Init() {
 	}()
 }
 
-func (q *Queue) MakeReadCommands(reqs ...snes.Read) snes.CommandSequence {
+func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
-		seq = append(seq, &readCommand{req})
+		seq = append(seq, snes.CommandWithCompletion{
+			Command: &readCommand{req},
+			Completion: batchComplete,
+		})
 	}
 	return seq
 }
 
-func (q *Queue) MakeWriteCommands(reqs ...snes.Write) snes.CommandSequence {
+func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete func(error)) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
-		seq = append(seq, &writeCommand{req})
+		seq = append(seq, snes.CommandWithCompletion{
+			Command: &writeCommand{req},
+			Completion: batchComplete,
+		})
 	}
 	return seq
 }

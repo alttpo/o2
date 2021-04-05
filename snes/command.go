@@ -4,11 +4,20 @@ type Command interface {
 	Execute(queue Queue) error
 }
 
-type CommandSequence []Command
-
 type CommandWithCompletion struct {
 	Command    Command
-	Completion chan<- error
+	Completion func(error)
+}
+
+type CommandSequence []CommandWithCompletion
+
+func (seq CommandSequence) EnqueueTo(queue Queue) error {
+	for _, cmd := range seq {
+		if err := queue.Enqueue(cmd); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type NoOpCommand struct{}
