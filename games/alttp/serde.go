@@ -62,6 +62,18 @@ func readU24(r io.Reader) (value uint32, err error) {
 	return
 }
 
+func writeU24(w io.Writer, value uint32) (err error) {
+	var valueLo uint8 = uint8(value & 0xFF)
+	if err = binary.Write(w, binary.LittleEndian, &valueLo); err != nil {
+		return
+	}
+	var valueHi uint16 = uint16((value >> 8) & 0xFFFF)
+	if err = binary.Write(w, binary.LittleEndian, &valueHi); err != nil {
+		return
+	}
+	return
+}
+
 func (p *Player) Deserialize(r io.Reader) (err error) {
 	var (
 		serializationVersion uint8
@@ -87,7 +99,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 	// discard stale frame data:
 	nextFrame := int(frame)
 	lastFrame := int(p.Frame)
-	if lastFrame - nextFrame >= 128 {
+	if lastFrame-nextFrame >= 128 {
 		lastFrame -= 256
 	}
 	if nextFrame < lastFrame {
@@ -455,5 +467,63 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	if lastName != p.Name {
 		log.Printf("[%02x]: %s joined\n", uint8(p.Index), p.Name)
 	}
+	return
+}
+
+func SerializeLocation(p *Player, w io.Writer) (err error) {
+	if err = binary.Write(w, binary.LittleEndian, uint8(MsgLocation)); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.Module); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.SubModule); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.SubSubModule); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = writeU24(w, p.Location); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.X); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.Y); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.Dungeon); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.DungeonEntrance); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.LastOverworldX); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.LastOverworldY); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.XOffs); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &p.YOffs); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &p.PlayerColor); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
+	var inSM uint8 = 0
+	if err = binary.Write(w, binary.LittleEndian, &inSM); err != nil {
+		panic(fmt.Errorf("error serializing location: %w", err))
+	}
+
 	return
 }

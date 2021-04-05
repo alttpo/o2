@@ -27,7 +27,8 @@ type Game struct {
 	readQueue             []snes.Read
 	readCompletionChannel chan snes.Response
 
-	wram [0x20000]byte
+	wram      [0x20000]byte
+	wramDirty [0x20000]bool
 
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game

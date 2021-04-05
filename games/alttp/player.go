@@ -1,5 +1,11 @@
 package alttp
 
+type Module uint8
+
+func (m Module) IsOverworld() bool {
+	return m == 0x09 || m == 0x0B
+}
+
 type Player struct {
 	Index int
 	TTL   uint8
@@ -9,7 +15,7 @@ type Player struct {
 
 	Frame uint8
 
-	Module       uint8
+	Module       Module
 	SubModule    uint8
 	SubSubModule uint8
 	Location     uint32
@@ -23,8 +29,8 @@ type Player struct {
 	LastOverworldX uint16
 	LastOverworldY uint16
 
-	XOffs uint16
-	YOffs uint16
+	XOffs int16
+	YOffs int16
 
 	PlayerColor uint16
 

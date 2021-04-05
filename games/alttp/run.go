@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"encoding/binary"
 	"o2/client/protocol02"
 	"o2/snes"
 	"time"
@@ -29,7 +30,15 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 	// copy data read into our wram array:
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
-		copy(g.wram[rsp.Address-0xF50000:], rsp.Data)
+		o := rsp.Address - 0xF50000
+		size := uint32(len(rsp.Data))
+		for i := uint32(0); i < size; i++ {
+			if g.wram[o] != rsp.Data[i] {
+				g.wramDirty[o] = true
+			}
+			g.wram[o] = rsp.Data[i]
+			o++
+		}
 	}
 }
 
@@ -39,7 +48,9 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0, g.readMainComplete)
+	g.readEnqueue(0xF50010, 0xF0, g.read0010Complete)
+	g.readEnqueue(0xF50100, 0x36, g.read0100Complete)
+	//g.readEnqueue(0xF50400, 0x20, g.read0400Complete)
 	g.readSubmit()
 
 	//readInventory: snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
@@ -102,11 +113,42 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) readMainComplete() {
+func (g *Game) read0010Complete() {
 	defer g.readSubmit()
 
 	// requeue the main read:
-	g.readEnqueue(0xF50010, 0xF0, g.readMainComplete)
+	g.readEnqueue(0xF50010, 0xF0, g.read0010Complete)
+
+	// assign local variables from WRAM:
+	p := g.local
+	p.Module = Module(g.wram[0x10])
+	p.SubModule = g.wram[0x11]
+	p.SubSubModule = g.wram[0xB0]
+
+	inDungeon := g.wram[0x1B]
+	overworldArea := g.wram[0x8A]
+	dungeonRoom := g.wram[0xA0]
+
+	// TODO: fix this calculation to be compatible with alttpo
+	inDarkWorld := uint32(0)
+	if overworldArea & 0x40 != 0 {
+		inDarkWorld = 1 << 17
+	}
+
+	p.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
+	if inDungeon != 0 {
+		p.Location |= uint32(dungeonRoom)
+	} else {
+		p.Location |= uint32(overworldArea)
+	}
+
+	if p.Module.IsOverworld() {
+		p.LastOverworldX = p.X
+		p.LastOverworldY = p.Y
+	}
+
+	p.X = binary.LittleEndian.Uint16(g.wram[0x22:])
+	p.Y = binary.LittleEndian.Uint16(g.wram[0x20:])
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
@@ -122,7 +164,32 @@ func (g *Game) readMainComplete() {
 	g.localFrame += nextFrame - lastFrame
 	g.lastGameFrame = g.wram[0x1A]
 
+	g.frameAdvanced()
+}
+
+func (g *Game) read0100Complete() {
+	p := g.local
+	p.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
+	p.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
+}
+
+// called when the local game frame advances:
+func (g *Game) frameAdvanced() {
 	//log.Printf("%08x\n", g.localFrame)
+
+	// don't send out any updates until we're connected:
+	if g.localIndex < 0 {
+		return
+	}
+
+	{
+		// send location packet every frame:
+		m := g.makeGamePacket(protocol02.Broadcast)
+		if err := SerializeLocation(g.local, m); err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
 
 	if g.localFrame&31 == 0 {
 		// TODO: send inventory update to server
