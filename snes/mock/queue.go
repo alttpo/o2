@@ -66,7 +66,8 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 	var data []byte
 	if r.Request.Address >= 0xF50000 && r.Request.Address < 0xF70000 {
 		// read from wram:
-		data = q.wram[r.Request.Address-0xF50000 : r.Request.Size]
+		o := r.Request.Address - 0xF50000
+		data = q.wram[o: o + uint32(r.Request.Size)]
 	} else {
 		// read from nothing:
 		data = q.nothing[0:r.Request.Size]
