@@ -73,13 +73,13 @@ func (c *vput) Execute(queue snes.Queue) error {
 		// make response callback:
 		completed := reqs[i].Completion
 		if completed != nil {
-			completed <- snes.Response{
+			completed(snes.Response{
 				IsWrite: true,
 				Address: reqs[i].Address,
 				Size:    reqs[i].Size,
 				Data:    reqs[i].Data,
 				Extra:   reqs[i].Extra,
-			}
+			})
 		}
 	}
 

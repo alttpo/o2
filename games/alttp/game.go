@@ -25,7 +25,8 @@ type Game struct {
 	running bool
 
 	readQueue             []snes.Read
-	readCompletionChannel chan snes.Response
+	readResponse          []snes.Response
+	readCompletionChannel chan []snes.Response
 
 	wram      [0x20000]byte
 	wramDirty [0x20000]bool
@@ -53,7 +54,7 @@ func (f *Factory) NewGame(
 		client:                client,
 		viewNotifier:          viewNotifier,
 		running:               false,
-		readCompletionChannel: make(chan snes.Response, 8),
+		readCompletionChannel: make(chan []snes.Response, 8),
 		IsCreated:             true,
 	}
 

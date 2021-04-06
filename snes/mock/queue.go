@@ -32,7 +32,7 @@ func (q *Queue) Init() {
 	}()
 }
 
-func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) snes.CommandSequence {
+func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, snes.CommandWithCompletion{
@@ -43,7 +43,7 @@ func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) sn
 	return seq
 }
 
-func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete func(error)) snes.CommandSequence {
+func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, snes.CommandWithCompletion{
@@ -82,13 +82,13 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 	// wait 2ms before returning response to simulate the delay of FX Pak Pro device:
 	<-time.After(time.Millisecond * 2)
 
-	completed <- snes.Response{
+	completed(snes.Response{
 		IsWrite: false,
 		Address: r.Request.Address,
 		Size:    r.Request.Size,
 		Extra:   r.Request.Extra,
 		Data:    data,
-	}
+	})
 
 	return nil
 }
@@ -101,13 +101,13 @@ func (r *writeCommand) Execute(_ snes.Queue) error {
 	<-time.After(time.Millisecond * 2)
 	completed := r.Request.Completion
 	if completed != nil {
-		completed <- snes.Response{
+		completed(snes.Response{
 			IsWrite: true,
 			Address: r.Request.Address,
 			Size:    r.Request.Size,
 			Data:    r.Request.Data,
 			Extra:   r.Request.Extra,
-		}
+		})
 	}
 	return nil
 }

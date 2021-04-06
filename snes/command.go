@@ -4,9 +4,11 @@ type Command interface {
 	Execute(queue Queue) error
 }
 
+type Completion func(Command, error)
+
 type CommandWithCompletion struct {
 	Command    Command
-	Completion func(error)
+	Completion Completion
 }
 
 type CommandSequence []CommandWithCompletion

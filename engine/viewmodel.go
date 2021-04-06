@@ -340,7 +340,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
 	vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command:    &snes.CloseCommand{},
-		Completion: func(err error) { snesClosed <- err },
+		Completion: func(cmd snes.Command, err error) { snesClosed <- err },
 	})
 
 	vm.dev = nil

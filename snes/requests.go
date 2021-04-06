@@ -17,7 +17,7 @@ type Read struct {
 	Address    uint32
 	Size       uint8
 	Extra      interface{} // extra data from the request handed back as part of the response
-	Completion chan<- Response
+	Completion func(Response)
 }
 
 type Write struct {
@@ -30,5 +30,5 @@ type Write struct {
 	Size       uint8
 	Data       []byte
 	Extra      interface{} // extra data from the request handed back as part of the response
-	Completion chan<- Response
+	Completion func(Response)
 }

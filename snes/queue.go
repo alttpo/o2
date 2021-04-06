@@ -18,8 +18,8 @@ type Queue interface {
 	Enqueue(cmd CommandWithCompletion) error
 
 	// Creates a sequence of Commands which submit possibly multiple batches of read requests to the device
-	MakeReadCommands(reqs []Read, batchComplete func(error)) CommandSequence
+	MakeReadCommands(reqs []Read, batchComplete Completion) CommandSequence
 
 	// Creates a sequence of Commands which submit possibly multiple batches of write requests to the device
-	MakeWriteCommands(reqs []Write, batchComplete func(error)) CommandSequence
+	MakeWriteCommands(reqs []Write, batchComplete Completion) CommandSequence
 }

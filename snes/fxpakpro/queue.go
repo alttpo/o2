@@ -14,7 +14,7 @@ type Queue struct {
 	f serial.Port
 }
 
-func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) (cmds snes.CommandSequence) {
+func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) (cmds snes.CommandSequence) {
 	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
 
 	for len(reqs) >= 8 {
@@ -39,7 +39,7 @@ func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete func(error)) (c
 	return
 }
 
-func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete func(error)) (cmds snes.CommandSequence) {
+func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) (cmds snes.CommandSequence) {
 	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
 
 	for len(reqs) >= 8 {

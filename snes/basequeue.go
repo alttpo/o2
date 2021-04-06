@@ -84,7 +84,7 @@ func (b *BaseQueue) handleQueue() {
 
 		err = cmd.Execute(q)
 		if pair.Completion != nil {
-			pair.Completion(err)
+			pair.Completion(cmd, err)
 		} else if err != nil {
 			log.Println(err)
 		}

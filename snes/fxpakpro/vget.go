@@ -72,13 +72,13 @@ func (c *vget) Execute(queue snes.Queue) error {
 		// make response callback:
 		completed := reqs[i].Completion
 		if completed != nil {
-			completed <- snes.Response{
+			completed(snes.Response{
 				IsWrite: false,
 				Address: reqs[i].Address,
 				Size:    reqs[i].Size,
 				Extra:   reqs[i].Extra,
 				Data:    rsp[o : o+size],
-			}
+			})
 		}
 
 		o += size

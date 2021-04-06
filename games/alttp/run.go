@@ -7,21 +7,31 @@ import (
 	"time"
 )
 
-func (g *Game) readEnqueue(addr uint32, size uint8, complete func()) {
+func (g *Game) readEnqueue(addr uint32, size uint8) {
 	g.readQueue = append(g.readQueue, snes.Read{
-		Address:    addr,
-		Size:       size,
-		Extra:      complete,
-		Completion: g.readCompletionChannel,
+		Address: addr,
+		Size:    size,
+		Extra:   nil,
+		Completion: func(rsp snes.Response) {
+			// append to response queue:
+			g.readResponse = append(g.readResponse, rsp)
+		},
 	})
 }
 
 func (g *Game) readSubmit() {
-	sequence := g.queue.MakeReadCommands(g.readQueue, nil)
+	sequence := g.queue.MakeReadCommands(
+		g.readQueue,
+		func(cmd snes.Command, err error) {
+			g.readCompletionChannel <- g.readResponse[:]
+			// clear response queue:
+			g.readResponse = g.readResponse[:0]
+		},
+	)
 	sequence.EnqueueTo(g.queue)
 
-	// TODO: consider just clearing length instead to avoid realloc
-	g.readQueue = nil
+	// clear the queue:
+	g.readQueue = g.readQueue[:0]
 }
 
 func (g *Game) handleSNESRead(rsp snes.Response) {
@@ -48,9 +58,9 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0, g.read0010Complete)
-	g.readEnqueue(0xF50100, 0x36, g.read0100Complete)
-	//g.readEnqueue(0xF50400, 0x20, g.read0400Complete)
+	g.readEnqueue(0xF50010, 0xF0)
+	g.readEnqueue(0xF50100, 0x36)
+	//g.readEnqueue(0xF50400, 0x20)
 	g.readSubmit()
 
 	//readInventory: snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
@@ -59,18 +69,19 @@ func (g *Game) run() {
 	for {
 		select {
 		// wait for SNES memory read completion:
-		case rsp := <-g.readCompletionChannel:
+		case rsps := <-g.readCompletionChannel:
 			if !g.IsRunning() {
 				break
 			}
 
-			// copy the data into our wram shadow:
-			g.handleSNESRead(rsp)
-
-			complete := rsp.Extra.(func())
-			if complete != nil {
-				complete()
+			for _, rsp := range rsps {
+				// copy the data into our wram shadow:
+				g.handleSNESRead(rsp)
+				g.readEnqueue(rsp.Address, rsp.Size)
 			}
+			g.readSubmit()
+
+			g.readMainComplete()
 
 			break
 
@@ -113,12 +124,8 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) read0010Complete() {
-	defer g.readSubmit()
-
-	// requeue the main read:
-	g.readEnqueue(0xF50010, 0xF0, g.read0010Complete)
-
+// called when all reads are completed:
+func (g *Game) readMainComplete() {
 	// assign local variables from WRAM:
 	p := g.local
 	p.Module = Module(g.wram[0x10])
@@ -150,6 +157,9 @@ func (g *Game) read0010Complete() {
 	p.X = binary.LittleEndian.Uint16(g.wram[0x22:])
 	p.Y = binary.LittleEndian.Uint16(g.wram[0x20:])
 
+	p.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
+	p.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
+
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
 		return
@@ -165,12 +175,6 @@ func (g *Game) read0010Complete() {
 	g.lastGameFrame = g.wram[0x1A]
 
 	g.frameAdvanced()
-}
-
-func (g *Game) read0100Complete() {
-	p := g.local
-	p.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
-	p.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
 }
 
 // called when the local game frame advances:
