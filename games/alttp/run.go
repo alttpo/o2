@@ -58,15 +58,17 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0)
-	g.readEnqueue(0xF50100, 0x36)
-	//g.readEnqueue(0xF50400, 0x20)
+	g.readEnqueue(0xF50010, 0xF0)	// $0010-$00FF
+	g.readEnqueue(0xF50100, 0x36)	// $0100-$0136
+	g.readEnqueue(0xF50400, 0x20)	// $0400-$041F
+	// ALTTP's SRAM copy in WRAM:
+	g.readEnqueue(0xF5F340, 0xF0)	// $F340-$F42F
+	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 	g.readSubmit()
 
-	//readInventory: snes.Read{Address: 0xF5F340, Size: 0xF0, Extra: nil}
 	heartbeat := time.NewTicker(250 * time.Millisecond)
 
-	for {
+	for g.running {
 		select {
 		// wait for SNES memory read completion:
 		case rsps := <-g.readCompletionChannel:
@@ -82,7 +84,6 @@ func (g *Game) run() {
 			g.readSubmit()
 
 			g.readMainComplete()
-
 			break
 
 		// wait for network message from server:
