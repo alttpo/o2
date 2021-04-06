@@ -137,81 +137,53 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 
 func DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.Module); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.SubModule); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.SubSubModule); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if p.Location, err = readU24(r); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.Y); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.Dungeon); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldX); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldY); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.XOffs); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &p.YOffs); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.PlayerColor); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	var inSM uint8
 	if err = binary.Read(r, binary.LittleEndian, &inSM); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing location: %w", err))
-		return
 	}
 
 	log.Printf("[%02x]: %04x, %04x\n", uint8(p.Index), p.X, p.Y)
@@ -304,14 +276,10 @@ func DeserializeSRAM(p *Player, r io.Reader) (err error) {
 		count uint16
 	)
 	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing sram: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing sram: %w", err))
-		return
 	}
 
 	if _, err = r.Read(p.SRAM[start : start+count]); err != nil {
@@ -328,26 +296,18 @@ func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 		length    uint8
 	)
 	if err = binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		return
 	}
 	if location, err = readU24(r); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		return
 	}
 	_ = location
 
 	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		return
 	}
 	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		return
 	}
 
 	for i := uint8(0); i < length; i++ {
@@ -356,31 +316,23 @@ func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 			count uint8
 		)
 		if err = binary.Read(r, binary.LittleEndian, &offs); err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-			return
 		}
 		if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-			return
 		}
 
 		same := (offs & 0x8000) != 0
 		if same {
 			var tile [3]byte
 			if _, err = r.Read(tile[:]); err != nil {
-				// TODO: diagnostics
 				panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-				return
 			}
 		} else {
 			for j := uint8(0); j < count; j++ {
 				var tile [3]byte
 				if _, err = r.Read(tile[:]); err != nil {
-					// TODO: diagnostics
 					panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-					return
 				}
 			}
 		}
@@ -391,38 +343,29 @@ func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 
 func DeserializeObjects(p *Player, r io.Reader) (err error) {
 	panic(fmt.Errorf("not implemented"))
-	return
 }
 
 func DeserializeAncillae(p *Player, r io.Reader) (err error) {
 	var count uint8
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing ancillae: %w", err))
-		return
 	}
 
 	for i := uint8(0); i < count; i++ {
 		var index uint8
 		if err = binary.Read(r, binary.LittleEndian, &index); err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error deserializing ancillae: %w", err))
-			return
 		}
 		index = index & 0x7F
 
 		var facts [0x20]byte
 		if index < 5 {
 			if _, err = r.Read(facts[:0x20]); err != nil {
-				// TODO: diagnostics
 				panic(fmt.Errorf("error deserializing ancillae: %w", err))
-				return
 			}
 		} else {
 			if _, err = r.Read(facts[:0x16]); err != nil {
-				// TODO: diagnostics
 				panic(fmt.Errorf("error deserializing ancillae: %w", err))
-				return
 			}
 		}
 	}
@@ -435,16 +378,12 @@ func DeserializeTorches(p *Player, r io.Reader) (err error) {
 		count uint8
 	)
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing torches: %w", err))
-		return
 	}
 	for i := uint8(0); i < count; i++ {
 		var torch [2]byte
 		if _, err = r.Read(torch[:]); err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error deserializing torches: %w", err))
-			return
 		}
 	}
 	return
@@ -452,15 +391,12 @@ func DeserializeTorches(p *Player, r io.Reader) (err error) {
 
 func DeserializePvP(p *Player, r io.Reader) (err error) {
 	panic(fmt.Errorf("not implemented"))
-	return
 }
 
 func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	var name [20]byte
 	if _, err = r.Read(name[:]); err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error deserializing name: %w", err))
-		return
 	}
 	lastName := p.Name
 	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")

@@ -80,6 +80,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		g.players[header.Index].TTL = 255
 		g.players[header.Index].Index = int(header.Index)
 
+		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
