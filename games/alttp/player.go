@@ -7,6 +7,8 @@ func (m Module) IsOverworld() bool {
 }
 
 type Player struct {
+	g *Game
+
 	Index int
 	TTL   uint8
 

@@ -31,6 +31,8 @@ type Game struct {
 	wram      [0x20000]byte
 	wramDirty [0x20000]bool
 
+	sramItem [0x500]SRAMSync
+
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
@@ -40,6 +42,7 @@ type Game struct {
 	IsCreated  bool   `json:"isCreated"`
 	Team       uint8  `json:"team"`
 	PlayerName string `json:"playerName"`
+	SyncItems  bool   `json:"syncItems"`
 }
 
 func (f *Factory) NewGame(
@@ -55,8 +58,17 @@ func (f *Factory) NewGame(
 		viewNotifier:          viewNotifier,
 		running:               false,
 		readCompletionChannel: make(chan []snes.Response, 8),
-		IsCreated:             true,
+
+		// ViewModel:
+		IsCreated: true,
+		SyncItems: true,
 	}
+
+	for i := range g.sramItem {
+		g.sramItem[i].Offset = uint16(i)
+		g.sramItem[i].Size = 1
+	}
+	g.initSync()
 
 	return g, nil
 }
@@ -86,12 +98,12 @@ func (g *Game) Reset() {
 
 	// clear out players array:
 	for i := range g.players {
-		g.players[i] = Player{}
+		g.players[i] = Player{g: g}
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
 	g.localIndex = -1
-	g.local = &Player{Index: -1}
+	g.local = &Player{g: g, Index: -1}
 	// preserve last-set info:
 	g.local.Name = g.PlayerName
 	g.local.Team = g.Team

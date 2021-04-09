@@ -189,6 +189,8 @@ func (g *Game) frameAdvanced() {
 
 	local := g.local
 
+
+
 	{
 		// send location packet every frame:
 		m := g.makeGamePacket(protocol02.Broadcast)
