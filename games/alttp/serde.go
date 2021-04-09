@@ -186,7 +186,7 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 
-	log.Printf("[%02x]: %04x, %04x\n", uint8(p.Index), p.X, p.Y)
+	//log.Printf("[%02x]: %04x, %04x\n", uint8(p.Index), p.X, p.Y)
 
 	return
 }
@@ -471,7 +471,7 @@ func SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err erro
 
 	var (
 		startIsZero uint8 = 0
-		inSM uint8 = 0
+		inSM        uint8 = 0
 	)
 	if start == 0 {
 		startIsZero = 1

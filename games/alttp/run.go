@@ -58,11 +58,11 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0)	// $0010-$00FF
-	g.readEnqueue(0xF50100, 0x36)	// $0100-$0136
-	g.readEnqueue(0xF50400, 0x20)	// $0400-$041F
+	g.readEnqueue(0xF50010, 0xF0) // $0010-$00FF
+	g.readEnqueue(0xF50100, 0x36) // $0100-$0136
+	g.readEnqueue(0xF50400, 0x20) // $0400-$041F
 	// ALTTP's SRAM copy in WRAM:
-	g.readEnqueue(0xF5F340, 0xF0)	// $F340-$F42F
+	g.readEnqueue(0xF5F340, 0xF0) // $F340-$F42F
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 	g.readSubmit()
 
@@ -198,16 +198,49 @@ func (g *Game) frameAdvanced() {
 		g.send(m)
 	}
 
+	if g.localFrame&15 == 0 {
+		// Broadcast items and progress SRAM:
+		m := g.makeGamePacket(protocol02.Broadcast)
+
+		// items earned
+		if err := SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
+			panic(err)
+		}
+		// progress made
+		if err := SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
+			panic(err)
+		}
+
+		// TODO: more ranges depending on ROM kind
+
+		// VT randomizer:
+		//serialize(r, 0x340, 0x390); // items earned
+		//serialize(r, 0x390, 0x3C5); // item limit counters
+		//serialize(r, 0x3C5, 0x43A); // progress made
+
+		// Door randomizer:
+		//serialize(r, 0x340, 0x390); // items earned
+		//serialize(r, 0x390, 0x3C5); // item limit counters
+		//serialize(r, 0x3C5, 0x43A); // progress made
+		//serialize(r, 0x4C0, 0x4CD); // chests
+		//serialize(r, 0x4E0, 0x4ED); // chest-keys
+
+		g.send(m)
+	}
 	if g.localFrame&31 == 0 {
 		// Broadcast underworld SRAM:
 		m := g.makeGamePacket(protocol02.Broadcast)
-		SerializeSRAM(local, m, 0, 0x250)
+		if err := SerializeSRAM(local, m, 0, 0x250); err != nil {
+			panic(err)
+		}
 		g.send(m)
 	}
 	if g.localFrame&31 == 16 {
 		// Broadcast overworld SRAM:
 		m := g.makeGamePacket(protocol02.Broadcast)
-		SerializeSRAM(local, m, 0x280, 0x340)
+		if err := SerializeSRAM(local, m, 0x280, 0x340); err != nil {
+			panic(err)
+		}
 		g.send(m)
 	}
 }
