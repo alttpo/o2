@@ -463,3 +463,37 @@ func SerializeLocation(p *Player, w io.Writer) (err error) {
 
 	return
 }
+
+func SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err error) {
+	if err = binary.Write(w, binary.LittleEndian, uint8(MsgSRAM)); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+
+	var (
+		startIsZero uint8 = 0
+		inSM uint8 = 0
+	)
+	if start == 0 {
+		startIsZero = 1
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &startIsZero); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+	if err = binary.Write(w, binary.LittleEndian, &inSM); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+
+	if err = binary.Write(w, binary.LittleEndian, &start); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+	count := endExclusive - start
+	if err = binary.Write(w, binary.LittleEndian, &count); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+
+	if _, err = w.Write(p.SRAM[start:endExclusive]); err != nil {
+		panic(fmt.Errorf("error serializing sram: %w", err))
+	}
+	return
+}

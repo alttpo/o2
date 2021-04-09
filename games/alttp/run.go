@@ -187,16 +187,27 @@ func (g *Game) frameAdvanced() {
 		return
 	}
 
+	local := g.local
+
 	{
 		// send location packet every frame:
 		m := g.makeGamePacket(protocol02.Broadcast)
-		if err := SerializeLocation(g.local, m); err != nil {
+		if err := SerializeLocation(local, m); err != nil {
 			panic(err)
 		}
 		g.send(m)
 	}
 
 	if g.localFrame&31 == 0 {
-		// TODO: send inventory update to server
+		// Broadcast underworld SRAM:
+		m := g.makeGamePacket(protocol02.Broadcast)
+		SerializeSRAM(local, m, 0, 0x250)
+		g.send(m)
+	}
+	if g.localFrame&31 == 16 {
+		// Broadcast overworld SRAM:
+		m := g.makeGamePacket(protocol02.Broadcast)
+		SerializeSRAM(local, m, 0x280, 0x340)
+		g.send(m)
 	}
 }
