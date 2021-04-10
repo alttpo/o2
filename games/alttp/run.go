@@ -195,12 +195,12 @@ func (g *Game) frameAdvanced() {
 		p.DecTTL()
 	}
 
-	// assume 16-bit mode for accumulator and index registers:
 	var a asm.Emitter
 	a.Text = os.Stdout
 	a.SetBase(0x717F00)
-	a.AssumeREP(0x20)
 	updated := false
+	// use 16-bit mode for accumulator and generate update ASM code for any 16-bit values:
+	a.REP(0x20)
 	for _, item := range g.syncableItems {
 		if item.Size() != 2 {
 			continue
@@ -211,6 +211,7 @@ func (g *Game) frameAdvanced() {
 		u := item.GenerateUpdate(&a)
 		updated = updated || u
 	}
+	// use 8-bit mode for accumulator and generate update ASM code for any 8-bit values:
 	a.SEP(0x20)
 	for _, item := range g.syncableItems {
 		if item.Size() != 1 {
