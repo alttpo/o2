@@ -10,7 +10,7 @@ type Player struct {
 	g *Game
 
 	Index int
-	TTL   uint8
+	TTL   int
 
 	Team uint8
 	Name string

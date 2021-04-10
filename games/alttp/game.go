@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
+// MaxPlayers can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
 const MaxPlayers = 256
 
-// implements game.Game
+// Game implements game.Game
 type Game struct {
 	rom          *snes.ROM
 	queue        snes.Queue
@@ -22,6 +22,9 @@ type Game struct {
 	local      *Player
 	players    [MaxPlayers]Player
 
+	activePlayersClean bool
+	activePlayers      []*Player
+
 	running bool
 
 	readQueue             []snes.Read
@@ -31,7 +34,7 @@ type Game struct {
 	wram      [0x20000]byte
 	wramDirty [0x20000]bool
 
-	sramItem [0x500]SRAMSync
+	syncableItems map[uint16]SyncableItem
 
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
@@ -63,12 +66,6 @@ func (f *Factory) NewGame(
 		IsCreated: true,
 		SyncItems: true,
 	}
-
-	for i := range g.sramItem {
-		g.sramItem[i].Offset = uint16(i)
-		g.sramItem[i].Size = 1
-	}
-	g.initSync()
 
 	return g, nil
 }
@@ -113,6 +110,8 @@ func (g *Game) Reset() {
 		g.wram[i] = 0xFF
 	}
 
+	g.initSync()
+
 	// inform the view:
 	g.notifyView()
 }
@@ -130,4 +129,23 @@ func (g *Game) Start() {
 
 func (g *Game) Stop() {
 	g.running = false
+}
+
+func (g *Game) ActivePlayers() []*Player {
+	if !g.activePlayersClean {
+		g.activePlayers = make([]*Player, 0, len(g.activePlayers))
+		for i, p := range g.players {
+			if p.Index < 0 {
+				continue
+			}
+			if p.TTL <= 0 {
+				continue
+			}
+
+			g.activePlayers = append(g.activePlayers, &g.players[i])
+		}
+		g.activePlayersClean = true
+	}
+
+	return g.activePlayers
 }

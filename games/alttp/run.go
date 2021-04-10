@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"o2/client/protocol02"
 	"o2/snes"
+	"o2/snes/asm"
 	"time"
 )
 
@@ -189,7 +190,33 @@ func (g *Game) frameAdvanced() {
 
 	local := g.local
 
+	// assume 16-bit mode for accumulator and index registers:
+	a := asm.NewAssembler()
+	a.AssumeREP(0x30)
+	updated := false
+	for _, item := range g.syncableItems {
+		if item.Size() != 2 {
+			continue
+		}
+		if !item.IsEnabled() {
+			continue
+		}
+		updated = updated || item.GenerateUpdate(a)
+	}
+	a.SEP(0x30)
+	for _, item := range g.syncableItems {
+		if item.Size() != 1 {
+			continue
+		}
+		if !item.IsEnabled() {
+			continue
+		}
+		updated = updated || item.GenerateUpdate(a)
+	}
 
+	if updated {
+		// TODO: send generated asm routine
+	}
 
 	{
 		// send location packet every frame:
