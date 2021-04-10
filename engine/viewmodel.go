@@ -235,15 +235,11 @@ func (vm *ViewModel) ROMSelected(rom *snes.ROM) error {
 title:   '%s'
 region:  %s (code %02X)
 version: 1.%d
-maker:   %02x
-game:    %04x
 `,
 		string(rom.Header.Title[:]),
 		regions[rom.Header.DestinationCode],
 		rom.Header.DestinationCode,
-		rom.Header.MaskROMVersion,
-		rom.Header.MakerCode,
-		rom.Header.GameCode)
+		rom.Header.MaskROMVersion)
 
 	// determine if ROM is recognizable as a game we provide support for:
 	vm.nextFactory = nil
