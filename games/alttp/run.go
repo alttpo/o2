@@ -191,11 +191,15 @@ func (g *Game) frameAdvanced() {
 
 	local := g.local
 
+	for _, p := range g.ActivePlayers() {
+		p.DecTTL()
+	}
+
 	// assume 16-bit mode for accumulator and index registers:
 	var a asm.Emitter
 	a.Text = os.Stdout
 	a.SetBase(0x717F00)
-	a.AssumeREP(0x30)
+	a.AssumeREP(0x20)
 	updated := false
 	for _, item := range g.syncableItems {
 		if item.Size() != 2 {
@@ -204,9 +208,10 @@ func (g *Game) frameAdvanced() {
 		if !item.IsEnabled() {
 			continue
 		}
-		updated = updated || item.GenerateUpdate(&a)
+		u := item.GenerateUpdate(&a)
+		updated = updated || u
 	}
-	a.SEP(0x30)
+	a.SEP(0x20)
 	for _, item := range g.syncableItems {
 		if item.Size() != 1 {
 			continue
@@ -214,7 +219,8 @@ func (g *Game) frameAdvanced() {
 		if !item.IsEnabled() {
 			continue
 		}
-		updated = updated || item.GenerateUpdate(&a)
+		u := item.GenerateUpdate(&a)
+		updated = updated || u
 	}
 
 	if updated {

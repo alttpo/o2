@@ -38,3 +38,23 @@ type Player struct {
 
 	SRAM [0x500]byte
 }
+
+func (p *Player) SetTTL(ttl int) {
+	if p.TTL <= 0 && ttl > 0 {
+		// Activating new player:
+		p.g.activePlayersClean = false
+	}
+
+	p.TTL = ttl
+}
+
+func (p *Player) DecTTL() {
+	if p.TTL <= 0 {
+		return
+	}
+
+	p.TTL--
+	if p.TTL <= 0 {
+		p.g.activePlayersClean = false
+	}
+}

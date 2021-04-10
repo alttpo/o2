@@ -77,7 +77,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 
 		// reset player TTL:
-		g.players[header.Index].TTL = 255
+		g.players[header.Index].SetTTL(255)
 		g.players[header.Index].Index = int(header.Index)
 
 		// handle which kind of message it is:
