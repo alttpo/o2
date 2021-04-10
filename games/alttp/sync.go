@@ -82,7 +82,7 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	_ = maxP
 	//g.notifyNewItem(s.names[v])
 
-	asm.LDA_imm8(maxV)
+	asm.LDA_imm8_b(maxV)
 	asm.STA_long(0x7EF000 + uint32(offset))
 
 	return true
@@ -131,7 +131,7 @@ func (s *syncableMaxU16) GenerateUpdate(asm *asm.Emitter) bool {
 	_ = maxP
 	//g.notifyNewItem(s.names[v])
 
-	asm.LDA_imm16(maxV)
+	asm.LDA_imm16_w(maxV)
 	asm.STA_long(0x7EF000 + uint32(offset))
 
 	return true

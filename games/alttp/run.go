@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"o2/client/protocol02"
 	"o2/snes"
@@ -195,38 +196,8 @@ func (g *Game) frameAdvanced() {
 		p.DecTTL()
 	}
 
-	var a asm.Emitter
-	a.Text = os.Stdout
-	a.SetBase(0x717F00)
-	updated := false
-	// use 16-bit mode for accumulator and generate update ASM code for any 16-bit values:
-	a.REP(0x20)
-	for _, item := range g.syncableItems {
-		if item.Size() != 2 {
-			continue
-		}
-		if !item.IsEnabled() {
-			continue
-		}
-		u := item.GenerateUpdate(&a)
-		updated = updated || u
-	}
-	// use 8-bit mode for accumulator and generate update ASM code for any 8-bit values:
-	a.SEP(0x20)
-	for _, item := range g.syncableItems {
-		if item.Size() != 1 {
-			continue
-		}
-		if !item.IsEnabled() {
-			continue
-		}
-		u := item.GenerateUpdate(&a)
-		updated = updated || u
-	}
-
-	if updated {
-		// TODO: send generated asm routine
-	}
+	// generate any WRAM update code and send it to the SNES:
+	g.updateWRAM()
 
 	{
 		// send location packet every frame:
@@ -281,5 +252,58 @@ func (g *Game) frameAdvanced() {
 			panic(err)
 		}
 		g.send(m)
+	}
+}
+
+func (g *Game) updateWRAM() {
+	b := &bytes.Buffer{}
+	var a asm.Emitter
+	a.Text = os.Stdout
+	a.Code = b
+	a.SetBase(0x717F00)
+	updated := false
+	// use 16-bit mode for accumulator and generate update ASM code for any 16-bit values:
+	a.REP(0x20)
+	for _, item := range g.syncableItems {
+		if item.Size() != 2 {
+			continue
+		}
+		if !item.IsEnabled() {
+			continue
+		}
+		u := item.GenerateUpdate(&a)
+		updated = updated || u
+	}
+	// use 8-bit mode for accumulator and generate update ASM code for any 8-bit values:
+	a.SEP(0x20)
+	for _, item := range g.syncableItems {
+		if item.Size() != 1 {
+			continue
+		}
+		if !item.IsEnabled() {
+			continue
+		}
+		u := item.GenerateUpdate(&a)
+		updated = updated || u
+	}
+
+	if updated {
+		// write generated asm routine to SRAM:
+		//g.queue.MakeWriteCommands([]snes.Write{
+		//	{
+		//		Address:    0xE0FF00,
+		//		Size:       uint8(b.Len()),
+		//		Data:       b.Bytes(),
+		//		Extra:      nil,
+		//		Completion: nil,
+		//	},
+		//	{
+		//		Address:    0xE0FFFA,
+		//		Size:       0,
+		//		Data:       nil,
+		//		Extra:      nil,
+		//		Completion: nil,
+		//	},
+		//}, nil)
 	}
 }

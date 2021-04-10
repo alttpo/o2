@@ -97,6 +97,7 @@ func (p *Patcher) Patch() (err error) {
 	if frameJSL[0] != 0x22 {
 		return fmt.Errorf("frame hook $008056 does not contain a JSL instruction: %s", hex.Dump(frameJSL))
 	}
+	gameModes := frameJSL[1:]
 
 	// overwrite the frame hook with a JSL to the end of SRAM:
 	p.writeAt(frameHook)
@@ -107,35 +108,48 @@ func (p *Patcher) Patch() (err error) {
 		return
 	}
 
-	// start writing at the end of the ROM after music data:
-	p.writeAt(initHook)
-	a.SetBase(initHook)
-	// we can't write to SRAM from this program because we only have access to the ROM contents,
-	// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
-	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
-	a.REP(0x20)
-	// 22 B5 80 00    JSL GameModes
-	// 6B             RTL
-	// EA             NOP
-	a.LDA_imm16(uint16(frameJSL[0]) | uint16(frameJSL[1])<<8)
-	a.STA_long(0x717FFA)
-	a.LDA_imm16(uint16(frameJSL[2]) | uint16(frameJSL[3])<<8)
-	a.STA_long(0x717FFC)
-	a.LDA_imm16(0xEA6B)
-	a.STA_long(0x717FFE)
-	a.SEP(0x20)
-	// emit asm code:
-	if _, err = b.WriteTo(p.w); err != nil {
-		return
-	}
-	// append the original 802F code to our custom init hook:
-	if err = p.write(code802F); err != nil {
-		return
-	}
-	// follow by `RTL`
-	a.RTL()
-	if _, err = b.WriteTo(p.w); err != nil {
-		return
+	{
+		// we can't write to SRAM from this program because we only have access to the ROM contents,
+		// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
+		// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
+
+		// Build a temporary assembler to write the routine that gets written to SRAM:
+		addr := uint32(0x718000 - 6)
+		var ta asm.Emitter
+		tb := &bytes.Buffer{}
+		ta.Code = tb
+		ta.Text = os.Stdout
+		ta.SetBase(addr)
+		// assemble 6 bytes of code:
+		ta.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+		ta.RTL()
+		ta.NOP()
+
+		// start writing at the end of the ROM after music data:
+		p.writeAt(initHook)
+		a.SetBase(initHook)
+		a.REP(0x20)
+		// copy the assembled routine using LDA.w and STA.l instruction pairs, 16-bits at a time:
+		tc := tb.Bytes()
+		for i := 0; i < len(tc); i += 2 {
+			a.LDA_imm16_lh(tc[i], tc[i+1])
+			a.STA_long(addr)
+			addr += 2
+		}
+		a.SEP(0x20)
+		// emit asm code:
+		if _, err = b.WriteTo(p.w); err != nil {
+			return
+		}
+		// append the original 802F code to our custom init hook:
+		if err = p.write(code802F); err != nil {
+			return
+		}
+		// follow by `RTL`
+		a.RTL()
+		if _, err = b.WriteTo(p.w); err != nil {
+			return
+		}
 	}
 
 	return nil
