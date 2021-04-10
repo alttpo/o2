@@ -8,9 +8,11 @@ type Assembler interface {
 	SEP(c Flags)
 	NOP()
 	JSL(addr uint32)
+	JSL_lhb(lo, hi, bank uint8)
 	JML(addr uint32)
 	RTL()
-	LDA_imm8(m uint8)
-	LDA_imm16(m uint16)
+	LDA_imm8_b(m uint8)
+	LDA_imm16_w(m uint16)
+	LDA_imm16_lh(lo, hi uint8)
 	STA_long(addr uint32)
 }
