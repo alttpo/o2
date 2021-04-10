@@ -20,7 +20,7 @@ func NewPatcher(rom *snes.ROM) *Patcher {
 	return &Patcher{rom: rom}
 }
 
-// patches the ROM for O2 support
+// Patch patches the ROM for O2 support
 func (p *Patcher) Patch() (err error) {
 	// free bytes in JP 1.0 rom:
 	// $00:89C2 - 30 bytes
@@ -99,60 +99,81 @@ func (p *Patcher) Patch() (err error) {
 	}
 	gameModes := frameJSL[1:]
 
+	// we can't write to SRAM from this program because we only have access to the ROM contents,
+	// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
+	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
+
+	// Build a temporary assembler to write the routine that gets written to SRAM:
+	var ta asm.Emitter
+	ta.Text = os.Stdout
+
+	// assemble #`preMainLen` bytes of code:
+	const preMainLen = 8
+	preMainAddr := uint32(0x718000 - preMainLen)
+	preMainBuf := &bytes.Buffer{}
+	ta.Code = preMainBuf
+	ta.SetBase(preMainAddr)
+	ta.JSR_abs(0x7C00)
+	ta.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+	ta.RTL()
+	if preMainBuf.Len() != preMainLen {
+		panic(fmt.Errorf("SRAM preMain assembled code length: %02x (actual) != %02x (expected)", preMainBuf.Len(), preMainLen))
+	}
+
+	// assemble the RTS instructions at the two A/B update routine locations:
+	bufUpdateA := &bytes.Buffer{}
+	ta.Code = bufUpdateA
+	ta.SetBase(0x717C00)
+	ta.RTS()
+	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	bufUpdateB := &bytes.Buffer{}
+	ta.Code = bufUpdateB
+	ta.SetBase(0x717E00)
+	ta.RTS()
+	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+
+	// start writing at the end of the ROM after music data:
+	p.writeAt(initHook)
+	a.SetBase(initHook)
+	a.REP(0x20)
+	p.asmCopyRoutine(bufUpdateA.Bytes(), &a, 0x717C00)
+	p.asmCopyRoutine(bufUpdateB.Bytes(), &a, 0x717E00)
+	p.asmCopyRoutine(preMainBuf.Bytes(), &a, preMainAddr)
+	a.SEP(0x20)
+	// emit asm code:
+	if _, err = b.WriteTo(p.w); err != nil {
+		return
+	}
+	// append the original 802F code to our custom init hook:
+	if err = p.write(code802F); err != nil {
+		return
+	}
+	// follow by `RTL`
+	a.RTL()
+	if _, err = b.WriteTo(p.w); err != nil {
+		return
+	}
+
 	// overwrite the frame hook with a JSL to the end of SRAM:
 	p.writeAt(frameHook)
 	a.SetBase(frameHook)
-	a.JSL(0x717FFA)
+	a.JSL(preMainAddr)
 	// emit asm code:
 	if _, err = b.WriteTo(p.w); err != nil {
 		return
 	}
 
-	{
-		// we can't write to SRAM from this program because we only have access to the ROM contents,
-		// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
-		// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
-
-		// Build a temporary assembler to write the routine that gets written to SRAM:
-		addr := uint32(0x718000 - 6)
-		var ta asm.Emitter
-		tb := &bytes.Buffer{}
-		ta.Code = tb
-		ta.Text = os.Stdout
-		ta.SetBase(addr)
-		// assemble 6 bytes of code:
-		ta.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
-		ta.RTL()
-		ta.NOP()
-
-		// start writing at the end of the ROM after music data:
-		p.writeAt(initHook)
-		a.SetBase(initHook)
-		a.REP(0x20)
-		// copy the assembled routine using LDA.w and STA.l instruction pairs, 16-bits at a time:
-		tc := tb.Bytes()
-		for i := 0; i < len(tc); i += 2 {
-			a.LDA_imm16_lh(tc[i], tc[i+1])
-			a.STA_long(addr)
-			addr += 2
-		}
-		a.SEP(0x20)
-		// emit asm code:
-		if _, err = b.WriteTo(p.w); err != nil {
-			return
-		}
-		// append the original 802F code to our custom init hook:
-		if err = p.write(code802F); err != nil {
-			return
-		}
-		// follow by `RTL`
-		a.RTL()
-		if _, err = b.WriteTo(p.w); err != nil {
-			return
-		}
-	}
-
 	return nil
+}
+
+func (p *Patcher) asmCopyRoutine(tc []byte, a *asm.Emitter, addr uint32) uint32 {
+	// copy the assembled routine using LDA.w and STA.l instruction pairs, 16-bits at a time:
+	for i := 0; i < len(tc); i += 2 {
+		a.LDA_imm16_lh(tc[i], tc[i+1])
+		a.STA_long(addr)
+		addr += 2
+	}
+	return addr
 }
 
 func (p *Patcher) readAt(busAddr uint32) {
