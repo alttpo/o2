@@ -7,6 +7,7 @@ import (
 	"io"
 	"o2/snes"
 	"o2/snes/asm"
+	"os"
 )
 
 type Patcher struct {
@@ -70,13 +71,17 @@ func (p *Patcher) Patch() (err error) {
 	// overwrite $00:802F with `JSL $1BB1D7`
 	p.writeAt(0x00802F)
 	const initHook = 0x1BB1D7
-	var a asm.Assembler
+	b := &bytes.Buffer{}
+	var a asm.Emitter
+	a.Code = b
+	a.Text = os.Stdout
+	a.SetBase(0x00802F)
 	a.JSL(initHook)
 	a.NOP()
-	if a.Len() != len(expected802F) {
+	if b.Len() != len(expected802F) {
 		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
 	}
-	if _, err = a.WriteTo(p.w); err != nil {
+	if _, err = b.WriteTo(p.w); err != nil {
 		return
 	}
 
@@ -95,14 +100,16 @@ func (p *Patcher) Patch() (err error) {
 
 	// overwrite the frame hook with a JSL to the end of SRAM:
 	p.writeAt(frameHook)
+	a.SetBase(frameHook)
 	a.JSL(0x717FFA)
 	// emit asm code:
-	if _, err = a.WriteTo(p.w); err != nil {
+	if _, err = b.WriteTo(p.w); err != nil {
 		return
 	}
 
 	// start writing at the end of the ROM after music data:
 	p.writeAt(initHook)
+	a.SetBase(initHook)
 	// we can't write to SRAM from this program because we only have access to the ROM contents,
 	// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
 	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
@@ -118,7 +125,7 @@ func (p *Patcher) Patch() (err error) {
 	a.STA_long(0x717FFE)
 	a.SEP(0x20)
 	// emit asm code:
-	if _, err = a.WriteTo(p.w); err != nil {
+	if _, err = b.WriteTo(p.w); err != nil {
 		return
 	}
 	// append the original 802F code to our custom init hook:
@@ -127,7 +134,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 	// follow by `RTL`
 	a.RTL()
-	if _, err = a.WriteTo(p.w); err != nil {
+	if _, err = b.WriteTo(p.w); err != nil {
 		return
 	}
 

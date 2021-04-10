@@ -14,7 +14,7 @@ type SyncableItem interface {
 	IsEnabled() bool
 	// GenerateUpdate generates a 65816 asm routine to update WRAM if applicable
 	// returns true if program was generated, false if asm was not modified
-	GenerateUpdate(asm *asm.Assembler) bool
+	GenerateUpdate(asm *asm.Emitter) bool
 }
 
 func (g *Game) initSync() {
@@ -58,7 +58,7 @@ func (s *syncableMaxU8) Offset() uint16  { return s.offset }
 func (s *syncableMaxU8) Size() uint      { return 1 }
 func (s *syncableMaxU8) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableMaxU8) GenerateUpdate(asm *asm.Assembler) bool {
+func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.local
 	offset := s.offset
@@ -107,7 +107,7 @@ func (s *syncableMaxU16) Offset() uint16  { return s.offset }
 func (s *syncableMaxU16) Size() uint      { return 2 }
 func (s *syncableMaxU16) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableMaxU16) GenerateUpdate(asm *asm.Assembler) bool {
+func (s *syncableMaxU16) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.local
 	offset := s.offset

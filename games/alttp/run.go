@@ -5,6 +5,7 @@ import (
 	"o2/client/protocol02"
 	"o2/snes"
 	"o2/snes/asm"
+	"os"
 	"time"
 )
 
@@ -191,7 +192,9 @@ func (g *Game) frameAdvanced() {
 	local := g.local
 
 	// assume 16-bit mode for accumulator and index registers:
-	a := asm.NewAssembler()
+	var a asm.Emitter
+	a.Text = os.Stdout
+	a.SetBase(0x717F00)
 	a.AssumeREP(0x30)
 	updated := false
 	for _, item := range g.syncableItems {
@@ -201,7 +204,7 @@ func (g *Game) frameAdvanced() {
 		if !item.IsEnabled() {
 			continue
 		}
-		updated = updated || item.GenerateUpdate(a)
+		updated = updated || item.GenerateUpdate(&a)
 	}
 	a.SEP(0x30)
 	for _, item := range g.syncableItems {
@@ -211,7 +214,7 @@ func (g *Game) frameAdvanced() {
 		if !item.IsEnabled() {
 			continue
 		}
-		updated = updated || item.GenerateUpdate(a)
+		updated = updated || item.GenerateUpdate(&a)
 	}
 
 	if updated {
