@@ -107,6 +107,13 @@ func (a *Emitter) NOP() {
 	a.emit1("nop", [1]byte{0xEA})
 }
 
+func (a *Emitter) JSR_abs(addr uint16) {
+	var d [3]byte
+	d[0] = 0x20
+	d[1], d[2] = imm16(addr)
+	a.emit3("jsr", "$%02[2]x%02[1]x", d)
+}
+
 func (a *Emitter) JSL(addr uint32) {
 	var d [4]byte
 	d[0] = 0x22
@@ -126,6 +133,10 @@ func (a *Emitter) JML(addr uint32) {
 	d[0] = 0x5C
 	d[1], d[2], d[3] = imm24(addr)
 	a.emit4("jml", "$%02[3]x%02[2]x%02[1]x", d)
+}
+
+func (a *Emitter) RTS() {
+	a.emit1("rts", [1]byte{0x60})
 }
 
 func (a *Emitter) RTL() {
