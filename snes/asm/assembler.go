@@ -4,8 +4,8 @@ package asm
 type Assembler interface {
 	FlagsTracker
 
-	REP(c uint8)
-	SEP(c uint8)
+	REP(c Flags)
+	SEP(c Flags)
 	NOP()
 	JSL(addr uint32)
 	JML(addr uint32)

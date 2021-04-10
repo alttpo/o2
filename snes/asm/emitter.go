@@ -93,14 +93,14 @@ func imm16(v uint16) (byte, byte) {
 	return byte(v), byte(v >> 8)
 }
 
-func (a *Emitter) REP(c uint8) {
+func (a *Emitter) REP(c Flags) {
 	a.AssumeREP(c)
-	a.emit2("rep", "#$%02x", [2]byte{0xC2, c})
+	a.emit2("rep", "#$%02x", [2]byte{0xC2, byte(c)})
 }
 
-func (a *Emitter) SEP(c uint8) {
+func (a *Emitter) SEP(c Flags) {
 	a.AssumeSEP(c)
-	a.emit2("sep", "#$%02x", [2]byte{0xE2, c})
+	a.emit2("sep", "#$%02x", [2]byte{0xE2, byte(c)})
 }
 
 func (a *Emitter) NOP() {

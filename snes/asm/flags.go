@@ -18,8 +18,8 @@ type FlagsTracker interface {
 	Flags() Flags
 	IsX16bit() bool
 	IsM16bit() bool
-	AssumeREP(c uint8)
-	AssumeSEP(c uint8)
+	AssumeREP(c Flags)
+	AssumeSEP(c Flags)
 }
 
 // flagsTracker implements FlagsTracker
@@ -37,10 +37,10 @@ func (t flagsTracker) IsM16bit() bool {
 	return Flags(t)&Accumulator8bit == 0
 }
 
-func (t *flagsTracker) AssumeREP(c uint8) {
+func (t *flagsTracker) AssumeREP(c Flags) {
 	*t &= ^flagsTracker(c)
 }
 
-func (t *flagsTracker) AssumeSEP(c uint8) {
+func (t *flagsTracker) AssumeSEP(c Flags) {
 	*t |= flagsTracker(c)
 }
