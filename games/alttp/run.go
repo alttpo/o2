@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"o2/client/protocol02"
 	"o2/snes"
 	"o2/snes/asm"
@@ -70,7 +71,8 @@ func (g *Game) run() {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 	g.readSubmit()
 
-	heartbeat := time.NewTicker(250 * time.Millisecond)
+	fastbeat := time.NewTicker(250 * time.Millisecond)
+	slowbeat := time.NewTicker(1000 * time.Millisecond)
 
 	for g.running {
 		select {
@@ -104,7 +106,7 @@ func (g *Game) run() {
 			break
 
 		// periodically send basic messages to the server to maintain our connection:
-		case <-heartbeat.C:
+		case <-fastbeat.C:
 			if g.localIndex < 0 {
 				// request our player index:
 				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
@@ -112,18 +114,20 @@ func (g *Game) run() {
 				break
 			}
 
-			// broadcast player name:
-			{
-				m := g.makeGamePacket(protocol02.Broadcast)
-				m.WriteByte(0x0C)
-				var name [20]byte
-				n := copy(name[:], g.local.Name)
-				for ; n < 20; n++ {
-					name[n] = ' '
-				}
-				m.Write(name[:])
-				g.send(m)
+		case <-slowbeat.C:
+			if g.localIndex < 0 {
+				break
 			}
+			// broadcast player name:
+			m := g.makeGamePacket(protocol02.Broadcast)
+			m.WriteByte(0x0C)
+			var name [20]byte
+			n := copy(name[:], g.local.Name)
+			for ; n < 20; n++ {
+				name[n] = ' '
+			}
+			m.Write(name[:])
+			g.send(m)
 			break
 		}
 	}
@@ -203,10 +207,23 @@ func (g *Game) frameAdvanced() {
 	{
 		// send location packet every frame:
 		m := g.makeGamePacket(protocol02.Broadcast)
+
+		locStart := m.Len()
 		if err := SerializeLocation(local, m); err != nil {
 			panic(err)
 		}
-		g.send(m)
+
+		// hash the location packet:
+		locHash := hash64(m.Bytes()[locStart:])
+		if g.locHashTTL > 0 {
+			g.locHashTTL--
+		}
+		if locHash != g.locHash || g.locHashTTL <= 0 {
+			// only send if different or TTL of last packet expired:
+			g.send(m)
+			g.locHashTTL = 60
+			g.locHash = locHash
+		}
 	}
 
 	if g.localFrame&15 == 0 {
@@ -254,6 +271,12 @@ func (g *Game) frameAdvanced() {
 		}
 		g.send(m)
 	}
+}
+
+func hash64(b []byte) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write(b)
+	return h.Sum64()
 }
 
 func (g *Game) updateWRAM() {

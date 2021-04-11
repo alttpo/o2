@@ -32,9 +32,12 @@ type Game struct {
 	readResponse          []snes.Response
 	readCompletionChannel chan []snes.Response
 
-	nextUpdateA bool
-	updateLock sync.Mutex
+	nextUpdateA      bool
+	updateLock       sync.Mutex
 	updateInProgress bool
+
+	locHashTTL int
+	locHash    uint64
 
 	wram      [0x20000]byte
 	wramDirty [0x20000]bool
