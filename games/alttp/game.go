@@ -39,8 +39,7 @@ type Game struct {
 	locHashTTL int
 	locHash    uint64
 
-	wram      [0x20000]byte
-	wramDirty [0x20000]bool
+	wram [0x20000]byte
 
 	syncableItems map[uint16]SyncableItem
 

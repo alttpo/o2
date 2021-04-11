@@ -45,15 +45,7 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 	// copy data read into our wram array:
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
-		o := rsp.Address - 0xF50000
-		size := uint32(len(rsp.Data))
-		for i := uint32(0); i < size; i++ {
-			if g.wram[o] != rsp.Data[i] {
-				g.wramDirty[o] = true
-			}
-			g.wram[o] = rsp.Data[i]
-			o++
-		}
+		copy(g.wram[(rsp.Address-0xF50000):], rsp.Data)
 	}
 }
 
