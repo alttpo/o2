@@ -66,6 +66,13 @@ func (g *Game) run() {
 		case rsps := <-g.readCompletionChannel:
 			lastReadTime = time.Now()
 
+			// allow further writes now:
+			g.updateLock.Lock()
+			if g.updateStage == 2 {
+				g.updateStage = 0
+			}
+			g.updateLock.Unlock()
+
 			if !g.IsRunning() {
 				break
 			}
@@ -138,14 +145,6 @@ func (g *Game) requestMainReads() {
 
 // called when all reads are completed:
 func (g *Game) readMainComplete() {
-	defer g.updateLock.Unlock()
-	g.updateLock.Lock()
-
-	// allow further writes now:
-	if g.updateStage == 2 {
-		g.updateStage = 0
-	}
-
 	// assign local variables from WRAM:
 	local := g.local
 	local.Module = Module(g.wram[0x10])
