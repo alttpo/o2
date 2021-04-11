@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"o2/snes"
 	"o2/snes/asm"
-	"os"
+	"strings"
 )
 
 const (
@@ -80,9 +81,12 @@ func (p *Patcher) Patch() (err error) {
 	p.writeAt(0x00802F)
 	const initHook = 0x1BB1D7
 	b := &bytes.Buffer{}
+	textBuf := &strings.Builder{}
+	defer func() { log.Print(textBuf.String()) }()
+
 	var a asm.Emitter
 	a.Code = b
-	a.Text = os.Stdout
+	a.Text = textBuf
 	a.SetBase(0x00802F)
 	a.JSL(initHook)
 	a.NOP()
@@ -113,7 +117,7 @@ func (p *Patcher) Patch() (err error) {
 
 	// Build a temporary assembler to write the routine that gets written to SRAM:
 	var ta asm.Emitter
-	ta.Text = os.Stdout
+	ta.Text = textBuf
 
 	// assemble #`preMainLen` bytes of code:
 	preMainBuf := &bytes.Buffer{}

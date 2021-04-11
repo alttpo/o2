@@ -5,10 +5,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"o2/client/protocol02"
 	"o2/snes"
 	"o2/snes/asm"
-	"os"
+	"strings"
 	"time"
 )
 
@@ -315,7 +316,7 @@ func (g *Game) updateWRAM() {
 	_ = oppositeSNES
 
 	codeBuf := bytes.Buffer{}
-	textBuf := bytes.Buffer{}
+	textBuf := strings.Builder{}
 
 	var a asm.Emitter
 	a.Text = &textBuf
@@ -362,7 +363,7 @@ func (g *Game) updateWRAM() {
 	a.RTS()
 
 	// dump asm:
-	_, _ = textBuf.WriteTo(os.Stdout)
+	log.Print(textBuf.String())
 
 	if codeBuf.Len() > 255 {
 		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", codeBuf.Len()))
