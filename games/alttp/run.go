@@ -3,6 +3,7 @@ package alttp
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"o2/client/protocol02"
 	"o2/snes"
 	"o2/snes/asm"
@@ -256,14 +257,30 @@ func (g *Game) frameAdvanced() {
 }
 
 func (g *Game) updateWRAM() {
+	defer g.updateLock.Unlock()
+	g.updateLock.Lock()
+
+	if g.updateInProgress {
+		return
+	}
+
+	// select target SRAM routine:
+	var targetSNES uint32
+	if g.nextUpdateA {
+		targetSNES = preMainUpdateAAddr
+	} else {
+		targetSNES = preMainUpdateBAddr
+	}
+
 	b := &bytes.Buffer{}
 	var a asm.Emitter
 	a.Text = os.Stdout
 	a.Code = b
-	a.SetBase(0x717F00)
+	a.SetBase(targetSNES)
 	updated := false
-	// use 16-bit mode for accumulator and generate update ASM code for any 16-bit values:
-	a.REP(0x20)
+	// assume 16-bit mode for accumulator
+	a.AssumeREP(0x20)
+	// generate update ASM code for any 16-bit values:
 	for _, item := range g.syncableItems {
 		if item.Size() != 2 {
 			continue
@@ -274,8 +291,9 @@ func (g *Game) updateWRAM() {
 		u := item.GenerateUpdate(&a)
 		updated = updated || u
 	}
-	// use 8-bit mode for accumulator and generate update ASM code for any 8-bit values:
+	// use 8-bit mode for accumulator
 	a.SEP(0x20)
+	// generate update ASM code for any 8-bit values:
 	for _, item := range g.syncableItems {
 		if item.Size() != 1 {
 			continue
@@ -286,24 +304,51 @@ func (g *Game) updateWRAM() {
 		u := item.GenerateUpdate(&a)
 		updated = updated || u
 	}
+	// back to 16-bit mode for accumulator:
+	a.REP(0x20)
+	a.RTS()
 
-	if updated {
-		// write generated asm routine to SRAM:
-		//g.queue.MakeWriteCommands([]snes.Write{
-		//	{
-		//		Address:    0xE0FF00,
-		//		Size:       uint8(b.Len()),
-		//		Data:       b.Bytes(),
-		//		Extra:      nil,
-		//		Completion: nil,
-		//	},
-		//	{
-		//		Address:    0xE0FFFA,
-		//		Size:       0,
-		//		Data:       nil,
-		//		Extra:      nil,
-		//		Completion: nil,
-		//	},
-		//}, nil)
+	if !updated {
+		return
 	}
+
+	if b.Len() > 255 {
+		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", b.Len()))
+	}
+
+	// prevent more updates until the upcoming write completes:
+	g.updateInProgress = true
+	fmt.Println("write started")
+
+	// calculate target address in FX Pak Pro address space:
+	// SRAM starts at $E00000
+	target := (targetSNES - 0x700000) + 0xE00000
+	g.nextUpdateA = !g.nextUpdateA
+
+	// write generated asm routine to SRAM:
+	g.queue.MakeWriteCommands(
+		[]snes.Write{
+			// TODO: might need multiple writes to cover full length if > 255:
+			{
+				Address: target,
+				Size:    uint8(b.Len()),
+				Data:    b.Bytes(),
+			},
+			// finally, update the JSR instruction to point to the updated routine:
+			{
+				// JSR $7C00 | JSR $7E00
+				// update the $7C or $7E byte in the JSR instruction:
+				Address: (preMainAddr + 2 - 0x700000) + 0xE00000,
+				Size:    1,
+				Data:    []byte{uint8(target >> 8)},
+			},
+		},
+		func(cmd snes.Command, err error) {
+			fmt.Println("write completed")
+			defer g.updateLock.Unlock()
+			g.updateLock.Lock()
+			// allow more updates:
+			g.updateInProgress = false
+		},
+	).EnqueueTo(g.queue)
 }

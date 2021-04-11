@@ -10,6 +10,14 @@ import (
 	"os"
 )
 
+const (
+	preMainLen  = 8
+	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
+	preMainAddr = uint32(0x718000 - preMainLen)
+	preMainUpdateAAddr = uint32(0x717C00)
+	preMainUpdateBAddr = uint32(0x717E00)
+)
+
 type Patcher struct {
 	rom *snes.ROM
 	r   io.Reader
@@ -108,8 +116,6 @@ func (p *Patcher) Patch() (err error) {
 	ta.Text = os.Stdout
 
 	// assemble #`preMainLen` bytes of code:
-	const preMainLen = 8
-	preMainAddr := uint32(0x718000 - preMainLen)
 	preMainBuf := &bytes.Buffer{}
 	ta.Code = preMainBuf
 	ta.SetBase(preMainAddr)
@@ -121,14 +127,14 @@ func (p *Patcher) Patch() (err error) {
 	}
 
 	// assemble the RTS instructions at the two A/B update routine locations:
-	bufUpdateA := &bytes.Buffer{}
-	ta.Code = bufUpdateA
-	ta.SetBase(0x717C00)
+	preMainUpdateABuf := &bytes.Buffer{}
+	ta.Code = preMainUpdateABuf
+	ta.SetBase(preMainUpdateAAddr)
 	ta.RTS()
 	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
 	bufUpdateB := &bytes.Buffer{}
 	ta.Code = bufUpdateB
-	ta.SetBase(0x717E00)
+	ta.SetBase(preMainUpdateBAddr)
 	ta.RTS()
 	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
 
@@ -136,8 +142,8 @@ func (p *Patcher) Patch() (err error) {
 	p.writeAt(initHook)
 	a.SetBase(initHook)
 	a.REP(0x20)
-	p.asmCopyRoutine(bufUpdateA.Bytes(), &a, 0x717C00)
-	p.asmCopyRoutine(bufUpdateB.Bytes(), &a, 0x717E00)
+	p.asmCopyRoutine(preMainUpdateABuf.Bytes(), &a, preMainUpdateAAddr)
+	p.asmCopyRoutine(bufUpdateB.Bytes(), &a, preMainUpdateBAddr)
 	p.asmCopyRoutine(preMainBuf.Bytes(), &a, preMainAddr)
 	a.SEP(0x20)
 	// emit asm code:

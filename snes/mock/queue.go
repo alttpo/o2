@@ -9,8 +9,8 @@ import (
 type Queue struct {
 	snes.BaseQueue
 
-	wram        [0x20000]byte
-	nothing     [0x100]byte
+	wram    [0x20000]byte
+	nothing [0x100]byte
 
 	frameTicker *time.Ticker
 }
@@ -36,7 +36,7 @@ func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, snes.CommandWithCompletion{
-			Command: &readCommand{req},
+			Command:    &readCommand{req},
 			Completion: batchComplete,
 		})
 	}
@@ -47,7 +47,7 @@ func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completi
 	seq := make(snes.CommandSequence, 0, len(reqs))
 	for _, req := range reqs {
 		seq = append(seq, snes.CommandWithCompletion{
-			Command: &writeCommand{req},
+			Command:    &writeCommand{req},
 			Completion: batchComplete,
 		})
 	}
@@ -73,7 +73,7 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 	if r.Request.Address >= 0xF50000 && r.Request.Address < 0xF70000 {
 		// read from wram:
 		o := r.Request.Address - 0xF50000
-		data = q.wram[o: o + uint32(r.Request.Size)]
+		data = q.wram[o : o+uint32(r.Request.Size)]
 	} else {
 		// read from nothing:
 		data = q.nothing[0:r.Request.Size]
@@ -105,8 +105,8 @@ func (r *writeCommand) Execute(_ snes.Queue) error {
 			IsWrite: true,
 			Address: r.Request.Address,
 			Size:    r.Request.Size,
-			Data:    r.Request.Data,
 			Extra:   r.Request.Extra,
+			Data:    r.Request.Data,
 		})
 	}
 	return nil

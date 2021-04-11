@@ -6,6 +6,7 @@ import (
 	"o2/interfaces"
 	"o2/snes"
 	"strings"
+	"sync"
 )
 
 // MaxPlayers can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
@@ -30,6 +31,10 @@ type Game struct {
 	readQueue             []snes.Read
 	readResponse          []snes.Response
 	readCompletionChannel chan []snes.Response
+
+	nextUpdateA bool
+	updateLock sync.Mutex
+	updateInProgress bool
 
 	wram      [0x20000]byte
 	wramDirty [0x20000]bool
