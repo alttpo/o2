@@ -43,6 +43,8 @@ type Game struct {
 
 	syncableItems map[uint16]SyncableItem
 
+	romFunctions map[romFunction]uint32
+
 	lastGameFrame uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	localFrame    uint64 // total frame count since start of local game
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
@@ -68,11 +70,13 @@ func (f *Factory) NewGame(
 		viewNotifier:          viewNotifier,
 		running:               false,
 		readCompletionChannel: make(chan []snes.Response, 8),
-
+		romFunctions:          make(map[romFunction]uint32),
 		// ViewModel:
 		IsCreated: true,
 		SyncItems: true,
 	}
+
+	g.fillRomFunctions()
 
 	return g, nil
 }
@@ -156,3 +160,4 @@ func (g *Game) ActivePlayers() []*Player {
 
 	return g.activePlayers
 }
+

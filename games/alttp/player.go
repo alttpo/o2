@@ -1,5 +1,7 @@
 package alttp
 
+import "log"
+
 type Module uint8
 
 func (m Module) IsOverworld() bool {
@@ -59,6 +61,7 @@ func (p *Player) DecTTL() {
 
 	p.TTL--
 	if p.TTL <= 0 {
+		log.Printf("[%02x]: %s left\n", uint8(p.Index), p.Name)
 		p.g.activePlayersClean = false
 	}
 }
