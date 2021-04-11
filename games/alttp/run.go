@@ -298,11 +298,13 @@ func (g *Game) updateWRAM() {
 
 	// select target SRAM routine:
 	var targetSNES uint32
+	var oppositeSNES uint32
 	if g.nextUpdateA {
-		targetSNES = preMainUpdateAAddr
+		targetSNES, oppositeSNES = preMainUpdateAAddr, preMainUpdateBAddr
 	} else {
-		targetSNES = preMainUpdateBAddr
+		targetSNES, oppositeSNES = preMainUpdateBAddr, preMainUpdateAAddr
 	}
+	_ = oppositeSNES
 
 	codeBuf := bytes.Buffer{}
 	textBuf := bytes.Buffer{}
@@ -343,6 +345,10 @@ func (g *Game) updateWRAM() {
 		return
 	}
 
+	// clear out our routine with an RTS instruction at the start:
+	// MUST be in SEP(0x20) mode!
+	a.LDA_imm8_b(0x60) // RTS
+	a.STA_long(targetSNES)
 	// back to 16-bit mode for accumulator:
 	a.REP(0x20)
 	a.RTS()
