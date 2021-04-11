@@ -19,37 +19,13 @@ type ROMViewModel struct {
 	Version  string `json:"version"`
 }
 
-var regions = map[byte]string{
-	0x00: "Japan",
-	0x01: "North America",
-	0x02: "Europe",
-	0x03: "Sweden/Scandinavia",
-	0x04: "Finland",
-	0x05: "Denmark",
-	0x06: "France",
-	0x07: "Netherlands",
-	0x08: "Spain",
-	0x09: "Germany",
-	0x0A: "Italy",
-	0x0B: "China",
-	0x0C: "Indonesia",
-	0x0D: "Korea",
-	0x0E: "Global (?)",
-	0x0F: "Canada",
-	0x10: "Brazil",
-	0x11: "Australia",
-	0x12: "Other (1)",
-	0x13: "Other (2)",
-	0x14: "Other (3)",
-}
-
 func (v *ROMViewModel) Update() {
 	rom := v.c.nextRom
 	v.IsLoaded = rom != nil
 
 	if v.IsLoaded {
 		v.Title = string(rom.Header.Title[:])
-		v.Region = regions[rom.Header.DestinationCode]
+		v.Region = snes.RegionNames[rom.Header.DestinationCode]
 		v.Version = fmt.Sprintf("1.%d", rom.Header.MaskROMVersion)
 	} else {
 		v.Title = ""

@@ -237,7 +237,7 @@ region:  %s (code %02X)
 version: 1.%d
 `,
 		string(rom.Header.Title[:]),
-		regions[rom.Header.DestinationCode],
+		snes.RegionNames[rom.Header.DestinationCode],
 		rom.Header.DestinationCode,
 		rom.Header.MaskROMVersion)
 

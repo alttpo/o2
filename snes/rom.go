@@ -18,6 +18,56 @@ type ROM struct {
 	EmulatedVectors EmulatedVectors
 }
 
+type Region uint8
+
+const (
+	RegionJapan Region = iota
+	RegionNorthAmerica
+	RegionEurope
+	RegionSwedenScandinavia
+	RegionFinland
+	RegionDenmark
+	RegionFrance
+	RegionNetherlands
+	RegionSpain
+	RegionGermany
+	RegionItaly
+	RegionChina
+	RegionIndonesia
+	RegionKorea
+	RegionGlobal
+	RegionCanada
+	RegionBrazil
+	RegionAustralia
+	RegionOther1
+	RegionOther2
+	RegionOther3
+)
+
+var RegionNames = map[Region]string{
+	0x00: "Japan",
+	0x01: "North America",
+	0x02: "Europe",
+	0x03: "Sweden/Scandinavia",
+	0x04: "Finland",
+	0x05: "Denmark",
+	0x06: "France",
+	0x07: "Netherlands",
+	0x08: "Spain",
+	0x09: "Germany",
+	0x0A: "Italy",
+	0x0B: "China",
+	0x0C: "Indonesia",
+	0x0D: "Korea",
+	0x0E: "Global (?)",
+	0x0F: "Canada",
+	0x10: "Brazil",
+	0x11: "Australia",
+	0x12: "Other (1)",
+	0x13: "Other (2)",
+	0x14: "Other (3)",
+}
+
 // $FFB0
 type Header struct {
 	version int // 1, 2, or 3
@@ -36,7 +86,7 @@ type Header struct {
 	CartridgeType      byte     `rom:"FFD6"`
 	ROMSize            byte     `rom:"FFD7"`
 	RAMSize            byte     `rom:"FFD8"`
-	DestinationCode    byte     `rom:"FFD9"`
+	DestinationCode    Region   `rom:"FFD9"`
 	OldMakerCode       byte     `rom:"FFDA"` // = $33 to indicate ver 3 header
 	MaskROMVersion     byte     `rom:"FFDB"`
 	ComplementCheckSum uint16   `rom:"FFDC"`
