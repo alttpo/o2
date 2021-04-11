@@ -65,6 +65,7 @@ func (g *Game) run() {
 		// wait for SNES memory read completion:
 		case rsps := <-g.readCompletionChannel:
 			lastReadTime = time.Now()
+
 			if !g.IsRunning() {
 				break
 			}
@@ -137,6 +138,14 @@ func (g *Game) requestMainReads() {
 
 // called when all reads are completed:
 func (g *Game) readMainComplete() {
+	defer g.updateLock.Unlock()
+	g.updateLock.Lock()
+
+	// allow further writes now:
+	if g.updateStage == 2 {
+		g.updateStage = 0
+	}
+
 	// assign local variables from WRAM:
 	local := g.local
 	local.Module = Module(g.wram[0x10])
@@ -292,7 +301,7 @@ func (g *Game) updateWRAM() {
 	defer g.updateLock.Unlock()
 	g.updateLock.Lock()
 
-	if g.updateInProgress {
+	if g.updateStage > 0 {
 		return
 	}
 
@@ -361,7 +370,7 @@ func (g *Game) updateWRAM() {
 	}
 
 	// prevent more updates until the upcoming write completes:
-	g.updateInProgress = true
+	g.updateStage = 1
 	fmt.Println("write started")
 
 	// calculate target address in FX Pak Pro address space:
@@ -391,8 +400,10 @@ func (g *Game) updateWRAM() {
 			fmt.Println("write completed")
 			defer g.updateLock.Unlock()
 			g.updateLock.Lock()
-			// allow more updates:
-			g.updateInProgress = false
+			// expect a read now to prevent double-write:
+			if g.updateStage == 1 {
+				g.updateStage = 2
+			}
 		},
 	).EnqueueTo(g.queue)
 }

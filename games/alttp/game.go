@@ -32,9 +32,9 @@ type Game struct {
 	readResponse          []snes.Response
 	readCompletionChannel chan []snes.Response
 
-	nextUpdateA      bool
-	updateLock       sync.Mutex
-	updateInProgress bool
+	nextUpdateA bool
+	updateLock  sync.Mutex
+	updateStage int
 
 	locHashTTL int
 	locHash    uint64
@@ -160,4 +160,3 @@ func (g *Game) ActivePlayers() []*Player {
 
 	return g.activePlayers
 }
-
