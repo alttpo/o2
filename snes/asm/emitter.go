@@ -180,6 +180,20 @@ func (a *Emitter) STA_long(addr uint32) {
 	a.emit4("sta.l", "$%02[3]x%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) STA_abs(addr uint16) {
+	var d [3]byte
+	d[0] = 0x8D
+	d[1], d[2] = imm16(addr)
+	a.emit3("sta.w", "$%02[2]x%02[1]x", d)
+}
+
+func (a *Emitter) STA_dp(addr uint8) {
+	var d [2]byte
+	d[0] = 0x85
+	d[1] = addr
+	a.emit2("sta.b", "$%02[1]x", d)
+}
+
 func (a *Emitter) ORA_long(addr uint32) {
 	var d [4]byte
 	d[0] = 0x0F

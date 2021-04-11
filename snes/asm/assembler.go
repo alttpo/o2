@@ -17,5 +17,7 @@ type Assembler interface {
 	LDA_imm16_w(m uint16)
 	LDA_imm16_lh(lo, hi uint8)
 	STA_long(addr uint32)
+	STA_abs(addr uint16)
+	STA_dp(addr uint8)
 	ORA_long(addr uint32)
 }
