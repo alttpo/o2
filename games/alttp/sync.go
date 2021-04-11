@@ -60,16 +60,12 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"}).onUpdated = func(asm *asm.Emitter) {
 		asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 	}
-}
 
-func Max(values []uint16) uint16 {
-	maxV := uint16(0)
-	for _, v := range values {
-		if v > maxV {
-			maxV = v
-		}
-	}
-	return maxV
+	bottleItemNames := []string{"", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
+	g.newSyncableBottle(0x35C, &g.SyncItems, bottleItemNames)
+	g.newSyncableBottle(0x35D, &g.SyncItems, bottleItemNames)
+	g.newSyncableBottle(0x35E, &g.SyncItems, bottleItemNames)
+	g.newSyncableBottle(0x35F, &g.SyncItems, bottleItemNames)
 }
 
 type syncableMaxU8 struct {
@@ -176,6 +172,72 @@ func (s *syncableMaxU16) GenerateUpdate(asm *asm.Emitter) bool {
 
 	asm.LDA_imm16_w(maxV)
 	asm.STA_long(0x7EF000 + uint32(offset))
+
+	return true
+}
+
+type syncableBottle struct {
+	g *Game
+
+	offset    uint16
+	isEnabled *bool
+	names     []string
+
+	onUpdated func(asm *asm.Emitter)
+}
+
+func (g *Game) newSyncableBottle(offset uint16, enabled *bool, names []string) *syncableBottle {
+	s := &syncableBottle{
+		g:         g,
+		offset:    offset,
+		isEnabled: enabled,
+		names:     names,
+	}
+	g.syncableItems[offset] = s
+	return s
+}
+
+func (s *syncableBottle) Offset() uint16  { return s.offset }
+func (s *syncableBottle) Size() uint      { return 1 }
+func (s *syncableBottle) IsEnabled() bool { return *s.isEnabled }
+
+func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
+	g := s.g
+	local := g.local
+	offset := s.offset
+
+	initial := local.SRAM[offset]
+	if initial != 0 {
+		// don't change existing bottle contents:
+		return false
+	}
+
+	// max() is an odd choice here but something has to reconcile any differences among
+	// all remote players that have this bottle slot filled.
+	maxP := local
+	maxV := initial
+	for _, p := range g.ActivePlayers() {
+		v := p.SRAM[offset]
+		if v > maxV {
+			maxV, maxP = v, p
+		}
+	}
+
+	if maxV == initial {
+		// no change:
+		return false
+	}
+
+	// notify local player of new item received:
+	_ = maxP
+	//g.notifyNewItem(s.names[v])
+
+	asm.LDA_imm8_b(maxV)
+	asm.STA_long(0x7EF000 + uint32(offset))
+
+	if s.onUpdated != nil {
+		s.onUpdated(asm)
+	}
 
 	return true
 }
