@@ -54,14 +54,8 @@ func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
 
-	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0) // $0010-$00FF
-	g.readEnqueue(0xF50100, 0x36) // $0100-$0136
-	g.readEnqueue(0xF50400, 0x20) // $0400-$041F
-	// ALTTP's SRAM copy in WRAM:
-	g.readEnqueue(0xF5F340, 0xF0) // $F340-$F42F
-	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
-	g.readSubmit()
+	lastReadTime := time.Now()
+	g.requestMainReads()
 
 	fastbeat := time.NewTicker(250 * time.Millisecond)
 	slowbeat := time.NewTicker(1000 * time.Millisecond)
@@ -70,6 +64,7 @@ func (g *Game) run() {
 		select {
 		// wait for SNES memory read completion:
 		case rsps := <-g.readCompletionChannel:
+			lastReadTime = time.Now()
 			if !g.IsRunning() {
 				break
 			}
@@ -99,6 +94,10 @@ func (g *Game) run() {
 
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
+			// make sure a read request is always in flight to keep our main loop running:
+			if time.Now().Sub(lastReadTime).Milliseconds() >= 500 {
+				g.requestMainReads()
+			}
 			if g.localIndex < 0 {
 				// request our player index:
 				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
@@ -123,6 +122,17 @@ func (g *Game) run() {
 			break
 		}
 	}
+}
+
+func (g *Game) requestMainReads() {
+	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+	g.readEnqueue(0xF50010, 0xF0) // $0010-$00FF
+	g.readEnqueue(0xF50100, 0x36) // $0100-$0136
+	g.readEnqueue(0xF50400, 0x20) // $0400-$041F
+	// ALTTP's SRAM copy in WRAM:
+	g.readEnqueue(0xF5F340, 0xF0) // $F340-$F42F
+	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
+	g.readSubmit()
 }
 
 // called when all reads are completed:
