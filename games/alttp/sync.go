@@ -124,8 +124,11 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	//g.notifyNewItem(s.names[v])
 
+	//log.Printf("sram[%04x]: %02x -> %02x\n", offset, initial, newBits)
+	addr := 0x7EF000 + uint32(offset)
 	asm.LDA_imm8_b(newBits & ^initial)
-	asm.ORA_long(0x7EF000 + uint32(offset))
+	asm.ORA_long(addr)
+	asm.STA_long(addr)
 
 	if s.onUpdated != nil {
 		s.onUpdated(asm)
