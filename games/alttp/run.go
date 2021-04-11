@@ -304,11 +304,14 @@ func (g *Game) updateWRAM() {
 		targetSNES = preMainUpdateBAddr
 	}
 
-	b := &bytes.Buffer{}
+	codeBuf := bytes.Buffer{}
+	textBuf := bytes.Buffer{}
+
 	var a asm.Emitter
-	a.Text = os.Stdout
-	a.Code = b
+	a.Text = &textBuf
+	a.Code = &codeBuf
 	a.SetBase(targetSNES)
+
 	updated := false
 	// assume 16-bit mode for accumulator
 	a.AssumeREP(0x20)
@@ -336,16 +339,19 @@ func (g *Game) updateWRAM() {
 		u := item.GenerateUpdate(&a)
 		updated = updated || u
 	}
-	// back to 16-bit mode for accumulator:
-	a.REP(0x20)
-	a.RTS()
-
 	if !updated {
 		return
 	}
 
-	if b.Len() > 255 {
-		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", b.Len()))
+	// back to 16-bit mode for accumulator:
+	a.REP(0x20)
+	a.RTS()
+
+	// dump asm:
+	_, _ = textBuf.WriteTo(os.Stdout)
+
+	if codeBuf.Len() > 255 {
+		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", codeBuf.Len()))
 	}
 
 	// prevent more updates until the upcoming write completes:
@@ -363,8 +369,8 @@ func (g *Game) updateWRAM() {
 			// TODO: might need multiple writes to cover full length if > 255:
 			{
 				Address: target,
-				Size:    uint8(b.Len()),
-				Data:    b.Bytes(),
+				Size:    uint8(codeBuf.Len()),
+				Data:    codeBuf.Bytes(),
 			},
 			// finally, update the JSR instruction to point to the updated routine:
 			{
