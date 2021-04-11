@@ -66,6 +66,16 @@ func (g *Game) initSync() {
 	g.newSyncableBottle(0x35D, &g.SyncItems, bottleItemNames)
 	g.newSyncableBottle(0x35E, &g.SyncItems, bottleItemNames)
 	g.newSyncableBottle(0x35F, &g.SyncItems, bottleItemNames)
+
+	// bombs capacity:
+	g.newSyncableMaxU8(0x370, &g.SyncItems, nil)
+	// arrows capacity:
+	g.newSyncableMaxU8(0x371, &g.SyncItems, nil)
+	// magic reduction (1/1, 1/2, 1/4):
+	g.newSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"})
+
+	// map icons:
+	g.newSyncableMaxU8(0x3C7, &g.SyncItems, nil)
 }
 
 type syncableMaxU8 struct {
