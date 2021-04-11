@@ -67,6 +67,62 @@ func (g *Game) initSync() {
 	g.newSyncableBottle(0x35E, &g.SyncItems, bottleItemNames)
 	g.newSyncableBottle(0x35F, &g.SyncItems, bottleItemNames)
 
+	// dungeon items:
+	g.newSyncableBitU8(0x364, &g.SyncDungeonItems, []string{
+		"",
+		"",
+		"Ganon's Tower Compass",
+		"Turtle Rock Compass",
+		"Thieves Town Compass",
+		"Tower of Hera Compass",
+		"Ice Palace Compass",
+		"Skull Woods Compass"})
+	g.newSyncableBitU8(0x365, &g.SyncDungeonItems, []string{
+		"Misery Mire Compass",
+		"Dark Palace Compass",
+		"Swamp Palace Compass",
+		"Hyrule Castle 2 Compass",
+		"Desert Palace Compass",
+		"Eastern Palace Compass",
+		"Hyrule Castle Compass",
+		"Sewer Passage Compass"})
+	g.newSyncableBitU8(0x366, &g.SyncDungeonItems, []string{
+		"",
+		"",
+		"Ganon's Tower Big Key",
+		"Turtle Rock Big Key",
+		"Thieves Town Big Key",
+		"Tower of Hera Big Key",
+		"Ice Palace Big Key",
+		"Skull Woods Big Key"})
+	g.newSyncableBitU8(0x367, &g.SyncDungeonItems, []string{
+		"Misery Mire Big Key",
+		"Dark Palace Big Key",
+		"Swamp Palace Big Key",
+		"Hyrule Castle 2 Big Key",
+		"Desert Palace Big Key",
+		"Eastern Palace Big Key",
+		"Hyrule Castle Big Key",
+		"Sewer Passage Big Key"})
+	g.newSyncableBitU8(0x368, &g.SyncDungeonItems, []string{
+		"",
+		"",
+		"Ganon's Tower Map",
+		"Turtle Rock Map",
+		"Thieves Town Map",
+		"Tower of Hera Map",
+		"Ice Palace Map",
+		"Skull Woods Map"})
+	g.newSyncableBitU8(0x369, &g.SyncDungeonItems, []string{
+		"Misery Mire Map",
+		"Dark Palace Map",
+		"Swamp Palace Map",
+		"Hyrule Castle 2 Map",
+		"Desert Palace Map",
+		"Eastern Palace Map",
+		"Hyrule Castle Map",
+		"Sewer Passage Map"})
+
 	// bombs capacity:
 	g.newSyncableMaxU8(0x370, &g.SyncItems, nil)
 	// arrows capacity:

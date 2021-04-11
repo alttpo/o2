@@ -50,11 +50,12 @@ type Game struct {
 	serverFrame   uint64 // total frame count according to server (taken from first player to enter group)
 
 	// serializable ViewModel:
-	clean      bool
-	IsCreated  bool   `json:"isCreated"`
-	Team       uint8  `json:"team"`
-	PlayerName string `json:"playerName"`
-	SyncItems  bool   `json:"syncItems"`
+	clean            bool
+	IsCreated        bool   `json:"isCreated"`
+	Team             uint8  `json:"team"`
+	PlayerName       string `json:"playerName"`
+	SyncItems        bool   `json:"syncItems"`
+	SyncDungeonItems bool   `json:"syncDungeonItems"`
 }
 
 func (f *Factory) NewGame(
@@ -74,6 +75,7 @@ func (f *Factory) NewGame(
 		// ViewModel:
 		IsCreated: true,
 		SyncItems: true,
+		SyncDungeonItems: true,
 	}
 
 	g.fillRomFunctions()
