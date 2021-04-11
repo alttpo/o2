@@ -78,6 +78,62 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x3C7, &g.SyncItems, nil)
 }
 
+type syncableBitU8 struct {
+	g *Game
+
+	offset    uint16
+	isEnabled *bool
+	names     []string
+
+	onUpdated func(asm *asm.Emitter)
+}
+
+func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string) *syncableBitU8 {
+	s := &syncableBitU8{
+		g:         g,
+		offset:    offset,
+		isEnabled: enabled,
+		names:     names,
+	}
+	g.syncableItems[offset] = s
+	return s
+}
+
+func (s *syncableBitU8) Offset() uint16  { return s.offset }
+func (s *syncableBitU8) Size() uint      { return 1 }
+func (s *syncableBitU8) IsEnabled() bool { return *s.isEnabled }
+
+func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
+	g := s.g
+	local := g.local
+	offset := s.offset
+
+	initial := local.SRAM[offset]
+
+	newBits := initial
+	for _, p := range g.ActivePlayers() {
+		v := p.SRAM[offset]
+		newBits |= v
+	}
+
+	if newBits == initial {
+		// no change:
+		return false
+	}
+
+	// notify local player of new item received:
+	//g.notifyNewItem(s.names[v])
+
+	asm.LDA_imm8_b(newBits & ^initial)
+	asm.ORA_long(0x7EF000 + uint32(offset))
+
+	if s.onUpdated != nil {
+		s.onUpdated(asm)
+	}
+
+	return true
+}
+
 type syncableMaxU8 struct {
 	g *Game
 
