@@ -179,3 +179,10 @@ func (a *Emitter) STA_long(addr uint32) {
 	d[1], d[2], d[3] = imm24(addr)
 	a.emit4("sta.l", "$%02[3]x%02[2]x%02[1]x", d)
 }
+
+func (a *Emitter) ORA_long(addr uint32) {
+	var d [4]byte
+	d[0] = 0x0F
+	d[1], d[2], d[3] = imm24(addr)
+	a.emit4("ora.l", "$%02[3]x%02[2]x%02[1]x", d)
+}
