@@ -268,22 +268,22 @@ func (g *Game) frameAdvanced() {
 
 		g.send(m)
 	}
-	if g.localFrame&31 == 0 {
-		// Broadcast underworld SRAM:
-		m := g.makeGamePacket(protocol02.Broadcast)
-		if err := SerializeSRAM(local, m, 0, 0x250); err != nil {
-			panic(err)
-		}
-		g.send(m)
-	}
-	if g.localFrame&31 == 16 {
-		// Broadcast overworld SRAM:
-		m := g.makeGamePacket(protocol02.Broadcast)
-		if err := SerializeSRAM(local, m, 0x280, 0x340); err != nil {
-			panic(err)
-		}
-		g.send(m)
-	}
+	//if g.localFrame&31 == 0 {
+	//	// Broadcast underworld SRAM:
+	//	m := g.makeGamePacket(protocol02.Broadcast)
+	//	if err := SerializeSRAM(local, m, 0, 0x250); err != nil {
+	//		panic(err)
+	//	}
+	//	g.send(m)
+	//}
+	//if g.localFrame&31 == 16 {
+	//	// Broadcast overworld SRAM:
+	//	m := g.makeGamePacket(protocol02.Broadcast)
+	//	if err := SerializeSRAM(local, m, 0x280, 0x340); err != nil {
+	//		panic(err)
+	//	}
+	//	g.send(m)
+	//}
 }
 
 func hash64(b []byte) uint64 {
