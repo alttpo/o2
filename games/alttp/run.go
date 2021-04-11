@@ -128,10 +128,10 @@ func (g *Game) run() {
 // called when all reads are completed:
 func (g *Game) readMainComplete() {
 	// assign local variables from WRAM:
-	p := g.local
-	p.Module = Module(g.wram[0x10])
-	p.SubModule = g.wram[0x11]
-	p.SubSubModule = g.wram[0xB0]
+	local := g.local
+	local.Module = Module(g.wram[0x10])
+	local.SubModule = g.wram[0x11]
+	local.SubSubModule = g.wram[0xB0]
 
 	inDungeon := g.wram[0x1B]
 	overworldArea := g.wram[0x8A]
@@ -143,23 +143,26 @@ func (g *Game) readMainComplete() {
 		inDarkWorld = 1 << 17
 	}
 
-	p.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
+	local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
 	if inDungeon != 0 {
-		p.Location |= uint32(dungeonRoom)
+		local.Location |= uint32(dungeonRoom)
 	} else {
-		p.Location |= uint32(overworldArea)
+		local.Location |= uint32(overworldArea)
 	}
 
-	if p.Module.IsOverworld() {
-		p.LastOverworldX = p.X
-		p.LastOverworldY = p.Y
+	if local.Module.IsOverworld() {
+		local.LastOverworldX = local.X
+		local.LastOverworldY = local.Y
 	}
 
-	p.X = binary.LittleEndian.Uint16(g.wram[0x22:])
-	p.Y = binary.LittleEndian.Uint16(g.wram[0x20:])
+	local.X = binary.LittleEndian.Uint16(g.wram[0x22:])
+	local.Y = binary.LittleEndian.Uint16(g.wram[0x20:])
 
-	p.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
-	p.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
+	local.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
+	local.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
+
+	// copy $7EF000-4FF into `local.SRAM`:
+	copy(local.SRAM[:], g.wram[0xF000:0xF500])
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
