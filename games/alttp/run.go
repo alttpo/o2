@@ -272,6 +272,10 @@ func hash64(b []byte) uint64 {
 }
 
 func (g *Game) updateWRAM() {
+	if !g.local.Module.IsInGame() {
+		return
+	}
+
 	defer g.updateLock.Unlock()
 	g.updateLock.Lock()
 
@@ -376,9 +380,9 @@ func snesBankToLinear(addr uint32) uint32 {
 }
 
 func xlatSNEStoPak(snes uint32) uint32 {
-	if snes & 0x8000 == 0 {
+	if snes&0x8000 == 0 {
 		if snes >= 0x700000 && snes < 0x7E0000 {
-			sram := snesBankToLinear(snes - 0x700000) + 0xE00000
+			sram := snesBankToLinear(snes-0x700000) + 0xE00000
 			return sram
 		} else if snes >= 0x7E0000 && snes < 0x800000 {
 			wram := (snes - 0x7E0000) + 0xE50000

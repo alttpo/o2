@@ -6,6 +6,10 @@ func (m Module) IsOverworld() bool {
 	return m == 0x09 || m == 0x0B
 }
 
+func (m Module) IsInGame() bool {
+	return m >= 0x07 && m <= 0x1A && m != 0x14
+}
+
 type Player struct {
 	g *Game
 
