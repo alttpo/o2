@@ -113,6 +113,12 @@ func imm16(v uint16) (byte, byte) {
 	return byte(v), byte(v >> 8)
 }
 
+func (a *Emitter) Comment(s string) {
+	if a.Text != nil {
+		_, _ = a.Text.WriteString(fmt.Sprintf("    ; %s\n", s))
+	}
+}
+
 func (a *Emitter) REP(c Flags) {
 	a.AssumeREP(c)
 	a.emit2("rep", "#$%02x", [2]byte{0xC2, byte(c)})
