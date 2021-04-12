@@ -2,7 +2,9 @@ package alttp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"o2/snes/asm"
+	"strings"
 )
 
 type SyncableItem interface {
@@ -22,44 +24,54 @@ func (g *Game) initSync() {
 	g.syncableItems = make(map[uint16]SyncableItem)
 
 	// define syncable items:
-	g.newSyncableMaxU8(0x340, &g.SyncItems, []string{"Bow", "Bow", "Silver Bow", "Silver Bow"})
-	g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"})
-	g.newSyncableMaxU8(0x342, &g.SyncItems, []string{"Hookshot"})
+	g.newSyncableMaxU8(0x340, &g.SyncItems, []string{"Bow", "Bow", "Silver Bow", "Silver Bow"}, nil)
+	g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
+	g.newSyncableMaxU8(0x342, &g.SyncItems, []string{"Hookshot"}, nil)
 	// skip 0x343 bomb count
-	g.newSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"})
-	g.newSyncableMaxU8(0x345, &g.SyncItems, []string{"Fire Rod"})
-	g.newSyncableMaxU8(0x346, &g.SyncItems, []string{"Ice Rod"})
-	g.newSyncableMaxU8(0x347, &g.SyncItems, []string{"Bombos Medallion"})
-	g.newSyncableMaxU8(0x348, &g.SyncItems, []string{"Ether Medallion"})
-	g.newSyncableMaxU8(0x349, &g.SyncItems, []string{"Quake Medallion"})
-	g.newSyncableMaxU8(0x34A, &g.SyncItems, []string{"Lamp"})
-	g.newSyncableMaxU8(0x34B, &g.SyncItems, []string{"Hammer"})
-	g.newSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"})
-	g.newSyncableMaxU8(0x34D, &g.SyncItems, []string{"Bug Catching Net"})
-	g.newSyncableMaxU8(0x34E, &g.SyncItems, []string{"Book of Mudora"})
+	g.newSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"}, nil)
+	g.newSyncableMaxU8(0x345, &g.SyncItems, []string{"Fire Rod"}, nil)
+	g.newSyncableMaxU8(0x346, &g.SyncItems, []string{"Ice Rod"}, nil)
+	g.newSyncableMaxU8(0x347, &g.SyncItems, []string{"Bombos Medallion"}, nil)
+	g.newSyncableMaxU8(0x348, &g.SyncItems, []string{"Ether Medallion"}, nil)
+	g.newSyncableMaxU8(0x349, &g.SyncItems, []string{"Quake Medallion"}, nil)
+	g.newSyncableMaxU8(0x34A, &g.SyncItems, []string{"Lamp"}, nil)
+	g.newSyncableMaxU8(0x34B, &g.SyncItems, []string{"Hammer"}, nil)
+	g.newSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"}, nil)
+	g.newSyncableMaxU8(0x34D, &g.SyncItems, []string{"Bug Catching Net"}, nil)
+	g.newSyncableMaxU8(0x34E, &g.SyncItems, []string{"Book of Mudora"}, nil)
 	// skip 0x34F current bottle selection
-	g.newSyncableMaxU8(0x350, &g.SyncItems, []string{"Cane of Somaria"})
-	g.newSyncableMaxU8(0x351, &g.SyncItems, []string{"Cane of Byrna"})
-	g.newSyncableMaxU8(0x352, &g.SyncItems, []string{"Magic Cape"})
-	g.newSyncableMaxU8(0x353, &g.SyncItems, []string{"Magic Scroll", "Magic Mirror"})
-	g.newSyncableMaxU8(0x354, &g.SyncItems, []string{"Power Gloves", "Titan's Mitts"}).onUpdated = func(asm *asm.Emitter, initial, updated uint8) {
-		asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
-	}
-	g.newSyncableMaxU8(0x355, &g.SyncItems, []string{"Pegasus Boots"})
-	g.newSyncableMaxU8(0x356, &g.SyncItems, []string{"Flippers"})
-	g.newSyncableMaxU8(0x357, &g.SyncItems, []string{"Moon Pearl"})
+	g.newSyncableMaxU8(0x350, &g.SyncItems, []string{"Cane of Somaria"}, nil)
+	g.newSyncableMaxU8(0x351, &g.SyncItems, []string{"Cane of Byrna"}, nil)
+	g.newSyncableMaxU8(0x352, &g.SyncItems, []string{"Magic Cape"}, nil)
+	g.newSyncableMaxU8(0x353, &g.SyncItems, []string{"Magic Scroll", "Magic Mirror"}, nil)
+	g.newSyncableMaxU8(0x354, &g.SyncItems, []string{"Power Gloves", "Titan's Mitts"},
+		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+			asm.Comment("update armor/gloves palette:")
+			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
+		})
+	g.newSyncableMaxU8(0x355, &g.SyncItems, []string{"Pegasus Boots"}, nil)
+	g.newSyncableMaxU8(0x356, &g.SyncItems, []string{"Flippers"}, nil)
+	g.newSyncableMaxU8(0x357, &g.SyncItems, []string{"Moon Pearl"}, nil)
 	// skip 0x358 unused
-	g.newSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"}).onUpdated = func(asm *asm.Emitter, initial, updated uint8) {
-		asm.JSL(g.romFunctions[fnDecompGfxSword])
-		asm.JSL(g.romFunctions[fnUpdatePaletteSword])
-	}
-	g.newSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"}).onUpdated = func(asm *asm.Emitter, initial, updated uint8) {
-		asm.JSL(g.romFunctions[fnDecompGfxShield])
-		asm.JSL(g.romFunctions[fnUpdatePaletteShield])
-	}
-	g.newSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"}).onUpdated = func(asm *asm.Emitter, initial, updated uint8) {
-		asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
-	}
+	g.newSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"},
+		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+			asm.Comment("decompress sword gfx:")
+			asm.JSL(g.romFunctions[fnDecompGfxSword])
+			asm.Comment("update sword palette:")
+			asm.JSL(g.romFunctions[fnUpdatePaletteSword])
+		})
+	g.newSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"},
+		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+			asm.Comment("decompress shield gfx:")
+			asm.JSL(g.romFunctions[fnDecompGfxShield])
+			asm.Comment("update shield palette:")
+			asm.JSL(g.romFunctions[fnUpdatePaletteShield])
+		})
+	g.newSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"},
+		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+			asm.Comment("update armor/gloves palette:")
+			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
+		})
 
 	bottleItemNames := []string{"", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
 	g.newSyncableBottle(0x35C, &g.SyncItems, bottleItemNames)
@@ -76,7 +88,8 @@ func (g *Game) initSync() {
 		"Thieves Town Compass",
 		"Tower of Hera Compass",
 		"Ice Palace Compass",
-		"Skull Woods Compass"})
+		"Skull Woods Compass"},
+		nil)
 	g.newSyncableBitU8(0x365, &g.SyncDungeonItems, []string{
 		"Misery Mire Compass",
 		"Dark Palace Compass",
@@ -85,7 +98,8 @@ func (g *Game) initSync() {
 		"Desert Palace Compass",
 		"Eastern Palace Compass",
 		"Hyrule Castle Compass",
-		"Sewer Passage Compass"})
+		"Sewer Passage Compass"},
+		nil)
 	g.newSyncableBitU8(0x366, &g.SyncDungeonItems, []string{
 		"",
 		"",
@@ -94,7 +108,8 @@ func (g *Game) initSync() {
 		"Thieves Town Big Key",
 		"Tower of Hera Big Key",
 		"Ice Palace Big Key",
-		"Skull Woods Big Key"})
+		"Skull Woods Big Key"},
+		nil)
 	g.newSyncableBitU8(0x367, &g.SyncDungeonItems, []string{
 		"Misery Mire Big Key",
 		"Dark Palace Big Key",
@@ -103,7 +118,8 @@ func (g *Game) initSync() {
 		"Desert Palace Big Key",
 		"Eastern Palace Big Key",
 		"Hyrule Castle Big Key",
-		"Sewer Passage Big Key"})
+		"Sewer Passage Big Key"},
+		nil)
 	g.newSyncableBitU8(0x368, &g.SyncDungeonItems, []string{
 		"",
 		"",
@@ -112,7 +128,8 @@ func (g *Game) initSync() {
 		"Thieves Town Map",
 		"Tower of Hera Map",
 		"Ice Palace Map",
-		"Skull Woods Map"})
+		"Skull Woods Map"},
+		nil)
 	g.newSyncableBitU8(0x369, &g.SyncDungeonItems, []string{
 		"Misery Mire Map",
 		"Dark Palace Map",
@@ -121,12 +138,13 @@ func (g *Game) initSync() {
 		"Desert Palace Map",
 		"Eastern Palace Map",
 		"Hyrule Castle Map",
-		"Sewer Passage Map"})
+		"Sewer Passage Map"},
+		nil)
 
 	// bombs capacity:
-	g.newSyncableMaxU8(0x370, &g.SyncItems, nil)
+	g.newSyncableMaxU8(0x370, &g.SyncItems, nil, nil)
 	// arrows capacity:
-	g.newSyncableMaxU8(0x371, &g.SyncItems, nil)
+	g.newSyncableMaxU8(0x371, &g.SyncItems, nil, nil)
 
 	// pendants:
 	g.newSyncableBitU8(0x374, &g.SyncDungeonItems, []string{
@@ -137,10 +155,11 @@ func (g *Game) initSync() {
 		"",
 		"",
 		"",
-		""})
+		""},
+		nil)
 
 	// player ability flags:
-	g.newSyncableBitU8(0x379, &g.SyncItems, nil)
+	g.newSyncableBitU8(0x379, &g.SyncItems, nil, nil)
 
 	// crystals:
 	g.newSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
@@ -151,22 +170,25 @@ func (g *Game) initSync() {
 		"Crystal #2",
 		"Crystal #4",
 		"Crystal #3",
-		""})
+		""},
+		nil)
 
 	// magic reduction (1/1, 1/2, 1/4):
-	g.newSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"})
+	g.newSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"}, nil)
 
 	// world state:
 	g.newSyncableMaxU8(0x3C5, &g.SyncProgress, []string{
-		"Q#Hyrule Castle Dungeon started",
-		"Q#Hyrule Castle Dungeon completed",
-		"Q#Search for Crystals started"}).onUpdated =
-		func(asm *asm.Emitter, initial, updated uint8) {
+		"Hyrule Castle Dungeon started",
+		"Hyrule Castle Dungeon completed",
+		"Search for Crystals started"},
+		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			if initial < 2 && updated >= 2 {
+				asm.Comment("load sprite gfx:")
 				asm.JSL(g.romFunctions[fnLoadSpriteGfx])
 
 				// overworld only:
 				if g.local.Module == 0x09 && g.local.SubModule == 0 {
+					asm.Comment("reset overworld:")
 					asm.LDA_imm8_b(0x00)
 					asm.STA_dp(0x1D)
 					asm.STA_dp(0x8C)
@@ -176,7 +198,7 @@ func (g *Game) initSync() {
 					asm.STA_abs(0x012D)
 				}
 			}
-		}
+		})
 
 	// progress flags 1/2:
 	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, nil,
@@ -202,13 +224,17 @@ func (g *Game) initSync() {
 			// notify local player of new item received:
 			//g.notifyNewItem(s.names[v])
 
+			orBits := newBits & ^initial
+			asm.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
+
 			addr := 0x7EF000 + uint32(offset)
-			asm.LDA_imm8_b(newBits & ^initial)
+			asm.LDA_imm8_b(orBits)
 			asm.ORA_long(addr)
 			asm.STA_long(addr)
 
 			// if receiving uncle's gear, remove zelda telepathic follower:
 			if newBits&0x01 == 0x01 {
+				asm.Comment("received uncle's gear; remove zelda follower:")
 				asm.LDA_long(0x7EF3CC)
 				asm.CMP_imm8_b(0x05)
 				asm.BNE(0x06)
@@ -220,7 +246,7 @@ func (g *Game) initSync() {
 		})
 
 	// map icons:
-	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, nil)
+	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, nil, nil)
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
@@ -243,13 +269,17 @@ func (g *Game) initSync() {
 			// notify local player of new item received:
 			//g.notifyNewItem(s.names[v])
 
+			orBits := newBits & ^initial
+			asm.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
+
 			addr := 0x7EF000 + uint32(offset)
-			asm.LDA_imm8_b(newBits & ^initial)
+			asm.LDA_imm8_b(orBits)
 			asm.ORA_long(addr)
 			asm.STA_long(addr)
 
 			// remove purple chest follower if purple chest opened:
 			if newBits&0x10 == 0x10 {
+				asm.Comment("lose purple chest follower:")
 				asm.LDA_long(0x7EF3CC)
 				asm.CMP_imm8_b(0x0C)
 				asm.BNE(0x06)
@@ -258,6 +288,7 @@ func (g *Game) initSync() {
 			}
 			// lose smithy follower if already rescued:
 			if newBits&0x20 == 0x20 {
+				asm.Comment("lose smithy follower:")
 				asm.LDA_long(0x7EF3CC)
 				asm.CMP_imm8_b(0x07)
 				asm.BNE(0x06)
@@ -274,7 +305,7 @@ func (g *Game) initSync() {
 
 }
 
-type generateUpdateDelegate func(s *syncableCustomU8, asm *asm.Emitter) bool
+type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool
 
 type syncableCustomU8 struct {
 	g *Game
@@ -283,10 +314,10 @@ type syncableCustomU8 struct {
 	isEnabled *bool
 	names     []string
 
-	generateUpdate generateUpdateDelegate
+	generateUpdate syncableCustomU8Update
 }
 
-func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, names []string, generateUpdate generateUpdateDelegate) *syncableCustomU8 {
+func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, names []string, generateUpdate syncableCustomU8Update) *syncableCustomU8 {
 	s := &syncableCustomU8{
 		g:              g,
 		offset:         offset,
@@ -303,6 +334,8 @@ func (s *syncableCustomU8) Size() uint                           { return 1 }
 func (s *syncableCustomU8) IsEnabled() bool                      { return *s.isEnabled }
 func (s *syncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool { return s.generateUpdate(s, asm) }
 
+type syncableBitU8OnUpdated func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
+
 type syncableBitU8 struct {
 	g *Game
 
@@ -310,15 +343,16 @@ type syncableBitU8 struct {
 	isEnabled *bool
 	names     []string
 
-	onUpdated func(asm *asm.Emitter, initial, updated uint8)
+	onUpdated syncableBitU8OnUpdated
 }
 
-func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string) *syncableBitU8 {
+func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated syncableBitU8OnUpdated) *syncableBitU8 {
 	s := &syncableBitU8{
 		g:         g,
 		offset:    offset,
 		isEnabled: enabled,
 		names:     names,
+		onUpdated: onUpdated,
 	}
 	g.syncableItems[offset] = s
 	return s
@@ -334,14 +368,26 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	offset := s.offset
 
 	initial := local.SRAM[offset]
+	var receivedFrom [8]string
 
-	newBits := initial
+	updated := initial
 	for _, p := range g.ActivePlayers() {
 		v := p.SRAM[offset]
-		newBits |= v
+		newBits := v & ^updated
+		if newBits != 0 {
+			k := uint8(1)
+			for i := 0; i < 8; i++ {
+				if newBits&k == k {
+					receivedFrom[i] = p.Name
+				}
+				k <<= 1
+			}
+		}
+
+		updated |= v
 	}
 
-	if newBits == initial {
+	if updated == initial {
 		// no change:
 		return false
 	}
@@ -349,18 +395,32 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	//g.notifyNewItem(s.names[v])
 
-	//log.Printf("sram[%04x]: %02x -> %02x\n", offset, initial, newBits)
+	if s.names != nil {
+		received := make([]string, 0, len(s.names))
+		k := uint8(1)
+		for i := 0; i < len(s.names); i++ {
+			if initial&k == 0 && updated&k == k {
+				item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
+				received = append(received, item)
+			}
+			k <<= 1
+		}
+		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
+	}
+
 	addr := 0x7EF000 + uint32(offset)
-	asm.LDA_imm8_b(newBits & ^initial)
+	asm.LDA_imm8_b(updated & ^initial)
 	asm.ORA_long(addr)
 	asm.STA_long(addr)
 
 	if s.onUpdated != nil {
-		s.onUpdated(asm, initial, newBits)
+		s.onUpdated(s, asm, initial, updated)
 	}
 
 	return true
 }
+
+type syncableMaxU8OnUpdated func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
 type syncableMaxU8 struct {
 	g *Game
@@ -369,15 +429,16 @@ type syncableMaxU8 struct {
 	isEnabled *bool
 	names     []string
 
-	onUpdated func(asm *asm.Emitter, initial, updated uint8)
+	onUpdated syncableMaxU8OnUpdated
 }
 
-func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string) *syncableMaxU8 {
+func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string, onUpdated syncableMaxU8OnUpdated) *syncableMaxU8 {
 	s := &syncableMaxU8{
 		g:         g,
 		offset:    offset,
 		isEnabled: enabled,
 		names:     names,
+		onUpdated: onUpdated,
 	}
 	g.syncableItems[offset] = s
 	return s
@@ -409,13 +470,20 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 
 	// notify local player of new item received:
 	_ = maxP
-	//g.notifyNewItem(s.names[v])
+
+	if s.names != nil {
+		i := int(maxV) - 1
+		if i >= 0 && i < len(s.names) {
+			received := s.names[i]
+			asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+		}
+	}
 
 	asm.LDA_imm8_b(maxV)
 	asm.STA_long(0x7EF000 + uint32(offset))
 
 	if s.onUpdated != nil {
-		s.onUpdated(asm, initial, maxV)
+		s.onUpdated(s, asm, initial, maxV)
 	}
 
 	return true
@@ -522,7 +590,14 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 
 	// notify local player of new item received:
 	_ = maxP
-	//g.notifyNewItem(s.names[v])
+
+	if s.names != nil {
+		i := int(maxV) - 1
+		if i >= 0 && i < len(s.names) {
+			received := s.names[i]
+			asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+		}
+	}
 
 	asm.LDA_imm8_b(maxV)
 	asm.STA_long(0x7EF000 + uint32(offset))
