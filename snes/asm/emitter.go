@@ -250,3 +250,13 @@ func (a *Emitter) BNE(m int8) {
 	d[1] = uint8(m)
 	a.emit2("bne", "$%02x", d)
 }
+
+func (a *Emitter) ADC_imm8_b(m uint8) {
+	if a.IsM16bit() {
+		panic(fmt.Errorf("asm: ADC_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
+	}
+	var d [2]byte
+	d[0] = 0x69
+	d[1] = m
+	a.emit2("adc.b", "#$%02x", d)
+}

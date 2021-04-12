@@ -23,4 +23,5 @@ type Assembler interface {
 	ORA_long(addr uint32)
 	CMP_imm8_b(m uint8)
 	BNE(m int8)
+	ADC_imm8_b(m uint8)
 }
