@@ -368,8 +368,19 @@ func (g *Game) initSync() {
 		return true
 	})
 
-	// map icons:
-	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, nil, nil)
+	// map markers:
+	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, []string{
+		//"Map Marker at Castle",
+		"Map Marker at Kakariko",
+		"Map Marker at Sahasrahla",
+		"Map Marker at Pendants",
+		"Map Marker at Master Sword",
+		"Map Marker at Agahnim Tower",
+		"Map Marker at Darkness",
+		"Map Marker at Crystals",
+		"Map Marker at Ganon's Tower",
+	}, nil)
+
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
