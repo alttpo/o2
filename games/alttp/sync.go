@@ -24,7 +24,59 @@ func (g *Game) initSync() {
 	g.syncableItems = make(map[uint16]SyncableItem)
 
 	// define syncable items:
-	g.newSyncableMaxU8(0x340, &g.SyncItems, []string{"Bow", "Bow", "Silver Bow", "Silver Bow"}, nil)
+	g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+		g := s.g
+		local := g.local
+		offset := s.offset
+
+		initial := local.SRAM[offset]
+		// treat w/ and w/o arrows as the same:
+		if initial == 2 {
+			initial = 1
+		} else if initial >= 4 {
+			initial = 3
+		}
+
+		maxP := local
+		maxV := initial
+		for _, p := range g.ActivePlayers() {
+			v := p.SRAM[offset]
+			// treat w/ and w/o arrows as the same:
+			if v == 2 {
+				v = 1
+			} else if v >= 4 {
+				v = 3
+			}
+			if v > maxV {
+				maxV, maxP = v, p
+			}
+		}
+
+		if maxV == initial {
+			// no change:
+			return false
+		}
+
+		// notify local player of new item received:
+		_ = maxP
+
+		received := ""
+		if maxV == 1 {
+			received = "Bow"
+		} else if maxV == 3 {
+			received = "Silver Bow"
+			maxV = 3
+		}
+		asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+
+		asm.LDA_long(0x7EF377) // arrows
+		asm.CMP_imm8_b(0x01) // are arrows present?
+		asm.LDA_imm8_b(maxV) // bow level; 1 = wood, 3 = silver
+		asm.ADC_imm8_b(0x00) // add +1 to bow if arrows are present
+		asm.STA_long(0x7EF000 + uint32(offset))
+
+		return true
+	})
 	g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
 	g.newSyncableMaxU8(0x342, &g.SyncItems, []string{"Hookshot"}, nil)
 	// skip 0x343 bomb count
@@ -201,107 +253,105 @@ func (g *Game) initSync() {
 		})
 
 	// progress flags 1/2:
-	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, nil,
-		func(s *syncableCustomU8, asm *asm.Emitter) bool {
-			offset := s.offset
-			initial := s.g.local.SRAM[offset]
+	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+		offset := s.offset
+		initial := s.g.local.SRAM[offset]
 
-			newBits := initial
-			for _, p := range g.ActivePlayers() {
-				v := p.SRAM[offset]
-				// if local player has not achieved uncle leaving house, leave it cleared otherwise link never wakes up:
-				if initial&0x10 == 0 {
-					v &= ^uint8(0x10)
-				}
-				newBits |= v
+		newBits := initial
+		for _, p := range g.ActivePlayers() {
+			v := p.SRAM[offset]
+			// if local player has not achieved uncle leaving house, leave it cleared otherwise link never wakes up:
+			if initial&0x10 == 0 {
+				v &= ^uint8(0x10)
 			}
+			newBits |= v
+		}
 
-			if newBits == initial {
-				// no change:
-				return false
-			}
+		if newBits == initial {
+			// no change:
+			return false
+		}
 
-			// notify local player of new item received:
-			//g.notifyNewItem(s.names[v])
+		// notify local player of new item received:
+		//g.notifyNewItem(s.names[v])
 
-			orBits := newBits & ^initial
-			asm.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
+		orBits := newBits & ^initial
+		asm.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
 
-			addr := 0x7EF000 + uint32(offset)
-			asm.LDA_imm8_b(orBits)
-			asm.ORA_long(addr)
-			asm.STA_long(addr)
+		addr := 0x7EF000 + uint32(offset)
+		asm.LDA_imm8_b(orBits)
+		asm.ORA_long(addr)
+		asm.STA_long(addr)
 
-			// if receiving uncle's gear, remove zelda telepathic follower:
-			if newBits&0x01 == 0x01 {
-				asm.Comment("received uncle's gear; remove zelda follower:")
-				asm.LDA_long(0x7EF3CC)
-				asm.CMP_imm8_b(0x05)
-				asm.BNE(0x06)
-				asm.LDA_imm8_b(0x00)   // 2 bytes
-				asm.STA_long(0x7EF3CC) // 4 bytes
-			}
+		// if receiving uncle's gear, remove zelda telepathic follower:
+		if newBits&0x01 == 0x01 {
+			asm.Comment("received uncle's gear; remove zelda follower:")
+			asm.LDA_long(0x7EF3CC)
+			asm.CMP_imm8_b(0x05)
+			asm.BNE(0x06)
+			asm.LDA_imm8_b(0x00)   // 2 bytes
+			asm.STA_long(0x7EF3CC) // 4 bytes
+		}
 
-			return true
-		})
+		return true
+	})
 
 	// map icons:
 	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, nil, nil)
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
-	g.newSyncableCustomU8(0x3C9, &g.SyncProgress, nil,
-		func(s *syncableCustomU8, asm *asm.Emitter) bool {
-			offset := s.offset
-			initial := s.g.local.SRAM[offset]
+	g.newSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+		offset := s.offset
+		initial := s.g.local.SRAM[offset]
 
-			newBits := initial
-			for _, p := range g.ActivePlayers() {
-				v := p.SRAM[offset]
-				newBits |= v
-			}
+		newBits := initial
+		for _, p := range g.ActivePlayers() {
+			v := p.SRAM[offset]
+			newBits |= v
+		}
 
-			if newBits == initial {
-				// no change:
-				return false
-			}
+		if newBits == initial {
+			// no change:
+			return false
+		}
 
-			// notify local player of new item received:
-			//g.notifyNewItem(s.names[v])
+		// notify local player of new item received:
+		//g.notifyNewItem(s.names[v])
 
-			orBits := newBits & ^initial
-			asm.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
+		orBits := newBits & ^initial
+		asm.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
 
-			addr := 0x7EF000 + uint32(offset)
-			asm.LDA_imm8_b(orBits)
-			asm.ORA_long(addr)
-			asm.STA_long(addr)
+		addr := 0x7EF000 + uint32(offset)
+		asm.LDA_imm8_b(orBits)
+		asm.ORA_long(addr)
+		asm.STA_long(addr)
 
-			// remove purple chest follower if purple chest opened:
-			if newBits&0x10 == 0x10 {
-				asm.Comment("lose purple chest follower:")
-				asm.LDA_long(0x7EF3CC)
-				asm.CMP_imm8_b(0x0C)
-				asm.BNE(0x06)
-				asm.LDA_imm8_b(0x00)   // 2 bytes
-				asm.STA_long(0x7EF3CC) // 4 bytes
-			}
-			// lose smithy follower if already rescued:
-			if newBits&0x20 == 0x20 {
-				asm.Comment("lose smithy follower:")
-				asm.LDA_long(0x7EF3CC)
-				asm.CMP_imm8_b(0x07)
-				asm.BNE(0x06)
-				asm.LDA_imm8_b(0x00)   // 2 bytes
-				asm.STA_long(0x7EF3CC) // 4 bytes
-				asm.CMP_imm8_b(0x08)
-				asm.BNE(0x06)
-				asm.LDA_imm8_b(0x00)   // 2 bytes
-				asm.STA_long(0x7EF3CC) // 4 bytes
-			}
+		// remove purple chest follower if purple chest opened:
+		if newBits&0x10 == 0x10 {
+			asm.Comment("lose purple chest follower:")
+			asm.LDA_long(0x7EF3CC)
+			asm.CMP_imm8_b(0x0C)
+			asm.BNE(0x06)
+			asm.LDA_imm8_b(0x00)   // 2 bytes
+			asm.STA_long(0x7EF3CC) // 4 bytes
+		}
+		// lose smithy follower if already rescued:
+		if newBits&0x20 == 0x20 {
+			asm.Comment("lose smithy follower:")
+			asm.LDA_long(0x7EF3CC)
+			asm.CMP_imm8_b(0x07)
+			asm.BNE(0x06)
+			asm.LDA_imm8_b(0x00)   // 2 bytes
+			asm.STA_long(0x7EF3CC) // 4 bytes
+			asm.CMP_imm8_b(0x08)
+			asm.BNE(0x06)
+			asm.LDA_imm8_b(0x00)   // 2 bytes
+			asm.STA_long(0x7EF3CC) // 4 bytes
+		}
 
-			return true
-		})
+		return true
+	})
 
 }
 
@@ -312,17 +362,15 @@ type syncableCustomU8 struct {
 
 	offset    uint16
 	isEnabled *bool
-	names     []string
 
 	generateUpdate syncableCustomU8Update
 }
 
-func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, names []string, generateUpdate syncableCustomU8Update) *syncableCustomU8 {
+func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, generateUpdate syncableCustomU8Update) *syncableCustomU8 {
 	s := &syncableCustomU8{
 		g:              g,
 		offset:         offset,
 		isEnabled:      enabled,
-		names:          names,
 		generateUpdate: generateUpdate,
 	}
 	g.syncableItems[offset] = s
