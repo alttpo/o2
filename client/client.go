@@ -111,7 +111,10 @@ func (c *Client) Close() {
 
 // must run in a goroutine
 func (c *Client) readLoop() {
-	defer c.Disconnect()
+	defer func() {
+		c.Disconnect()
+		log.Println("client disconnected; readLoop exited")
+	}()
 
 	// we only need a single receive buffer:
 	b := make([]byte, 1500)
@@ -136,7 +139,10 @@ func (c *Client) readLoop() {
 
 // must run in a goroutine
 func (c *Client) writeLoop() {
-	defer c.Disconnect()
+	defer func() {
+		c.Disconnect()
+		log.Println("client disconnected; writeLoop exited")
+	}()
 
 	for w := range c.write {
 		if w == nil {
