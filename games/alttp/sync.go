@@ -70,9 +70,9 @@ func (g *Game) initSync() {
 		asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
 
 		asm.LDA_long(0x7EF377) // arrows
-		asm.CMP_imm8_b(0x01) // are arrows present?
-		asm.LDA_imm8_b(maxV) // bow level; 1 = wood, 3 = silver
-		asm.ADC_imm8_b(0x00) // add +1 to bow if arrows are present
+		asm.CMP_imm8_b(0x01)   // are arrows present?
+		asm.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
+		asm.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
 		asm.STA_long(0x7EF000 + uint32(offset))
 
 		return true
@@ -257,6 +257,17 @@ func (g *Game) initSync() {
 		offset := s.offset
 		initial := s.g.local.SRAM[offset]
 
+		// check to make sure zelda telepathic follower removed if have uncle's gear:
+		if initial&0x01 == 0x01 && s.g.local.SRAM[0x3CC] == 0x05 {
+			asm.Comment("already have uncle's gear; remove telepathic zelda follower:")
+			asm.LDA_long(0x7EF3CC)
+			asm.CMP_imm8_b(0x05)
+			asm.BNE(0x06)
+			asm.LDA_imm8_b(0x00)   // 2 bytes
+			asm.STA_long(0x7EF3CC) // 4 bytes
+			return true
+		}
+
 		newBits := initial
 		for _, p := range g.ActivePlayers() {
 			v := p.SRAM[offset]
@@ -285,7 +296,8 @@ func (g *Game) initSync() {
 
 		// if receiving uncle's gear, remove zelda telepathic follower:
 		if newBits&0x01 == 0x01 {
-			asm.Comment("received uncle's gear; remove zelda follower:")
+			asm.Comment("received uncle's gear; remove telepathic zelda follower:")
+			// this may run when link is still in bed so uncle adds the follower before link can get up:
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x05)
 			asm.BNE(0x06)
