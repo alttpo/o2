@@ -173,6 +173,13 @@ func (a *Emitter) LDA_imm16_lh(lo, hi uint8) {
 	a.emit3("lda.w", "#$%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) LDA_long(addr uint32) {
+	var d [4]byte
+	d[0] = 0xAF
+	d[1], d[2], d[3] = imm24(addr)
+	a.emit4("lda.l", "$%02[3]x%02[2]x%02[1]x", d)
+}
+
 func (a *Emitter) STA_long(addr uint32) {
 	var d [4]byte
 	d[0] = 0x8F
@@ -199,4 +206,21 @@ func (a *Emitter) ORA_long(addr uint32) {
 	d[0] = 0x0F
 	d[1], d[2], d[3] = imm24(addr)
 	a.emit4("ora.l", "$%02[3]x%02[2]x%02[1]x", d)
+}
+
+func (a *Emitter) CMP_imm8_b(m uint8) {
+	if a.IsM16bit() {
+		panic(fmt.Errorf("asm: CMP_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
+	}
+	var d [2]byte
+	d[0] = 0xC9
+	d[1] = m
+	a.emit2("cmp.b", "#$%02x", d)
+}
+
+func (a *Emitter) BNE(m int8) {
+	var d [2]byte
+	d[0] = 0xD0
+	d[1] = uint8(m)
+	a.emit2("bne", "$%02x", d)
 }
