@@ -125,7 +125,7 @@ func (g *Game) initSync() {
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
 
-	bottleItemNames := []string{"", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
+	bottleItemNames := []string{"Shroom", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
 	g.newSyncableBottle(0x35C, &g.SyncItems, bottleItemNames)
 	g.newSyncableBottle(0x35D, &g.SyncItems, bottleItemNames)
 	g.newSyncableBottle(0x35E, &g.SyncItems, bottleItemNames)
@@ -627,7 +627,7 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	offset := s.offset
 
 	initial := local.SRAM[offset]
-	if initial != 0 {
+	if initial >= 2 {
 		// don't change existing bottle contents:
 		return false
 	}
@@ -638,6 +638,10 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	maxV := initial
 	for _, p := range g.ActivePlayers() {
 		v := p.SRAM[offset]
+		// ignore "shroom" bottle item:
+		if v == 1 {
+			v = 0
+		}
 		if v > maxV {
 			maxV, maxP = v, p
 		}
