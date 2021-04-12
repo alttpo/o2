@@ -57,6 +57,7 @@ type Game struct {
 	SyncItems        bool   `json:"syncItems"`
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
 	SyncProgress     bool   `json:"syncProgress"`
+	SyncHearts       bool   `json:"syncHearts"`
 }
 
 func (f *Factory) NewGame(
@@ -78,6 +79,7 @@ func (f *Factory) NewGame(
 		SyncItems:        true,
 		SyncDungeonItems: true,
 		SyncProgress:     true,
+		SyncHearts:       true,
 	}
 
 	g.fillRomFunctions()

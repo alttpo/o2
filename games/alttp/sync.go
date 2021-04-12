@@ -193,6 +193,66 @@ func (g *Game) initSync() {
 		"Sewer Passage Map"},
 		nil)
 
+	// heart containers:
+	g.newSyncableCustomU8(0x36C, &g.SyncHearts, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+		g := s.g
+		local := g.local
+
+		initial := (local.SRAM[0x36C] & ^uint8(7)) | (local.SRAM[0x36B] & 3)
+
+		maxP := local
+		updated := initial
+		for _, p := range g.ActivePlayers() {
+			v := (p.SRAM[0x36C] & ^uint8(7)) | (p.SRAM[0x36B] & 3)
+			if v > updated {
+				updated, maxP = v, p
+			}
+		}
+
+		if updated == initial {
+			// no change:
+			return false
+		}
+
+		// notify local player of new item received:
+		_ = maxP
+
+		oldHearts := initial & ^uint8(7)
+		oldPieces := initial & uint8(3)
+		newHearts := updated & ^uint8(7)
+		newPieces := updated & uint8(3)
+
+		diffHearts := (newHearts + (newPieces << 1)) - (oldHearts + (oldPieces << 1))
+		fullHearts := diffHearts >> 3
+		pieces := (diffHearts & 7) >> 1
+
+		hc := &strings.Builder{}
+		if fullHearts == 1 {
+			hc.WriteString("1 new heart")
+		} else if fullHearts > 1 {
+			hc.WriteString(fmt.Sprintf("%d new hearts", fullHearts))
+		}
+		if fullHearts >= 1 && pieces >= 1 {
+			hc.WriteString(", ")
+		}
+
+		if pieces == 1 {
+			hc.WriteString("1 new heart piece")
+		} else if pieces > 0 {
+			hc.WriteString(fmt.Sprintf("%d new heart pieces", pieces))
+		}
+
+		received := hc.String()
+		asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+
+		asm.LDA_imm8_b(updated & ^uint8(7))
+		asm.STA_long(0x7EF000 + uint32(0x36C))
+		asm.LDA_imm8_b(updated & uint8(3))
+		asm.STA_long(0x7EF000 + uint32(0x36B))
+
+		return true
+	})
+
 	// bombs capacity:
 	g.newSyncableMaxU8(0x370, &g.SyncItems, nil, nil)
 	// arrows capacity:
