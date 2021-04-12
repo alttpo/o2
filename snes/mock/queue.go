@@ -64,6 +64,9 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 		return fmt.Errorf("queue is not of expected internal type")
 	}
 
+	// wait 2ms before returning response to simulate the delay of FX Pak Pro device:
+	<-time.After(time.Millisecond * 2)
+
 	completed := r.Request.Completion
 	if completed == nil {
 		return nil
@@ -78,9 +81,6 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 		// read from nothing:
 		data = q.nothing[0:r.Request.Size]
 	}
-
-	// wait 2ms before returning response to simulate the delay of FX Pak Pro device:
-	<-time.After(time.Millisecond * 2)
 
 	completed(snes.Response{
 		IsWrite: false,
