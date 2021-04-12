@@ -56,6 +56,7 @@ type Game struct {
 	PlayerName       string `json:"playerName"`
 	SyncItems        bool   `json:"syncItems"`
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
+	SyncProgress     bool   `json:"syncProgress"`
 }
 
 func (f *Factory) NewGame(
@@ -73,9 +74,10 @@ func (f *Factory) NewGame(
 		readCompletionChannel: make(chan []snes.Response, 8),
 		romFunctions:          make(map[romFunction]uint32),
 		// ViewModel:
-		IsCreated: true,
-		SyncItems: true,
+		IsCreated:        true,
+		SyncItems:        true,
 		SyncDungeonItems: true,
+		SyncProgress:     true,
 	}
 
 	g.fillRomFunctions()

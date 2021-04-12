@@ -140,7 +140,7 @@ func (g *Game) initSync() {
 		""})
 
 	// player ability flags:
-	g.newSyncableBitU8(0x379, &g.SyncDungeonItems, nil)
+	g.newSyncableBitU8(0x379, &g.SyncItems, nil)
 
 	// crystals:
 	g.newSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
@@ -157,7 +157,7 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"})
 
 	// world state:
-	g.newSyncableMaxU8(0x3C5, &g.SyncItems, []string{
+	g.newSyncableMaxU8(0x3C5, &g.SyncProgress, []string{
 		"Q#Hyrule Castle Dungeon started",
 		"Q#Hyrule Castle Dungeon completed",
 		"Q#Search for Crystals started"}).onUpdated =
@@ -178,9 +178,130 @@ func (g *Game) initSync() {
 			}
 		}
 
+	// progress flags 1/2:
+	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, nil,
+		func(s *syncableCustomU8, asm *asm.Emitter) bool {
+			offset := s.offset
+			initial := s.g.local.SRAM[offset]
+
+			newBits := initial
+			for _, p := range g.ActivePlayers() {
+				v := p.SRAM[offset]
+				// if local player has not achieved uncle leaving house, leave it cleared otherwise link never wakes up:
+				if initial&0x10 == 0 {
+					v &= ^uint8(0x10)
+				}
+				newBits |= v
+			}
+
+			if newBits == initial {
+				// no change:
+				return false
+			}
+
+			// notify local player of new item received:
+			//g.notifyNewItem(s.names[v])
+
+			addr := 0x7EF000 + uint32(offset)
+			asm.LDA_imm8_b(newBits & ^initial)
+			asm.ORA_long(addr)
+			asm.STA_long(addr)
+
+			// if receiving uncle's gear, remove zelda telepathic follower:
+			if newBits&0x01 == 0x01 {
+				asm.LDA_long(0x7EF3CC)
+				asm.CMP_imm8_b(0x05)
+				asm.BNE(0x06)
+				asm.LDA_imm8_b(0x00)   // 2 bytes
+				asm.STA_long(0x7EF3CC) // 4 bytes
+			}
+
+			return true
+		})
+
 	// map icons:
-	g.newSyncableMaxU8(0x3C7, &g.SyncItems, nil)
+	g.newSyncableMaxU8(0x3C7, &g.SyncProgress, nil)
+	// skip 0x3C8 start at location
+
+	// progress flags 2/2:
+	g.newSyncableCustomU8(0x3C9, &g.SyncProgress, nil,
+		func(s *syncableCustomU8, asm *asm.Emitter) bool {
+			offset := s.offset
+			initial := s.g.local.SRAM[offset]
+
+			newBits := initial
+			for _, p := range g.ActivePlayers() {
+				v := p.SRAM[offset]
+				newBits |= v
+			}
+
+			if newBits == initial {
+				// no change:
+				return false
+			}
+
+			// notify local player of new item received:
+			//g.notifyNewItem(s.names[v])
+
+			addr := 0x7EF000 + uint32(offset)
+			asm.LDA_imm8_b(newBits & ^initial)
+			asm.ORA_long(addr)
+			asm.STA_long(addr)
+
+			// remove purple chest follower if purple chest opened:
+			if newBits&0x10 == 0x10 {
+				asm.LDA_long(0x7EF3CC)
+				asm.CMP_imm8_b(0x0C)
+				asm.BNE(0x06)
+				asm.LDA_imm8_b(0x00)   // 2 bytes
+				asm.STA_long(0x7EF3CC) // 4 bytes
+			}
+			// lose smithy follower if already rescued:
+			if newBits&0x20 == 0x20 {
+				asm.LDA_long(0x7EF3CC)
+				asm.CMP_imm8_b(0x07)
+				asm.BNE(0x06)
+				asm.LDA_imm8_b(0x00)   // 2 bytes
+				asm.STA_long(0x7EF3CC) // 4 bytes
+				asm.CMP_imm8_b(0x08)
+				asm.BNE(0x06)
+				asm.LDA_imm8_b(0x00)   // 2 bytes
+				asm.STA_long(0x7EF3CC) // 4 bytes
+			}
+
+			return true
+		})
+
 }
+
+type generateUpdateDelegate func(s *syncableCustomU8, asm *asm.Emitter) bool
+
+type syncableCustomU8 struct {
+	g *Game
+
+	offset    uint16
+	isEnabled *bool
+	names     []string
+
+	generateUpdate generateUpdateDelegate
+}
+
+func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, names []string, generateUpdate generateUpdateDelegate) *syncableCustomU8 {
+	s := &syncableCustomU8{
+		g:              g,
+		offset:         offset,
+		isEnabled:      enabled,
+		names:          names,
+		generateUpdate: generateUpdate,
+	}
+	g.syncableItems[offset] = s
+	return s
+}
+
+func (s *syncableCustomU8) Offset() uint16                       { return s.offset }
+func (s *syncableCustomU8) Size() uint                           { return 1 }
+func (s *syncableCustomU8) IsEnabled() bool                      { return *s.isEnabled }
+func (s *syncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool { return s.generateUpdate(s, asm) }
 
 type syncableBitU8 struct {
 	g *Game
