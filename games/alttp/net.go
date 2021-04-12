@@ -40,9 +40,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 
 	r, err := client.ParseHeader(msg, &protocol)
 	if err != nil {
-		// TODO: diagnostics
 		panic(fmt.Errorf("error parsing message header: %w", err))
-		return
 	}
 
 	switch protocol {
@@ -51,9 +49,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		var header protocol01.Header
 		err = protocol01.Parse(r, &header)
 		if err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error parsing protocol 01 header: %w", err))
-			return
 		}
 		if header.ClientType != 1 {
 			return
@@ -65,9 +61,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		var header protocol02.Header
 		err = protocol02.Parse(r, &header)
 		if err != nil {
-			// TODO: diagnostics
 			panic(fmt.Errorf("error parsing protocol 02 header: %w", err))
-			return
 		}
 
 		// pre-emptively avoid panics in accessing players array out of bounds:
@@ -105,7 +99,6 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			//log.Printf("%s\n", header.Kind.String())
 			return g.players[header.Index].Deserialize(r)
 		default:
-			// TODO: diagnostics
 			panic(fmt.Errorf("unknown message kind %02x", header.Kind))
 		}
 		return
