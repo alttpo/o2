@@ -315,15 +315,15 @@ func (g *Game) updateWRAM() {
 	}
 	_ = oppositeSNES
 
-	codeBuf := bytes.Buffer{}
-	textBuf := strings.Builder{}
-
-	var a asm.Emitter
-	a.Text = &textBuf
-	a.Code = &codeBuf
+	// create an assembler:
+	a := asm.Emitter{
+		Code: &bytes.Buffer{},
+		Text: &strings.Builder{},
+	}
 	a.SetBase(targetSNES)
 
 	updated := false
+
 	// assume 16-bit mode for accumulator
 	a.AssumeREP(0x20)
 	// generate update ASM code for any 16-bit values:
@@ -334,9 +334,23 @@ func (g *Game) updateWRAM() {
 		if !item.IsEnabled() {
 			continue
 		}
-		u := item.GenerateUpdate(&a)
+
+		// clone the assembler to a temporary:
+		ta := a.Clone()
+		// generate the update asm routine in the temporary assembler:
+		u := item.GenerateUpdate(ta)
+		if u {
+			// don't emit the routine if it pushes us over the code size limit:
+			if ta.Code.Len() + a.Code.Len() + 10 > 255 {
+				// continue to try to find smaller routines that might fit:
+				continue
+			}
+			a.Append(ta)
+		}
+
 		updated = updated || u
 	}
+
 	// use 8-bit mode for accumulator
 	a.SEP(0x20)
 	// generate update ASM code for any 8-bit values:
@@ -347,9 +361,23 @@ func (g *Game) updateWRAM() {
 		if !item.IsEnabled() {
 			continue
 		}
-		u := item.GenerateUpdate(&a)
+
+		// clone the assembler to a temporary:
+		ta := a.Clone()
+		// generate the update asm routine in the temporary assembler:
+		u := item.GenerateUpdate(ta)
+		if u {
+			// don't emit the routine if it pushes us over the code size limit:
+			if ta.Code.Len() + a.Code.Len() + 10 > 255 {
+				// continue to try to find smaller routines that might fit:
+				continue
+			}
+			a.Append(ta)
+		}
+
 		updated = updated || u
 	}
+
 	if !updated {
 		return
 	}
@@ -363,10 +391,10 @@ func (g *Game) updateWRAM() {
 	a.RTS()
 
 	// dump asm:
-	log.Print(textBuf.String())
+	log.Print(a.Text.String())
 
-	if codeBuf.Len() > 255 {
-		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", codeBuf.Len()))
+	if a.Code.Len() > 255 {
+		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", a.Code.Len()))
 	}
 
 	// prevent more updates until the upcoming write completes:
@@ -384,8 +412,8 @@ func (g *Game) updateWRAM() {
 			// TODO: might need multiple writes to cover full length if > 255:
 			{
 				Address: target,
-				Size:    uint8(codeBuf.Len()),
-				Data:    codeBuf.Bytes(),
+				Size:    uint8(a.Code.Len()),
+				Data:    a.Code.Bytes(),
 			},
 			// finally, update the JSR instruction to point to the updated routine:
 			{
