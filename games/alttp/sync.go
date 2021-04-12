@@ -355,7 +355,7 @@ func (g *Game) initSync() {
 		asm.STA_long(addr)
 
 		// if receiving uncle's gear, remove zelda telepathic follower:
-		if newBits&0x01 == 0x01 {
+		if newBits&0x01 == 0x01 && initial&0x01 == 0 {
 			asm.Comment("received uncle's gear; remove telepathic zelda follower:")
 			// this may run when link is still in bed so uncle adds the follower before link can get up:
 			asm.LDA_long(0x7EF3CC)
