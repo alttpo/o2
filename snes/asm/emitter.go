@@ -1,28 +1,48 @@
 package asm
 
 import (
+	"bytes"
 	"fmt"
-	"io"
+	"strings"
 )
 
 // Emitter implements Assembler and bytes.Buffer; a 65816 immediate assembler that emits to the buffer
 type Emitter struct {
 	flagsTracker
 
-	Code io.Writer
-	Text io.StringWriter
+	Code *bytes.Buffer
+	Text *strings.Builder
 
 	address uint32
 	baseSet bool
 }
 
-func NewEmitter(code io.Writer, text io.StringWriter) *Emitter {
-	return &Emitter{Code: code, Text: text}
+func (a *Emitter) Clone() *Emitter {
+	return &Emitter{
+		flagsTracker: a.flagsTracker,
+		Code:         &bytes.Buffer{},
+		Text:         &strings.Builder{},
+		address:      a.address,
+		baseSet:      a.baseSet,
+	}
+}
+
+func (a *Emitter) Append(e *Emitter) {
+	a.address = e.address
+	a.baseSet = e.baseSet
+	a.flagsTracker = e.flagsTracker
+
+	_, _ = e.Code.WriteTo(a.Code)
+	_, _ = a.Text.WriteString(e.Text.String())
 }
 
 func (a *Emitter) SetBase(addr uint32) {
 	a.address = addr
 	a.baseSet = true
+}
+
+func (a *Emitter) GetBase() uint32 {
+	return a.address
 }
 
 func (a *Emitter) emitBase() {
