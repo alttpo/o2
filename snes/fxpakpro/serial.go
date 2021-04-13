@@ -17,12 +17,12 @@ func sendSerial(f serial.Port, buf []byte) error {
 	return nil
 }
 
-func sendSerialProgress(f serial.Port, buf []byte, report func(sent, total int)) error {
+func sendSerialProgress(f serial.Port, buf []byte, batchSize int, report func(sent int, total int)) error {
 	sent := 0
 	total := len(buf)
 	for sent < total {
 		report(sent, total)
-		n, e := f.Write(buf[sent:])
+		n, e := f.Write(buf[sent:sent+batchSize])
 		if e != nil {
 			return e
 		}

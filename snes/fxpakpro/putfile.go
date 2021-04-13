@@ -52,7 +52,7 @@ func (c *putfile) Execute(queue snes.Queue) error {
 	if c.report == nil {
 		err = sendSerial(f, c.rom)
 	} else {
-		err = sendSerialProgress(f, c.rom, c.report)
+		err = sendSerialProgress(f, c.rom, 1024, c.report)
 	}
 	if err != nil {
 		return err

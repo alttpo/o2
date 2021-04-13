@@ -13,7 +13,7 @@ func (q *Queue) MakeUploadROMCommands(name string, rom []byte) (path string, cmd
 	cmds = snes.CommandSequence{
 		snes.CommandWithCompletion{Command: newMKDIR("o2")},
 		snes.CommandWithCompletion{Command: newPUTFile(path, rom, func(sent, total int) {
-			log.Printf("%d of %d\n", sent, total)
+			log.Printf("%#6x of %#6x\n", sent, total)
 		})},
 	}
 
