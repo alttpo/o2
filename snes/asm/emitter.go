@@ -206,6 +206,13 @@ func (a *Emitter) LDA_long(addr uint32) {
 	a.emit4("lda.l", "$%02[3]x%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) LDA_abs(addr uint16) {
+	var d [3]byte
+	d[0] = 0xAD
+	d[1], d[2] = imm16(addr)
+	a.emit3("lda.w", "$%02[2]x%02[1]x", d)
+}
+
 func (a *Emitter) STA_long(addr uint32) {
 	var d [4]byte
 	d[0] = 0x8F
@@ -249,6 +256,13 @@ func (a *Emitter) BNE(m int8) {
 	d[0] = 0xD0
 	d[1] = uint8(m)
 	a.emit2("bne", "$%02x", d)
+}
+
+func (a *Emitter) BEQ(m int8) {
+	var d [2]byte
+	d[0] = 0xF0
+	d[1] = uint8(m)
+	a.emit2("beq", "$%02x", d)
 }
 
 func (a *Emitter) ADC_imm8_b(m uint8) {
