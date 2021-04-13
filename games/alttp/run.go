@@ -40,23 +40,14 @@ func (g *Game) readSubmit() {
 	g.readQueue = g.readQueue[:0]
 }
 
-func (g *Game) handleSNESRead(rsp snes.Response) {
-	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
-
-	// copy data read into our wram array:
-	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
-		copy(g.wram[(rsp.Address-0xF50000):], rsp.Data)
-	}
-}
-
 // run in a separate goroutine
 func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
 
 	lastReadTime := time.Now()
-	g.requestMainReads()
+	g.enqueueMainReads()
+	g.readSubmit()
 
 	fastbeat := time.NewTicker(250 * time.Millisecond)
 	slowbeat := time.NewTicker(1000 * time.Millisecond)
@@ -67,22 +58,15 @@ func (g *Game) run() {
 		case rsps := <-g.readCompletionChannel:
 			lastReadTime = time.Now()
 
-			// allow further writes now:
-			g.updateLock.Lock()
-			if g.updateStage == 2 {
-				g.updateStage = 0
-			}
-			g.updateLock.Unlock()
-
 			if !g.IsRunning() {
 				break
 			}
 
+			// copy the data into our wram shadow:
 			for _, rsp := range rsps {
-				// copy the data into our wram shadow:
 				g.handleSNESRead(rsp)
-				g.readEnqueue(rsp.Address, rsp.Size)
 			}
+			g.enqueueMainReads()
 			g.readSubmit()
 
 			g.readMainComplete()
@@ -105,7 +89,7 @@ func (g *Game) run() {
 		case <-fastbeat.C:
 			// make sure a read request is always in flight to keep our main loop running:
 			if time.Now().Sub(lastReadTime).Milliseconds() >= 500 {
-				g.requestMainReads()
+				g.enqueueMainReads()
 			}
 			if g.localIndex < 0 {
 				// request our player index:
@@ -133,15 +117,49 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) requestMainReads() {
+func (g *Game) handleSNESRead(rsp snes.Response) {
+	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
+
+	// copy data read into our wram array:
+	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
+		copy(g.wram[(rsp.Address-0xF50000):], rsp.Data)
+	}
+	if rsp.Address >= 0xE00000 && rsp.Address < 0xF00000 {
+		copy(g.sram[(rsp.Address-0xE00000):], rsp.Data)
+	}
+
+	if rsp.Address == g.lastUpdateTarget {
+		log.Printf("check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+		if rsp.Data[0] == 0x60 {
+			// allow next update:
+			g.updateLock.Lock()
+			if g.updateStage == 2 {
+				g.updateStage = 0
+				g.nextUpdateA = !g.nextUpdateA
+				g.lastUpdateTarget = 0xFFFFFF
+			}
+			g.updateLock.Unlock()
+		}
+	}
+}
+
+func (g *Game) enqueueMainReads() {
+	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
+
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	g.readEnqueue(0xF50010, 0xF0) // $0010-$00FF
 	g.readEnqueue(0xF50100, 0x36) // $0100-$0136
 	g.readEnqueue(0xF50400, 0x20) // $0400-$041F
 	// ALTTP's SRAM copy in WRAM:
 	g.readEnqueue(0xF5F340, 0xF0) // $F340-$F42F
-	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
-	g.readSubmit()
+
+	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
+	if g.lastUpdateTarget != 0xFFFFFF {
+		addr := g.lastUpdateTarget
+		//log.Printf("read: $%06x\n", addr)
+		g.readEnqueue(addr, 0x01)
+	}
 }
 
 // called when all reads are completed:
@@ -308,13 +326,11 @@ func (g *Game) updateWRAM() {
 
 	// select target SRAM routine:
 	var targetSNES uint32
-	var oppositeSNES uint32
 	if g.nextUpdateA {
-		targetSNES, oppositeSNES = preMainUpdateAAddr, preMainUpdateBAddr
+		targetSNES = preMainUpdateAAddr
 	} else {
-		targetSNES, oppositeSNES = preMainUpdateBAddr, preMainUpdateAAddr
+		targetSNES = preMainUpdateBAddr
 	}
-	_ = oppositeSNES
 
 	// create an assembler:
 	a := asm.Emitter{
@@ -327,6 +343,14 @@ func (g *Game) updateWRAM() {
 
 	// assume 16-bit mode for accumulator
 	a.AssumeREP(0x20)
+
+	// don't update if link is currently frozen:
+	a.SEP(0x20)
+	a.LDA_abs(0x02E4)
+	a.BEQ(0x01)
+	a.RTS()
+	a.REP(0x20)
+
 	// generate update ASM code for any 16-bit values:
 	for _, item := range g.syncableItems {
 		if item.Size() != 2 {
@@ -405,12 +429,11 @@ func (g *Game) updateWRAM() {
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
 	target := xlatSNEStoPak(targetSNES)
-	g.nextUpdateA = !g.nextUpdateA
+	g.lastUpdateTarget = target
 
 	// write generated asm routine to SRAM:
 	g.queue.MakeWriteCommands(
 		[]snes.Write{
-			// TODO: might need multiple writes to cover full length if > 255:
 			{
 				Address: target,
 				Size:    uint8(a.Code.Len()),

@@ -32,14 +32,16 @@ type Game struct {
 	readResponse          []snes.Response
 	readCompletionChannel chan []snes.Response
 
-	nextUpdateA bool
-	updateLock  sync.Mutex
-	updateStage int
+	nextUpdateA      bool
+	updateLock       sync.Mutex
+	updateStage      int
+	lastUpdateTarget uint32
 
 	locHashTTL int
 	locHash    uint64
 
 	wram [0x20000]byte
+	sram [0x10000]byte
 
 	syncableItems map[uint16]SyncableItem
 
@@ -75,6 +77,7 @@ func (f *Factory) NewGame(
 		running:               false,
 		readCompletionChannel: make(chan []snes.Response, 8),
 		romFunctions:          make(map[romFunction]uint32),
+		lastUpdateTarget:      0xFFFFFF,
 		// ViewModel:
 		IsCreated:        true,
 		SyncItems:        true,
