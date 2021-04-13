@@ -19,6 +19,7 @@ export default ({ch, vm}: TopLevelProps) => {
         <div class="card input-grid">
             <label for="romFile">ROM:</label>
             <input id="romFile" type="file" onChange={(e) => fileChosen(e)}/>
+            <button onClick={e => ch.command("rom", "boot", {})}>Boot</button>
         {rom.isLoaded &&
             <Fragment>
                 <label>Name:</label>

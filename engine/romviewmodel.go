@@ -51,6 +51,7 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 	v.commands = map[string]interfaces.Command{
 		"name": &ROMNameCommand{v},
 		"data": &ROMDataCommand{v},
+		"boot": &ROMBootCommand{v},
 	}
 
 	return v
@@ -89,4 +90,36 @@ func (v *ROMViewModel) DataProvided(romImage []byte) error {
 		return err
 	}
 	return v.c.ROMSelected(rom)
+}
+
+type ROMBootCommand struct{ v *ROMViewModel }
+
+func (ce *ROMBootCommand) CreateArgs() interfaces.CommandArgs { return nil }
+func (ce *ROMBootCommand) Execute(_ interfaces.CommandArgs) (err error) {
+	rom := ce.v.c.rom
+	if rom == nil {
+		return fmt.Errorf("rom not loaded")
+	}
+	queue := ce.v.c.dev
+	if queue == nil {
+		return fmt.Errorf("SNES not connected")
+	}
+
+	rc, ok := queue.(snes.ROMControl)
+	if !ok {
+		return fmt.Errorf("SNES driver does not support booting ROMs")
+	}
+
+	path, cmds := rc.MakeUploadROMCommands(rom.Name, rom.Contents)
+	err = cmds.EnqueueTo(queue)
+	if err != nil {
+		return fmt.Errorf("could not upload ROM: %w", err)
+	}
+
+	err = rc.MakeBootROMCommands(path).EnqueueTo(queue)
+	if err != nil {
+		return fmt.Errorf("could not boot ROM: %w", err)
+	}
+
+	return nil
 }
