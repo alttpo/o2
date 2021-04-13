@@ -46,6 +46,9 @@ func (a *Emitter) GetBase() uint32 {
 }
 
 func (a *Emitter) emitBase() {
+	if a.Text == nil {
+		return
+	}
 	if !a.baseSet {
 		return
 	}
@@ -115,6 +118,7 @@ func imm16(v uint16) (byte, byte) {
 
 func (a *Emitter) Comment(s string) {
 	if a.Text != nil {
+		a.emitBase()
 		_, _ = a.Text.WriteString(fmt.Sprintf("    ; %s\n", s))
 	}
 }
