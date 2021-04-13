@@ -411,8 +411,8 @@ func (g *Game) updateWRAM() {
 	// MUST be in SEP(0x20) mode!
 	a.LDA_imm8_b(0x60) // RTS
 	a.STA_long(targetSNES)
-	// back to 16-bit mode for accumulator:
-	a.REP(0x20)
+	// back to 8-bit mode for accumulator:
+	a.SEP(0x30)
 	a.RTS()
 
 	// dump asm:
