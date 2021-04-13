@@ -100,7 +100,6 @@ func (g *Game) initSync() {
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
-			asm.SEP(0x30)
 		})
 	g.newSyncableMaxU8(0x355, &g.SyncItems, []string{"Pegasus Boots"}, nil)
 	g.newSyncableMaxU8(0x356, &g.SyncItems, []string{"Flippers"}, nil)
@@ -110,25 +109,20 @@ func (g *Game) initSync() {
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress sword gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxSword])
-			asm.SEP(0x30)
 			asm.Comment("update sword palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteSword])
-			asm.SEP(0x30)
 		})
 	g.newSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"},
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress shield gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxShield])
-			asm.SEP(0x30)
 			asm.Comment("update shield palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteShield])
-			asm.SEP(0x30)
 		})
 	g.newSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"},
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
-			asm.SEP(0x30)
 		})
 
 	bottleItemNames := []string{"Shroom", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
@@ -303,7 +297,6 @@ func (g *Game) initSync() {
 			if initial < 2 && updated >= 2 {
 				asm.Comment("load sprite gfx:")
 				asm.JSL(g.romFunctions[fnLoadSpriteGfx])
-				asm.SEP(0x30)
 
 				// overworld only:
 				if g.local.Module == 0x09 && g.local.SubModule == 0 {
@@ -312,7 +305,6 @@ func (g *Game) initSync() {
 					asm.STA_dp(0x1D)
 					asm.STA_dp(0x8C)
 					asm.JSL(g.romFunctions[fnOverworldFinishMirrorWarp])
-					asm.SEP(0x30)
 					// clear sfx:
 					asm.LDA_imm8_b(0x05)
 					asm.STA_abs(0x012D)
