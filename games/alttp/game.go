@@ -37,6 +37,9 @@ type Game struct {
 	updateStage      int
 	lastUpdateTarget uint32
 
+	customAsmLock sync.Mutex
+	customAsm     []byte
+
 	locHashTTL int
 	locHash    uint64
 

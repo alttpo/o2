@@ -340,8 +340,6 @@ func (g *Game) updateWRAM() {
 	}
 	a.SetBase(targetSNES)
 
-	updated := false
-
 	// assume 8-bit mode for accumulator and index registers:
 	a.AssumeSEP(0x30)
 
@@ -349,6 +347,90 @@ func (g *Game) updateWRAM() {
 	a.LDA_abs(0x02E4)
 	a.BEQ(0x01)
 	a.RTS()
+
+	// custom asm overrides update asm generation:
+	if !g.generateCustomAsm(a) {
+		if !g.generateUpdateAsm(a) {
+			// nothing to emit:
+			return
+		}
+	}
+
+	// clear out our routine with an RTS instruction at the start:
+	a.Comment("disable update routine with RTS instruction:")
+	// MUST be in SEP(0x20) mode!
+	a.LDA_imm8_b(0x60) // RTS
+	a.STA_long(targetSNES)
+	// back to 8-bit mode for accumulator:
+	a.SEP(0x30)
+	a.RTS()
+
+	// dump asm:
+	log.Print(a.Text.String())
+
+	if a.Code.Len() > 255 {
+		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", a.Code.Len()))
+	}
+
+	// prevent more updates until the upcoming write completes:
+	g.updateStage = 1
+	log.Println("write started")
+
+	// calculate target address in FX Pak Pro address space:
+	// SRAM starts at $E00000
+	target := xlatSNEStoPak(targetSNES)
+	g.lastUpdateTarget = target
+
+	// write generated asm routine to SRAM:
+	err := g.queue.MakeWriteCommands(
+		[]snes.Write{
+			{
+				Address: target,
+				Size:    uint8(a.Code.Len()),
+				Data:    a.Code.Bytes(),
+			},
+			// finally, update the JSR instruction to point to the updated routine:
+			{
+				// JSR $7C00 | JSR $7E00
+				// update the $7C or $7E byte in the JSR instruction:
+				Address: xlatSNEStoPak(preMainAddr + 2),
+				Size:    1,
+				Data:    []byte{uint8(targetSNES >> 8)},
+			},
+		},
+		func(cmd snes.Command, err error) {
+			log.Println("write completed")
+			defer g.updateLock.Unlock()
+			g.updateLock.Lock()
+			// expect a read now to prevent double-write:
+			if g.updateStage == 1 {
+				g.updateStage = 2
+			}
+		},
+	).EnqueueTo(g.queue)
+	if err != nil {
+		log.Println(fmt.Errorf("error enqueuing snes write for update routine: %w", err))
+		return
+	}
+}
+
+func (g *Game) generateCustomAsm(a asm.Emitter) bool {
+	g.customAsmLock.Lock()
+	defer g.customAsmLock.Unlock()
+
+	if g.customAsm == nil {
+		return false
+	}
+
+	a.Comment("custom asm code from websocket:")
+	a.EmitBytes(g.customAsm)
+	g.customAsm = nil
+
+	return true
+}
+
+func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
+	updated := false
 
 	//// generate update ASM code for any 16-bit values:
 	//a.REP(0x20)
@@ -392,7 +474,7 @@ func (g *Game) updateWRAM() {
 		u := item.GenerateUpdate(ta)
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Code.Len() + a.Code.Len() + 10 > 255 {
+			if ta.Code.Len()+a.Code.Len()+10 > 255 {
 				// continue to try to find smaller routines that might fit:
 				continue
 			}
@@ -402,62 +484,7 @@ func (g *Game) updateWRAM() {
 		updated = updated || u
 	}
 
-	if !updated {
-		return
-	}
-
-	// clear out our routine with an RTS instruction at the start:
-	a.Comment("disable update routine with RTS instruction:")
-	// MUST be in SEP(0x20) mode!
-	a.LDA_imm8_b(0x60) // RTS
-	a.STA_long(targetSNES)
-	// back to 8-bit mode for accumulator:
-	a.SEP(0x30)
-	a.RTS()
-
-	// dump asm:
-	log.Print(a.Text.String())
-
-	if a.Code.Len() > 255 {
-		panic(fmt.Errorf("generated update ASM larger than 255 bytes: %d", a.Code.Len()))
-	}
-
-	// prevent more updates until the upcoming write completes:
-	g.updateStage = 1
-	log.Println("write started")
-
-	// calculate target address in FX Pak Pro address space:
-	// SRAM starts at $E00000
-	target := xlatSNEStoPak(targetSNES)
-	g.lastUpdateTarget = target
-
-	// write generated asm routine to SRAM:
-	g.queue.MakeWriteCommands(
-		[]snes.Write{
-			{
-				Address: target,
-				Size:    uint8(a.Code.Len()),
-				Data:    a.Code.Bytes(),
-			},
-			// finally, update the JSR instruction to point to the updated routine:
-			{
-				// JSR $7C00 | JSR $7E00
-				// update the $7C or $7E byte in the JSR instruction:
-				Address: xlatSNEStoPak(preMainAddr + 2),
-				Size:    1,
-				Data:    []byte{uint8(targetSNES >> 8)},
-			},
-		},
-		func(cmd snes.Command, err error) {
-			log.Println("write completed")
-			defer g.updateLock.Unlock()
-			g.updateLock.Lock()
-			// expect a read now to prevent double-write:
-			if g.updateStage == 1 {
-				g.updateStage = 2
-			}
-		},
-	).EnqueueTo(g.queue)
+	return updated
 }
 
 func snesBankToLinear(addr uint32) uint32 {
