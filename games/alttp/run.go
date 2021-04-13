@@ -197,13 +197,14 @@ func (g *Game) readMainComplete() {
 	g.localFrame += nextFrame - lastFrame
 	g.lastGameFrame = g.wram[0x1A]
 
+	// should wrap around 255 to 0:
+	g.monotonicFrameTime++
+
 	g.frameAdvanced()
 }
 
 // called when the local game frame advances:
 func (g *Game) frameAdvanced() {
-	//log.Printf("%08x\n", g.localFrame)
-
 	// don't send out any updates until we're connected:
 	if g.localIndex < 0 {
 		return
@@ -240,7 +241,7 @@ func (g *Game) frameAdvanced() {
 		}
 	}
 
-	if g.localFrame&15 == 0 {
+	if g.monotonicFrameTime&15 == 0 {
 		// Broadcast items and progress SRAM:
 		m := g.makeGamePacket(protocol02.Broadcast)
 
@@ -269,7 +270,7 @@ func (g *Game) frameAdvanced() {
 
 		g.send(m)
 	}
-	//if g.localFrame&31 == 0 {
+	//if g.monotonicFrameTime&31 == 0 {
 	//	// Broadcast underworld SRAM:
 	//	m := g.makeGamePacket(protocol02.Broadcast)
 	//	if err := SerializeSRAM(local, m, 0, 0x250); err != nil {
@@ -277,7 +278,7 @@ func (g *Game) frameAdvanced() {
 	//	}
 	//	g.send(m)
 	//}
-	//if g.localFrame&31 == 16 {
+	//if g.monotonicFrameTime&31 == 16 {
 	//	// Broadcast overworld SRAM:
 	//	m := g.makeGamePacket(protocol02.Broadcast)
 	//	if err := SerializeSRAM(local, m, 0x280, 0x340); err != nil {
