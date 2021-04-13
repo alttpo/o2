@@ -1,6 +1,8 @@
 const path = require('path');
 
 module.exports = {
+    // TODO(jsd): change to 'production' sometime
+    mode: 'development',
     entry: './src/index.tsx',
     devtool: 'inline-source-map',
     module: {
