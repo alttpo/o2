@@ -61,6 +61,7 @@ func NewWebServer(listenAddr string) *WebServer {
 			rw.WriteHeader(400)
 			return
 		}
+		log.Printf("Accepted websocket connection from %s\n", conn.RemoteAddr())
 
 		// create the Socket to handle bidirectional communication:
 		socket := NewSocket(s, req, conn)
@@ -158,6 +159,7 @@ type CommandRequest struct {
 func (k *Socket) readHandler() {
 	// the reader is in control of the lifetime of the socket:
 	defer func() {
+		log.Printf("Closing websocket connection to %s\n", k.conn.RemoteAddr())
 		_ = k.conn.Close()
 
 		// remove self from sockets array:
