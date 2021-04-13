@@ -123,6 +123,27 @@ func (a *Emitter) Comment(s string) {
 	}
 }
 
+const hextable = "0123456789abcdef"
+
+func (a *Emitter) EmitBytes(b []byte) {
+	if a.Text != nil {
+		a.emitBase()
+		s := strings.Builder{}
+		blen := len(b)
+		for i, v := range b {
+			s.Write([]byte{'$', hextable[(v>>4)&0xF], hextable[v&0xF]})
+			if i < blen-1 {
+				s.Write([]byte{',', ' '})
+			}
+		}
+		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s", "db", s.String()))
+	}
+	if a.Code != nil {
+		_, _ = a.Code.Write(b)
+	}
+	a.address += uint32(len(b))
+}
+
 func (a *Emitter) REP(c Flags) {
 	a.AssumeREP(c)
 	a.emit2("rep", "#$%02x", [2]byte{0xC2, byte(c)})
