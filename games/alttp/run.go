@@ -130,9 +130,10 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 	}
 
 	if rsp.Address == g.lastUpdateTarget {
-		log.Printf("check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+		//log.Printf("check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 		if rsp.Data[0] == 0x60 {
 			// allow next update:
+			log.Printf("update complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 			g.updateLock.Lock()
 			if g.updateStage == 2 {
 				g.updateStage = 0
@@ -341,46 +342,44 @@ func (g *Game) updateWRAM() {
 
 	updated := false
 
-	// assume 16-bit mode for accumulator
-	a.AssumeREP(0x20)
+	// assume 8-bit mode for accumulator and index registers:
+	a.AssumeSEP(0x30)
 
-	// don't update if link is currently frozen:
-	a.SEP(0x20)
+	a.Comment("don't update if link is currently frozen:")
 	a.LDA_abs(0x02E4)
 	a.BEQ(0x01)
 	a.RTS()
-	a.REP(0x20)
 
-	// generate update ASM code for any 16-bit values:
-	for _, item := range g.syncableItems {
-		if item.Size() != 2 {
-			continue
-		}
-		if !item.IsEnabled() {
-			continue
-		}
+	//// generate update ASM code for any 16-bit values:
+	//a.REP(0x20)
+	//for _, item := range g.syncableItems {
+	//	if item.Size() != 2 {
+	//		continue
+	//	}
+	//	if !item.IsEnabled() {
+	//		continue
+	//	}
+	//
+	//	// clone the assembler to a temporary:
+	//	ta := a.Clone()
+	//	// generate the update asm routine in the temporary assembler:
+	//	u := item.GenerateUpdate(ta)
+	//	if u {
+	//		// don't emit the routine if it pushes us over the code size limit:
+	//		if ta.Code.Len() + a.Code.Len() + 10 > 255 {
+	//			// continue to try to find smaller routines that might fit:
+	//			continue
+	//		}
+	//		a.Append(ta)
+	//	}
+	//
+	//	updated = updated || u
+	//}
 
-		// clone the assembler to a temporary:
-		ta := a.Clone()
-		// generate the update asm routine in the temporary assembler:
-		u := item.GenerateUpdate(ta)
-		if u {
-			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Code.Len() + a.Code.Len() + 10 > 255 {
-				// continue to try to find smaller routines that might fit:
-				continue
-			}
-			a.Append(ta)
-		}
-
-		updated = updated || u
-	}
-
-	// use 8-bit mode for accumulator
-	a.SEP(0x20)
 	// generate update ASM code for any 8-bit values:
 	for _, item := range g.syncableItems {
 		if item.Size() != 1 {
+			a.Comment(fmt.Sprintf("TODO: ignoring non-1 size syncableItem[%#04x]", item.Offset()))
 			continue
 		}
 		if !item.IsEnabled() {
@@ -408,6 +407,7 @@ func (g *Game) updateWRAM() {
 	}
 
 	// clear out our routine with an RTS instruction at the start:
+	a.Comment("disable update routine with RTS instruction:")
 	// MUST be in SEP(0x20) mode!
 	a.LDA_imm8_b(0x60) // RTS
 	a.STA_long(targetSNES)
@@ -424,7 +424,7 @@ func (g *Game) updateWRAM() {
 
 	// prevent more updates until the upcoming write completes:
 	g.updateStage = 1
-	fmt.Println("write started")
+	log.Println("write started")
 
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
@@ -449,7 +449,7 @@ func (g *Game) updateWRAM() {
 			},
 		},
 		func(cmd snes.Command, err error) {
-			fmt.Println("write completed")
+			log.Println("write completed")
 			defer g.updateLock.Unlock()
 			g.updateLock.Lock()
 			// expect a read now to prevent double-write:

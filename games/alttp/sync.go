@@ -271,7 +271,16 @@ func (g *Game) initSync() {
 		nil)
 
 	// player ability flags:
-	g.newSyncableBitU8(0x379, &g.SyncItems, nil, nil)
+	g.newSyncableBitU8(0x379, &g.SyncItems, []string{
+		"",
+		"Swim Ability",
+		"Dash Ability",
+		"Pull Ability",
+		"",
+		"Talk Ability",
+		"Read Ability",
+		""},
+		nil)
 
 	// crystals:
 	g.newSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
@@ -435,7 +444,6 @@ func (g *Game) initSync() {
 
 		return true
 	})
-
 }
 
 type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool
@@ -526,6 +534,9 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	//g.notifyNewItem(s.names[v])
 
+	addr := 0x7EF000 + uint32(offset)
+	newBits := updated & ^initial
+
 	if s.names != nil {
 		received := make([]string, 0, len(s.names))
 		k := uint8(1)
@@ -537,10 +548,11 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 			k <<= 1
 		}
 		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
+	} else {
+		asm.Comment(fmt.Sprintf("sram[$%04x] |= %#08b", offset, newBits))
 	}
 
-	addr := 0x7EF000 + uint32(offset)
-	asm.LDA_imm8_b(updated & ^initial)
+	asm.LDA_imm8_b(newBits)
 	asm.ORA_long(addr)
 	asm.STA_long(addr)
 
@@ -608,6 +620,8 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 			received := s.names[i]
 			asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
 		}
+	} else {
+		asm.Comment(fmt.Sprintf("sram[$%04x] = $%02x", offset, maxV))
 	}
 
 	asm.LDA_imm8_b(maxV)
