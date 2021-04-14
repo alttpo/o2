@@ -2,8 +2,7 @@ package qusb2snes
 
 import (
 	"fmt"
-	"github.com/gobwas/ws"
-	"io/ioutil"
+	"github.com/gobwas/ws/wsutil"
 	"log"
 	"o2/snes"
 )
@@ -61,12 +60,10 @@ func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion
 
 func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) snes.CommandSequence {
 	seq := make(snes.CommandSequence, 0, len(reqs))
-	for _, req := range reqs {
-		seq = append(seq, snes.CommandWithCompletion{
-			Command:    &writeCommand{req},
-			Completion: batchComplete,
-		})
-	}
+	seq = append(seq, snes.CommandWithCompletion{
+		Command:    &writeCommand{reqs},
+		Completion: batchComplete,
+	})
 	return seq
 }
 
@@ -99,40 +96,9 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 		return
 	}
 
-	// qusb2snes sends back randomly sized binary response messages:
-	sumReceived := 0
-	dataReceived := make([]byte, 0, sumExpected)
-	for sumReceived < sumExpected {
-		var hdr ws.Header
-		hdr, err = q.ws.r.NextFrame()
-		if err != nil {
-			err = fmt.Errorf("qusb2snes: readCommand: NextFrame: %w", err)
-			return
-		}
-		if hdr.OpCode == ws.OpClose {
-			err = fmt.Errorf("qusb2snes: readCommand: NextFrame: server closed websocket")
-			q.ws.Close()
-			return
-		}
-		if hdr.OpCode != ws.OpBinary {
-			log.Printf("qusb2snes: readCommand: unexpected opcode %#x (expecting %#x)\n", hdr.OpCode, ws.OpBinary)
-			return
-		}
-
-		var data []byte
-		data, err = ioutil.ReadAll(q.ws.r)
-		if err != nil {
-			err = fmt.Errorf("qusb2snes: readCommand: error reading binary response: %w", err)
-			return
-		}
-		//log.Printf("qusb2snes: readCommand: %x binary bytes received\n", len(data))
-
-		dataReceived = append(dataReceived, data...)
-		sumReceived += len(data)
-	}
-
-	if sumReceived != sumExpected {
-		err = fmt.Errorf("qusb2snes: readCommand: expected total of %x bytes but received %x", sumExpected, sumReceived)
+	var dataReceived []byte
+	dataReceived, err = q.ws.ReadBinaryResponse(sumExpected)
+	if err != nil {
 		return
 	}
 
@@ -159,24 +125,48 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 }
 
 type writeCommand struct {
-	Request snes.Write
+	Requests []snes.Write
 }
 
-func (r *writeCommand) Execute(_ snes.Queue) error {
-
-	// TODO: PutAddress
-	// Qusb supports multiple chunks in one request!
-	// https://github.com/Skarsnik/QUsb2snes/blob/master/usb2snes.h#L84
-
-	completed := r.Request.Completion
-	if completed != nil {
-		completed(snes.Response{
-			IsWrite: true,
-			Address: r.Request.Address,
-			Size:    r.Request.Size,
-			Extra:   r.Request.Extra,
-			Data:    r.Request.Data,
-		})
+func (r *writeCommand) Execute(queue snes.Queue) (err error) {
+	q, ok := queue.(*Queue)
+	if !ok {
+		return fmt.Errorf("qusb2snes: writeCommand: queue is not of expected internal type")
 	}
-	return nil
+
+	operands := make([]string, 0, 2*len(r.Requests))
+	for _, req := range r.Requests {
+		operands = append(operands, fmt.Sprintf("%x", req.Address), fmt.Sprintf("%x", req.Size))
+	}
+
+	//log.Printf("qusb2snes: writeCommand: PutAddress %d requests\n", len(r.Requests))
+	err = q.ws.SendCommand(qusbCommand{
+		Opcode:   "PutAddress",
+		Space:    "SNES",
+		Operands: operands,
+	})
+	if err != nil {
+		return
+	}
+
+	for _, req := range r.Requests {
+		err = wsutil.WriteClientBinary(q.ws.ws, req.Data)
+		if err != nil {
+			err = fmt.Errorf("qusb2snes: writeCommand: writeClientBinary: %w", err)
+			return
+		}
+
+		completed := req.Completion
+		if completed != nil {
+			completed(snes.Response{
+				IsWrite: true,
+				Address: req.Address,
+				Size:    req.Size,
+				Extra:   req.Extra,
+				Data:    req.Data,
+			})
+		}
+	}
+
+	return
 }

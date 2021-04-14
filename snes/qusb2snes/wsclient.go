@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"io/ioutil"
 	"log"
 	"net"
 	"syscall"
+	"time"
 )
 
 type WebSocketClient struct {
@@ -32,6 +34,8 @@ type qusbCommand struct {
 type qusbResult struct {
 	Results []string `json:"Results"`
 }
+
+var timeout = time.Second * 2
 
 func NewWebSocketClient(w *WebSocketClient, urlstr string, appName string) (err error) {
 	w.urlstr = urlstr
@@ -59,7 +63,7 @@ func (w *WebSocketClient) Dial() (err error) {
 	})
 	if err != nil {
 		var serr syscall.Errno
-		if errors.Is(err, &serr) {
+		if errors.As(err, &serr) {
 			if !serr.Temporary() {
 				w.Close()
 			}
@@ -97,11 +101,12 @@ func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
 		return
 	}
 
-	log.Printf("qusb2snes: [%s] Encode(%s)\n", w.appName, cmd.Opcode)
+	//log.Printf("qusb2snes: [%s] Encode(%s)\n", w.appName, cmd.Opcode)
+	w.ws.SetWriteDeadline(time.Now().Add(timeout))
 	err = w.encoder.Encode(cmd)
 	if err != nil {
 		var serr syscall.Errno
-		if errors.Is(err, &serr) {
+		if errors.As(err, &serr) {
 			if !serr.Temporary() {
 				w.Close()
 			}
@@ -110,11 +115,12 @@ func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
 		return
 	}
 
-	log.Printf("qusb2snes: [%s] Flush()\n", w.appName)
+	//log.Printf("qusb2snes: [%s] Flush()\n", w.appName)
+	w.ws.SetWriteDeadline(time.Now().Add(timeout))
 	err = w.w.Flush()
 	if err != nil {
 		var serr syscall.Errno
-		if errors.Is(err, &serr) {
+		if errors.As(err, &serr) {
 			if !serr.Temporary() {
 				w.Close()
 			}
@@ -132,10 +138,11 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 	}
 
 	//log.Println("qusb2snes: NextFrame()")
+	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	hdr, err := w.r.NextFrame()
 	if err != nil {
 		var serr syscall.Errno
-		if errors.Is(err, &serr) {
+		if errors.As(err, &serr) {
 			if !serr.Temporary() {
 				w.Close()
 			}
@@ -150,10 +157,11 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 	}
 
 	//log.Println("qusb2snes: Decode()")
+	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	err = w.decoder.Decode(rsp)
 	if err != nil {
 		var serr syscall.Errno
-		if errors.Is(err, &serr) {
+		if errors.As(err, &serr) {
 			if !serr.Temporary() {
 				w.Close()
 			}
@@ -163,5 +171,49 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 	}
 
 	//log.Println("qusb2snes: response received")
+	return
+}
+
+func (w *WebSocketClient) ReadBinaryResponse(sumExpected int) (dataReceived []byte, err error) {
+	// qusb2snes sends back randomly sized binary response messages:
+	sumReceived := 0
+	dataReceived = make([]byte, 0, sumExpected)
+	for sumReceived < sumExpected {
+		var hdr ws.Header
+		w.ws.SetReadDeadline(time.Now().Add(timeout))
+
+		hdr, err = w.r.NextFrame()
+		if err != nil {
+			err = fmt.Errorf("qusb2snes: ReadBinaryResponse: NextFrame: %w", err)
+			return
+		}
+		if hdr.OpCode == ws.OpClose {
+			err = fmt.Errorf("qusb2snes: ReadBinaryResponse: NextFrame: server closed websocket")
+			w.Close()
+			return
+		}
+		if hdr.OpCode != ws.OpBinary {
+			log.Printf("qusb2snes: ReadBinaryResponse: unexpected opcode %#x (expecting %#x)\n", hdr.OpCode, ws.OpBinary)
+			return
+		}
+
+		var data []byte
+		w.ws.SetReadDeadline(time.Now().Add(timeout))
+		data, err = ioutil.ReadAll(w.r)
+		if err != nil {
+			err = fmt.Errorf("qusb2snes: ReadBinaryResponse: error reading binary response: %w", err)
+			return
+		}
+		//log.Printf("qusb2snes: ReadBinaryResponse: %x binary bytes received\n", len(data))
+
+		dataReceived = append(dataReceived, data...)
+		sumReceived += len(data)
+	}
+
+	if sumReceived != sumExpected {
+		err = fmt.Errorf("qusb2snes: ReadBinaryResponse: expected total of %x bytes but received %x", sumExpected, sumReceived)
+		return
+	}
+
 	return
 }
