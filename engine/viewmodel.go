@@ -205,9 +205,6 @@ func (vm *ViewModel) tryCreateGame() bool {
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
 
-	// Load the ROM:
-	vm.game.Load()
-
 	// start the game instance:
 	log.Println("Start game")
 	vm.game.Start()

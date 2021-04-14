@@ -102,14 +102,6 @@ func (g *Game) Description() string {
 	return strings.TrimRight(string(g.rom.Header.Title[:]), " ")
 }
 
-func (g *Game) Load() {
-	if rc, ok := g.queue.(snes.ROMControl); ok {
-		path, cmds := rc.MakeUploadROMCommands(g.rom.Name, g.rom.Contents)
-		cmds.EnqueueTo(g.queue)
-		rc.MakeBootROMCommands(path).EnqueueTo(g.queue)
-	}
-}
-
 func (g *Game) IsRunning() bool {
 	return g.running
 }
