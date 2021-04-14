@@ -1,6 +1,9 @@
 package alttp
 
-import "log"
+import (
+	"encoding/binary"
+	"log"
+)
 
 type Module uint8
 
@@ -107,4 +110,8 @@ func (p *Player) DecTTL() {
 		log.Printf("[%02x]: %s left\n", uint8(p.Index), p.Name)
 		p.g.activePlayersClean = false
 	}
+}
+
+func (p *Player) sramU16(offset uint16) uint16 {
+	return binary.LittleEndian.Uint16(p.SRAM[offset : offset+2])
 }

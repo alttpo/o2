@@ -172,8 +172,8 @@ func (g *Game) readMainComplete() {
 	local.SubSubModule = g.wram[0xB0]
 
 	inDungeon := g.wram[0x1B]
-	overworldArea := g.wram[0x8A]
-	dungeonRoom := g.wram[0xA0]
+	overworldArea := g.wramU16(0x8A)
+	dungeonRoom := g.wramU16(0xA0)
 
 	// TODO: fix this calculation to be compatible with alttpo
 	inDarkWorld := uint32(0)
@@ -193,11 +193,11 @@ func (g *Game) readMainComplete() {
 		local.LastOverworldY = local.Y
 	}
 
-	local.X = binary.LittleEndian.Uint16(g.wram[0x22:])
-	local.Y = binary.LittleEndian.Uint16(g.wram[0x20:])
+	local.X = g.wramU16(0x22)
+	local.Y = g.wramU16(0x20)
 
-	local.XOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE2:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11A:]))
-	local.YOffs = int16(binary.LittleEndian.Uint16(g.wram[0xE8:])) - int16(binary.LittleEndian.Uint16(g.wram[0x11C:]))
+	local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
+	local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 
 	// copy $7EF000-4FF into `local.SRAM`:
 	copy(local.SRAM[:], g.wram[0xF000:0xF500])
@@ -220,6 +220,14 @@ func (g *Game) readMainComplete() {
 	g.monotonicFrameTime++
 
 	g.frameAdvanced()
+}
+
+func (g *Game) wramU8(addr uint32) uint8 {
+	return g.wram[addr]
+}
+
+func (g *Game) wramU16(addr uint32) uint16 {
+	return binary.LittleEndian.Uint16(g.wram[addr:addr+2])
 }
 
 // called when the local game frame advances:

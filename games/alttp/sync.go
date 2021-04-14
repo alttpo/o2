@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"encoding/binary"
 	"fmt"
 	"o2/snes/asm"
 	"strings"
@@ -659,10 +658,10 @@ func (s *syncableMaxU16) GenerateUpdate(asm *asm.Emitter) bool {
 	offset := s.offset
 
 	maxP := local
-	maxV := binary.LittleEndian.Uint16(local.SRAM[offset : offset+2])
+	maxV := local.sramU16(offset)
 	initial := maxV
 	for _, p := range g.ActivePlayers() {
-		v := binary.LittleEndian.Uint16(p.SRAM[offset : offset+2])
+		v := p.sramU16(offset)
 		if v > maxV {
 			maxV, maxP = v, p
 		}
