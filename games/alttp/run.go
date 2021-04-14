@@ -27,17 +27,20 @@ func (g *Game) readEnqueue(addr uint32, size uint8) {
 
 func (g *Game) readSubmit() {
 	sequence := g.queue.MakeReadCommands(
-		g.readQueue,
+		g.readQueue[:],
 		func(cmd snes.Command, err error) {
+			if err != nil {
+				log.Println(err)
+			}
 			g.readCompletionChannel <- g.readResponse[:]
 			// clear response queue:
-			g.readResponse = g.readResponse[:0]
+			g.readResponse = nil
 		},
 	)
 	sequence.EnqueueTo(g.queue)
 
 	// clear the queue:
-	g.readQueue = g.readQueue[:0]
+	g.readQueue = nil
 }
 
 // run in a separate goroutine
@@ -90,6 +93,7 @@ func (g *Game) run() {
 			// make sure a read request is always in flight to keep our main loop running:
 			if time.Now().Sub(lastReadTime).Milliseconds() >= 500 {
 				g.enqueueMainReads()
+				g.readSubmit()
 			}
 			if g.localIndex < 0 {
 				// request our player index:
@@ -115,6 +119,8 @@ func (g *Game) run() {
 			break
 		}
 	}
+
+	log.Println("game: run loop exited")
 }
 
 func (g *Game) handleSNESRead(rsp snes.Response) {
