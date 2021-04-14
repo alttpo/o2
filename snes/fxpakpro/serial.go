@@ -28,6 +28,9 @@ func sendSerialProgress(f serial.Port, buf []byte, batchSize int, report func(se
 		}
 		sent += n
 	}
+	if sent > total {
+		sent = total
+	}
 	report(sent, total)
 	return nil
 }
