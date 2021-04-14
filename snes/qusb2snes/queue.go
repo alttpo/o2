@@ -80,12 +80,16 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 		return fmt.Errorf("qusb2snes: readCommand: queue is not of expected internal type")
 	}
 
+	// TODO: make sure device is ready and a game is loaded!
+
 	operands := make([]string, 0, 2*len(r.Requests))
+	sumExpected := 0
 	for _, req := range r.Requests {
 		operands = append(operands, fmt.Sprintf("%x", req.Address), fmt.Sprintf("%x", req.Size))
+		sumExpected += int(req.Size)
 	}
 
-	log.Printf("qusb2snes: readCommand: GetAddress %d requests\n", len(r.Requests))
+	//log.Printf("qusb2snes: readCommand: GetAddress %d requests\n", len(r.Requests))
 	err = q.ws.SendCommand(qusbCommand{
 		Opcode:   "GetAddress",
 		Space:    "SNES",
@@ -95,8 +99,10 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 		return
 	}
 
-	for i, req := range r.Requests {
-		log.Printf("qusb2snes: readCommand: expecting binary message, %x bytes for requests[%d]\n", req.Size, i)
+	// qusb2snes sends back randomly sized binary response messages:
+	sumReceived := 0
+	dataReceived := make([]byte, 0, sumExpected)
+	for sumReceived < sumExpected {
 		var hdr ws.Header
 		hdr, err = q.ws.r.NextFrame()
 		if err != nil {
@@ -119,7 +125,23 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 			err = fmt.Errorf("qusb2snes: readCommand: error reading binary response: %w", err)
 			return
 		}
-		log.Printf("qusb2snes: readCommand: %x binary bytes received\n", len(data))
+		//log.Printf("qusb2snes: readCommand: %x binary bytes received\n", len(data))
+
+		dataReceived = append(dataReceived, data...)
+		sumReceived += len(data)
+	}
+
+	if sumReceived != sumExpected {
+		err = fmt.Errorf("qusb2snes: readCommand: expected total of %x bytes but received %x", sumExpected, sumReceived)
+		return
+	}
+
+	n := 0
+	for _, req := range r.Requests {
+		size := int(req.Size)
+
+		data := dataReceived[n : n+size]
+		n += size
 
 		completed := req.Completion
 		if completed != nil {
