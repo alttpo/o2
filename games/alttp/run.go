@@ -224,11 +224,6 @@ func (g *Game) readMainComplete() {
 
 // called when the local game frame advances:
 func (g *Game) frameAdvanced() {
-	// don't send out any updates until we're connected:
-	if g.localIndex < 0 {
-		return
-	}
-
 	local := g.local
 
 	for _, p := range g.ActivePlayers() {
@@ -237,6 +232,11 @@ func (g *Game) frameAdvanced() {
 
 	// generate any WRAM update code and send it to the SNES:
 	g.updateWRAM()
+
+	// don't send out any updates until we're connected:
+	if g.localIndex < 0 {
+		return
+	}
 
 	{
 		// send location packet every frame:
