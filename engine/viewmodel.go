@@ -7,6 +7,7 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
+	"time"
 )
 
 type ViewModel struct {
@@ -307,6 +308,12 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 		return
 	}
 
+	go func() {
+		// wait for the SNES to be closed:
+		<-vm.dev.Closed()
+		vm.SNESDisconnected()
+	}()
+
 	vm.driverDevice = pair
 	vm.setStatus("Connected to SNES")
 
@@ -331,7 +338,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
-	vm.dev.Enqueue(snes.CommandWithCompletion{
+	err := vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command:    &snes.CloseCommand{},
 		Completion: func(cmd snes.Command, err error) { snesClosed <- err },
 	})
@@ -341,14 +348,28 @@ func (vm *ViewModel) SNESDisconnected() {
 	vm.setStatus("Disconnecting from SNES...")
 	vm.UpdateAndNotifyView()
 
-	// wait until snes is closed:
-	err := <-snesClosed
 	if err != nil {
 		log.Println(err)
+		return
 	}
-	log.Printf("Closed %s\n", lastDev.Device.DisplayName())
-	vm.setStatus("Disconnected from SNES")
+
+	// wait until snes is closed:
+	timer := time.NewTimer(time.Second)
+	select {
+	case err = <-snesClosed:
+		if err != nil {
+			log.Println(err)
+		}
+		log.Printf("Closed %s\n", lastDev.Device.DisplayName())
+		break
+	case <-timer.C:
+		log.Println("Timed out disconnecting from SNES")
+		return
+	}
+
 	lastDev = snes.NamedDriverDevicePair{}
+	vm.setStatus("Disconnected from SNES")
+
 	vm.UpdateAndNotifyView()
 }
 

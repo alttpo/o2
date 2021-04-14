@@ -1,6 +1,8 @@
 package snes
 
-import "io"
+import (
+	"io"
+)
 
 // Represents an asynchronous communication interface to either a physical or emulated SNES system.
 // Communication with a physical SNES console is done via a flash cart with a USB connection.
@@ -13,6 +15,9 @@ import "io"
 // hard limitation due to the design of the SNES and is not specific to any flash cart.
 type Queue interface {
 	io.Closer
+
+	// This channel is closed when the underlying connection is closed
+	Closed() <-chan struct{}
 
 	// Enqueues a command with an optional completion callback
 	Enqueue(cmd CommandWithCompletion) error

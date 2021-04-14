@@ -9,19 +9,27 @@ import (
 type Queue struct {
 	snes.BaseQueue
 
+	closed chan struct{}
+
 	wram    [0x20000]byte
 	nothing [0x100]byte
 
 	frameTicker *time.Ticker
 }
 
+func (q *Queue) Closed() <-chan struct{} {
+	return q.closed
+}
+
 func (q *Queue) Close() error {
 	q.frameTicker.Stop()
 	q.frameTicker = nil
+	close(q.closed)
 	return nil
 }
 
 func (q *Queue) Init() {
+	q.closed = make(chan struct{})
 	q.frameTicker = time.NewTicker(16_639_265 * time.Nanosecond)
 	go func() {
 		// 5,369,317.5/89,341.5 ~= 60.0988 frames / sec ~= 16,639,265.605 ns / frame
@@ -64,8 +72,8 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 		return fmt.Errorf("queue is not of expected internal type")
 	}
 
-	// wait 2ms before returning response to simulate the delay of FX Pak Pro device:
-	<-time.After(time.Millisecond * 2)
+	// wait 1ms before returning response to simulate the delay of FX Pak Pro device:
+	<-time.After(time.Millisecond * 1)
 
 	completed := r.Request.Completion
 	if completed == nil {
@@ -98,7 +106,8 @@ type writeCommand struct {
 }
 
 func (r *writeCommand) Execute(_ snes.Queue) error {
-	<-time.After(time.Millisecond * 2)
+	<-time.After(time.Millisecond * 1)
+
 	completed := r.Request.Completion
 	if completed != nil {
 		completed(snes.Response{

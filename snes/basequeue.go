@@ -3,6 +3,7 @@ package snes
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 type BaseQueue struct {
@@ -33,8 +34,14 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) error {
 	if b.cqClosed {
 		return fmt.Errorf("%s: device connection is closed", b.name)
 	}
-	b.cq <- cmd
-	return nil
+	timer := time.NewTimer(time.Second)
+	select {
+	case b.cq <- cmd:
+		timer.Stop()
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("%s: timeout enqueuing command", b.name)
+	}
 }
 
 func (b *BaseQueue) handleQueue() {

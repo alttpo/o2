@@ -14,6 +14,10 @@ type Queue struct {
 	ws         WebSocketClient
 }
 
+func (q *Queue) Closed() <-chan struct{} {
+	return q.ws.closed
+}
+
 func (q *Queue) Close() error {
 	return q.ws.Close()
 }

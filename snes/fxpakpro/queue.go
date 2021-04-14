@@ -10,8 +10,32 @@ import (
 type Queue struct {
 	snes.BaseQueue
 
+	closed chan struct{}
+
 	// must be only accessed via Command.Execute
 	f serial.Port
+}
+
+func (q *Queue) Closed() <-chan struct{} {
+	return q.closed
+}
+
+func (q *Queue) Close() (err error) {
+	// make sure closed channel is closed:
+	defer close(q.closed)
+
+	// Clear DTR (ignore any errors since we're closing):
+	log.Println("fxpakpro: clear DTR")
+	q.f.SetDTR(false)
+
+	// Close the port:
+	log.Println("fxpakpro: close port")
+	err = q.f.Close()
+	if err != nil {
+		return fmt.Errorf("fxpakpro: could not close serial port: %w", err)
+	}
+
+	return
 }
 
 func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) (cmds snes.CommandSequence) {
@@ -59,21 +83,6 @@ func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completi
 			Command:    q.newVPUT(reqs),
 			Completion: batchComplete,
 		})
-	}
-
-	return
-}
-
-func (q *Queue) Close() (err error) {
-	// Clear DTR (ignore any errors since we're closing):
-	log.Println("fxpakpro: clear DTR")
-	q.f.SetDTR(false)
-
-	// Close the port:
-	log.Println("fxpakpro: close port")
-	err = q.f.Close()
-	if err != nil {
-		return fmt.Errorf("fxpakpro: could not close serial port: %w", err)
 	}
 
 	return

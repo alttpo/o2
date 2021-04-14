@@ -18,6 +18,7 @@ type WebSocketClient struct {
 	urlstr  string
 	appName string
 
+	closed  chan struct{}
 	ws      net.Conn
 	r       *wsutil.Reader
 	w       *wsutil.Writer
@@ -38,13 +39,14 @@ type qusbResult struct {
 var timeout = time.Second * 2
 
 func NewWebSocketClient(w *WebSocketClient, urlstr string, appName string) (err error) {
+	w.closed = make(chan struct{})
 	w.urlstr = urlstr
 	w.appName = appName
 	return w.Dial()
 }
 
 func (w *WebSocketClient) Dial() (err error) {
-	log.Printf("qusb2snes: [%s] dial %s", w.appName, w.urlstr)
+	//log.Printf("qusb2snes: [%s] dial %s", w.appName, w.urlstr)
 	w.ws, _, _, err = ws.Dial(context.Background(), w.urlstr)
 	if err != nil {
 		err = fmt.Errorf("qusb2snes: [%s] dial: %w", w.appName, err)
@@ -73,17 +75,19 @@ func (w *WebSocketClient) Dial() (err error) {
 	return
 }
 
-func (w *WebSocketClient) tryOpen() (err error) {
+func (w *WebSocketClient) checkOpen() (err error) {
 	if w.ws == nil {
-		err = w.Dial()
+		err = fmt.Errorf("qusb2snes: websocket is closed")
 	}
 	return
 }
 
 func (w *WebSocketClient) Close() (err error) {
-	log.Printf("qusb2snes: [%s] close websocket\n", w.appName)
+	//log.Printf("qusb2snes: [%s] close websocket\n", w.appName)
+
 	if w.ws != nil {
 		err = w.ws.Close()
+		close(w.closed)
 	}
 
 	w.ws = nil
@@ -96,7 +100,7 @@ func (w *WebSocketClient) Close() (err error) {
 }
 
 func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
-	err = w.tryOpen()
+	err = w.checkOpen()
 	if err != nil {
 		return
 	}
@@ -132,12 +136,12 @@ func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
 }
 
 func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err error) {
-	err = w.tryOpen()
+	err = w.checkOpen()
 	if err != nil {
 		return
 	}
 
-	//log.Println("qusb2snes: NextFrame()")
+	//log.Printf("qusb2snes: ReadCommandResponse: NextFrame(%s)\n", name)
 	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	hdr, err := w.r.NextFrame()
 	if err != nil {
@@ -156,7 +160,7 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 		return
 	}
 
-	//log.Println("qusb2snes: Decode()")
+	//log.Printf("qusb2snes: Decode(%s)\n", name)
 	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	err = w.decoder.Decode(rsp)
 	if err != nil {
@@ -175,6 +179,11 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 }
 
 func (w *WebSocketClient) ReadBinaryResponse(sumExpected int) (dataReceived []byte, err error) {
+	err = w.checkOpen()
+	if err != nil {
+		return
+	}
+
 	// qusb2snes sends back randomly sized binary response messages:
 	sumReceived := 0
 	dataReceived = make([]byte, 0, sumExpected)
