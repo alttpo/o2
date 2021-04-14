@@ -1,26 +1,23 @@
 package qusb2snes
 
 import (
-	"encoding/json"
 	"fmt"
 	"o2/snes"
-	"time"
 )
 
 type Queue struct {
 	snes.BaseQueue
 
-	d       *Driver
-	encoder *json.Encoder
-	decoder *json.Decoder
+	ws   WebSocketClient
+	name string
 }
 
 func (q *Queue) Close() error {
-	// TODO: QUsb2Snes should have a "Detach" command
-	return nil
+	return q.ws.Close()
 }
 
 func (q *Queue) Init() {
+	// TODO: Attach
 }
 
 func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) snes.CommandSequence {
@@ -55,16 +52,11 @@ func (r *readCommand) Execute(queue snes.Queue) error {
 		return fmt.Errorf("queue is not of expected internal type")
 	}
 
-	// wait 2ms before returning response to simulate the delay of FX Pak Pro device:
-	<-time.After(time.Millisecond * 2)
-
-	completed := r.Request.Completion
-
 	_ = q
-	q.encoder.Encode(&map[string]interface{}{
-	})
+	// TODO: GetAddress
 	data := []byte{}
 
+	completed := r.Request.Completion
 	if completed != nil {
 		completed(snes.Response{
 			IsWrite: false,
@@ -83,7 +75,11 @@ type writeCommand struct {
 }
 
 func (r *writeCommand) Execute(_ snes.Queue) error {
-	<-time.After(time.Millisecond * 2)
+
+	// TODO: PutAddress
+	// Qusb supports multiple chunks in one request!
+	// https://github.com/Skarsnik/QUsb2snes/blob/master/usb2snes.h#L84
+
 	completed := r.Request.Completion
 	if completed != nil {
 		completed(snes.Response{
