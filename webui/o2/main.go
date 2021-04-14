@@ -14,6 +14,7 @@ import (
 import (
 	_ "o2/snes/fxpakpro"
 	_ "o2/snes/mock"
+	_ "o2/snes/qusb2snes"
 )
 
 // include these game providers:
