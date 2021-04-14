@@ -22,10 +22,31 @@ func (q *Queue) Close() error {
 func (q *Queue) Init() (err error) {
 	// attach to this device:
 	err = q.ws.SendCommand(qusbCommand{
-		Opcode:   "Name",
+		Opcode:   "Attach",
 		Space:    "SNES",
 		Operands: []string{q.deviceName},
 	})
+	if err != nil {
+		return
+	}
+
+	err = q.ws.SendCommand(qusbCommand{
+		Opcode:   "Info",
+		Space:    "SNES",
+		Operands: []string{},
+	})
+	if err != nil {
+		return
+	}
+
+	var rsp qusbResult
+	err = q.ws.ReadCommandResponse("Info", &rsp)
+	if err != nil {
+		return
+	}
+
+	log.Printf("qusb2snes: [%s] Info = %v\n", q.ws.appName, rsp.Results)
+
 	return
 }
 
@@ -83,6 +104,7 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 			return
 		}
 		if hdr.OpCode == ws.OpClose {
+			err = fmt.Errorf("qusb2snes: readCommand: NextFrame: server closed websocket")
 			q.ws.Close()
 			return
 		}

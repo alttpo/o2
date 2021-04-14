@@ -33,9 +33,9 @@ type qusbResult struct {
 	Results []string `json:"Results"`
 }
 
-func NewWebSocketClient(w *WebSocketClient, urlstr string, name string) (err error) {
+func NewWebSocketClient(w *WebSocketClient, urlstr string, appName string) (err error) {
 	w.urlstr = urlstr
-	w.appName = name
+	w.appName = appName
 	return w.Dial()
 }
 
@@ -97,7 +97,7 @@ func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
 		return
 	}
 
-	//log.Printf("qusb2snes: Encode(%s)\n", deviceName)
+	log.Printf("qusb2snes: [%s] Encode(%s)\n", w.appName, cmd.Opcode)
 	err = w.encoder.Encode(cmd)
 	if err != nil {
 		var serr syscall.Errno
@@ -110,7 +110,7 @@ func (w *WebSocketClient) SendCommand(cmd qusbCommand) (err error) {
 		return
 	}
 
-	//log.Println("qusb2snes: Flush()")
+	log.Printf("qusb2snes: [%s] Flush()\n", w.appName)
 	err = w.w.Flush()
 	if err != nil {
 		var serr syscall.Errno
@@ -145,7 +145,7 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 	}
 	if hdr.OpCode == ws.OpClose {
 		w.Close()
-		err = fmt.Errorf("qusb2snes: [%s] %s command response: websocket closed: %w", w.appName, name, err)
+		err = fmt.Errorf("qusb2snes: [%s] %s command response: websocket closed", w.appName, name)
 		return
 	}
 
