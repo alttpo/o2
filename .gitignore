@@ -36,3 +36,5 @@ alttpo-patcher
 /webui/dist/r/app.js
 /webui/o2/bindata.go
 /webui/o2/bindata_debug.go
+content/*.mp4
+content/*.zip
