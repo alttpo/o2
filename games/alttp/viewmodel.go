@@ -16,7 +16,7 @@ func (g *Game) notifyView() {
 	g.clean = true
 
 	// notify view of changes:
-	g.viewNotifier.NotifyView("game", g)
+	g.viewModels.NotifyView("game", g)
 }
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {

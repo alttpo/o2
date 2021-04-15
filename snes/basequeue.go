@@ -3,7 +3,6 @@ package snes
 import (
 	"fmt"
 	"log"
-	"time"
 )
 
 type BaseQueue struct {
@@ -24,24 +23,27 @@ func (b *BaseQueue) BaseInit(name string, queue Queue) {
 	}
 
 	b.name = name
-	b.cq = make(chan CommandWithCompletion, 64)
+	b.cq = make(chan CommandWithCompletion)
 	b.queue = queue
 
 	go b.handleQueue()
 }
 
-func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) error {
+func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
+	// FIXME: no great way I can figure out how to avoid panic on closed channel send below.
+	defer func() {
+		if recover() != nil {
+			err = fmt.Errorf("%s: device connection is closed", b.name)
+		}
+	}()
+
 	if b.cqClosed {
-		return fmt.Errorf("%s: device connection is closed", b.name)
+		err = fmt.Errorf("%s: device connection is closed", b.name)
+		return
 	}
-	timer := time.NewTimer(time.Second)
-	select {
-	case b.cq <- cmd:
-		timer.Stop()
-		return nil
-	case <-timer.C:
-		return fmt.Errorf("%s: timeout enqueuing command", b.name)
-	}
+
+	b.cq <- cmd
+	return
 }
 
 func (b *BaseQueue) handleQueue() {
@@ -68,25 +70,31 @@ func (b *BaseQueue) handleQueue() {
 		}
 
 		log.Printf("%s: closing chan\n", b.name)
-		close(b.cq)
 		b.cqClosed = true
+		close(b.cq)
 	}
 	defer doClose()
 
 	for pair := range b.cq {
+		//log.Printf("%s: dequeue command\n", b.name)
 		cmd := pair.Command
+
 		if cmd == nil {
 			break
 		}
+
 		if _, ok := cmd.(*CloseCommand); ok {
 			log.Printf("%s: processing CloseCommand\n", b.name)
-			doClose()
+			if pair.Completion != nil {
+				go pair.Completion(cmd, err)
+			}
+			break
 		}
 		if _, ok := cmd.(*DrainQueueCommand); ok {
 			// close and recreate queue:
 			log.Printf("%s: processing DrainQueueCommand\n", b.name)
-			close(b.cq)
-			b.cq = make(chan CommandWithCompletion, 64)
+			doClose()
+			b.cq = make(chan CommandWithCompletion)
 		}
 
 		err = cmd.Execute(q)

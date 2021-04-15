@@ -7,6 +7,7 @@ import (
 	"o2/snes"
 	"strings"
 	"sync"
+	"time"
 )
 
 // MaxPlayers can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
@@ -14,10 +15,15 @@ const MaxPlayers = 256
 
 // Game implements game.Game
 type Game struct {
-	rom          *snes.ROM
-	queue        snes.Queue
-	client       *client.Client
-	viewNotifier interfaces.ViewNotifier
+	// rom cannot be nil
+	rom *snes.ROM
+
+	// queue can be nil at any time
+	queue snes.Queue
+	// client can be nil at any time
+	client *client.Client
+	// viewModels can be nil at any time
+	viewModels interfaces.ViewModelContainer
 
 	localIndex int // index into the players array that local points to (or -1 if not connected)
 	local      *Player
@@ -29,9 +35,9 @@ type Game struct {
 	running bool
 	stopped chan struct{}
 
-	readQueue             []snes.Read
-	readResponse          []snes.Response
-	readCompletionChannel chan []snes.Response
+	readQueue    []snes.Read
+	readResponse []snes.Response
+	lastReadTime time.Time
 
 	nextUpdateA      bool
 	updateLock       sync.Mutex
@@ -57,8 +63,9 @@ type Game struct {
 	monotonicFrameTime uint8  // always increments by 1 whenever game frame increases by any amount N
 
 	// serializable ViewModel:
-	clean            bool
-	IsCreated        bool   `json:"isCreated"`
+	clean     bool
+	IsCreated bool `json:"isCreated"`
+	// TODO: move Team and PlayerName to ServerViewModel
 	Team             uint8  `json:"team"`
 	PlayerName       string `json:"playerName"`
 	SyncItems        bool   `json:"syncItems"`
@@ -67,20 +74,15 @@ type Game struct {
 	SyncHearts       bool   `json:"syncHearts"`
 }
 
-func (f *Factory) NewGame(
-	queue snes.Queue,
-	rom *snes.ROM,
-	client *client.Client,
-	viewNotifier interfaces.ViewNotifier,
-) (games.Game, error) {
+func (f *Factory) NewGame(rom *snes.ROM) games.Game {
+	if rom == nil {
+		panic("game: rom cannot be nil")
+	}
+
 	g := &Game{
 		rom:                   rom,
-		queue:                 queue,
-		client:                client,
-		viewNotifier:          viewNotifier,
 		running:               false,
 		stopped:               make(chan struct{}),
-		readCompletionChannel: make(chan []snes.Response, 8),
 		romFunctions:          make(map[romFunction]uint32),
 		lastUpdateTarget:      0xFFFFFF,
 		// ViewModel:
@@ -93,7 +95,7 @@ func (f *Factory) NewGame(
 
 	g.fillRomFunctions()
 
-	return g, nil
+	return g
 }
 
 func (g *Game) Title() string {
@@ -102,6 +104,12 @@ func (g *Game) Title() string {
 
 func (g *Game) Description() string {
 	return strings.TrimRight(string(g.rom.Header.Title[:]), " ")
+}
+
+func (g *Game) ProvideQueue(queue snes.Queue)       { g.queue = queue }
+func (g *Game) ProvideClient(client *client.Client) { g.client = client }
+func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
+	g.viewModels = container
 }
 
 func (g *Game) IsRunning() bool {

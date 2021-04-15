@@ -7,7 +7,6 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
-	"time"
 )
 
 type ViewModel struct {
@@ -55,6 +54,29 @@ func NewViewModel() *ViewModel {
 	return vm
 }
 
+func (vm *ViewModel) GetViewModel(view string) (interface{}, bool) {
+	viewModel, ok := vm.viewModels[view]
+	return viewModel, ok
+}
+
+func (vm *ViewModel) NotifyView(view string, model interface{}) {
+	// allow model to customize the instance to be stored as a view model:
+	viewModel := model
+	if viewModeler, ok := model.(interfaces.ViewModeler); ok {
+		viewModel = viewModeler.ViewModel()
+	}
+
+	// cache the viewModel for new websocket connections so they get the updates on first connect:
+	vm.viewModels[view] = viewModel
+
+	// notify downstream if applicable:
+	vn := vm.viewNotifier
+	if vn == nil {
+		return
+	}
+	vn.NotifyView(view, viewModel)
+}
+
 // initializes all view models:
 func (vm *ViewModel) Init() {
 	for _, model := range vm.viewModels {
@@ -73,6 +95,17 @@ func (vm *ViewModel) Update() {
 	}
 }
 
+func (vm *ViewModel) NotifyViewTo(viewNotifier interfaces.ViewNotifier) {
+	if viewNotifier == nil {
+		return
+	}
+
+	// send all view models to this notifier regardless of dirty state:
+	for view, model := range vm.viewModels {
+		viewNotifier.NotifyView(view, model)
+	}
+}
+
 // updates all view models and notifies view:
 func (vm *ViewModel) UpdateAndNotifyView() {
 	for view, model := range vm.viewModels {
@@ -83,61 +116,16 @@ func (vm *ViewModel) UpdateAndNotifyView() {
 	}
 }
 
-// notifies the view of any updated view models:
-func (vm *ViewModel) NotifyView() {
-	for view, model := range vm.viewModels {
-		vm.NotifyViewOf(view, model)
-	}
-}
-
-func notifyView(viewNotifier interfaces.ViewNotifier, view string, model interface{}) {
-	viewModel := model
-	if viewModeler, ok := model.(interfaces.ViewModeler); ok {
-		viewModel = viewModeler.ViewModel()
-	}
-	viewNotifier.NotifyView(view, viewModel)
-}
-
-func (vm *ViewModel) ForceNotifyViewOf(view string, model interface{}) {
-	if vm.viewNotifier == nil {
-		return
-	}
-
-	dirtyable, isDirtyable := model.(interfaces.Dirtyable)
-	// ignore IsDirty() check
-
-	notifyView(vm.viewNotifier, view, model)
-
-	if isDirtyable {
-		dirtyable.ClearDirty()
-	}
-}
-
 func (vm *ViewModel) NotifyViewOf(view string, model interface{}) {
-	if vm.viewNotifier == nil {
-		return
-	}
-
 	dirtyable, isDirtyable := model.(interfaces.Dirtyable)
 	if isDirtyable && !dirtyable.IsDirty() {
 		return
 	}
 
-	notifyView(vm.viewNotifier, view, model)
+	vm.NotifyView(view, model)
 
 	if isDirtyable {
 		dirtyable.ClearDirty()
-	}
-}
-
-func (vm *ViewModel) NotifyViewTo(viewNotifier interfaces.ViewNotifier) {
-	if viewNotifier == nil {
-		return
-	}
-
-	// send all view models to this notifier regardless of dirty state:
-	for view, model := range vm.viewModels {
-		notifyView(viewNotifier, view, model)
 	}
 }
 
@@ -146,14 +134,7 @@ func (vm *ViewModel) CommandFor(view, command string) (ce interfaces.Command, er
 	var svm interface{}
 	var ok bool
 
-	if view == "game" {
-		if vm.game == nil {
-			return nil, fmt.Errorf("view=%s,cmd=%s: game view model not available yet", view, command)
-		}
-		svm, ok = vm.game, true
-	} else {
-		svm, ok = vm.viewModels[view]
-	}
+	svm, ok = vm.viewModels[view]
 	if !ok {
 		return nil, fmt.Errorf("view=%s,cmd=%s: no view model found to handle command", view, command)
 	}
@@ -178,10 +159,6 @@ func (vm *ViewModel) setStatus(msg string) {
 func (vm *ViewModel) tryCreateGame() bool {
 	defer vm.UpdateAndNotifyView()
 
-	if vm.dev == nil {
-		log.Println("dev is nil")
-		return false
-	}
 	if vm.nextRom == nil {
 		log.Println("rom is nil")
 		return false
@@ -191,25 +168,25 @@ func (vm *ViewModel) tryCreateGame() bool {
 		return false
 	}
 
-	var err error
-	log.Println("Create new game")
-	vm.game, err = vm.nextFactory.NewGame(
-		vm.dev,
-		vm.nextRom,
-		vm.client,
-		vm.viewNotifier,
-	)
-	if err != nil {
-		return false
-	}
-
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
+
+	log.Println("Create new game")
+	vm.game = vm.factory.NewGame(vm.rom)
+
+	// provide the game with its deps:
+	vm.game.ProvideQueue(vm.dev)
+	vm.game.ProvideClient(vm.client)
+
+	// intercept vm.viewNotifier to let us cache viewModel updates from the game:
+	// game will notify us of its viewModel on Start()/Reset():
+	vm.game.ProvideViewModelContainer(vm)
 
 	go func() {
 		// wait until the game is stopped:
 		<-vm.game.Stopped()
 		vm.game = nil
+		delete(vm.viewModels, "game")
 		vm.UpdateAndNotifyView()
 	}()
 
@@ -315,6 +292,11 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 		return
 	}
 
+	if vm.game != nil {
+		// inform the game of the new device:
+		vm.game.ProvideQueue(vm.dev)
+	}
+
 	go func() {
 		// wait for the SNES to be closed:
 		<-vm.dev.Closed()
@@ -323,8 +305,6 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 
 	vm.driverDevice = pair
 	vm.setStatus("Connected to SNES")
-
-	vm.tryCreateGame()
 }
 
 func (vm *ViewModel) SNESDisconnected() {
@@ -335,22 +315,22 @@ func (vm *ViewModel) SNESDisconnected() {
 		return
 	}
 
-	if vm.game != nil {
-		log.Println("Stop existing game")
-		vm.game.Stop()
-		vm.game = nil
-	}
-
 	// enqueue the close operation:
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
 	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
 	err := vm.dev.Enqueue(snes.CommandWithCompletion{
-		Command:    &snes.CloseCommand{},
-		Completion: func(cmd snes.Command, err error) { snesClosed <- err },
+		Command: &snes.CloseCommand{},
+		Completion: func(cmd snes.Command, err error) {
+			snesClosed <- err
+			close(snesClosed)
+		},
 	})
 
 	vm.dev = nil
+	if vm.game != nil {
+		vm.game.ProvideQueue(nil)
+	}
 	vm.driverDevice = snes.NamedDriverDevicePair{}
 	vm.setStatus("Disconnecting from SNES...")
 	vm.UpdateAndNotifyView()
@@ -361,18 +341,11 @@ func (vm *ViewModel) SNESDisconnected() {
 	}
 
 	// wait until snes is closed:
-	timer := time.NewTimer(time.Second)
-	select {
-	case err = <-snesClosed:
-		if err != nil {
-			log.Println(err)
-		}
-		log.Printf("Closed %s\n", lastDev.Device.DisplayName())
-		break
-	case <-timer.C:
-		log.Println("Timed out disconnecting from SNES")
-		return
+	err = <-snesClosed
+	if err != nil {
+		log.Println(err)
 	}
+	log.Printf("Closed %s\n", lastDev.Device.DisplayName())
 
 	lastDev = snes.NamedDriverDevicePair{}
 	vm.setStatus("Disconnected from SNES")

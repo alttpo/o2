@@ -1,8 +1,6 @@
 package games
 
 import (
-	"o2/client"
-	"o2/interfaces"
 	"o2/snes"
 	"sort"
 	"sync"
@@ -17,11 +15,7 @@ type Factory interface {
 
 	Patcher(rom *snes.ROM) Patcher
 
-	NewGame(
-		queue snes.Queue,
-		rom *snes.ROM,
-		client *client.Client,
-		viewNotifier interfaces.ViewNotifier) (Game, error)
+	NewGame(rom *snes.ROM) Game
 }
 
 type Patcher interface {

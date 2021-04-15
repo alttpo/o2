@@ -10,16 +10,25 @@ import (
 )
 
 func (g *Game) send(m *bytes.Buffer) {
-	if !g.client.IsConnected() {
+	c := g.client
+	if c == nil {
+		return
+	}
+	if !c.IsConnected() {
 		return
 	}
 
-	g.client.Write() <- m.Bytes()
+	c.Write() <- m.Bytes()
 }
 
 func (g *Game) makeGamePacket(kind protocol02.Kind) (m *bytes.Buffer) {
+	c := g.client
+	if c == nil {
+		return
+	}
+
 	m = protocol02.MakePacket(
-		g.client.Group(),
+		c.Group(),
 		kind,
 		uint16(g.localIndex),
 	)
