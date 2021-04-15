@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"o2/snes"
+	"sync"
 	"syscall"
 )
 
@@ -11,6 +12,8 @@ const driverName = "qusb2snes"
 
 type Driver struct {
 	ws WebSocketClient
+
+	wsLock sync.Mutex
 }
 
 func (d *Driver) DisplayOrder() int {
@@ -37,7 +40,10 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		return
 	}
 
-	qu := &Queue{deviceName: dev.name}
+	qu := &Queue{
+		d: d,
+		deviceName: dev.name,
+	}
 
 	err = NewWebSocketClient(&qu.ws, "ws://localhost:8080/", "o2")
 	if err != nil {
@@ -71,6 +77,12 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	}
 
 	// request a device list:
+	defer func() {
+		d.wsLock.Unlock()
+		//log.Println("qusb2snes: DeviceList request end")
+	}()
+	d.wsLock.Lock()
+	//log.Println("qusb2snes: DeviceList request start")
 	err = d.ws.SendCommand(qusbCommand{
 		Opcode:   "DeviceList",
 		Space:    "SNES",

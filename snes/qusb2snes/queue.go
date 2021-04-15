@@ -7,11 +7,21 @@ import (
 	"o2/snes"
 )
 
+type Info struct {
+	FirmwareVersion string
+	DeviceName      string
+	ROM             string
+}
+
 type Queue struct {
 	snes.BaseQueue
 
+	d *Driver
+
 	deviceName string
 	ws         WebSocketClient
+
+	info Info
 }
 
 func (q *Queue) Closed() <-chan struct{} {
@@ -24,6 +34,13 @@ func (q *Queue) Close() error {
 
 func (q *Queue) Init() (err error) {
 	// attach to this device:
+	defer func() {
+		//log.Println("qusb2snes: Attach,Info request end")
+		q.d.wsLock.Unlock()
+	}()
+	q.d.wsLock.Lock()
+	//log.Println("qusb2snes: Attach,Info request start")
+
 	err = q.ws.SendCommand(qusbCommand{
 		Opcode:   "Attach",
 		Space:    "SNES",
@@ -49,6 +66,14 @@ func (q *Queue) Init() (err error) {
 	}
 
 	log.Printf("qusb2snes: [%s] Info = %v\n", q.ws.appName, rsp.Results)
+
+	// qusb version:
+	q.info.FirmwareVersion = rsp.Results[0]
+	q.info.DeviceName = rsp.Results[1]
+	q.info.ROM = rsp.Results[2]
+	log.Printf("qusb2snes: firmware version %s\n", q.info.FirmwareVersion)
+	log.Printf("qusb2snes: device '%s'\n", q.info.DeviceName)
+	log.Printf("qusb2snes: rom '%s'\n", q.info.ROM)
 
 	return
 }
@@ -81,8 +106,22 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 		return fmt.Errorf("qusb2snes: readCommand: queue is not of expected internal type")
 	}
 
-	// TODO: make sure device is ready and a game is loaded!
+	defer func() {
+		//log.Println("qusb2snes: GetAddress request end")
+		q.d.wsLock.Unlock()
+	}()
+	q.d.wsLock.Lock()
+	//log.Println("qusb2snes: GetAddress request start")
 
+	if q.info.DeviceName == "SD2SNES" {
+		return r.sendBatched(q)
+	}
+
+	// Most devices don't support batched requests:
+	return r.sendIndividual(q)
+}
+
+func (r *readCommand) sendBatched(q *Queue) (err error) {
 	operands := make([]string, 0, 2*len(r.Requests))
 	sumExpected := 0
 	for _, req := range r.Requests {
@@ -128,6 +167,41 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 	return
 }
 
+func (r *readCommand) sendIndividual(q *Queue) (err error) {
+	for _, req := range r.Requests {
+		sumExpected := int(req.Size)
+		operands := []string{fmt.Sprintf("%x", req.Address), fmt.Sprintf("%x", req.Size)}
+
+		err = q.ws.SendCommand(qusbCommand{
+			Opcode:   "GetAddress",
+			Space:    "SNES",
+			Operands: operands,
+		})
+		if err != nil {
+			return
+		}
+
+		var data []byte
+		data, err = q.ws.ReadBinaryResponse(sumExpected)
+		if err != nil {
+			return
+		}
+
+		completed := req.Completion
+		if completed != nil {
+			completed(snes.Response{
+				IsWrite: false,
+				Address: req.Address,
+				Size:    req.Size,
+				Extra:   req.Extra,
+				Data:    data,
+			})
+		}
+	}
+
+	return
+}
+
 type writeCommand struct {
 	Requests []snes.Write
 }
@@ -137,6 +211,13 @@ func (r *writeCommand) Execute(queue snes.Queue) (err error) {
 	if !ok {
 		return fmt.Errorf("qusb2snes: writeCommand: queue is not of expected internal type")
 	}
+
+	defer func() {
+		//log.Println("qusb2snes: PutAddress request end")
+		q.d.wsLock.Unlock()
+	}()
+	q.d.wsLock.Lock()
+	//log.Println("qusb2snes: PutAddress request start")
 
 	operands := make([]string, 0, 2*len(r.Requests))
 	for _, req := range r.Requests {
