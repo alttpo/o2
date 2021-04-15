@@ -36,11 +36,6 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		return
 	}
 
-	if dev.name == "No devices found" {
-		err = fmt.Errorf("invalid descriptor")
-		return
-	}
-
 	qu := &Queue{
 		d:          d,
 		deviceName: dev.name,
@@ -117,11 +112,6 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	var list qusbResult
 	err = ws.ReadCommandResponse("DeviceList", &list)
 	if err != nil {
-		return
-	}
-
-	if len(list.Results) == 0 {
-		devices = []snes.DeviceDescriptor{DeviceDescriptor{name: "No devices found"}}
 		return
 	}
 
