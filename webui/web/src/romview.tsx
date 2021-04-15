@@ -21,18 +21,14 @@ export default ({ch, vm}: TopLevelProps) => {
             <label for="romFile">ROM:</label>
             <form><input id="romFile" type="file" onChange={fileChosen}/></form>
             <button onClick={e => ch.command("rom", "boot", {})}>Patch &amp; Boot</button>
-        {rom.isLoaded &&
-            <Fragment>
-                <label>Name:</label>
-                <input class="mono" readonly value={rom.name} />
-                <label>Title:</label>
-                <input class="mono" readonly value={rom.title} />
-                <label>Region:</label>
-                <input class="mono" readonly value={rom.region} />
-                <label>Version:</label>
-                <input class="mono" readonly value={rom.version} />
-            </Fragment>
-        }
+            <label>Name:</label>
+            <input class="mono" readonly value={rom.name} />
+            <label>Title:</label>
+            <input class="mono" readonly value={rom.title} />
+            <label>Region:</label>
+            <input class="mono" readonly value={rom.region} />
+            <label>Version:</label>
+            <input class="mono" readonly value={rom.version} />
         </div>
     </Fragment>);
 }

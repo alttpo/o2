@@ -227,6 +227,7 @@ footer {
 }
 .three-grid > label {
     grid-column: 1;
+    padding-top: 6px;
 }
 .three-grid > input,form {
     grid-column: 2;
