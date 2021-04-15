@@ -151,7 +151,10 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 		return nil, fmt.Errorf("%s: failed to set DTR: %w", driverName, err)
 	}
 
-	c := &Queue{f: f}
+	c := &Queue{
+		f: f,
+		closed: make(chan struct{}),
+	}
 	c.BaseInit(driverName, c)
 
 	return c, err
