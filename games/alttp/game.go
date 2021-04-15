@@ -27,6 +27,7 @@ type Game struct {
 	activePlayers      []*Player
 
 	running bool
+	stopped chan struct{}
 
 	readQueue             []snes.Read
 	readResponse          []snes.Response
@@ -78,6 +79,7 @@ func (f *Factory) NewGame(
 		client:                client,
 		viewNotifier:          viewNotifier,
 		running:               false,
+		stopped:               make(chan struct{}),
 		readCompletionChannel: make(chan []snes.Response, 8),
 		romFunctions:          make(map[romFunction]uint32),
 		lastUpdateTarget:      0xFFFFFF,
@@ -140,7 +142,15 @@ func (g *Game) Start() {
 
 	g.Reset()
 
-	go g.run()
+	go func() {
+		g.run()
+		// notify that the game is stopped:
+		close(g.stopped)
+	}()
+}
+
+func (g *Game) Stopped() <-chan struct{} {
+	return g.stopped
 }
 
 func (g *Game) Stop() {

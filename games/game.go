@@ -5,6 +5,7 @@ type Game interface {
 	Description() string
 
 	IsRunning() bool
+	Stopped() <-chan struct{}
 
 	Start()
 	Stop()

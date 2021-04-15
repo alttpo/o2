@@ -206,6 +206,13 @@ func (vm *ViewModel) tryCreateGame() bool {
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
 
+	go func() {
+		// wait until the game is stopped:
+		<-vm.game.Stopped()
+		vm.game = nil
+		vm.UpdateAndNotifyView()
+	}()
+
 	// start the game instance:
 	log.Println("Start game")
 	vm.game.Start()
