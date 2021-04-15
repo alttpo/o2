@@ -7,12 +7,14 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
+	"sync"
 )
 
 type ViewModel struct {
 	// state:
 	driverDevice snes.NamedDriverDevicePair
 	dev          snes.Queue
+	devLock      sync.Mutex
 
 	rom     *snes.ROM
 	nextRom *snes.ROM
@@ -27,7 +29,9 @@ type ViewModel struct {
 	viewNotifier interfaces.ViewNotifier
 
 	// View Models:
-	viewModels      map[string]interface{}
+	viewModels     map[string]interface{}
+	viewModelsLock sync.Mutex
+
 	snesViewModel   *SNESViewModel
 	romViewModel    *ROMViewModel
 	serverViewModel *ServerViewModel
@@ -55,11 +59,17 @@ func NewViewModel() *ViewModel {
 }
 
 func (vm *ViewModel) GetViewModel(view string) (interface{}, bool) {
+	defer vm.viewModelsLock.Unlock()
+	vm.viewModelsLock.Lock()
+
 	viewModel, ok := vm.viewModels[view]
 	return viewModel, ok
 }
 
 func (vm *ViewModel) NotifyView(view string, model interface{}) {
+	defer vm.viewModelsLock.Unlock()
+	vm.viewModelsLock.Lock()
+
 	// allow model to customize the instance to be stored as a view model:
 	viewModel := model
 	if viewModeler, ok := model.(interfaces.ViewModeler); ok {
@@ -308,12 +318,15 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 }
 
 func (vm *ViewModel) SNESDisconnected() {
-	defer vm.UpdateAndNotifyView()
+	defer vm.devLock.Unlock()
+	vm.devLock.Lock()
 
 	if vm.dev == nil {
 		vm.driverDevice = snes.NamedDriverDevicePair{}
 		return
 	}
+
+	defer vm.UpdateAndNotifyView()
 
 	// enqueue the close operation:
 	snesClosed := make(chan error)

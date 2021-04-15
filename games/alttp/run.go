@@ -36,34 +36,20 @@ func (g *Game) readSubmit() {
 					log.Println(err)
 				}
 
-				rsps := g.readResponse
-				// clear response queue:
+				go func(rsps []snes.Response) {
+					//log.Println("readComplete send")
+					g.readComplete <- rsps
+				}(g.readResponse[:])
+
 				g.readResponse = nil
-
-				g.lastReadTime = time.Now()
-
-				if !g.IsRunning() {
-					return
-				}
-
-				// copy the data into our wram shadow:
-				for _, rsp := range rsps {
-					g.handleSNESRead(rsp)
-				}
-				g.enqueueMainReads()
-				g.readSubmit()
-
-				g.readMainComplete()
 			},
 		)
 
-		go func() {
-			err := sequence.EnqueueTo(q)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-		}()
+		err := sequence.EnqueueTo(q)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 
 	// clear the queue:
@@ -84,6 +70,24 @@ func (g *Game) run() {
 
 	for g.running {
 		select {
+		// wait for reads to complete:
+		case rsps := <-g.readComplete:
+			g.lastReadTime = time.Now()
+
+			if !g.IsRunning() {
+				return
+			}
+
+			// copy the data into our wram shadow:
+			for _, rsp := range rsps {
+				g.handleSNESRead(rsp)
+			}
+			g.enqueueMainReads()
+			g.readSubmit()
+
+			g.readMainComplete()
+			break
+
 		// wait for network message from server:
 		case msg := <-g.client.Read():
 			if msg == nil {

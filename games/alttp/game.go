@@ -37,6 +37,7 @@ type Game struct {
 
 	readQueue    []snes.Read
 	readResponse []snes.Response
+	readComplete chan []snes.Response
 	lastReadTime time.Time
 
 	nextUpdateA      bool
@@ -80,11 +81,12 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 	}
 
 	g := &Game{
-		rom:                   rom,
-		running:               false,
-		stopped:               make(chan struct{}),
-		romFunctions:          make(map[romFunction]uint32),
-		lastUpdateTarget:      0xFFFFFF,
+		rom:              rom,
+		running:          false,
+		stopped:          make(chan struct{}),
+		readComplete:     make(chan []snes.Response, 2),
+		romFunctions:     make(map[romFunction]uint32),
+		lastUpdateTarget: 0xFFFFFF,
 		// ViewModel:
 		IsCreated:        true,
 		SyncItems:        true,
