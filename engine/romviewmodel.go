@@ -52,6 +52,8 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 		"name": &ROMNameCommand{v},
 		"data": &ROMDataCommand{v},
 		"boot": &ROMBootCommand{v},
+		// get contents of patched rom:
+		"patched": &ROMGetDataCommand{v},
 	}
 
 	return v
@@ -90,6 +92,25 @@ func (v *ROMViewModel) DataProvided(romImage []byte) error {
 		return err
 	}
 	return v.c.ROMSelected(rom)
+}
+
+// ROMGetDataCommand This command should only be used by the web server
+type ROMGetDataCommand struct{ v *ROMViewModel }
+
+func (ce *ROMGetDataCommand) CreateArgs() interfaces.CommandArgs { return nil }
+
+func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
+	if ce.v.c.rom == nil {
+		return nil
+	}
+
+	p, ok := args.(*[]byte)
+	if !ok {
+		return nil
+	}
+
+	*p = ce.v.c.rom.Contents[:]
+	return nil
 }
 
 type ROMBootCommand struct{ v *ROMViewModel }

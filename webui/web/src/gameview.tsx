@@ -35,10 +35,10 @@ function GameView({ch, game}: GameProps) {
     }
 
     return <div class="card three-grid">
-        <label for="playerName">Player Name:</label>
+        <label class="grid-col1" for="playerName">Player Name:</label>
         <input type="text" value={playerName} id="playerName"
                onInput={onInput.bind(this, setPlayerName, "playerName", (v: string) => v)}/>
-        <label for="team">Team Number:</label>
+        <label class="grid-col1" for="team">Team Number:</label>
         <input type="number" min={0} max={255} value={team} id="team"
                onInput={onInput.bind(this, setTeam, "team", (v: string) => parseInt(v, 10))}/>
     </div>;

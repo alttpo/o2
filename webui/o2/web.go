@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,30 @@ func NewWebServer(listenAddr string) *WebServer {
 
 		// start by sending all view models to this new socket:
 		s.commandHandler.NotifyViewTo(socket)
+	}))
+
+	// download the patched ROM:
+	s.mux.Handle("/rom/patched.smc", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cmd, err := s.commandHandler.CommandFor("rom", "patched")
+		if err != nil {
+			log.Println(err)
+			http.NotFound(w, r)
+			return
+		}
+
+		var rom []byte
+		err = cmd.Execute(&rom)
+		if err != nil {
+			log.Println(err)
+			http.NotFound(w, r)
+			return
+		}
+		if rom == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeContent(w, r, "patched.smc", time.Now(), bytes.NewReader(rom))
 	}))
 
 	// serve static content from go-bindata:

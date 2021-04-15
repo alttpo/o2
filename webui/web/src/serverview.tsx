@@ -39,10 +39,10 @@ function ServerView({ch, server}: ServerProps) {
     };
 
     return <div class="card three-grid">
-        <label for="hostName">Hostname:</label>
+        <label class="grid-col1" for="hostName">Hostname:</label>
         <input type="text" value={hostName} disabled={server.isConnected} id="hostName"
                onInput={e => setHostName((e.target as HTMLInputElement).value)}/>
-        <label for="groupName">Group:</label>
+        <label class="grid-col1" for="groupName">Group:</label>
         <input type="text" value={groupName} disabled={server.isConnected} id="groupName"
                onInput={e => setGroupName((e.target as HTMLInputElement).value)}/>
         {connectButton()}

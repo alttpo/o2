@@ -52,7 +52,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const {name} = drv;
 
         return <Fragment key={name}>
-            <label for={`device-${name}`} title={drv.displayDescription}>{drv.displayName}:&nbsp;</label>
+            <label class="grid-col1" for={`device-${name}`} title={drv.displayDescription}>{drv.displayName}:</label>
             <select
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}

@@ -18,17 +18,29 @@ export default ({ch, vm}: TopLevelProps) => {
 
     return (<Fragment>
         <div class="card three-grid">
-            <label for="romFile">ROM:</label>
-            <form><input id="romFile" type="file" onChange={fileChosen}/></form>
-            <button onClick={e => ch.command("rom", "boot", {})}>Patch &amp; Boot</button>
-            <label>Name:</label>
-            <input class="mono" readonly value={rom.name} />
-            <label>Title:</label>
-            <input class="mono" readonly value={rom.title} />
-            <label>Region:</label>
-            <input class="mono" readonly value={rom.region} />
-            <label>Version:</label>
-            <input class="mono" readonly value={rom.version} />
+            <label class="grid-col1" for="romFile">Input ROM:</label>
+            <form class="grid-col2"><input id="romFile" type="file" onChange={fileChosen}/></form>
+
+            <label class="grid-col1">Patched ROM:</label>
+            <button class="grid-col2"
+                    disabled={!vm.snes.isConnected}
+                    onClick={e => ch.command("rom", "boot", {})}>Boot
+            </button>
+            <form class="grid-col3" method="get" action="/rom/patched.smc">
+                <input type="submit" value="Download"/>
+            </form>
+
+            <label class="grid-col1">Name:</label>
+            <input class="grid-col2 mono" readonly value={rom.name}/>
+
+            <label class="grid-col1">Title:</label>
+            <input class="grid-col2 mono" readonly value={rom.title}/>
+
+            <label class="grid-col1">Region:</label>
+            <input class="grid-col2 mono" readonly value={rom.region}/>
+
+            <label class="grid-col1">Version:</label>
+            <input class="grid-col2 mono" readonly value={rom.version}/>
         </div>
     </Fragment>);
 }

@@ -12,9 +12,12 @@
     box-sizing: border-box;
 }
 
-html, select, option {
+html, select, option, button, input {
     font-family: Rokkitt, sans-serif;
-    font-size: 1.1rem;
+    font-size: 1.1em;
+}
+
+html, select, option, input:not([type=submit]) {
     color: lightgray;
     text-shadow: -1px -1px 0 #333,
     1px -1px 0 #333,
@@ -35,11 +38,9 @@ a {
     color: #ffef00;
 }
 
-button {
-    font-family: sans-serif;
+button, input[type=submit] {
     font-weight: 500;
-    font-size: 0.9rem;
-    padding: 6px 16px 6px 16px; /* top right bottom left */
+    padding: 4px 16px 4px 16px; /* top right bottom left */
     border-radius: 4px;
     border-top: 1px solid rgba(0, 0, 0, 0.5);
     border-left: 1px solid rgba(0, 0, 0, 0.5);
@@ -49,16 +50,16 @@ button {
     cursor: pointer;
 }
 
-button:active {
+button:active, input[type=submit]:active {
     border-right: 1px solid rgba(0, 0, 0, 0.5);
     border-bottom: 1px solid rgba(0, 0, 0, 0.5);
     padding-right: 16px;
     margin-right: 2px;
-    padding-bottom: 10px;
+    padding-bottom: 4px;
     margin-bottom: 2px;
 }
 
-select, input {
+select, input:not([type=submit]) {
     background-color: #444;
     color: lightgray;
     font-family: Rokkitt, sans-serif;
@@ -73,7 +74,7 @@ select, input {
     font-kerning: auto;
 }
 
-select:disabled, input:disabled {
+select:disabled, input:not([type=submit]):disabled {
     background-color: #333;
     color: #666;
     border-color: #666;
@@ -226,18 +227,22 @@ footer {
     grid-column-gap: 0.2em;
 }
 .three-grid > label {
-    grid-column: 1;
     padding-top: 6px;
-}
-.three-grid > input,form {
-    grid-column: 2;
-}
-.three-grid > button {
-    grid-column: 3;
+    white-space: nowrap;
 }
 
 [type="file"] {
     overflow: hidden;
     padding: 1px;
     white-space: nowrap;
+}
+
+.grid-col1 {
+    grid-column: 1;
+}
+.grid-col2 {
+    grid-column: 2;
+}
+.grid-col3 {
+    grid-column: 3;
 }
