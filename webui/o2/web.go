@@ -12,7 +12,9 @@ import (
 	"net"
 	"net/http"
 	"o2/interfaces"
+	"path/filepath"
 	"sync"
+	"time"
 )
 
 type WebServer struct {
@@ -72,12 +74,36 @@ func NewWebServer(listenAddr string) *WebServer {
 	}))
 
 	// serve static content from go-bindata:
-	s.mux.Handle("/", http.FileServer(AssetFile()))
+	s.mux.Handle("/", MaxAge(http.FileServer(AssetFile())))
 
 	// handle the broadcast channel:
 	go s.handleBroadcast()
 
 	return s
+}
+
+func MaxAge(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var age time.Duration
+		ext := filepath.Ext(r.URL.String())
+
+		switch ext {
+		case ".css", ".js":
+			age = (time.Hour * 24 * 30) / time.Second
+		case ".jpg", ".jpeg", ".gif", ".png", ".ico", ".cur", ".gz", ".svg", ".svgz",
+			".ttf", ".otf",
+			".mp4", ".ogg", ".ogv", ".webm", ".htc":
+			age = (time.Hour * 24 * 365) / time.Second
+		default:
+			age = 0
+		}
+
+		if age > 0 {
+			w.Header().Add("Cache-Control", fmt.Sprintf("max-age=%d, public, must-revalidate, proxy-revalidate", age))
+		}
+
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *WebServer) appendSocket(socket *Socket) {
@@ -273,7 +299,6 @@ func (k *Socket) readHandler() {
 		}
 	}
 }
-
 
 func readTinyString(buf io.Reader) (value string, err error) {
 	var valueLength uint8
