@@ -38,7 +38,7 @@ function ServerView({ch, server}: ServerProps) {
         }
     };
 
-    return <div class="card input-grid">
+    return <div class="card three-grid">
         <label for="hostName">Hostname:</label>
         <input type="text" value={hostName} disabled={server.isConnected} id="hostName"
                onInput={e => setHostName((e.target as HTMLInputElement).value)}/>

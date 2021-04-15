@@ -39,7 +39,7 @@ button {
     font-family: sans-serif;
     font-weight: 500;
     font-size: 0.9rem;
-    padding: 10px 17px 11px 16px; /* top right bottom left */
+    padding: 6px 16px 6px 16px; /* top right bottom left */
     border-radius: 4px;
     border-top: 1px solid rgba(0, 0, 0, 0.5);
     border-left: 1px solid rgba(0, 0, 0, 0.5);
@@ -113,7 +113,7 @@ h5, h6 {
 }
 
 header {
-    margin-top: 1em;
+    margin-top: 4px;
     width: 100%;
 }
 
@@ -124,7 +124,9 @@ footer {
 }
 
 .squeeze {
-    margin: 0.6em 1em;
+    margin-top: 4px;
+    margin-left: 6px;
+    margin-right: 6px;
 }
 
 .rounded {
@@ -138,11 +140,11 @@ footer {
 }
 
 .padded {
-    padding: 0.6em;
+    padding: 6px;
 }
 
 .padded-lr {
-    padding: 0 0.6em 0 0.6em;
+    padding: 0 6px 0 6px;
 }
 
 .mono {
@@ -197,9 +199,16 @@ footer {
     display: none;
 }
 
+/* This allows the selected tab to be on top */
+.tab > [type='radio']:checked + label + .content {
+    z-index: 1;
+}
+
+
 .content {
-    padding: 10px;
-    position: absolute;
+    padding: 6px;
+    margin-top: 4px;
+    /*position: absolute;*/
     left: 0;
     right: 0;
     /* the left and right at 0 help the tabs to overlap each other */
@@ -209,21 +218,19 @@ footer {
     backdrop-filter: blur(5px);
 }
 
-/* This allows the selected tab to be on top */
-.tab > [type='radio']:checked + label + .content {
-    z-index: 1;
-}
-
-
-.input-grid {
+.three-grid {
     display: grid;
-    grid-template-columns: 1fr 4fr;
-    grid-auto-rows: 2em;
+    grid-template-columns: 1fr 2fr 1fr;
+    grid-auto-rows: 1.8em;
     grid-row-gap: 0.1em;
+    grid-column-gap: 0.2em;
 }
-.input-grid > label {
+.three-grid > label {
     grid-column: 1;
 }
-.input-grid > input,button {
+.three-grid > input {
     grid-column: 2;
+}
+.three-grid > button {
+    grid-column: 3;
 }

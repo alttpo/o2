@@ -14,5 +14,5 @@ func (m DeviceDescriptor) Equals(other snes.DeviceDescriptor) bool {
 }
 
 func (m DeviceDescriptor) DisplayName() string {
-	return "Mock Device"
+	return "Mock"
 }

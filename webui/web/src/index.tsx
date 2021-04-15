@@ -111,50 +111,21 @@ const App = () => {
                 </section>
             </header>
             <section class="squeeze">
-                <div class="tabbed">
-                    <div class="tab">
-                        <input name="viewtab" id="viewtab1" type="radio"
-                               value="snes"
-                               checked={tabSelected == "snes"}
-                               onChange={tabChanged}
-                        />
-                        <label for="viewtab1">SNES</label>
-                        <div class="content">
-                            <SNESView ch={ch} vm={viewModel}/>
-                        </div>
+                <div>
+                    <div class="content">
+                        <SNESView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="tab">
-                        <input name="viewtab" id="viewtab2" type="radio"
-                               value="rom"
-                               checked={tabSelected == "rom"}
-                               onChange={tabChanged}/>
-                        <label for="viewtab2">ROM</label>
-                        <div class="content">
-                            <ROMView ch={ch} vm={viewModel}/>
-                        </div>
+                    <div class="content">
+                        <ROMView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="tab">
-                        <input name="viewtab" id="viewtab3" type="radio"
-                               value="server"
-                               checked={tabSelected == "server"}
-                               onChange={tabChanged}/>
-                        <label for="viewtab3">Server</label>
-                        <div class="content">
-                            <ServerView ch={ch} vm={viewModel}/>
-                        </div>
+                    <div class="content">
+                        <ServerView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="tab">
-                        <input name="viewtab" id="viewtab4" type="radio"
-                               value="game"
-                               checked={tabSelected == "game"}
-                               onChange={tabChanged}/>
-                        <label for="viewtab4">Game</label>
-                        <div class="content">
-                            <GameView ch={ch} vm={viewModel}/>
-                        </div>
+                    <div class="content">
+                        <GameView ch={ch} vm={viewModel}/>
                     </div>
                 </div>
             </section>

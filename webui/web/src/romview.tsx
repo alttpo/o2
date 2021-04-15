@@ -13,13 +13,14 @@ export default ({ch, vm}: TopLevelProps) => {
             ch.command('rom', 'name', {name: file.name});
             ch.binaryCommand('rom', 'data', buf);
         });
+        e.currentTarget.form.reset();
     }
 
     return (<Fragment>
-        <div class="card input-grid">
+        <div class="card three-grid">
             <label for="romFile">ROM:</label>
-            <input id="romFile" type="file" onChange={(e) => fileChosen(e)}/>
-            <button onClick={e => ch.command("rom", "boot", {})}>Boot</button>
+            <form><input id="romFile" type="file" onChange={fileChosen}/></form>
+            <button onClick={e => ch.command("rom", "boot", {})}>Patch &amp; Boot</button>
         {rom.isLoaded &&
             <Fragment>
                 <label>Name:</label>
