@@ -14,9 +14,9 @@ import (
 const (
 	preMainLen  = 8
 	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
-	preMainAddr = uint32(0x718000 - preMainLen)
-	preMainUpdateAAddr = uint32(0x717C00)
-	preMainUpdateBAddr = uint32(0x717E00)
+	preMainAddr = uint32(0x708000 - preMainLen)
+	preMainUpdateAAddr = uint32(0x707C00)
+	preMainUpdateBAddr = uint32(0x707E00)
 )
 
 type Patcher struct {
