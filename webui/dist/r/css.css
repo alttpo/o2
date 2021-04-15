@@ -228,9 +228,15 @@ footer {
 .three-grid > label {
     grid-column: 1;
 }
-.three-grid > input {
+.three-grid > input,form {
     grid-column: 2;
 }
 .three-grid > button {
     grid-column: 3;
+}
+
+[type="file"] {
+    overflow: hidden;
+    padding: 1px;
+    white-space: nowrap;
 }
