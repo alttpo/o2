@@ -11,9 +11,10 @@ import (
 const driverName = "qusb2snes"
 
 type Driver struct {
-	ws WebSocketClient
-
 	wsLock sync.Mutex
+
+	opened   *Queue
+	detected []snes.DeviceDescriptor
 }
 
 func (d *Driver) DisplayOrder() int {
@@ -41,7 +42,7 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 	}
 
 	qu := &Queue{
-		d: d,
+		d:          d,
 		deviceName: dev.name,
 	}
 
@@ -54,26 +55,45 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 
 	qu.BaseInit(driverName, q)
 	err = qu.Init()
+	if err != nil {
+		return
+	}
+
+	// record that this device is opened:
+	d.opened = qu
+	go func() {
+		<-q.Closed()
+		d.opened = nil
+	}()
 
 	return
 }
 
 func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
-	// attempt to create a websocket connection to qusb2snes:
-	if d.ws.ws == nil {
-		err = NewWebSocketClient(&d.ws, "ws://localhost:8080/", "o2discover")
-		if err != nil {
-			// intercept "connection refused" errors to silence them:
-			var serr syscall.Errno
-			if errors.As(err, &serr) {
-				if serr == syscall.ECONNREFUSED {
-					err = nil
-					return
-				}
-			}
-			// otherwise return the error:
-			return
+	// Prevent auto-detection when opened because DeviceList opcode breaks other websockets:
+	if d.opened != nil {
+		devices = d.detected
+		if devices == nil {
+			devices = []snes.DeviceDescriptor{DeviceDescriptor{name: "Auto-detection disabled when connected"}}
 		}
+		return
+	}
+
+	// attempt to create a websocket connection to qusb2snes:
+	var ws WebSocketClient
+	err = NewWebSocketClient(&ws, "ws://localhost:8080/", "o2discover")
+	defer func() { ws.Close() }()
+	if err != nil {
+		// intercept "connection refused" errors to silence them:
+		var serr syscall.Errno
+		if errors.As(err, &serr) {
+			if serr == syscall.ECONNREFUSED {
+				err = nil
+				return
+			}
+		}
+		// otherwise return the error:
+		return
 	}
 
 	// request a device list:
@@ -83,7 +103,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	}()
 	d.wsLock.Lock()
 	//log.Println("qusb2snes: DeviceList request start")
-	err = d.ws.SendCommand(qusbCommand{
+	err = ws.SendCommand(qusbCommand{
 		Opcode:   "DeviceList",
 		Space:    "SNES",
 		Operands: []string{},
@@ -95,7 +115,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 
 	// handle response:
 	var list qusbResult
-	err = d.ws.ReadCommandResponse("DeviceList", &list)
+	err = ws.ReadCommandResponse("DeviceList", &list)
 	if err != nil {
 		return
 	}
@@ -110,6 +130,8 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	for _, name := range list.Results {
 		devices = append(devices, DeviceDescriptor{name})
 	}
+
+	d.detected = devices
 
 	return
 }
