@@ -547,7 +547,7 @@ func SerializeWRAM(p *Player, w io.Writer) (err error) {
 		var value uint16 = 0
 		if ok {
 			timestamp = wv.Timestamp
-			value = wv.Value
+			value = wv.ValueUsed
 		}
 
 		if err = binary.Write(w, binary.LittleEndian, &timestamp); err != nil {

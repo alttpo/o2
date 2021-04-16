@@ -42,15 +42,18 @@ func (g *Game) handleReadWRAM() {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
+			w.ValueUsed = v
 		}
 	}
 
 	if local.Module.IsDungeon() {
-		// override current dungeon's small-key counter:
-		dungeonNumber := g.wram[0x040C] >> 1
-		offs := uint16(0xF37C) + uint16(dungeonNumber)
-		currentKeyCount := g.wram[0xF36F]
-		local.WRAM[offs].Value = uint16(currentKeyCount)
+		dungeonNumber := g.wram[0x040C]
+		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
+			dungeonNumber >>= 1
+			dungeonOffs := uint16(0xF37C) + uint16(dungeonNumber)
+			currentKeyCount := uint16(g.wram[0xF36F])
+			local.WRAM[dungeonOffs].ValueUsed = currentKeyCount
+		}
 	}
 
 	g.firstRead = false
@@ -86,7 +89,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		ww := winner.WRAM[offs]
 
 		// Rely on the upcoming memory read to update our local Timestamp:
-		if lw.Value != ww.Value {
+		if lw.ValueUsed != ww.Value {
 			dungeonNumber := offs - 0xF37C
 			a.Comment(fmt.Sprintf("update %s small keys from %s", dungeonNammes[dungeonNumber], winner.Name))
 			a.LDA_imm8_b(uint8(ww.Value))
