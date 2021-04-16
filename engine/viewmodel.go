@@ -174,14 +174,15 @@ func (vm *ViewModel) tryCreateGame() bool {
 		return false
 	}
 	if vm.game != nil {
-		log.Println("game already created")
-		return false
+		log.Println("stop game")
+		vm.game.Stop()
+		vm.game = nil
 	}
 
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
 
-	log.Println("Create new game")
+	log.Println("create new game")
 	vm.game = vm.factory.NewGame(vm.rom)
 
 	// provide the game with its deps:
@@ -201,7 +202,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 	}()
 
 	// start the game instance:
-	log.Println("Start game")
+	log.Println("start game")
 	vm.game.Start()
 
 	return true
