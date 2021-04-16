@@ -14,15 +14,7 @@
 
 html, select, option, button, input {
     font-family: Rokkitt, sans-serif;
-    font-size: 1.1em;
-}
-
-html, select, option, input:not([type=submit]) {
-    color: lightgray;
-    text-shadow: -1px -1px 0 #333,
-    1px -1px 0 #333,
-    -1px 1px 0 #333,
-    1px 1px 0 #333;
+    font-size: 1.0em;
 }
 
 body {
@@ -32,6 +24,28 @@ body {
     background-position: center top;
     background-repeat: repeat-y;
     background-size: cover;
+}
+
+html, select, option, input:not([type=submit]) {
+    color: lightgray;
+    text-shadow: -1px -1px 0 #333,
+                  1px -1px 0 #333,
+                 -1px  1px 0 #333,
+                  1px  1px 0 #333;
+}
+
+form {
+    display: inline-flex;
+}
+
+form > input[type=submit] {
+    flex: 1;
+}
+
+input[type="file"] {
+    overflow: hidden;
+    padding: 1px;
+    white-space: nowrap;
 }
 
 a {
@@ -46,7 +60,6 @@ button, input[type=submit] {
     border-left: 1px solid rgba(0, 0, 0, 0.5);
     border-right: 2px solid rgba(0, 0, 0, 0.5);
     border-bottom: 2px solid rgba(0, 0, 0, 0.5);
-    font-kerning: auto;
     cursor: pointer;
 }
 
@@ -64,7 +77,6 @@ select, input:not([type=submit]) {
     color: lightgray;
     font-family: Rokkitt, sans-serif;
     font-weight: 500;
-    font-size: 1.0rem;
     padding: 0.25em 0.25em 0.25em 0.25em; /* top right bottom left */
     border-radius: 0.5em;
     border-top: 1px solid rgba(0, 0, 0, 0.5);
@@ -74,7 +86,7 @@ select, input:not([type=submit]) {
     font-kerning: auto;
 }
 
-select:disabled, input:not([type=submit]):disabled {
+select:disabled, input:not([type=submit]):disabled, button:disabled {
     background-color: #333;
     color: #666;
     border-color: #666;
@@ -180,28 +192,28 @@ footer {
     display: block;
 }
 
-.tab > [type='radio']:checked + label {
+.tab > input[type='radio']:checked + label {
     border-color: #151;
     background: linear-gradient(rgba(1, 1, 1, 0.35), rgba(1, 1, 1, 0.35));
     backdrop-filter: blur(5px);
 }
 
-.tab > [type='radio']:not(:checked) + label {
+.tab > input[type='radio']:not(:checked) + label {
     background: linear-gradient(rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.75));
     backdrop-filter: blur(5px);
 }
 
-.tab > [type='radio'] {
+.tab > input[type='radio'] {
     display: none;
     /* this makes the radio buttons disappear - we are only keeping track if they are checked or not */
 }
 
-.tab > [type='radio']:not(:checked) ~ .content {
+.tab > input[type='radio']:not(:checked) ~ .content {
     display: none;
 }
 
 /* This allows the selected tab to be on top */
-.tab > [type='radio']:checked + label + .content {
+.tab > input[type='radio']:checked + label + .content {
     z-index: 1;
 }
 
@@ -231,11 +243,6 @@ footer {
     white-space: nowrap;
 }
 
-[type="file"] {
-    overflow: hidden;
-    padding: 1px;
-    white-space: nowrap;
-}
 
 .grid-col1 {
     grid-column: 1;
