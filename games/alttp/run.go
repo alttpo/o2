@@ -224,6 +224,8 @@ func (g *Game) readMainComplete() {
 	local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
 	local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 
+	g.handleReadWRAM()
+
 	// copy $7EF000-4FF into `local.SRAM`:
 	copy(local.SRAM[:], g.wram[0xF000:0xF500])
 
@@ -513,14 +515,25 @@ func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
 		u := item.GenerateUpdate(ta)
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Code.Len()+a.Code.Len()+10 > 255 {
-				// continue to try to find smaller routines that might fit:
-				continue
+			if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+				a.Append(ta)
+				updated = true
 			}
-			a.Append(ta)
 		}
+	}
 
-		updated = updated || u
+	if g.SyncSmallKeys {
+		// clone the assembler to a temporary:
+		ta := a.Clone()
+		// generate the update asm routine in the temporary assembler:
+		u := g.doSyncSmallKeys(ta)
+		if u {
+			// don't emit the routine if it pushes us over the code size limit:
+			if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+				a.Append(ta)
+				updated = true
+			}
+		}
 	}
 
 	return updated

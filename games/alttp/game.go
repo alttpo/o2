@@ -72,6 +72,7 @@ type Game struct {
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
 	SyncProgress     bool   `json:"syncProgress"`
 	SyncHearts       bool   `json:"syncHearts"`
+	SyncSmallKeys    bool   `json:"syncSmallKeys"`
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
@@ -93,6 +94,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		SyncDungeonItems: true,
 		SyncProgress:     true,
 		SyncHearts:       true,
+		SyncSmallKeys:    true,
 	}
 
 	g.fillRomFunctions()

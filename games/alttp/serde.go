@@ -251,16 +251,43 @@ func DeserializeSprites2(p *Player, r io.Reader) (err error) {
 }
 
 func DeserializeWRAM(p *Player, r io.Reader) (err error) {
-	var dummy [3]byte
-	if _, err = r.Read(dummy[:]); err != nil {
+	var count uint8
+	var offsStart uint16
+
+	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
 		panic(fmt.Errorf("error deserializing wram: %w", err))
 	}
-	for i := uint8(0); i < dummy[0]; i++ {
-		var syncableByte [4 + 2]byte
-		if _, err = r.Read(syncableByte[:]); err != nil {
-			panic(fmt.Errorf("error deserializing wram syncableByte %d: %w", i, err))
+	if err = binary.Read(r, binary.LittleEndian, &offsStart); err != nil {
+		panic(fmt.Errorf("error deserializing wram: %w", err))
+	}
+
+	if count > 0 && p.WRAM == nil {
+		p.WRAM = make(map[uint16]*SyncableWRAM)
+	}
+
+	for i := uint8(0); i < count; i++ {
+		var timestamp uint32
+		var value uint16
+		if err = binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
+			panic(fmt.Errorf("error deserializing wram: %w", err))
+		}
+		if err = binary.Read(r, binary.LittleEndian, &value); err != nil {
+			panic(fmt.Errorf("error deserializing wram: %w", err))
+		}
+
+		offs := offsStart + uint16(i)
+		w, ok := p.WRAM[offs]
+		if !ok {
+			w = &SyncableWRAM{
+				Timestamp: timestamp,
+				Value: value,
+			}
+		} else {
+			w.Timestamp = timestamp
+			w.Value = value
 		}
 	}
+
 	return
 }
 

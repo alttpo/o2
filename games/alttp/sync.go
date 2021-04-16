@@ -6,6 +6,25 @@ import (
 	"strings"
 )
 
+var dungeonNammes = []string{
+	"Sewer Passage",
+	"Hyrule Castle",
+	"Eastern Palace",
+	"Desert Palace",
+	"Hyrule Castle 2",
+	"Swamp Palace",
+	"Dark Palace",
+	"Misery Mire",
+	"Skull Woods",
+	"Ice Palace",
+	"Tower of Hera",
+	"Gargoyle's Domain",
+	"Turtle Rock",
+	"Ganon's Tower",
+	"",
+	"",
+}
+
 type SyncableItem interface {
 	// Offset offset from $7EF000
 	Offset() uint16
@@ -447,6 +466,8 @@ func (g *Game) initSync() {
 
 		return true
 	})
+
+	g.initSyncableWRAM()
 }
 
 type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool

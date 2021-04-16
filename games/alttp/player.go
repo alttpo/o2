@@ -58,6 +58,11 @@ func (m Module) IsInGame() bool {
 	return true
 }
 
+type SyncableWRAM struct {
+	Timestamp uint32
+	Value     uint16
+}
+
 type Player struct {
 	g *Game
 
@@ -89,6 +94,8 @@ type Player struct {
 	PlayerColor uint16
 
 	SRAM [0x500]byte
+
+	WRAM map[uint16]*SyncableWRAM
 }
 
 func (p *Player) SetTTL(ttl int) {
