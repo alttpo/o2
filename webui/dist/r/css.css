@@ -86,7 +86,7 @@ select, input:not([type=submit]) {
     font-kerning: auto;
 }
 
-select:disabled, input:not([type=submit]):disabled, button:disabled {
+select:disabled, input:disabled, button:disabled {
     background-color: #333;
     color: #666;
     border-color: #666;
