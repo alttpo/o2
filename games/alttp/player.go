@@ -58,6 +58,10 @@ func (m Module) IsInGame() bool {
 	return true
 }
 
+func (m Module) IsDungeon() bool {
+	return m == 0x07
+}
+
 type SyncableWRAM struct {
 	Timestamp uint32
 	Value     uint16

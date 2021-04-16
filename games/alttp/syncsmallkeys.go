@@ -45,6 +45,14 @@ func (g *Game) handleReadWRAM() {
 		}
 	}
 
+	if local.Module.IsDungeon() {
+		// override current dungeon's small-key counter:
+		dungeonNumber := g.wram[0x040C] >> 1
+		offs := uint16(0xF37C) + uint16(dungeonNumber)
+		currentKeyCount := g.wram[0xF36F]
+		local.WRAM[offs].Value = uint16(currentKeyCount)
+	}
+
 	g.firstRead = false
 }
 

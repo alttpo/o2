@@ -223,10 +223,10 @@ func (g *Game) readMainComplete() {
 	local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
 	local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 
-	g.handleReadWRAM()
-
 	// copy $7EF000-4FF into `local.SRAM`:
 	copy(local.SRAM[:], g.wram[0xF000:0xF500])
+
+	g.handleReadWRAM()
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
