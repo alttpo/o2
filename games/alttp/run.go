@@ -103,7 +103,7 @@ func (g *Game) run() {
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
 			// make sure a read request is always in flight to keep our main loop running:
-			if time.Now().Sub(g.lastReadCompleted) > time.Millisecond * 500 {
+			if time.Now().Sub(g.lastReadCompleted) > time.Millisecond*500 {
 				g.enqueueMainReads()
 				g.readSubmit()
 			}
@@ -292,6 +292,15 @@ func (g *Game) frameAdvanced() {
 			g.locHashTTL = 60
 			g.locHash = locHash
 		}
+	}
+
+	{
+		// small keys update:
+		m := g.makeGamePacket(protocol02.Broadcast)
+		if err := SerializeWRAM(local, m); err != nil {
+			panic(err)
+		}
+		g.send(m)
 	}
 
 	if g.monotonicFrameTime&15 == 0 {

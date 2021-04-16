@@ -280,7 +280,7 @@ func DeserializeWRAM(p *Player, r io.Reader) (err error) {
 		if !ok {
 			w = &SyncableWRAM{
 				Timestamp: timestamp,
-				Value: value,
+				Value:     value,
 			}
 			p.WRAM[offs] = w
 		} else {
@@ -523,5 +523,40 @@ func SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err erro
 	if _, err = w.Write(p.SRAM[start:endExclusive]); err != nil {
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
+	return
+}
+
+func SerializeWRAM(p *Player, w io.Writer) (err error) {
+	if err = binary.Write(w, binary.LittleEndian, uint8(MsgWRAM)); err != nil {
+		panic(fmt.Errorf("error serializing wram: %w", err))
+	}
+
+	// TODO: this is specific to small keys right now; expand with more WRAM offsets.
+	count := uint8(0x10)
+	if err = binary.Write(w, binary.LittleEndian, &count); err != nil {
+		panic(fmt.Errorf("error serializing wram: %w", err))
+	}
+	start := uint16(0xF37C)
+	if err = binary.Write(w, binary.LittleEndian, &start); err != nil {
+		panic(fmt.Errorf("error serializing wram: %w", err))
+	}
+
+	for offs := uint16(0xF37C); offs < 0xF38C; offs++ {
+		wv, ok := p.WRAM[offs]
+		var timestamp uint32 = 0
+		var value uint16 = 0
+		if ok {
+			timestamp = wv.Timestamp
+			value = wv.Value
+		}
+
+		if err = binary.Write(w, binary.LittleEndian, &timestamp); err != nil {
+			panic(fmt.Errorf("error serializing wram: %w", err))
+		}
+		if err = binary.Write(w, binary.LittleEndian, &value); err != nil {
+			panic(fmt.Errorf("error serializing wram: %w", err))
+		}
+	}
+
 	return
 }
