@@ -77,11 +77,7 @@ const App = () => {
         }),
         game: useState<GameViewModel>({
             isCreated: false,
-            gameName: "",
-            syncDungeonItems: false,
-            syncHearts: false,
-            syncItems: false,
-            syncProgress: false
+            gameName: ""
         })
     };
 

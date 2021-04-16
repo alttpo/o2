@@ -1,4 +1,7 @@
 // this view-model data comes from websocket JSON:
+import {CommandHandler} from "./index";
+import {JSX} from "preact";
+
 export class ViewModel {
     [k: string]: any;
 
@@ -48,9 +51,18 @@ export interface ServerViewModel {
 export interface GameViewModel {
     isCreated: boolean;
     gameName: string;
+}
 
+export interface GameALTTPViewModel extends GameViewModel {
     syncItems: boolean;
     syncDungeonItems: boolean;
     syncProgress: boolean;
     syncHearts: boolean;
 }
+
+export type GameViewProps = {
+    ch: CommandHandler;
+    vm: ViewModel;
+};
+
+export type GameViewComponent = ({ch, vm}: GameViewProps) => JSX.Element;
