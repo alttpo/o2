@@ -104,13 +104,17 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x356, &g.SyncItems, []string{"Flippers"}, nil)
 	g.newSyncableMaxU8(0x357, &g.SyncItems, []string{"Moon Pearl"}, nil)
 	// skip 0x358 unused
-	g.newSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"},
+
+	swordSync := g.newSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"},
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress sword gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxSword])
 			asm.Comment("update sword palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteSword])
 		})
+	// prevent sync in of $ff (i.e. anything above $04) when smithy takes your sword for tempering
+	swordSync.absMax = 4
+
 	g.newSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"},
 		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress shield gfx:")
@@ -571,6 +575,8 @@ type syncableMaxU8 struct {
 	isEnabled *bool
 	names     []string
 
+	absMax uint8
+
 	onUpdated syncableMaxU8OnUpdated
 }
 
@@ -580,6 +586,7 @@ func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string, on
 		offset:    offset,
 		isEnabled: enabled,
 		names:     names,
+		absMax:    255,
 		onUpdated: onUpdated,
 	}
 	g.syncableItems[offset] = s
@@ -600,6 +607,11 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	initial := maxV
 	for _, p := range g.ActivePlayers() {
 		v := p.SRAM[offset]
+		// discard value if too high:
+		if v > s.absMax {
+			continue
+		}
+
 		if v > maxV {
 			maxV, maxP = v, p
 		}
