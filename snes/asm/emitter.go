@@ -299,3 +299,20 @@ func (a *Emitter) ADC_imm8_b(m uint8) {
 	d[1] = m
 	a.emit2("adc.b", "#$%02x", d)
 }
+
+func (a *Emitter) CPY_imm8_b(m uint8) {
+	if a.IsX16bit() {
+		panic(fmt.Errorf("asm: CPY_imm8_b called but 'x' flag is 16-bit; call SEP(0x10) or AssumeSEP(0x10) first"))
+	}
+	var d [2]byte
+	d[0] = 0xC0
+	d[1] = m
+	a.emit2("cpy.b", "#$%02x", d)
+}
+
+func (a *Emitter) LDY_abs(offs uint16) {
+	var d [3]byte
+	d[0] = 0xAC
+	d[1], d[2] = imm16(offs)
+	a.emit3("ldy.w", "$%02[2]x%02[1]x", d)
+}
