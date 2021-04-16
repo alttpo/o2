@@ -39,3 +39,8 @@ type ViewModelContainer interface {
 
 	GetViewModel(view string) (interface{}, bool)
 }
+
+// KeyValueNotifier notifies receiver of an updated key,value pair:
+type KeyValueNotifier interface {
+	Notify(key string, value interface{})
+}
