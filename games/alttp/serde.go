@@ -282,6 +282,7 @@ func DeserializeWRAM(p *Player, r io.Reader) (err error) {
 				Timestamp: timestamp,
 				Value: value,
 			}
+			p.WRAM[offs] = w
 		} else {
 			w.Timestamp = timestamp
 			w.Value = value

@@ -36,10 +36,11 @@ type Game struct {
 	running bool
 	stopped chan struct{}
 
-	readQueue    []snes.Read
-	readResponse []snes.Response
-	readComplete chan []snes.Response
-	lastReadTime time.Time
+	readQueue         []snes.Read
+	readResponse      []snes.Response
+	readComplete      chan []snes.Response
+	lastReadCompleted time.Time
+	firstRead         bool
 
 	nextUpdateA      bool
 	updateLock       sync.Mutex

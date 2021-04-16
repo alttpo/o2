@@ -7,20 +7,20 @@ import (
 )
 
 var dungeonNammes = []string{
-	"Sewer Passage",
-	"Hyrule Castle",
-	"Eastern Palace",
-	"Desert Palace",
-	"Hyrule Castle 2",
-	"Swamp Palace",
-	"Dark Palace",
-	"Misery Mire",
-	"Skull Woods",
-	"Ice Palace",
-	"Tower of Hera",
-	"Gargoyle's Domain",
-	"Turtle Rock",
-	"Ganon's Tower",
+	"Sewer Passage",     // $37C
+	"Hyrule Castle",     // $37D
+	"Eastern Palace",    // $37E
+	"Desert Palace",     // $37F
+	"Hyrule Castle 2",   // $380
+	"Swamp Palace",      // $381
+	"Dark Palace",       // $382
+	"Misery Mire",       // $383
+	"Skull Woods",       // $384
+	"Ice Palace",        // $385
+	"Tower of Hera",     // $386
+	"Gargoyle's Domain", // $387
+	"Turtle Rock",       // $388
+	"Ganon's Tower",     // $389
 	"",
 	"",
 }

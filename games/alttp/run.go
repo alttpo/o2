@@ -61,7 +61,6 @@ func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
 
-	g.lastReadTime = time.Now()
 	g.enqueueMainReads()
 	g.readSubmit()
 
@@ -72,8 +71,6 @@ func (g *Game) run() {
 		select {
 		// wait for reads to complete:
 		case rsps := <-g.readComplete:
-			g.lastReadTime = time.Now()
-
 			if !g.IsRunning() {
 				return
 			}
@@ -86,6 +83,8 @@ func (g *Game) run() {
 			g.readSubmit()
 
 			g.readMainComplete()
+
+			g.lastReadCompleted = time.Now()
 			break
 
 		// wait for network message from server:
@@ -104,7 +103,7 @@ func (g *Game) run() {
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
 			// make sure a read request is always in flight to keep our main loop running:
-			if time.Now().Sub(g.lastReadTime).Milliseconds() >= 500 {
+			if time.Now().Sub(g.lastReadCompleted) > time.Millisecond * 500 {
 				g.enqueueMainReads()
 				g.readSubmit()
 			}
