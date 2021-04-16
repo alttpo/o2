@@ -8,12 +8,14 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncDungeonItems, setsyncDungeonItems] = useState(true);
     const [syncProgress, setsyncProgress] = useState(true);
     const [syncHearts, setsyncHearts] = useState(true);
+    const [syncSmallKeys, setsyncSmallKeys] = useState(true);
 
     useEffect(() => {
         setsyncItems(game.syncItems);
         setsyncDungeonItems(game.syncDungeonItems);
         setsyncProgress(game.syncProgress);
         setsyncHearts(game.syncHearts);
+        setsyncSmallKeys(game.syncSmallKeys);
     }, [game]);
 
     const sendGameCommand = ch.command.bind(ch, "game");
@@ -54,6 +56,14 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                    checked={syncHearts}
                    onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}/>
             Sync Hearts
+        </label>
+
+        <label class="grid-c1" for="syncSmallKeys">
+            <input type="checkbox"
+                   id="syncSmallKeys"
+                   checked={syncSmallKeys}
+                   onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}/>
+            Sync Small Keys
         </label>
     </div>;
 }

@@ -35,6 +35,7 @@ type setFieldArgs struct {
 	SyncDungeonItems *bool `json:"syncDungeonItems"`
 	SyncProgress     *bool `json:"syncProgress"`
 	SyncHearts       *bool `json:"syncHearts"`
+	SyncSmallKeys    *bool `json:"syncSmallKeys"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -61,6 +62,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncHearts != nil {
 		g.SyncHearts = *f.SyncHearts
+		g.clean = false
+	}
+	if f.SyncSmallKeys != nil {
+		g.SyncSmallKeys = *f.SyncSmallKeys
 		g.clean = false
 	}
 
