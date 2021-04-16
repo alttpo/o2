@@ -11,7 +11,6 @@ func (g *Game) notifyView() {
 	}
 
 	// update the public serializable ViewModel:
-	g.GameName = "ALTTP"
 	g.clean = true
 
 	// notify view of changes:

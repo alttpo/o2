@@ -88,6 +88,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		lastUpdateTarget: 0xFFFFFF,
 		// ViewModel:
 		IsCreated:        true,
+		GameName:         gameName,
 		SyncItems:        true,
 		SyncDungeonItems: true,
 		SyncProgress:     true,
