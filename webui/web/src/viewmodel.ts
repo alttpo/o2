@@ -48,4 +48,9 @@ export interface ServerViewModel {
 export interface GameViewModel {
     isCreated: boolean;
     gameName: string;
+
+    syncItems: boolean;
+    syncDungeonItems: boolean;
+    syncProgress: boolean;
+    syncHearts: boolean;
 }

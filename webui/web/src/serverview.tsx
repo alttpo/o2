@@ -1,6 +1,7 @@
 import {ServerViewModel} from "./viewmodel";
 import {CommandHandler, TopLevelProps} from "./index";
 import {useEffect, useState} from "preact/hooks";
+import {setField} from "./util";
 
 type ServerProps = {
     ch: CommandHandler;
@@ -20,9 +21,11 @@ function ServerView({ch, server}: ServerProps) {
         setTeam(server.team);
     }, [server]);
 
+    const sendServerCommand = ch?.command?.bind(ch, "server");
+
     const cmdConnect = (e: Event) => {
         e.preventDefault();
-        ch.command('server', 'connect', {
+        sendServerCommand('connect', {
             hostName,
             groupName
         });
@@ -30,26 +33,8 @@ function ServerView({ch, server}: ServerProps) {
 
     const cmdDisconnect = (e: Event) => {
         e.preventDefault();
-        ch.command('server', 'disconnect', {});
+        sendServerCommand('disconnect', {});
     };
-
-    function onInput<T>(
-        setter: (arg0: T) => void,
-        fieldName: any,
-        coerceValue: (strValue: string) => T,
-        e: Event
-    ) {
-        const strValue: string = (e.target as HTMLInputElement).value;
-        const coerced: T = coerceValue(strValue);
-        setter(coerced);
-        ch.command(
-            "server",
-            "setField",
-            {
-                [fieldName]: coerced
-            }
-        );
-    }
 
     const connectButton = () => {
         if (server.isConnected) {
@@ -63,6 +48,8 @@ function ServerView({ch, server}: ServerProps) {
         }
     };
 
+    const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
+    const getTargetValueInt = (e: Event) => parseInt((e.target as HTMLInputElement).value, 10);
     return <div class="grid" style="min-width: 24em">
         <h5 class="grid-ca">Connect to a server:</h5>
         <label class="grid-c1" for="hostName">Hostname:</label>
@@ -86,7 +73,7 @@ function ServerView({ch, server}: ServerProps) {
                value={playerName}
                id="playerName"
                class="grid-c2"
-               onInput={onInput.bind(this, setPlayerName, "playerName", (v: string) => v)}/>
+               onInput={setField.bind(this, sendServerCommand, setPlayerName, "playerName", getTargetValueString)}/>
         <label class="grid-c1" for="team">Team Number:</label>
         <input type="number"
                min={0}
@@ -94,7 +81,7 @@ function ServerView({ch, server}: ServerProps) {
                value={team}
                id="team"
                class="grid-c2"
-               onInput={onInput.bind(this, setTeam, "team", (v: string) => parseInt(v, 10))}/>
+               onInput={setField.bind(this, sendServerCommand, setTeam, "team", getTargetValueInt)}/>
 
         {connectButton()}
     </div>;

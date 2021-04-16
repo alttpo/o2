@@ -30,8 +30,12 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 }
 
 type setFieldCmd struct{ g *Game }
-type setFieldArgs struct{
-	// TODO: define fields to change here
+type setFieldArgs struct {
+	// Checkboxes:
+	SyncItems        *bool `json:"syncItems"`
+	SyncDungeonItems *bool `json:"syncDungeonItems"`
+	SyncProgress     *bool `json:"syncProgress"`
+	SyncHearts       *bool `json:"syncHearts"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -42,8 +46,26 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		return fmt.Errorf("invalid args type for command")
 	}
 
-	// TODO: accept field changes
-	_ = f
+	g := c.g
+
+	if f.SyncItems != nil {
+		g.SyncItems = *f.SyncItems
+		g.clean = false
+	}
+	if f.SyncDungeonItems != nil {
+		g.SyncDungeonItems = *f.SyncDungeonItems
+		g.clean = false
+	}
+	if f.SyncProgress != nil {
+		g.SyncProgress = *f.SyncProgress
+		g.clean = false
+	}
+	if f.SyncHearts != nil {
+		g.SyncHearts = *f.SyncHearts
+		g.clean = false
+	}
+
+	g.notifyView()
 
 	return nil
 }

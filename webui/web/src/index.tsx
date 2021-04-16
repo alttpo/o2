@@ -66,10 +66,23 @@ const App = () => {
 
     const viewModelState: { [k: string]: [any, StateUpdater<any>] } = {
         status: useState<string>(""),
-        snes: useState<SNESViewModel>({drivers: [], isConnected: false}),
-        rom: useState<ROMViewModel>({isLoaded: false, region: "", name: "", title: "", version: ""}),
-        server: useState<ServerViewModel>({isConnected: false, hostName: "", groupName: "", playerName: "", team: 0}),
-        game: useState<GameViewModel>({isCreated: false, gameName: ""})
+        snes: useState<SNESViewModel>({
+            drivers: [], isConnected: false
+        }),
+        rom: useState<ROMViewModel>({
+            isLoaded: false, region: "", name: "", title: "", version: ""
+        }),
+        server: useState<ServerViewModel>({
+            isConnected: false, hostName: "", groupName: "", playerName: "", team: 0
+        }),
+        game: useState<GameViewModel>({
+            isCreated: false,
+            gameName: "",
+            syncDungeonItems: false,
+            syncHearts: false,
+            syncItems: false,
+            syncProgress: false
+        })
     };
 
     const viewModel = {
