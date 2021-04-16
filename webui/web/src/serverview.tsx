@@ -21,14 +21,12 @@ function ServerView({ch, server}: ServerProps) {
         setTeam(server.team);
     }, [server]);
 
+    // NOTE: `ch` can be null during app init
     const sendServerCommand = ch?.command?.bind(ch, "server");
 
     const cmdConnect = (e: Event) => {
         e.preventDefault();
-        sendServerCommand('connect', {
-            hostName,
-            groupName
-        });
+        sendServerCommand('connect', {});
     };
 
     const cmdDisconnect = (e: Event) => {
@@ -51,26 +49,29 @@ function ServerView({ch, server}: ServerProps) {
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
     const getTargetValueInt = (e: Event) => parseInt((e.target as HTMLInputElement).value, 10);
     return <div class="grid" style="min-width: 24em">
-        <h5 class="grid-ca">Connect to a server:</h5>
+        <h5 class="grid-ca"
+            title="To play online, connect to the alttp.online server"
+        >Connect to a server:&nbsp;4️⃣</h5>
         <label class="grid-c1" for="hostName">Hostname:</label>
         <input type="text"
                value={hostName}
                disabled={server.isConnected}
-               title="Connect to a server (default is `alttp.online`)"
+               title="Connect to an O2 server (default is `alttp.online`)"
                id="hostName"
                class="grid-c2"
-               onInput={e => setHostName((e.target as HTMLInputElement).value)}/>
+               onInput={setField.bind(this, sendServerCommand, setHostName, "hostName", getTargetValueString)}/>
         <label class="grid-c1" for="groupName">Group:</label>
         <input type="text"
                value={groupName}
-               disabled={server.isConnected}
+               title="A group name uniquely identifies the group of players you wish to sync items and progress with; max 20 characters, case-insensitive, leading and trailing whitespace are trimmed"
                id="groupName"
                class="grid-c2"
-               onInput={e => setGroupName((e.target as HTMLInputElement).value)}/>
+               onInput={setField.bind(this, sendServerCommand, setGroupName, "groupName", getTargetValueString)}/>
 
         <label class="grid-c1" for="playerName">Player Name:</label>
         <input type="text"
                value={playerName}
+               title="Enter your player name here"
                id="playerName"
                class="grid-c2"
                onInput={setField.bind(this, sendServerCommand, setPlayerName, "playerName", getTargetValueString)}/>
@@ -79,6 +80,7 @@ function ServerView({ch, server}: ServerProps) {
                min={0}
                max={255}
                value={team}
+               title="The team number within the group you wish to sync with; default is 0 to sync with all players, max 255"
                id="team"
                class="grid-c2"
                onInput={setField.bind(this, sendServerCommand, setTeam, "team", getTargetValueInt)}/>

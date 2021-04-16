@@ -30,21 +30,24 @@ func NewClient() *Client {
 func (c *Client) Group() []byte    { return c.group[:] }
 func (c *Client) Hostname() string { return c.hostname }
 
+func (c *Client) SetGroup(group string) {
+	n := copy(c.group[:], group)
+	for ; n < 20; n++ {
+		c.group[n] = ' '
+	}
+}
+
 func (c *Client) Write() chan<- []byte { return c.write }
 func (c *Client) Read() <-chan []byte  { return c.read }
 
 func (c *Client) IsConnected() bool { return c.isConnected }
 
-func (c *Client) Connect(hostname string, group string) (err error) {
+func (c *Client) Connect(hostname string) (err error) {
 	if c.isConnected {
 		return fmt.Errorf("already connected")
 	}
 
 	c.hostname = hostname
-	n := copy(c.group[:], group)
-	for ; n < 20; n++ {
-		c.group[n] = ' '
-	}
 
 	raddr, err := net.ResolveUDPAddr("udp", hostname+":4590")
 	if err != nil {

@@ -17,7 +17,7 @@ export default ({ch, vm}: TopLevelProps) => {
 
     return (
         <div class="grid" style="min-width: 20em">
-            <h5 class="grid-ca">Select a game ROM:</h5>
+            <h5 class="grid-ca">Select a game ROM:&nbsp;2️⃣</h5>
             <label class="grid-c1" for="romFile">Input ROM:</label>
             <form class="grid-c2">
                 <input id="romFile"
@@ -36,7 +36,7 @@ export default ({ch, vm}: TopLevelProps) => {
             <label class="grid-c1">Version:</label>
             <input class="grid-c2 mono" readonly value={rom.region + " " + rom.version}/>
 
-            <label class="grid-c1">Patched ROM:</label>
+            <label class="grid-c1">Patched ROM:&nbsp;3️⃣</label>
             <button class="grid-c2-1"
                     disabled={!vm.snes.isConnected}
                     title="Send the O2 patched ROM to the SNES and boot it"

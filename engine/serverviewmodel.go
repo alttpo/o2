@@ -69,41 +69,27 @@ func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err
 // Commands
 
 type ServerConnectCommand struct{ v *ServerViewModel }
-type ServerConnectCommandArgs struct {
-	HostName   string `json:"hostName"`
-	GroupName  string `json:"groupName"`
-	Team       uint8  `json:"team"`
-	PlayerName string `json:"playerName"`
-}
 
-func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs {
-	return &ServerConnectCommandArgs{}
-}
+func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs { return nil }
 func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
 	v := ce.v
+	vm := v.root
+
+	defer vm.UpdateAndNotifyView()
 
 	if v.IsConnected {
 		return nil
 	}
 
-	ca, ok := args.(*ServerConnectCommandArgs)
-	if !ok {
-		return fmt.Errorf("command args not of expected type")
-	}
-	v.HostName = ca.HostName
-	v.GroupName = ca.GroupName
-	v.MarkDirty()
-
-	vm := v.root
-
-	err := vm.client.Connect(v.HostName, v.GroupName)
+	err := vm.client.Connect(v.HostName)
 	v.IsConnected = vm.client.IsConnected()
-	vm.UpdateAndNotifyView()
-
+	v.MarkDirty()
 	if err != nil {
 		log.Print(err)
 		return nil
 	}
+
+	vm.client.SetGroup(v.GroupName)
 
 	return nil
 }
@@ -129,6 +115,8 @@ func (v *ServerViewModel) Disconnect() error {
 
 type setFieldCmd struct{ v *ServerViewModel }
 type setFieldArgs struct {
+	HostName   *string `json:"hostName"`
+	GroupName  *string `json:"groupName"`
 	Team       *uint8  `json:"team"`
 	PlayerName *string `json:"playerName"`
 }
@@ -143,19 +131,31 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 
 	game := c.v.root.game
 
+	if f.HostName != nil {
+		c.v.HostName = *f.HostName
+		c.v.MarkDirty()
+	}
+	if f.GroupName != nil {
+		c.v.GroupName = *f.GroupName
+		client := c.v.root.client
+		if client != nil {
+			client.SetGroup(c.v.GroupName)
+		}
+		c.v.MarkDirty()
+	}
 	if f.Team != nil {
 		c.v.Team = *f.Team
 		if game != nil {
 			game.Notify("team", c.v.Team)
 		}
-		c.v.isDirty = true
+		c.v.MarkDirty()
 	}
 	if f.PlayerName != nil {
 		c.v.PlayerName = *f.PlayerName
 		if game != nil {
 			game.Notify("playerName", c.v.PlayerName)
 		}
-		c.v.isDirty = true
+		c.v.MarkDirty()
 	}
 
 	c.v.root.UpdateAndNotifyView()

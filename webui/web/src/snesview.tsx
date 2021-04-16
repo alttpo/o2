@@ -75,7 +75,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 export default ({ch, vm}: TopLevelProps) => {
     return (
         <div class="grid" style="min-width: 32em">
-            <h5 class="grid-ca">Select a SNES device:</h5>
+            <h5 class="grid-ca">Select a SNES device:&nbsp;1️⃣</h5>
             {
                 (vm.snes?.drivers || []).map(drv => (
                     <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>

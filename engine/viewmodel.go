@@ -374,7 +374,8 @@ func (vm *ViewModel) ProvideViewNotifier(viewNotifier interfaces.ViewNotifier) {
 func (vm *ViewModel) ConnectServer() {
 	defer vm.serverViewModel.MarkDirty()
 
-	err := vm.client.Connect(vm.serverViewModel.HostName, vm.serverViewModel.GroupName)
+	err := vm.client.Connect(vm.serverViewModel.HostName)
+	vm.client.SetGroup(vm.serverViewModel.GroupName)
 	vm.serverViewModel.IsConnected = vm.client.IsConnected()
 	if err != nil {
 		log.Print(err)
