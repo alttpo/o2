@@ -188,7 +188,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 	vm.game.ProvideQueue(vm.dev)
 	vm.game.ProvideClient(vm.client)
 
-	// intercept vm.viewNotifier to let us cache viewModel updates from the game:
+	// intercept root.viewNotifier to let us cache viewModel updates from the game:
 	// game will notify us of its viewModel on Start()/Reset():
 	vm.game.ProvideViewModelContainer(vm)
 

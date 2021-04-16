@@ -41,10 +41,11 @@ export interface ServerViewModel {
 
     hostName: string;
     groupName: string;
+    playerName: string;
+    team: number;
 }
 
 export interface GameViewModel {
     isCreated: boolean;
-    playerName: string;
-    team: number;
+    gameName: string;
 }

@@ -9,18 +9,28 @@ import (
 type ServerViewModel struct {
 	commands map[string]interfaces.Command
 
-	c *ViewModel
+	root *ViewModel
 
 	isDirty bool
 
 	IsConnected bool   `json:"isConnected"`
 	HostName    string `json:"hostName"`
 	GroupName   string `json:"groupName"`
+	Team        uint8  `json:"team"`
+	PlayerName  string `json:"playerName"`
 }
 
-func NewServerViewModel(c *ViewModel) *ServerViewModel {
+func (v *ServerViewModel) Update() {
+	game := v.root.game
+	if game != nil {
+		game.Notify("team", v.Team)
+		game.Notify("playerName", v.PlayerName)
+	}
+}
+
+func NewServerViewModel(root *ViewModel) *ServerViewModel {
 	v := &ServerViewModel{
-		c:           c,
+		root:        root,
 		IsConnected: false,
 		HostName:    "alttp.online",
 		GroupName:   "group",
@@ -29,6 +39,7 @@ func NewServerViewModel(c *ViewModel) *ServerViewModel {
 	v.commands = map[string]interfaces.Command{
 		"connect":    &ServerConnectCommand{v},
 		"disconnect": &ServerDisconnectCommand{v},
+		"setField":   &setFieldCmd{v},
 	}
 
 	return v
@@ -59,8 +70,10 @@ func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err
 
 type ServerConnectCommand struct{ v *ServerViewModel }
 type ServerConnectCommandArgs struct {
-	HostName  string `json:"hostName"`
-	GroupName string `json:"groupName"`
+	HostName   string `json:"hostName"`
+	GroupName  string `json:"groupName"`
+	Team       uint8  `json:"team"`
+	PlayerName string `json:"playerName"`
 }
 
 func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs {
@@ -81,7 +94,7 @@ func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
 	v.GroupName = ca.GroupName
 	v.MarkDirty()
 
-	vm := v.c
+	vm := v.root
 
 	err := vm.client.Connect(v.HostName, v.GroupName)
 	v.IsConnected = vm.client.IsConnected()
@@ -101,15 +114,51 @@ func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs     { ret
 func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Disconnect() }
 
 func (v *ServerViewModel) Connect() error {
-	defer v.c.UpdateAndNotifyView()
+	defer v.root.UpdateAndNotifyView()
 
-	v.c.ConnectServer()
+	v.root.ConnectServer()
 	return nil
 }
 
 func (v *ServerViewModel) Disconnect() error {
-	defer v.c.UpdateAndNotifyView()
+	defer v.root.UpdateAndNotifyView()
 
-	v.c.DisconnectServer()
+	v.root.DisconnectServer()
+	return nil
+}
+
+type setFieldCmd struct{ v *ServerViewModel }
+type setFieldArgs struct {
+	Team       *uint8  `json:"team"`
+	PlayerName *string `json:"playerName"`
+}
+
+func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
+
+func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
+	f, ok := args.(*setFieldArgs)
+	if !ok {
+		return fmt.Errorf("invalid args type for command")
+	}
+
+	game := c.v.root.game
+
+	if f.Team != nil {
+		c.v.Team = *f.Team
+		if game != nil {
+			game.Notify("team", c.v.Team)
+		}
+		c.v.isDirty = true
+	}
+	if f.PlayerName != nil {
+		c.v.PlayerName = *f.PlayerName
+		if game != nil {
+			game.Notify("playerName", c.v.PlayerName)
+		}
+		c.v.isDirty = true
+	}
+
+	c.v.root.UpdateAndNotifyView()
+
 	return nil
 }

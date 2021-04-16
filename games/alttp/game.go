@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"o2/client"
+	"o2/engine"
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
@@ -64,11 +65,9 @@ type Game struct {
 	monotonicFrameTime uint8  // always increments by 1 whenever game frame increases by any amount N
 
 	// serializable ViewModel:
-	clean     bool
-	IsCreated bool `json:"isCreated"`
-	// TODO: move Team and PlayerName to ServerViewModel
-	Team             uint8  `json:"team"`
-	PlayerName       string `json:"playerName"`
+	clean            bool
+	IsCreated        bool   `json:"isCreated"`
+	GameName         string `json:"gameName"`
 	SyncItems        bool   `json:"syncItems"`
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
 	SyncProgress     bool   `json:"syncProgress"`
@@ -114,6 +113,19 @@ func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer
 	g.viewModels = container
 }
 
+// Notify is called by root ViewModel
+func (g *Game) Notify(key string, value interface{}) {
+	//log.Printf("game: notify('%s', '%+v')\n", key, value)
+	switch key {
+	case "team":
+		g.local.Team = value.(uint8)
+		break
+	case "playerName":
+		g.local.Name = value.(string)
+		break
+	}
+}
+
 func (g *Game) IsRunning() bool {
 	return g.running
 }
@@ -130,8 +142,12 @@ func (g *Game) Reset() {
 	g.localIndex = -1
 	g.local = &Player{g: g, Index: -1}
 	// preserve last-set info:
-	g.local.Name = g.PlayerName
-	g.local.Team = g.Team
+	serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
+	if ok && serverViewModelIntf != nil {
+		serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
+		g.local.Name = serverViewModel.PlayerName
+		g.local.Team = serverViewModel.Team
+	}
 
 	// initialize WRAM to non-zero values:
 	for i := range g.wram {

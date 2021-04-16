@@ -11,8 +11,7 @@ func (g *Game) notifyView() {
 	}
 
 	// update the public serializable ViewModel:
-	g.Team = g.local.Team
-	g.PlayerName = g.local.Name
+	g.GameName = "ALTTP"
 	g.clean = true
 
 	// notify view of changes:
@@ -31,9 +30,8 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 }
 
 type setFieldCmd struct{ g *Game }
-type setFieldArgs struct {
-	Team       *uint8  `json:"team"`
-	PlayerName *string `json:"playerName"`
+type setFieldArgs struct{
+	// TODO: define fields to change here
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -44,16 +42,8 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		return fmt.Errorf("invalid args type for command")
 	}
 
-	if f.Team != nil {
-		c.g.local.Team = *f.Team
-		c.g.clean = false
-	}
-	if f.PlayerName != nil {
-		c.g.local.Name = *f.PlayerName
-		c.g.clean = false
-	}
-
-	c.g.notifyView()
+	// TODO: accept field changes
+	_ = f
 
 	return nil
 }

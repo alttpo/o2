@@ -7,9 +7,13 @@ import (
 )
 
 type Game interface {
+	interfaces.KeyValueNotifier
+
 	ProvideQueue(queue snes.Queue)
 	ProvideClient(client *client.Client)
 	ProvideViewModelContainer(container interfaces.ViewModelContainer)
+
+	Notify(key string, value interface{})
 
 	Title() string
 	Description() string
