@@ -8,8 +8,8 @@ type GameProps = {
 };
 
 function GameView({ch, game}: GameProps) {
-    return <div class="card three-grid">
-        <h5>{game.gameName}</h5>
+    return <div class="grid">
+        <h5 class="grid-ca">Game: {game.gameName}</h5>
     </div>;
 }
 

@@ -39,6 +39,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const connectButton = (drv: DriverViewModel) => {
             if (drv.isConnected) {
                 return <button type="button"
+                               class="grid-c2-2"
                                title={drv.displayDescription}
                                onClick={cmdDisconnect.bind(this, drv)}>Disconnect</button>;
             } else {
@@ -52,8 +53,11 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const {name} = drv;
 
         return <Fragment key={name}>
-            <label class="grid-col1" for={`device-${name}`} title={drv.displayDescription}>{drv.displayName}:</label>
+            <label class="grid-c1"
+                   for={`device-${name}`}
+                   title={drv.displayDescription}>{drv.displayName}:</label>
             <select
+                class="grid-c2-1"
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
@@ -70,10 +74,13 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 
 export default ({ch, vm}: TopLevelProps) => {
     return (
-        <div class="card three-grid">{
-            (vm.snes?.drivers || []).map(drv => (
-                <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
-            ))
-        }</div>
+        <div class="grid" style="min-width: 32em">
+            <h5 class="grid-ca">Select a SNES device:</h5>
+            {
+                (vm.snes?.drivers || []).map(drv => (
+                    <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
+                ))
+            }
+        </div>
     );
 };

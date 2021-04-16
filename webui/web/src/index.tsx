@@ -107,26 +107,30 @@ const App = () => {
         <Fragment>
             <header>
                 <section class="rounded darken padded squeeze">
-                    <h1>ALTTPO2</h1>
+                    <h1>O2{
+                        (viewModel.game.isCreated) ? " - " + viewModel.game.gameName : ""
+                    }</h1>
                 </section>
             </header>
             <section class="squeeze">
-                <div>
-                    <div class="content">
+                <div class="flex-wrap">
+                    <div class="content flex-1">
                         <SNESView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="content">
+                    <div class="content flex-1">
                         <ROMView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="content">
+                    <div class="content flex-1">
                         <ServerView ch={ch} vm={viewModel}/>
                     </div>
 
-                    <div class="content">
-                        <GameView ch={ch} vm={viewModel}/>
-                    </div>
+                    {viewModel.game.isCreated && (
+                        <div class="content flex-1">
+                            <GameView ch={ch} vm={viewModel}/>
+                        </div>
+                    )}
                 </div>
             </section>
             <footer>

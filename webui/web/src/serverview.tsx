@@ -54,40 +54,49 @@ function ServerView({ch, server}: ServerProps) {
     const connectButton = () => {
         if (server.isConnected) {
             return <button type="button"
+                           class="grid-c2"
                            onClick={cmdDisconnect.bind(this)}>Disconnect</button>;
         } else {
             return <button type="button"
+                           class="grid-c2"
                            onClick={cmdConnect.bind(this)}>Connect</button>;
         }
     };
 
-    return <div class="card three-grid">
-        <label class="grid-col1" for="hostName">Hostname:</label>
+    return <div class="grid" style="min-width: 24em">
+        <h5 class="grid-ca">Connect to a server:</h5>
+        <label class="grid-c1" for="hostName">Hostname:</label>
         <input type="text"
                value={hostName}
                disabled={server.isConnected}
+               title="Connect to a server (default is `alttp.online`)"
                id="hostName"
+               class="grid-c2"
                onInput={e => setHostName((e.target as HTMLInputElement).value)}/>
-        <label class="grid-col1" for="groupName">Group:</label>
+        <label class="grid-c1" for="groupName">Group:</label>
         <input type="text"
                value={groupName}
                disabled={server.isConnected}
                id="groupName"
+               class="grid-c2"
                onInput={e => setGroupName((e.target as HTMLInputElement).value)}/>
-        {connectButton()}
 
-        <label class="grid-col1" for="playerName">Player Name:</label>
+        <label class="grid-c1" for="playerName">Player Name:</label>
         <input type="text"
                value={playerName}
                id="playerName"
+               class="grid-c2"
                onInput={onInput.bind(this, setPlayerName, "playerName", (v: string) => v)}/>
-        <label class="grid-col1" for="team">Team Number:</label>
+        <label class="grid-c1" for="team">Team Number:</label>
         <input type="number"
                min={0}
                max={255}
                value={team}
                id="team"
+               class="grid-c2"
                onInput={onInput.bind(this, setTeam, "team", (v: string) => parseInt(v, 10))}/>
+
+        {connectButton()}
     </div>;
 }
 
