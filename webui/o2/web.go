@@ -98,6 +98,14 @@ func NewWebServer(listenAddr string) *WebServer {
 		http.ServeContent(w, r, "patched.smc", time.Now(), bytes.NewReader(rom))
 	}))
 
+	// access log file:
+	s.mux.Handle("/log.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, logFileName := filepath.Split(logPath)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", logFileName))
+		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+		http.ServeFile(w, r, logPath)
+	}))
+
 	// serve static content from go-bindata:
 	s.mux.Handle("/", MaxAge(http.FileServer(AssetFile())))
 

@@ -3,11 +3,15 @@ package main
 import (
 	"fmt"
 	"github.com/skratchdot/open-golang/open"
+	"io"
 	"log"
 	"net"
 	"o2/engine"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // include these SNES drivers:
@@ -28,6 +32,7 @@ var (
 	listenPort  int    // port number to listen on for webserver
 	browserHost string // hostname to send as part of URL to browser to connect to webserver
 	browserUrl  string // full URL that is sent to browser (composed of browserHost:listenPort)
+	logPath     string
 )
 
 func orElse(a, b string) string {
@@ -38,7 +43,21 @@ func orElse(a, b string) string {
 }
 
 func main() {
+	var err error
+
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
+
+	ts := time.Now().Format("2006-01-02T15:04:05.000Z")
+	ts = strings.ReplaceAll(ts, ":", "-")
+	ts = strings.ReplaceAll(ts, ".", "-")
+	logPath = filepath.Join(os.TempDir(), fmt.Sprintf("o2-%s.log", ts))
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		log.Printf("logging to '%s'\n", logPath)
+		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+	} else {
+		log.Printf("could not open log file '%s' for writing\n", logPath)
+	}
 
 	// Parse env vars:
 	listenHost = os.Getenv("O2_WEB_LISTEN_HOST")
@@ -46,7 +65,6 @@ func main() {
 		listenHost = "0.0.0.0"
 	}
 
-	var err error
 	listenPort, err = strconv.Atoi(orElse(os.Getenv("O2_WEB_LISTEN_PORT"), "27637"))
 	if err != nil {
 		listenPort = 27637
