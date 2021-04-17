@@ -41,7 +41,6 @@ type Game struct {
 	readComplete        chan []snes.Response
 	lastReadCompleted   time.Time
 	firstKeysRead       bool
-	firstCurrentKeyRead bool
 
 	nextUpdateA      bool
 	updateLock       sync.Mutex

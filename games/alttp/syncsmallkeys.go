@@ -23,7 +23,6 @@ func (g *Game) initSyncableWRAM() {
 
 	// don't set timestamp on first read:
 	g.firstKeysRead = true
-	g.firstCurrentKeyRead = true
 }
 
 // handleReadWRAM called when WRAM is read from SNES:
@@ -51,17 +50,16 @@ func (g *Game) handleReadWRAM() {
 		}
 	}
 
-	if local.Module.IsDungeon() {
-		dungeonNumber := g.wram[0x040C]
+	if local.IsInDungeon() {
+		dungeonNumber := local.Dungeon
 		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
 			dungeonNumber >>= 1
-			dungeonOffs := smallKeyFirst + uint16(dungeonNumber)
+			dungeonOffs := smallKeyFirst + dungeonNumber
 			currentKeyCount := uint16(g.wram[0xF36F])
 			w := local.WRAM[dungeonOffs]
 			if currentKeyCount != w.ValueUsed {
-				if !g.firstCurrentKeyRead {
+				if !g.firstKeysRead {
 					w.Timestamp = nowTs
-					g.firstCurrentKeyRead = true
 				}
 				w.ValueUsed = currentKeyCount
 				log.Printf("[$%04x] -> %08x, %02x ** current key counter\n", dungeonOffs, w.Timestamp, w.ValueUsed)

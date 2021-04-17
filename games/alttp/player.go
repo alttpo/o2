@@ -127,3 +127,10 @@ func (p *Player) DecTTL() {
 func (p *Player) sramU16(offset uint16) uint16 {
 	return binary.LittleEndian.Uint16(p.SRAM[offset : offset+2])
 }
+
+func (p *Player) IsInDungeon() bool {
+	if p.Module.IsDungeon() {
+		return true
+	}
+	return p.Location&(1<<16) != 0
+}

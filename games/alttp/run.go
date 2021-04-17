@@ -191,9 +191,23 @@ func (g *Game) enqueueMainReads() {
 func (g *Game) readMainComplete() {
 	// assign local variables from WRAM:
 	local := g.local
-	local.Module = Module(g.wram[0x10])
-	local.SubModule = g.wram[0x11]
-	local.SubSubModule = g.wram[0xB0]
+
+	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
+	if local.Module != newModule || local.SubModule != newSubModule || local.SubSubModule != newSubSubModule {
+		log.Printf(
+			"module [%02x,%02x,%02x] -> [%02x,%02x,%02x]\n",
+			local.Module,
+			local.SubModule,
+			local.SubSubModule,
+			newModule,
+			newSubModule,
+			newSubSubModule,
+		)
+	}
+
+	local.Module = newModule
+	local.SubModule = newSubModule
+	local.SubSubModule = newSubSubModule
 
 	inDungeon := g.wram[0x1B]
 	overworldArea := g.wramU16(0x8A)
@@ -205,6 +219,7 @@ func (g *Game) readMainComplete() {
 		inDarkWorld = 1 << 17
 	}
 
+	local.Dungeon = g.wramU16(0x040C)
 	local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
 	if inDungeon != 0 {
 		local.Location |= uint32(dungeonRoom)
