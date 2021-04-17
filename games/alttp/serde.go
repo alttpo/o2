@@ -536,12 +536,12 @@ func SerializeWRAM(p *Player, w io.Writer) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, &count); err != nil {
 		panic(fmt.Errorf("error serializing wram: %w", err))
 	}
-	start := uint16(0xF37C)
+	start := smallKeyFirst
 	if err = binary.Write(w, binary.LittleEndian, &start); err != nil {
 		panic(fmt.Errorf("error serializing wram: %w", err))
 	}
 
-	for offs := uint16(0xF37C); offs < 0xF38C; offs++ {
+	for offs := smallKeyFirst; offs < smallKeyFirst+0x10; offs++ {
 		wv, ok := p.WRAM[offs]
 		var timestamp uint32 = 0
 		var value uint16 = 0
