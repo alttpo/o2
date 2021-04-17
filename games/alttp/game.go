@@ -36,11 +36,11 @@ type Game struct {
 	running bool
 	stopped chan struct{}
 
-	readQueue           []snes.Read
-	readResponse        []snes.Response
-	readComplete        chan []snes.Response
-	lastReadCompleted   time.Time
-	firstKeysRead       bool
+	readQueue         []snes.Read
+	readResponse      []snes.Response
+	readComplete      chan []snes.Response
+	lastReadCompleted time.Time
+	firstKeysRead     bool
 
 	nextUpdateA      bool
 	updateLock       sync.Mutex
@@ -57,6 +57,8 @@ type Game struct {
 	sram [0x10000]byte
 
 	syncableItems map[uint16]SyncableItem
+	underworld    [0x250]syncableBitU8
+	overworld     [0xC0]syncableBitU8
 
 	romFunctions map[romFunction]uint32
 
@@ -74,6 +76,8 @@ type Game struct {
 	SyncProgress     bool   `json:"syncProgress"`
 	SyncHearts       bool   `json:"syncHearts"`
 	SyncSmallKeys    bool   `json:"syncSmallKeys"`
+	SyncUnderworld   bool   `json:"syncUnderworld"`
+	SyncOverworld    bool   `json:"syncOverworld"`
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
@@ -96,6 +100,8 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		SyncProgress:     true,
 		SyncHearts:       true,
 		SyncSmallKeys:    true,
+		SyncUnderworld:   true,
+		SyncOverworld:    true,
 	}
 
 	g.fillRomFunctions()

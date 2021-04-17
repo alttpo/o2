@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-func (g *Game) readEnqueue(addr uint32, size uint8) {
+func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
 	g.readQueue = append(g.readQueue, snes.Read{
 		Address: addr,
 		Size:    size,
-		Extra:   nil,
+		Extra:   extra,
 		Completion: func(rsp snes.Response) {
 			// append to response queue:
 			g.readResponse = append(g.readResponse, rsp)
@@ -64,8 +64,8 @@ func (g *Game) run() {
 	g.enqueueMainReads()
 	g.readSubmit()
 
-	fastbeat := time.NewTicker(250 * time.Millisecond)
-	slowbeat := time.NewTicker(1000 * time.Millisecond)
+	fastbeat := time.NewTicker(120 * time.Millisecond)
+	slowbeat := time.NewTicker(500 * time.Millisecond)
 
 	for g.running {
 		select {
@@ -75,16 +75,26 @@ func (g *Game) run() {
 				return
 			}
 
-			// copy the data into our wram shadow:
 			for _, rsp := range rsps {
+				// copy the data into our wram shadow:
 				g.handleSNESRead(rsp)
+				// 0 indicates to re-enqueue the read every time:
+				if rsp.Extra == 0 {
+					g.readEnqueue(rsp.Address, rsp.Size, rsp.Extra)
+				}
 			}
-			g.enqueueMainReads()
-			g.readSubmit()
 
+			// process the last read data:
 			g.readMainComplete()
-
 			g.lastReadCompleted = time.Now()
+
+			// read the first instruction of the last update routine to check if it completed (if it's a RTS):
+			if g.lastUpdateTarget != 0xFFFFFF {
+				addr := g.lastUpdateTarget
+				//log.Printf("read: $%06x\n", addr)
+				g.readEnqueue(addr, 0x01, nil)
+			}
+			g.readSubmit()
 			break
 
 		// wait for network message from server:
@@ -103,11 +113,12 @@ func (g *Game) run() {
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
 			// make sure a read request is always in flight to keep our main loop running:
-			if time.Now().Sub(g.lastReadCompleted) > time.Millisecond*500 {
+			if time.Now().Sub(g.lastReadCompleted) >= time.Millisecond*512 {
 				g.enqueueMainReads()
 				g.readSubmit()
 			}
-			if g.localIndex < 0 {
+
+			if g.localIndex < 0 && g.client != nil {
 				// request our player index:
 				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
 				if m == nil {
@@ -117,10 +128,19 @@ func (g *Game) run() {
 				break
 			}
 
+			// read the SRAM copy for underworld and overworld:
+			g.readEnqueue(0xF5F000, 0xFE, 1) // [$F000..$F0FD]
+			g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
+			g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
+			g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
+			g.readSubmit()
+			break
+
 		case <-slowbeat.C:
 			if g.localIndex < 0 {
 				break
 			}
+
 			// broadcast player name:
 			m := g.makeGamePacket(protocol02.Broadcast)
 			if m == nil {
@@ -134,6 +154,7 @@ func (g *Game) run() {
 			}
 			m.Write(name[:])
 			g.send(m)
+
 			break
 		}
 	}
@@ -173,18 +194,11 @@ func (g *Game) enqueueMainReads() {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0) // $0010-$00FF
-	g.readEnqueue(0xF50100, 0x36) // $0100-$0136
-	g.readEnqueue(0xF50400, 0x20) // $0400-$041F
+	g.readEnqueue(0xF50010, 0xF0, 0) // $0010-$00FF
+	g.readEnqueue(0xF50100, 0x36, 0) // $0100-$0136
+	g.readEnqueue(0xF50400, 0x20, 0) // $0400-$041F
 	// ALTTP's SRAM copy in WRAM:
-	g.readEnqueue(0xF5F340, 0xF0) // $F340-$F42F
-
-	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
-	if g.lastUpdateTarget != 0xFFFFFF {
-		addr := g.lastUpdateTarget
-		//log.Printf("read: $%06x\n", addr)
-		g.readEnqueue(addr, 0x01)
-	}
+	g.readEnqueue(0xF5F340, 0xF0, 0) // $F340-$F42F
 }
 
 // called when all reads are completed:
@@ -348,22 +362,27 @@ func (g *Game) frameAdvanced() {
 			g.send(m)
 		}
 	}
-	//if g.monotonicFrameTime&31 == 0 {
-	//	// Broadcast underworld SRAM:
-	//	m := g.makeGamePacket(protocol02.Broadcast)
-	//	if err := SerializeSRAM(local, m, 0, 0x250); err != nil {
-	//		panic(err)
-	//	}
-	//	g.send(m)
-	//}
-	//if g.monotonicFrameTime&31 == 16 {
-	//	// Broadcast overworld SRAM:
-	//	m := g.makeGamePacket(protocol02.Broadcast)
-	//	if err := SerializeSRAM(local, m, 0x280, 0x340); err != nil {
-	//		panic(err)
-	//	}
-	//	g.send(m)
-	//}
+
+	if g.SyncUnderworld && g.monotonicFrameTime&31 == 0 {
+		// dungeon rooms
+		m := g.makeGamePacket(protocol02.Broadcast)
+		err := SerializeSRAM(g.local, m, 0x000, 0x250)
+		if err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
+
+	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
+		// overworld events; heart containers, overlays
+		m := g.makeGamePacket(protocol02.Broadcast)
+		err := SerializeSRAM(g.local, m, 0x280, 0x340)
+		if err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
+
 }
 
 func hash64(b []byte) uint64 {
@@ -555,6 +574,38 @@ func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
 			if ta.Code.Len()+a.Code.Len()+10 <= 255 {
 				a.Append(ta)
 				updated = true
+			}
+		}
+	}
+
+	if g.SyncUnderworld {
+		for i := range g.underworld {
+			// clone the assembler to a temporary:
+			ta := a.Clone()
+			// generate the update asm routine in the temporary assembler:
+			u := g.underworld[i].GenerateUpdate(ta)
+			if u {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+					a.Append(ta)
+					updated = true
+				}
+			}
+		}
+	}
+
+	if g.SyncOverworld {
+		for i := range g.overworld {
+			// clone the assembler to a temporary:
+			ta := a.Clone()
+			// generate the update asm routine in the temporary assembler:
+			u := g.overworld[i].GenerateUpdate(ta)
+			if u {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+					a.Append(ta)
+					updated = true
+				}
 			}
 		}
 	}

@@ -467,7 +467,29 @@ func (g *Game) initSync() {
 		return true
 	})
 
+	// WRAM offsets for small keys, crystal switches, etc:
 	g.initSyncableWRAM()
+
+	// underworld rooms:
+	for offs := uint16(0x000); offs < 0x250; offs++ {
+		g.underworld[offs] = syncableBitU8{
+			g:         g,
+			offset:    offs,
+			isEnabled: &g.SyncUnderworld,
+			names:     nil,
+			onUpdated: nil,
+		}
+	}
+	// overworld areas:
+	for offs := uint16(0x280); offs < 0x340; offs++ {
+		g.overworld[offs-0x280] = syncableBitU8{
+			g:         g,
+			offset:    offs,
+			isEnabled: &g.SyncUnderworld,
+			names:     nil,
+			onUpdated: nil,
+		}
+	}
 }
 
 type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool

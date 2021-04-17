@@ -13,13 +13,14 @@ type CommandWithCompletion struct {
 
 type CommandSequence []CommandWithCompletion
 
-func (seq CommandSequence) EnqueueTo(queue Queue) error {
+func (seq CommandSequence) EnqueueTo(queue Queue) (err error) {
 	for _, cmd := range seq {
-		if err := queue.Enqueue(cmd); err != nil {
-			return err
+		err = queue.Enqueue(cmd)
+		if err != nil {
+			return
 		}
 	}
-	return nil
+	return
 }
 
 type NoOpCommand struct{}
