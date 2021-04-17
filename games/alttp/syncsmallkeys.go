@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"fmt"
+	"log"
 	"o2/snes/asm"
 	"time"
 )
@@ -21,7 +22,8 @@ func (g *Game) initSyncableWRAM() {
 	}
 
 	// don't set timestamp on first read:
-	g.firstRead = true
+	g.firstKeysRead = true
+	g.firstCurrentKeyRead = true
 }
 
 // handleReadWRAM called when WRAM is read from SNES:
@@ -40,11 +42,12 @@ func (g *Game) handleReadWRAM() {
 	for offs, w := range local.WRAM {
 		v := uint16(g.wram[offs])
 		if v != w.Value {
-			if !g.firstRead {
+			if !g.firstKeysRead {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
 			w.ValueUsed = v
+			log.Printf("[$%04x] -> %08x, %02x\n", offs, w.Timestamp, w.Value)
 		}
 	}
 
@@ -54,11 +57,19 @@ func (g *Game) handleReadWRAM() {
 			dungeonNumber >>= 1
 			dungeonOffs := smallKeyFirst + uint16(dungeonNumber)
 			currentKeyCount := uint16(g.wram[0xF36F])
-			local.WRAM[dungeonOffs].ValueUsed = currentKeyCount
+			w := local.WRAM[dungeonOffs]
+			if currentKeyCount != w.ValueUsed {
+				if !g.firstCurrentKeyRead {
+					w.Timestamp = nowTs
+					g.firstCurrentKeyRead = true
+				}
+				w.ValueUsed = currentKeyCount
+				log.Printf("[$%04x] -> %08x, %02x ** current key counter\n", dungeonOffs, w.Timestamp, w.ValueUsed)
+			}
 		}
 	}
 
-	g.firstRead = false
+	g.firstKeysRead = false
 }
 
 func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
