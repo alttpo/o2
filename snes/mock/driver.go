@@ -1,6 +1,10 @@
 package mock
 
-import "o2/snes"
+import (
+	"o2/interfaces"
+	"o2/snes"
+	"os"
+)
 
 const driverName = "mock"
 
@@ -36,5 +40,7 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
-	snes.Register(driverName, &Driver{})
+	if interfaces.IsTruthy(os.Getenv("O2_MOCK_ENABLE")) {
+		snes.Register(driverName, &Driver{})
+	}
 }

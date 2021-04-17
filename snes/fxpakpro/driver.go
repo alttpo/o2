@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
+	"o2/interfaces"
 	"o2/snes"
+	"os"
 )
 
 const (
@@ -152,7 +154,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 	}
 
 	c := &Queue{
-		f: f,
+		f:      f,
 		closed: make(chan struct{}),
 	}
 	c.BaseInit(driverName, c)
@@ -161,5 +163,8 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 }
 
 func init() {
+	if interfaces.IsTruthy(os.Getenv("O2_FXPAKPRO_DISABLE")) {
+		return
+	}
 	snes.Register(driverName, &Driver{})
 }

@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"o2/interfaces"
 	"o2/snes"
+	"os"
 	"sync"
 	"syscall"
 )
@@ -135,5 +137,8 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
+	if interfaces.IsTruthy(os.Getenv("O2_QUSB2SNES_DISABLE")) {
+		return
+	}
 	snes.Register(driverName, &Driver{})
 }
