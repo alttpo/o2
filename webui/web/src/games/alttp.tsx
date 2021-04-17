@@ -9,6 +9,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncProgress, setsyncProgress] = useState(true);
     const [syncHearts, setsyncHearts] = useState(true);
     const [syncSmallKeys, setsyncSmallKeys] = useState(true);
+    const [code, set_code] = useState('A9038F59F37E');
 
     useEffect(() => {
         setsyncItems(game.syncItems);
@@ -33,6 +34,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             Sync Items
         </label>
 
+        <div class="grid-c2">
+            <label for="asm">Custom ASM:</label>
+        </div>
+
         <label class="grid-c1" for="syncDungeonItems"
                title="Big Keys, Compasses, Maps">
             <input type="checkbox"
@@ -41,6 +46,12 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                    onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}/>
             Sync Dungeon Items
         </label>
+
+        <textarea class="grid-c2-1" id="asm" cols={40} rows={1} value={code}
+            onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
+        <button class="grid-c2-2" onClick={e => sendGameCommand('asm', {code: code})}>
+            Execute
+        </button>
 
         <label class="grid-c1" for="syncProgress">
             <input type="checkbox"
