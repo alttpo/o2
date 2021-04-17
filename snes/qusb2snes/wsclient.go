@@ -2,6 +2,7 @@ package qusb2snes
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +38,12 @@ type qusbResult struct {
 }
 
 var timeout = time.Second * 2
+
+func RandomName(prefix string) string {
+	var bytes [4]byte
+	_, _ = rand.Read(bytes[:])
+	return fmt.Sprintf("%s-%08x", prefix, bytes)
+}
 
 func NewWebSocketClient(w *WebSocketClient, urlstr string, appName string) (err error) {
 	w.closed = make(chan struct{})

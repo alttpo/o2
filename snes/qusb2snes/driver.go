@@ -1,6 +1,7 @@
 package qusb2snes
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"o2/snes"
@@ -41,7 +42,7 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		deviceName: dev.name,
 	}
 
-	err = NewWebSocketClient(&qu.ws, "ws://localhost:8080/", "o2")
+	err = NewWebSocketClient(&qu.ws, "ws://localhost:8080/", RandomName("o2"))
 	if err != nil {
 		return
 	}
@@ -76,7 +77,10 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 
 	// attempt to create a websocket connection to qusb2snes:
 	var ws WebSocketClient
-	err = NewWebSocketClient(&ws, "ws://localhost:8080/", "o2discover")
+
+	var bytes [4]byte
+	_, _ = rand.Read(bytes[:])
+	err = NewWebSocketClient(&ws, "ws://localhost:8080/", RandomName("o2d"))
 	defer func() { ws.Close() }()
 	if err != nil {
 		// intercept "connection refused" errors to silence them:
