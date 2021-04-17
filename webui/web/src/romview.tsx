@@ -38,7 +38,7 @@ export default ({ch, vm}: TopLevelProps) => {
 
             <label class="grid-c1">Patched ROM:&nbsp;3️⃣</label>
             <button class="grid-c2-1"
-                    disabled={!vm.snes.isConnected}
+                    disabled={!rom.isLoaded || !vm.snes.isConnected}
                     title="Send the O2 patched ROM to the SNES and boot it"
                     onClick={e => ch.command("rom", "boot", {})}>Boot
             </button>
