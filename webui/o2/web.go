@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"o2/interfaces"
+	"o2/snes"
 	"path/filepath"
 	"sync"
 	"time"
@@ -83,7 +84,7 @@ func NewWebServer(listenAddr string) *WebServer {
 			return
 		}
 
-		var rom []byte
+		var rom *snes.ROM
 		err = cmd.Execute(&rom)
 		if err != nil {
 			log.Println(err)
@@ -95,7 +96,10 @@ func NewWebServer(listenAddr string) *WebServer {
 			return
 		}
 
-		http.ServeContent(w, r, "patched.smc", time.Now(), bytes.NewReader(rom))
+		romName := fmt.Sprintf("o2-%s", rom.Name)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", romName))
+		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+		http.ServeContent(w, r, romName, time.Now(), bytes.NewReader(rom.Contents))
 	}))
 
 	// access log file:

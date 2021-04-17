@@ -104,12 +104,12 @@ func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
 		return nil
 	}
 
-	p, ok := args.(*[]byte)
+	p, ok := args.(**snes.ROM)
 	if !ok {
 		return nil
 	}
 
-	*p = ce.v.c.rom.Contents[:]
+	*p = ce.v.c.rom
 	return nil
 }
 

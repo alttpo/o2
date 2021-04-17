@@ -42,7 +42,7 @@ export default ({ch, vm}: TopLevelProps) => {
                     title="Send the O2 patched ROM to the SNES and boot it"
                     onClick={e => ch.command("rom", "boot", {})}>Boot
             </button>
-            <form class="grid-c2-2" method="get" action="/rom/patched.smc" target="_blank">
+            <form class="grid-c2-2" method="get" action="/rom/patched.smc">
                 <input type="submit"
                        disabled={!rom.isLoaded}
                        title="Download the O2 patched ROM"
