@@ -216,22 +216,6 @@ func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
 		}
 	}
 
-	if g.SyncUnderworld {
-		for i := range g.underworld {
-			// clone the assembler to a temporary:
-			ta := a.Clone()
-			// generate the update asm routine in the temporary assembler:
-			u := g.underworld[i].GenerateUpdate(ta)
-			if u {
-				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Code.Len()+a.Code.Len()+10 <= 255 {
-					a.Append(ta)
-					updated = true
-				}
-			}
-		}
-	}
-
 	if g.SyncOverworld {
 		for i := range g.overworld {
 			// clone the assembler to a temporary:
@@ -245,6 +229,36 @@ func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
 					updated = true
 				}
 			}
+		}
+	}
+
+	if g.SyncUnderworld {
+		updated16 := false
+		// clone to a temporary assembler for 16-bit mode:
+		a16 := a.Clone()
+		// switch to 16-bit mode:
+		a16.Comment("switch to 16-bit mode:")
+		a16.REP(0x30)
+		for i := range g.underworld {
+			// clone the assembler to a temporary:
+			ta := a16.Clone()
+			// generate the update asm routine in the temporary assembler:
+			u := g.underworld[i].GenerateUpdate(ta)
+			if u {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Code.Len()+a16.Code.Len()+10 <= 255 {
+					a16.Append(ta)
+					updated = true
+					updated16 = true
+				}
+			}
+		}
+		if updated16 {
+			// switch back to 8-bit mode:
+			a16.Comment("switch back to 8-bit mode:")
+			a16.SEP(0x30)
+			// commit the changes to the parent assembler:
+			a.Append(a16)
 		}
 	}
 

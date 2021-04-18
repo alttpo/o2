@@ -57,7 +57,7 @@ type Game struct {
 	sram [0x10000]byte
 
 	syncableItems map[uint16]SyncableItem
-	underworld    [0x250]syncableBitU8
+	underworld    [0x128]syncableBitU16
 	overworld     [0xC0]syncableBitU8
 
 	romFunctions map[romFunction]uint32

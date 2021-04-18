@@ -471,14 +471,14 @@ func (g *Game) initSync() {
 	g.initSyncableWRAM()
 
 	// underworld rooms:
-	for offs := uint16(0x000); offs < 0x250; offs++ {
-		g.underworld[offs] = syncableBitU8{
+	for offs := uint16(0x000); offs < 0x250; offs+=2 {
+		g.underworld[offs>>1] = syncableBitU16{
 			g:         g,
 			offset:    offs,
 			isEnabled: &g.SyncUnderworld,
 			names:     nil,
 			onUpdated: nil,
-			mask:      0xFF,
+			mask:      0xFFFF,
 		}
 	}
 	// overworld areas:
@@ -660,7 +660,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	offset := s.offset
 
 	initial := local.sramU16(offset)
-	var receivedFrom [8]string
+	var receivedFrom [16]string
 
 	updated := initial
 	for _, p := range g.ActivePlayers() {
