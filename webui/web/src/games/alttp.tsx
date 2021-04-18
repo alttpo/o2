@@ -9,6 +9,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncProgress, setsyncProgress] = useState(true);
     const [syncHearts, setsyncHearts] = useState(true);
     const [syncSmallKeys, setsyncSmallKeys] = useState(true);
+    const [syncUnderworld, setsyncUnderworld] = useState(true);
+    const [syncOverworld, setsyncOverworld] = useState(true);
 
     const [showASM, set_showASM] = useState(false);
     const [code, set_code] = useState('A9038F59F37E');
@@ -19,6 +21,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncProgress(game.syncProgress);
         setsyncHearts(game.syncHearts);
         setsyncSmallKeys(game.syncSmallKeys);
+        setsyncUnderworld(game.syncUnderworld);
+        setsyncOverworld(game.syncOverworld);
     }, [game]);
 
     const sendGameCommand = ch.command.bind(ch, "game");
@@ -88,6 +92,22 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                    checked={syncSmallKeys}
                    onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
             />Sync Small Keys
+        </label>
+
+        <label class="grid-c1" for="syncUnderworld">
+            <input type="checkbox"
+                   id="syncUnderworld"
+                   checked={syncUnderworld}
+                   onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
+            />Sync Underworld
+        </label>
+
+        <label class="grid-c1" for="syncOverworld">
+            <input type="checkbox"
+                   id="syncOverworld"
+                   checked={syncOverworld}
+                   onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
+            />Sync Overworld
         </label>
     </div>;
 }
