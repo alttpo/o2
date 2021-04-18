@@ -163,32 +163,6 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
 
-	//// generate update ASM code for any 16-bit values:
-	//a.REP(0x20)
-	//for _, item := range g.syncableItems {
-	//	if item.Size() != 2 {
-	//		continue
-	//	}
-	//	if !item.IsEnabled() {
-	//		continue
-	//	}
-	//
-	//	// clone the assembler to a temporary:
-	//	ta := a.Clone()
-	//	// generate the update asm routine in the temporary assembler:
-	//	u := item.GenerateUpdate(ta)
-	//	if u {
-	//		// don't emit the routine if it pushes us over the code size limit:
-	//		if ta.Code.Len() + a.Code.Len() + 10 > 255 {
-	//			// continue to try to find smaller routines that might fit:
-	//			continue
-	//		}
-	//		a.Append(ta)
-	//	}
-	//
-	//	updated = updated || u
-	//}
-
 	// generate update ASM code for any 8-bit values:
 	for _, item := range g.syncableItems {
 		if item.Size() != 1 {

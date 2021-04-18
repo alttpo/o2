@@ -117,12 +117,21 @@ func (g *Game) run() {
 
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
-			// make sure a read request is always in flight to keep our main loop running:
-			timeSinceRead := time.Now().Sub(g.lastReadCompleted)
-			if timeSinceRead >= time.Millisecond*512 {
-				log.Printf("fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
-				g.enqueueMainReads()
-				g.readSubmit()
+			if g.queue != nil {
+				// make sure a read request is always in flight to keep our main loop running:
+				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
+				if timeSinceRead >= time.Millisecond*512 {
+					log.Printf("fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
+					g.enqueueMainReads()
+					g.readSubmit()
+				} else {
+					// read the SRAM copy for underworld and overworld:
+					g.readEnqueue(0xF5F000, 0xFE, 1) // [$F000..$F0FD]
+					g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
+					g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
+					g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
+					g.readSubmit()
+				}
 			}
 
 			if g.localIndex < 0 && g.client != nil {
@@ -135,12 +144,6 @@ func (g *Game) run() {
 				break
 			}
 
-			// read the SRAM copy for underworld and overworld:
-			g.readEnqueue(0xF5F000, 0xFE, 1) // [$F000..$F0FD]
-			g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
-			g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
-			g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
-			g.readSubmit()
 			break
 
 		case <-slowbeat.C:
