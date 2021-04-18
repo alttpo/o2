@@ -70,8 +70,8 @@ func (g *Game) updateWRAM() {
 	a.RTS()
 
 	// custom asm overrides update asm generation:
-	if !g.generateCustomAsm(a) {
-		if !g.generateUpdateAsm(a) {
+	if !g.generateCustomAsm(&a) {
+		if !g.generateUpdateAsm(&a) {
 			// nothing to emit:
 			return
 		}
@@ -135,7 +135,7 @@ func (g *Game) updateWRAM() {
 	}
 }
 
-func (g *Game) generateCustomAsm(a asm.Emitter) bool {
+func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 	g.customAsmLock.Lock()
 	defer g.customAsmLock.Unlock()
 
@@ -150,7 +150,7 @@ func (g *Game) generateCustomAsm(a asm.Emitter) bool {
 	return true
 }
 
-func (g *Game) generateUpdateAsm(a asm.Emitter) bool {
+func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
 
 	//// generate update ASM code for any 16-bit values:
