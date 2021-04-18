@@ -2,13 +2,11 @@ package qusb2snes
 
 import (
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"o2/interfaces"
 	"o2/snes"
 	"os"
 	"sync"
-	"syscall"
 )
 
 const driverName = "qusb2snes"
@@ -83,16 +81,16 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	var bytes [4]byte
 	_, _ = rand.Read(bytes[:])
 	err = NewWebSocketClient(&ws, "ws://localhost:8080/", RandomName("o2d"))
-	defer func() { ws.Close() }()
+	defer func() {
+		ws.Close()
+	}()
 	if err != nil {
 		// intercept "connection refused" errors to silence them:
-		var serr syscall.Errno
-		if errors.As(err, &serr) {
-			if serr == syscall.ECONNREFUSED {
-				err = nil
-				return
-			}
+		if interfaces.IsConnectionRefused(err) {
+			err = nil
+			return
 		}
+
 		// otherwise return the error:
 		return
 	}
