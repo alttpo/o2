@@ -624,6 +624,99 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	return true
 }
 
+type syncableBitU16OnUpdated func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
+
+type syncableBitU16 struct {
+	g *Game
+
+	offset    uint16
+	isEnabled *bool
+	names     []string
+	mask      uint16
+
+	onUpdated syncableBitU16OnUpdated
+}
+
+func (g *Game) newSyncableBitU16(offset uint16, enabled *bool, names []string, onUpdated syncableBitU16OnUpdated) *syncableBitU16 {
+	s := &syncableBitU16{
+		g:         g,
+		offset:    offset,
+		isEnabled: enabled,
+		names:     names,
+		onUpdated: onUpdated,
+		mask:      0xFFFF,
+	}
+	g.syncableItems[offset] = s
+	return s
+}
+
+func (s *syncableBitU16) Offset() uint16  { return s.offset }
+func (s *syncableBitU16) Size() uint      { return 2 }
+func (s *syncableBitU16) IsEnabled() bool { return *s.isEnabled }
+
+func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
+	g := s.g
+	local := g.local
+	offset := s.offset
+
+	initial := local.sramU16(offset)
+	var receivedFrom [8]string
+
+	updated := initial
+	for _, p := range g.ActivePlayers() {
+		v := p.sramU16(offset)
+		v &= s.mask
+		newBits := v & ^updated
+		if newBits != 0 {
+			k := uint16(1)
+			for i := 0; i < 8; i++ {
+				if newBits&k == k {
+					receivedFrom[i] = p.Name
+				}
+				k <<= 1
+			}
+		}
+
+		updated |= v
+	}
+
+	if updated == initial {
+		// no change:
+		return false
+	}
+
+	// notify local player of new item received:
+	//g.notifyNewItem(s.names[v])
+
+	addr := 0x7EF000 + uint32(offset)
+	newBits := updated & ^initial
+
+	if s.names != nil {
+		received := make([]string, 0, len(s.names))
+		k := uint16(1)
+		for i := 0; i < len(s.names); i++ {
+			if initial&k == 0 && updated&k == k {
+				item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
+				received = append(received, item)
+			}
+			k <<= 1
+		}
+		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
+	} else {
+		asm.Comment(fmt.Sprintf("sram[$%04x] |= %#08b", offset, newBits))
+	}
+
+	asm.LDA_imm16_w(newBits)
+	asm.ORA_long(addr)
+	asm.STA_long(addr)
+
+	if s.onUpdated != nil {
+		s.onUpdated(s, asm, initial, updated)
+	}
+
+	return true
+}
+
 type syncableMaxU8OnUpdated func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
 type syncableMaxU8 struct {
