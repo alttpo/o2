@@ -201,6 +201,7 @@ func (w *WebSocketClient) ReadBinaryResponse(sumExpected int) (dataReceived []by
 		hdr, err = w.r.NextFrame()
 		if err != nil {
 			err = fmt.Errorf("qusb2snes: ReadBinaryResponse: NextFrame: %w", err)
+			w.Close()
 			return
 		}
 		if hdr.OpCode == ws.OpClose {
