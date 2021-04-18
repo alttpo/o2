@@ -481,6 +481,9 @@ func (g *Game) initSync() {
 			mask:      0xFFFF,
 		}
 	}
+	// desync swamp inner watergate at $7EF06A (supertile $35)
+	g.underworld[0x035].mask = 0xFF7F
+
 	// overworld areas:
 	for offs := uint16(0x280); offs < 0x340; offs++ {
 		g.overworld[offs-0x280] = syncableBitU8{
