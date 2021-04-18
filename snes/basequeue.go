@@ -74,6 +74,7 @@ func (b *BaseQueue) handleQueue() {
 		log.Printf("%s: closing chan\n", b.name)
 		b.cqClosed = true
 		close(b.cq)
+		log.Printf("%s: closed chan\n", b.name)
 	}
 	defer doClose()
 
