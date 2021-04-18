@@ -10,11 +10,16 @@ import (
 )
 
 func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
+	defer g.readQueueLock.Unlock()
+	g.readQueueLock.Lock()
+
 	g.readQueue = append(g.readQueue, snes.Read{
 		Address: addr,
 		Size:    size,
 		Extra:   extra,
 		Completion: func(rsp snes.Response) {
+			defer g.readResponseLock.Unlock()
+			g.readResponseLock.Lock()
 			// append to response queue:
 			g.readResponse = append(g.readResponse, rsp)
 		},
@@ -22,34 +27,44 @@ func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
 }
 
 func (g *Game) readSubmit() {
-	q := g.queue
-
-	if q != nil {
-		sequence := q.MakeReadCommands(
-			g.readQueue[:],
-			func(cmd snes.Command, err error) {
-				if err != nil {
-					log.Println(err)
-				}
-
-				go func(rsps []snes.Response) {
-					//log.Println("readComplete send")
-					g.readComplete <- rsps
-				}(g.readResponse[:])
-
-				g.readResponse = nil
-			},
-		)
-
-		err := sequence.EnqueueTo(q)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
-
+	g.readQueueLock.Lock()
+	// copy out the current queue contents:
+	readQueue := g.readQueue[:]
 	// clear the queue:
 	g.readQueue = nil
+	g.readQueueLock.Unlock()
+	if len(readQueue) == 0 {
+		return
+	}
+
+	q := g.queue
+	if q == nil {
+		return
+	}
+
+	sequence := q.MakeReadCommands(
+		readQueue,
+		func(cmd snes.Command, err error) {
+			g.readResponseLock.Lock()
+			// copy out read responses and clear that queue:
+			rsps := g.readResponse[:]
+			g.readResponse = nil
+			g.readResponseLock.Unlock()
+
+			if err != nil {
+				log.Println(err)
+			}
+
+			// inform the main loop:
+			g.readComplete <- rsps
+		},
+	)
+
+	err := sequence.EnqueueTo(q)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 }
 
 // run in a separate goroutine
@@ -84,12 +99,6 @@ func (g *Game) run() {
 			g.readMainComplete()
 			g.lastReadCompleted = time.Now()
 
-			// read the first instruction of the last update routine to check if it completed (if it's a RTS):
-			if g.lastUpdateTarget != 0xFFFFFF {
-				addr := g.lastUpdateTarget
-				//log.Printf("read: $%06x\n", addr)
-				g.readEnqueue(addr, 0x01, nil)
-			}
 			g.readSubmit()
 			break
 
@@ -109,7 +118,9 @@ func (g *Game) run() {
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
 			// make sure a read request is always in flight to keep our main loop running:
-			if time.Now().Sub(g.lastReadCompleted) >= time.Millisecond*512 {
+			timeSinceRead := time.Now().Sub(g.lastReadCompleted)
+			if timeSinceRead >= time.Millisecond*512 {
+				log.Printf("fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 				g.enqueueMainReads()
 				g.readSubmit()
 			}
@@ -159,7 +170,7 @@ func (g *Game) run() {
 }
 
 func (g *Game) handleSNESRead(rsp snes.Response) {
-	//log.Printf("\n%s\n", hex.Dump(rsp.Data))
+	//log.Printf("read completed: %06x size=%02x\n", rsp.Address, rsp.Size)
 
 	// copy data read into our wram array:
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx

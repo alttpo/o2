@@ -36,9 +36,14 @@ type Game struct {
 	running bool
 	stopped chan struct{}
 
-	readQueue         []snes.Read
-	readResponse      []snes.Response
-	readComplete      chan []snes.Response
+	readQueueLock sync.Mutex
+	readQueue     []snes.Read
+
+	readResponseLock sync.Mutex
+	readResponse     []snes.Response
+
+	readComplete chan []snes.Response
+
 	lastReadCompleted time.Time
 	firstKeysRead     bool
 
@@ -89,7 +94,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		rom:              rom,
 		running:          false,
 		stopped:          make(chan struct{}),
-		readComplete:     make(chan []snes.Response, 2),
+		readComplete:     make(chan []snes.Response, 4),
 		romFunctions:     make(map[romFunction]uint32),
 		lastUpdateTarget: 0xFFFFFF,
 		// ViewModel:

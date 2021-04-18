@@ -5,6 +5,8 @@ import (
 	"log"
 )
 
+const chanSize = 1
+
 type BaseQueue struct {
 	// driver name
 	name string
@@ -23,7 +25,7 @@ func (b *BaseQueue) BaseInit(name string, queue Queue) {
 	}
 
 	b.name = name
-	b.cq = make(chan CommandWithCompletion)
+	b.cq = make(chan CommandWithCompletion, chanSize)
 	b.queue = queue
 
 	go b.handleQueue()
@@ -94,7 +96,7 @@ func (b *BaseQueue) handleQueue() {
 			// close and recreate queue:
 			log.Printf("%s: processing DrainQueueCommand\n", b.name)
 			doClose()
-			b.cq = make(chan CommandWithCompletion)
+			b.cq = make(chan CommandWithCompletion, chanSize)
 		}
 
 		err = cmd.Execute(q)

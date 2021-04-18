@@ -120,13 +120,23 @@ func (g *Game) updateWRAM() {
 			},
 		},
 		func(cmd snes.Command, err error) {
-			log.Println("write completed")
-			defer g.updateLock.Unlock()
-			g.updateLock.Lock()
-			// expect a read now to prevent double-write:
-			if g.updateStage == 1 {
-				g.updateStage = 2
-			}
+			go func() {
+				log.Println("write completed")
+				defer g.updateLock.Unlock()
+				g.updateLock.Lock()
+				// expect a read now to prevent double-write:
+				if g.updateStage == 1 {
+					g.updateStage = 2
+					// read the first instruction of the last update routine to check if it completed (if it's a RTS):
+					if g.lastUpdateTarget != 0xFFFFFF {
+						addr := g.lastUpdateTarget
+						log.Printf("write complete; enqueue read: $%06x\n", g.lastUpdateTarget)
+						g.readEnqueue(addr, 0x01, nil)
+						log.Printf("write complete; submit read\n")
+						g.readSubmit()
+					}
+				}
+			}()
 		},
 	).EnqueueTo(q)
 	if err != nil {
