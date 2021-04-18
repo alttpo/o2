@@ -12,6 +12,7 @@ const (
 	fnDecompGfxShield
 	fnLoadSpriteGfx
 	fnOverworldFinishMirrorWarp
+	fnOverworldCreatePyramidHole
 )
 
 func (g *Game) fillRomFunctions() {
@@ -24,6 +25,7 @@ func (g *Game) fillRomFunctions() {
 		g.romFunctions[fnDecompGfxShield] = 0x00D308
 		g.romFunctions[fnLoadSpriteGfx] = 0x00FC62
 		g.romFunctions[fnOverworldFinishMirrorWarp] = 0x02B260
+		g.romFunctions[fnOverworldCreatePyramidHole] = 0x1BC2A7
 	} else if g.rom.Header.DestinationCode == snes.RegionJapan {
 		// JP 1.0
 		g.romFunctions[fnUpdatePaletteArmorGloves] = 0x1BEDF9
@@ -33,5 +35,6 @@ func (g *Game) fillRomFunctions() {
 		g.romFunctions[fnDecompGfxShield] = 0x00D348
 		g.romFunctions[fnLoadSpriteGfx] = 0x00FC62
 		g.romFunctions[fnOverworldFinishMirrorWarp] = 0x02B186
+		g.romFunctions[fnOverworldCreatePyramidHole] = 0x1BC2A7
 	}
 }

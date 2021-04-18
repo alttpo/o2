@@ -82,7 +82,10 @@ type Player struct {
 	Module       Module
 	SubModule    uint8
 	SubSubModule uint8
-	Location     uint32
+
+	OverworldArea uint16
+	DungeonRoom   uint16
+	Location      uint32
 
 	X uint16
 	Y uint16

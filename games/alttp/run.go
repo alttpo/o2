@@ -223,6 +223,9 @@ func (g *Game) readMainComplete() {
 	overworldArea := g.wramU16(0x8A)
 	dungeonRoom := g.wramU16(0xA0)
 
+	local.OverworldArea = overworldArea
+	local.DungeonRoom = dungeonRoom
+
 	// TODO: fix this calculation to be compatible with alttpo
 	inDarkWorld := uint32(0)
 	if overworldArea&0x40 != 0 {

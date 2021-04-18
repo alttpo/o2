@@ -490,6 +490,16 @@ func (g *Game) initSync() {
 			onUpdated: nil,
 		}
 	}
+
+	// Pyramid bat crash: ([$7EF2DB] | 0x20)
+	g.overworld[0x5B].onUpdated = func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+		if initial&0x20 == 0 && updated&0x20 == 0x20 {
+			if g.local.OverworldArea == 0x5B {
+				a.Comment("create pyramid hole:")
+				a.JSL(g.romFunctions[fnOverworldCreatePyramidHole])
+			}
+		}
+	}
 }
 
 type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool
