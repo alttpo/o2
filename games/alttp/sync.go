@@ -478,6 +478,7 @@ func (g *Game) initSync() {
 			isEnabled: &g.SyncUnderworld,
 			names:     nil,
 			onUpdated: nil,
+			mask:      0xFF,
 		}
 	}
 	// overworld areas:
@@ -488,6 +489,7 @@ func (g *Game) initSync() {
 			isEnabled: &g.SyncUnderworld,
 			names:     nil,
 			onUpdated: nil,
+			mask:      0xFF,
 		}
 	}
 
@@ -537,6 +539,7 @@ type syncableBitU8 struct {
 	offset    uint16
 	isEnabled *bool
 	names     []string
+	mask      uint8
 
 	onUpdated syncableBitU8OnUpdated
 }
@@ -548,6 +551,7 @@ func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string, on
 		isEnabled: enabled,
 		names:     names,
 		onUpdated: onUpdated,
+		mask:      0xFF,
 	}
 	g.syncableItems[offset] = s
 	return s
@@ -568,6 +572,7 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	updated := initial
 	for _, p := range g.ActivePlayers() {
 		v := p.SRAM[offset]
+		v &= s.mask
 		newBits := v & ^updated
 		if newBits != 0 {
 			k := uint8(1)
