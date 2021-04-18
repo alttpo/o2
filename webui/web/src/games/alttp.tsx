@@ -9,6 +9,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncProgress, setsyncProgress] = useState(true);
     const [syncHearts, setsyncHearts] = useState(true);
     const [syncSmallKeys, setsyncSmallKeys] = useState(true);
+
+    const [showASM, set_showASM] = useState(false);
     const [code, set_code] = useState('A9038F59F37E');
 
     useEffect(() => {
@@ -30,12 +32,18 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             <input type="checkbox"
                    id="syncItems"
                    checked={syncItems}
-                   onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}/>
-            Sync Items
+                   onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}
+            />Sync Items
         </label>
 
         <div class="grid-c2">
-            <label for="asm">Custom ASM:</label>
+            <label for="showASM">
+                <input type="checkbox"
+                       id="showASM"
+                       checked={showASM}
+                       onChange={e => set_showASM((e.target as HTMLInputElement).checked)}
+                />Custom ASM
+            </label>
         </div>
 
         <label class="grid-c1" for="syncDungeonItems"
@@ -43,38 +51,43 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             <input type="checkbox"
                    id="syncDungeonItems"
                    checked={syncDungeonItems}
-                   onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}/>
-            Sync Dungeon Items
+                   onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}
+            />Sync Dungeon Items
         </label>
 
-        <textarea class="grid-c2-1" id="asm" cols={40} rows={1} value={code}
-            onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
-        <button class="grid-c2-2" onClick={e => sendGameCommand('asm', {code: code})}>
-            Execute
+        <textarea class="grid-c2-1" id="asm" cols={40} rows={2} value={code}
+                  style="height: 2.5em"
+                  hidden={!showASM}
+                  onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
+        <button class="grid-c2-2"
+                hidden={!showASM}
+                disabled={!vm.snes.isConnected}
+                onClick={e => sendGameCommand('asm', {code: code})}
+        >Execute
         </button>
 
         <label class="grid-c1" for="syncProgress">
             <input type="checkbox"
                    id="syncProgress"
                    checked={syncProgress}
-                   onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}/>
-            Sync Progress
+                   onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}
+            />Sync Progress
         </label>
 
         <label class="grid-c1" for="syncHearts">
             <input type="checkbox"
                    id="syncHearts"
                    checked={syncHearts}
-                   onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}/>
-            Sync Hearts
+                   onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}
+            />Sync Hearts
         </label>
 
         <label class="grid-c1" for="syncSmallKeys">
             <input type="checkbox"
                    id="syncSmallKeys"
                    checked={syncSmallKeys}
-                   onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}/>
-            Sync Small Keys
+                   onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
+            />Sync Small Keys
         </label>
     </div>;
 }
