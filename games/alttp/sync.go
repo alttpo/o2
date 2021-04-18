@@ -471,10 +471,10 @@ func (g *Game) initSync() {
 	g.initSyncableWRAM()
 
 	// underworld rooms:
-	for offs := uint16(0x000); offs < 0x250; offs+=2 {
-		g.underworld[offs>>1] = syncableBitU16{
+	for room := uint16(0x000); room < 0x128; room++ {
+		g.underworld[room] = syncableBitU16{
 			g:         g,
-			offset:    offs,
+			offset:    room<<1,
 			isEnabled: &g.SyncUnderworld,
 			names:     nil,
 			onUpdated: nil,

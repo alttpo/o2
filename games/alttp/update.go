@@ -246,9 +246,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			u := g.underworld[i].GenerateUpdate(ta)
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Code.Len()+a16.Code.Len()+10 <= 255 {
+				if ta.Code.Len()+a16.Code.Len()+a.Code.Len()+10 <= 255 {
 					a16.Append(ta)
-					updated = true
 					updated16 = true
 				}
 			}
@@ -257,8 +256,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// switch back to 8-bit mode:
 			a16.Comment("switch back to 8-bit mode:")
 			a16.SEP(0x30)
-			// commit the changes to the parent assembler:
-			a.Append(a16)
+			if a.Code.Len()+a16.Code.Len()+10 <= 255 {
+				// commit the changes to the parent assembler:
+				a.Append(a16)
+				updated = true
+			}
 		}
 	}
 
