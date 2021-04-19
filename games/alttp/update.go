@@ -133,7 +133,7 @@ func (g *Game) updateWRAM() {
 						log.Printf("write complete; enqueue read: $%06x\n", g.lastUpdateTarget)
 						g.readEnqueue(addr, 0x01, nil)
 						log.Printf("write complete; submit read\n")
-						g.readSubmit()
+						go g.readSubmit()
 					}
 				}
 			}()

@@ -74,7 +74,7 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	g.enqueueMainReads()
-	g.readSubmit()
+	go g.readSubmit()
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
 	slowbeat := time.NewTicker(500 * time.Millisecond)
@@ -100,7 +100,7 @@ func (g *Game) run() {
 			g.readMainComplete()
 			g.lastReadCompleted = time.Now()
 
-			g.readSubmit()
+			go g.readSubmit()
 			break
 
 		// wait for network message from server:
@@ -124,14 +124,14 @@ func (g *Game) run() {
 				if timeSinceRead >= time.Millisecond*512 {
 					log.Printf("fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 					g.enqueueMainReads()
-					g.readSubmit()
+					go g.readSubmit()
 				} else {
 					// read the SRAM copy for underworld and overworld:
 					g.readEnqueue(0xF5F000, 0xFE, 1) // [$F000..$F0FD]
 					g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
 					g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
 					g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
-					g.readSubmit()
+					go g.readSubmit()
 				}
 			}
 
