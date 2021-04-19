@@ -14,7 +14,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncChests, setsyncChests] = useState(true);
 
     const [showASM, set_showASM] = useState(false);
-    const [code, set_code] = useState('A9038F59F37E');
+    const [code, set_code] = useState('A903 8F59F37E');
 
     useEffect(() => {
         setsyncItems(game.syncItems);
