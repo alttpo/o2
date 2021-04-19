@@ -474,15 +474,14 @@ func (g *Game) initSync() {
 	for room := uint16(0x000); room < 0x128; room++ {
 		g.underworld[room] = syncableBitU16{
 			g:         g,
-			offset:    room<<1,
+			offset:    room << 1,
 			isEnabled: &g.SyncUnderworld,
 			names:     nil,
 			onUpdated: nil,
 			mask:      0xFFFF,
 		}
 	}
-	// desync swamp inner watergate at $7EF06A (supertile $35)
-	g.underworld[0x035].mask = 0xFF7F
+	g.setUnderworldSyncMasks()
 
 	// overworld areas:
 	for offs := uint16(0x280); offs < 0x340; offs++ {
@@ -505,6 +504,28 @@ func (g *Game) initSync() {
 			}
 		}
 	}
+}
+
+func (g *Game) setUnderworldSyncMasks() {
+	if g.SyncChests == g.lastSyncChests {
+		return
+	}
+
+	g.lastSyncChests = g.SyncChests
+
+	mask := uint16(0xFFFF)
+	if !g.SyncChests {
+		// chops off the 6 bits that sync chests/keys
+		mask = ^uint16(0x03F0)
+	}
+
+	// set the masks for all the underworld rooms:
+	for room := uint16(0x000); room < 0x128; room++ {
+		g.underworld[room].mask = mask
+	}
+
+	// desync swamp inner watergate at $7EF06A (supertile $35):
+	g.underworld[0x035].mask &= ^uint16(0x0080)
 }
 
 type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool

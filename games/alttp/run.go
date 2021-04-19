@@ -306,6 +306,8 @@ func (g *Game) frameAdvanced() {
 		p.DecTTL()
 	}
 
+	g.setUnderworldSyncMasks()
+
 	// generate any WRAM update code and send it to the SNES:
 	g.updateWRAM()
 

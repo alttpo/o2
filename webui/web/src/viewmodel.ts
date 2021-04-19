@@ -61,6 +61,7 @@ export interface GameALTTPViewModel extends GameViewModel {
     syncSmallKeys: boolean;
     syncUnderworld: boolean;
     syncOverworld: boolean;
+    syncChests: boolean;
 }
 
 export type GameViewProps = {
