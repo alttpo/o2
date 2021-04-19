@@ -75,7 +75,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 
 		// pre-emptively avoid panics in accessing players array out of bounds:
 		if header.Index >= MaxPlayers {
-			log.Printf("player index %v received in packet beyond max player count %v!\n", header.Index, MaxPlayers)
+			log.Printf("alttp: player index %v received in packet beyond max player count %v!\n", header.Index, MaxPlayers)
 			return
 		}
 
@@ -97,7 +97,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				// repoint local into the array:
 				g.local = &g.players[g.localIndex]
 				g.local.Index = g.localIndex
-				log.Printf("[%02x] %s joined\n", g.localIndex, g.local.Name)
+				log.Printf("alttp: player[%02x] %s joined\n", g.localIndex, g.local.Name)
 			}
 			return
 

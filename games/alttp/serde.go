@@ -103,7 +103,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		lastFrame -= 256
 	}
 	if nextFrame < lastFrame {
-		log.Println("discard stale frame data")
+		log.Printf("alttp: discard stale frame data (%d < %d)\n", nextFrame, lastFrame)
 		return
 	}
 	p.Frame = frame
@@ -118,7 +118,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 
 		// check bounds for message type:
 		if msgType == 0 || msgType >= MsgMaxMessageType {
-			log.Println("msgType out of bounds")
+			log.Println("alttp: msgType out of bounds")
 			// no good recourse to be able to skip over the message
 			return
 		}
@@ -429,7 +429,7 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	lastName := p.Name
 	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
 	if lastName != p.Name {
-		log.Printf("[%02x]: %s joined\n", uint8(p.Index), p.Name)
+		log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
 	}
 	return
 }

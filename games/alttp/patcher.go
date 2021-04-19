@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	preMainLen  = 8
+	preMainLen = 8
 	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
-	preMainAddr = uint32(0x708000 - preMainLen)
+	preMainAddr        = uint32(0x708000 - preMainLen)
 	preMainUpdateAAddr = uint32(0x707C00)
 	preMainUpdateBAddr = uint32(0x707E00)
 )
@@ -82,7 +82,9 @@ func (p *Patcher) Patch() (err error) {
 	const initHook = 0x1BB1D7
 	b := &bytes.Buffer{}
 	textBuf := &strings.Builder{}
-	defer func() { log.Print(textBuf.String()) }()
+	defer func() {
+		log.Print(textBuf.String())
+	}()
 
 	var a asm.Emitter
 	a.Code = b

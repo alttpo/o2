@@ -12,10 +12,8 @@ import (
 func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
 	defer func() {
 		g.readQueueLock.Unlock()
-		//log.Printf("readSubmit: readQueueLock: unlock\n")
 	}()
 
-	//log.Printf("readSubmit: readQueueLock: lock\n")
 	g.readQueueLock.Lock()
 
 	g.readQueue = append(g.readQueue, snes.Read{
@@ -58,7 +56,7 @@ func (g *Game) readSubmit() {
 			g.readResponseLock.Unlock()
 
 			if err != nil {
-				log.Println(err)
+				log.Printf("alttp: readSubmit: complete: %s\n\n", err)
 			}
 
 			// inform the main loop:
@@ -68,7 +66,7 @@ func (g *Game) readSubmit() {
 
 	err := sequence.EnqueueTo(q)
 	if err != nil {
-		log.Println(err)
+		log.Printf("alttp: readSubmit: enqueue: %s\n\n", err)
 		return
 	}
 }
@@ -127,7 +125,7 @@ func (g *Game) run() {
 				// make sure a read request is always in flight to keep our main loop running:
 				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
 				if timeSinceRead >= time.Millisecond*512 {
-					log.Printf("fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
+					log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 					g.enqueueMainReads()
 					go g.readSubmit()
 				} else {
@@ -175,7 +173,7 @@ func (g *Game) run() {
 		}
 	}
 
-	log.Println("game: run loop exited")
+	log.Println("alttp: run loop exited")
 }
 
 func (g *Game) handleSNESRead(rsp snes.Response) {
@@ -192,10 +190,10 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 
 	g.updateLock.Lock()
 	if rsp.Address == g.lastUpdateTarget {
-		log.Printf("update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+		log.Printf("alttp: update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 		if rsp.Data[0] == 0x60 {
 			// allow next update:
-			log.Printf("update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+			log.Printf("alttp: update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 			if g.updateStage == 2 {
 				g.updateStage = 0
 				g.nextUpdateA = !g.nextUpdateA
@@ -228,7 +226,7 @@ func (g *Game) readMainComplete() {
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
 	if local.Module != newModule || local.SubModule != newSubModule || local.SubSubModule != newSubSubModule {
 		log.Printf(
-			"module [%02x,%02x,%02x] -> [%02x,%02x,%02x]\n",
+			"alttp: module [%02x,%02x,%02x] -> [%02x,%02x,%02x]\n",
 			local.Module,
 			local.SubModule,
 			local.SubSubModule,
@@ -237,17 +235,21 @@ func (g *Game) readMainComplete() {
 			newSubSubModule,
 		)
 	}
-
-	local.Module = newModule
-	local.SubModule = newSubModule
-	local.SubSubModule = newSubSubModule
+	local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
 
 	inDungeon := g.wram[0x1B]
 	overworldArea := g.wramU16(0x8A)
 	dungeonRoom := g.wramU16(0xA0)
-
-	local.OverworldArea = overworldArea
-	local.DungeonRoom = dungeonRoom
+	if local.OverworldArea != overworldArea || local.DungeonRoom != dungeonRoom {
+		log.Printf(
+			"alttp: supertile[overworld,underworld]: [%04x,%04x] -> [%04x,%04x]\n",
+			local.OverworldArea,
+			local.DungeonRoom,
+			overworldArea,
+			dungeonRoom,
+		)
+	}
+	local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
 
 	// TODO: fix this calculation to be compatible with alttpo
 	inDarkWorld := uint32(0)
@@ -255,7 +257,16 @@ func (g *Game) readMainComplete() {
 		inDarkWorld = 1 << 17
 	}
 
-	local.Dungeon = g.wramU16(0x040C)
+	dungeon := g.wramU16(0x040C)
+	if local.Dungeon != dungeon {
+		log.Printf(
+			"alttp: dungeon: [%04x] -> [%04x]\n",
+			local.Dungeon,
+			dungeon,
+		)
+	}
+	local.Dungeon = dungeon
+
 	local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
 	if inDungeon != 0 {
 		local.Location |= uint32(dungeonRoom)

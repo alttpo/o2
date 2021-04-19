@@ -89,7 +89,7 @@ type Game struct {
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 	if rom == nil {
-		panic("game: rom cannot be nil")
+		panic("alttp: rom cannot be nil")
 	}
 
 	g := &Game{
@@ -134,7 +134,7 @@ func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer
 
 // Notify is called by root ViewModel
 func (g *Game) Notify(key string, value interface{}) {
-	//log.Printf("game: notify('%s', '%+v')\n", key, value)
+	//log.Printf("alttp: notify('%s', '%+v')\n", key, value)
 	switch key {
 	case "team":
 		g.local.Team = value.(uint8)
