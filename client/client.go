@@ -31,7 +31,6 @@ func (c *Client) Group() []byte    { return c.group[:] }
 func (c *Client) Hostname() string { return c.hostname }
 
 func (c *Client) SetGroup(group string) {
-	log.Printf("client: join group '%s'\n", group)
 	n := copy(c.group[:], group)
 	for ; n < 20; n++ {
 		c.group[n] = ' '

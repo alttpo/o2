@@ -61,7 +61,7 @@ func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err
 	var ok bool
 	ce, ok = v.commands[command]
 	if !ok {
-		err = fmt.Errorf("no command '%s' found", command)
+		err = fmt.Errorf("serverviewmodel: no command '%s' found", command)
 	}
 	return
 }
@@ -71,9 +71,11 @@ func (v *ServerViewModel) CommandFor(command string) (ce interfaces.Command, err
 type ServerConnectCommand struct{ v *ServerViewModel }
 
 func (ce *ServerConnectCommand) CreateArgs() interfaces.CommandArgs { return nil }
-func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
+func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 	v := ce.v
 	vm := v.root
+
+	log.Println("serverviewmodel: connect()")
 
 	defer vm.UpdateAndNotifyView()
 
@@ -85,10 +87,11 @@ func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
 	v.IsConnected = vm.client.IsConnected()
 	v.MarkDirty()
 	if err != nil {
-		log.Print(err)
+		log.Printf("serverviewmodel: %v\n", err)
 		return nil
 	}
 
+	log.Printf("client: set group '%s'\n", v.GroupName)
 	vm.client.SetGroup(v.GroupName)
 
 	return nil
@@ -96,20 +99,19 @@ func (ce *ServerConnectCommand) Execute(args interfaces.CommandArgs) error {
 
 type ServerDisconnectCommand struct{ v *ServerViewModel }
 
-func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs     { return nil }
-func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error { return ce.v.Disconnect() }
+func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs { return nil }
+func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error {
+	v := ce.v
+	vm := v.root
 
-func (v *ServerViewModel) Connect() error {
-	defer v.root.UpdateAndNotifyView()
+	log.Println("serverviewmodel: disconnect()")
 
-	v.root.ConnectServer()
-	return nil
-}
+	defer vm.UpdateAndNotifyView()
+	defer vm.serverViewModel.MarkDirty()
 
-func (v *ServerViewModel) Disconnect() error {
-	defer v.root.UpdateAndNotifyView()
+	vm.client.Disconnect()
+	vm.serverViewModel.IsConnected = vm.client.IsConnected()
 
-	v.root.DisconnectServer()
 	return nil
 }
 

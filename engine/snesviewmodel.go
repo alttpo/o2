@@ -104,7 +104,7 @@ func (v *SNESViewModel) Init() {
 			for _, dvm := range v.Drivers {
 				devices, err := dvm.namedDriver.Driver.Detect()
 				if err != nil {
-					log.Println(err)
+					log.Printf("snesviewmodel: detect: %v\n", err)
 					devices = make([]snes.DeviceDescriptor, 0)
 				}
 

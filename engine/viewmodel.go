@@ -170,11 +170,11 @@ func (vm *ViewModel) tryCreateGame() bool {
 	defer vm.UpdateAndNotifyView()
 
 	if vm.nextRom == nil {
-		log.Println("rom is nil")
+		log.Println("viewmodel: tryCreateGame: rom is nil")
 		return false
 	}
 	if vm.game != nil {
-		log.Println("stop game")
+		log.Println("viewmodel: tryCreateGame: stop game")
 		vm.game.Stop()
 		vm.game = nil
 	}
@@ -182,7 +182,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 	vm.rom = vm.nextRom
 	vm.factory = vm.nextFactory
 
-	log.Println("create new game")
+	log.Println("viewmodel: tryCreateGame: create new game")
 	vm.game = vm.factory.NewGame(vm.rom)
 
 	// provide the game with its deps:
@@ -202,7 +202,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 	}()
 
 	// start the game instance:
-	log.Println("start game")
+	log.Println("viewmodel: tryCreateGame: start game")
 	vm.game.Start()
 
 	return true
@@ -272,7 +272,7 @@ version: 1.%d
 	patcher := vm.nextFactory.Patcher(rom)
 	if err := patcher.Patch(); err != nil {
 		err = fmt.Errorf("error patching ROM: %w", err)
-		log.Println(err)
+		log.Printf("viewmodel: romselected: patcher: %v\n", err)
 		vm.setStatus(err.Error())
 		return nil
 	}
@@ -291,12 +291,10 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 		return
 	}
 
-	log.Println(pair.Device.DisplayName())
-
 	var err error
 	vm.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
 	if err != nil {
-		log.Println(err)
+		log.Printf("viewmodel: snesconnected: %v\n", err)
 		vm.setStatus("Could not connect to the SNES")
 		vm.dev = nil
 		vm.driverDevice = snes.NamedDriverDevicePair{}
@@ -332,7 +330,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	// enqueue the close operation:
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
-	log.Printf("Closing %s\n", lastDev.Device.DisplayName())
+	log.Printf("viewmodel: snesdisconnected: closing %s\n", lastDev.Device.DisplayName())
 	err := vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command: &snes.CloseCommand{},
 		Completion: func(cmd snes.Command, err error) {
@@ -350,7 +348,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	vm.UpdateAndNotifyView()
 
 	if err != nil {
-		log.Println(err)
+		log.Printf("viewmodel: snesdisconnected: enqueue closecommand: %v\n", err)
 		return
 	}
 
@@ -359,7 +357,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	if err != nil {
 		log.Println(err)
 	}
-	log.Printf("Closed %s\n", lastDev.Device.DisplayName())
+	log.Printf("viewmodel: snesdisconnected: closed device '%s'\n", lastDev.Device.DisplayName())
 
 	lastDev = snes.NamedDriverDevicePair{}
 	vm.setStatus("Disconnected from SNES")
@@ -369,23 +367,4 @@ func (vm *ViewModel) SNESDisconnected() {
 
 func (vm *ViewModel) ProvideViewNotifier(viewNotifier interfaces.ViewNotifier) {
 	vm.viewNotifier = viewNotifier
-}
-
-func (vm *ViewModel) ConnectServer() {
-	defer vm.serverViewModel.MarkDirty()
-
-	err := vm.client.Connect(vm.serverViewModel.HostName)
-	vm.client.SetGroup(vm.serverViewModel.GroupName)
-	vm.serverViewModel.IsConnected = vm.client.IsConnected()
-	if err != nil {
-		log.Print(err)
-		return
-	}
-}
-
-func (vm *ViewModel) DisconnectServer() {
-	defer vm.serverViewModel.MarkDirty()
-
-	vm.client.Disconnect()
-	vm.serverViewModel.IsConnected = vm.client.IsConnected()
 }
