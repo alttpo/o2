@@ -46,8 +46,8 @@ func (p *Patcher) Patch() (err error) {
 	// patch header to expand SRAM size:
 	hdr := &p.rom.Header
 	if hdr.RAMSize < 6 {
-		// 1024 << 6 = 65536 bytes, aka 1 full bank in $70:0000
-		hdr.RAMSize = 6
+		// 1024 << 5 = 32768 bytes, aka $70:0000-7FFF
+		hdr.RAMSize = 5
 		if err = p.rom.WriteHeader(); err != nil {
 			return
 		}
