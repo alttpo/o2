@@ -292,9 +292,10 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	}
 
 	var err error
+	log.Printf("viewmodel: snesconnected: open: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.DisplayName())
 	vm.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
 	if err != nil {
-		log.Printf("viewmodel: snesconnected: %v\n", err)
+		log.Printf("viewmodel: snesconnected: open: %v\n", err)
 		vm.setStatus("Could not connect to the SNES")
 		vm.dev = nil
 		vm.driverDevice = snes.NamedDriverDevicePair{}
@@ -309,6 +310,7 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	go func() {
 		// wait for the SNES to be closed:
 		<-vm.dev.Closed()
+		log.Printf("viewmodel: snesconnected: closed: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.DisplayName())
 		vm.SNESDisconnected()
 	}()
 
@@ -330,7 +332,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	// enqueue the close operation:
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
-	log.Printf("viewmodel: snesdisconnected: closing %s\n", lastDev.Device.DisplayName())
+	log.Printf("viewmodel: snesdisconnected: closing driver='%s', device='%s'\n", lastDev.NamedDriver.Name, lastDev.Device.DisplayName())
 	err := vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command: &snes.CloseCommand{},
 		Completion: func(cmd snes.Command, err error) {
