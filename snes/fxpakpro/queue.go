@@ -16,6 +16,8 @@ type Queue struct {
 	f serial.Port
 }
 
+// IsTerminalError is implemented in errors_unix.go and errors_windows.go
+
 func (q *Queue) Closed() <-chan struct{} {
 	return q.closed
 }

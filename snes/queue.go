@@ -27,4 +27,7 @@ type Queue interface {
 
 	// Creates a sequence of Commands which submit possibly multiple batches of write requests to the device
 	MakeWriteCommands(reqs []Write, batchComplete Completion) CommandSequence
+
+	// IsTerminalError determines if the given error should cause the underlying device to be closed
+	IsTerminalError(err error) bool
 }

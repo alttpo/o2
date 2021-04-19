@@ -24,6 +24,10 @@ type Queue struct {
 	info Info
 }
 
+func (q *Queue) IsTerminalError(err error) bool {
+	return false
+}
+
 func (q *Queue) Closed() <-chan struct{} {
 	return q.ws.closed
 }

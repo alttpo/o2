@@ -86,12 +86,11 @@ func (b *BaseQueue) handleQueue() {
 			break
 		}
 
+		terminal := false
+
 		if _, ok := cmd.(*CloseCommand); ok {
 			log.Printf("%s: processing CloseCommand\n", b.name)
-			if pair.Completion != nil {
-				go pair.Completion(cmd, err)
-			}
-			break
+			terminal = true
 		}
 		if _, ok := cmd.(*DrainQueueCommand); ok {
 			// close and recreate queue:
@@ -101,10 +100,19 @@ func (b *BaseQueue) handleQueue() {
 		}
 
 		err = cmd.Execute(q)
+		// wrap the error if it is a terminal case:
+		if err != nil && q.IsTerminalError(err) {
+			err = ErrDeviceDisconnected{err}
+			terminal = true
+		}
 		if pair.Completion != nil {
 			pair.Completion(cmd, err)
 		} else if err != nil {
 			log.Println(err)
+		}
+
+		if terminal {
+			break
 		}
 	}
 }

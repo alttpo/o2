@@ -17,6 +17,10 @@ type Queue struct {
 	frameTicker *time.Ticker
 }
 
+func (q *Queue) IsTerminalError(err error) bool {
+	return false
+}
+
 func (q *Queue) Closed() <-chan struct{} {
 	return q.closed
 }
