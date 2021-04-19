@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-const chanSize = 1
+const chanSize = 8
 
 type BaseQueue struct {
 	// driver name
