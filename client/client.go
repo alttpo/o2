@@ -31,10 +31,12 @@ func (c *Client) Group() []byte    { return c.group[:] }
 func (c *Client) Hostname() string { return c.hostname }
 
 func (c *Client) SetGroup(group string) {
+	log.Printf("client: join group '%s'\n", group)
 	n := copy(c.group[:], group)
 	for ; n < 20; n++ {
 		c.group[n] = ' '
 	}
+	log.Printf("client: actual group name '%s'\n", c.group[:])
 }
 
 func (c *Client) Write() chan<- []byte { return c.write }
@@ -43,6 +45,8 @@ func (c *Client) Read() <-chan []byte  { return c.read }
 func (c *Client) IsConnected() bool { return c.isConnected }
 
 func (c *Client) Connect(hostname string) (err error) {
+	log.Printf("client: connect to server '%s'\n", hostname)
+
 	if c.isConnected {
 		return fmt.Errorf("already connected")
 	}
@@ -60,6 +64,7 @@ func (c *Client) Connect(hostname string) (err error) {
 	}
 
 	c.isConnected = true
+	log.Printf("client: connected to server '%s'\n", hostname)
 
 	go c.readLoop()
 	go c.writeLoop()
@@ -68,6 +73,8 @@ func (c *Client) Connect(hostname string) (err error) {
 }
 
 func (c *Client) Disconnect() {
+	log.Printf("client: disconnect from server '%s'\n", c.hostname)
+
 	if !c.isConnected {
 		return
 	}
@@ -75,12 +82,12 @@ func (c *Client) Disconnect() {
 	c.isConnected = false
 	err := c.c.SetReadDeadline(time.Now())
 	if err != nil {
-		log.Print(err)
+		log.Printf("client: setreaddeadline: %v", err)
 	}
 
 	err = c.c.SetWriteDeadline(time.Now())
 	if err != nil {
-		log.Print(err)
+		log.Printf("client: setwritedeadline: %v", err)
 	}
 
 	// signal a disconnect took place:
@@ -99,8 +106,10 @@ func (c *Client) Disconnect() {
 	// close the underlying connection:
 	err = c.c.Close()
 	if err != nil {
-		log.Print(err)
+		log.Printf("client: close: %v", err)
 	}
+
+	log.Printf("client: disconnected from server '%s'\n", c.hostname)
 
 	c.c = nil
 }
@@ -114,6 +123,8 @@ func (c *Client) Close() {
 
 // must run in a goroutine
 func (c *Client) readLoop() {
+	log.Printf("client: readLoop started\n")
+
 	defer func() {
 		c.Disconnect()
 		log.Println("client disconnected; readLoop exited")
@@ -142,6 +153,8 @@ func (c *Client) readLoop() {
 
 // must run in a goroutine
 func (c *Client) writeLoop() {
+	log.Printf("client: writeLoop started\n")
+
 	defer func() {
 		c.Disconnect()
 		log.Println("client disconnected; writeLoop exited")
