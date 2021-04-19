@@ -30,7 +30,7 @@ func xlatSNEStoPak(snes uint32) uint32 {
 }
 
 func (g *Game) updateWRAM() {
-	if !g.local.Module.IsInGame() {
+	if !g.local.IsInGame() {
 		return
 	}
 

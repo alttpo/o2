@@ -224,18 +224,19 @@ func (g *Game) readMainComplete() {
 	local := g.local
 
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
-	if local.Module != newModule || local.SubModule != newSubModule || local.SubSubModule != newSubSubModule {
+	if local.Module != newModule || local.SubModule != newSubModule {
 		log.Printf(
-			"alttp: module [%02x,%02x,%02x] -> [%02x,%02x,%02x]\n",
+			"alttp: module [%02x,%02x] -> [%02x,%02x]\n",
 			local.Module,
 			local.SubModule,
-			local.SubSubModule,
 			newModule,
 			newSubModule,
-			newSubSubModule,
 		)
 	}
 	local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
+
+	// this is documented as a uint16, but we use it as a uint8
+	local.PriorModule = Module(g.wram[0x010C])
 
 	inDungeon := g.wram[0x1B]
 	overworldArea := g.wramU16(0x8A)

@@ -30,7 +30,7 @@ func (g *Game) handleReadWRAM() {
 	local := g.local
 
 	// don't sample updates when not in game:
-	if !local.Module.IsInGame() {
+	if !local.IsInGame() {
 		return
 	}
 
