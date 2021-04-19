@@ -95,7 +95,7 @@ func (g *Game) updateWRAM() {
 
 	// prevent more updates until the upcoming write completes:
 	g.updateStage = 1
-	log.Println("write started")
+	log.Println("update: write started")
 
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
@@ -120,28 +120,32 @@ func (g *Game) updateWRAM() {
 			},
 		},
 		func(cmd snes.Command, err error) {
-			go func() {
-				log.Println("write completed")
-				defer g.updateLock.Unlock()
-				g.updateLock.Lock()
-				// expect a read now to prevent double-write:
-				if g.updateStage == 1 {
-					g.updateStage = 2
-					// read the first instruction of the last update routine to check if it completed (if it's a RTS):
-					if g.lastUpdateTarget != 0xFFFFFF {
-						addr := g.lastUpdateTarget
-						log.Printf("write complete; enqueue read: $%06x\n", g.lastUpdateTarget)
-						g.readEnqueue(addr, 0x01, nil)
-						log.Printf("write complete; submit read\n")
-						go g.readSubmit()
-					}
-				}
-			}()
+			log.Println("update: write completed")
+
+			defer g.updateLock.Unlock()
+			g.updateLock.Lock()
+
+			if g.updateStage != 1 {
+				log.Printf("update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+			}
+
+			g.updateStage = 2
+			g.enqueueUpdateCheckRead()
 		},
 	).EnqueueTo(q)
 	if err != nil {
-		log.Println(fmt.Errorf("error enqueuing snes write for update routine: %w", err))
+		log.Println(fmt.Errorf("update: error enqueuing snes write for update routine: %w", err))
 		return
+	}
+}
+
+func (g *Game) enqueueUpdateCheckRead() {
+	log.Println("enqueueUpdateCheckRead")
+	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
+	addr := g.lastUpdateTarget
+	if addr != 0xFFFFFF {
+		g.readEnqueue(addr, 0x01, nil)
+		go g.readSubmit()
 	}
 }
 

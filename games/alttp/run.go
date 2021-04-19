@@ -10,7 +10,12 @@ import (
 )
 
 func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
-	defer g.readQueueLock.Unlock()
+	defer func() {
+		g.readQueueLock.Unlock()
+		//log.Printf("readSubmit: readQueueLock: unlock\n")
+	}()
+
+	//log.Printf("readSubmit: readQueueLock: lock\n")
 	g.readQueueLock.Lock()
 
 	g.readQueue = append(g.readQueue, snes.Read{
@@ -185,20 +190,23 @@ func (g *Game) handleSNESRead(rsp snes.Response) {
 		copy(g.sram[(rsp.Address-0xE00000):], rsp.Data)
 	}
 
+	g.updateLock.Lock()
 	if rsp.Address == g.lastUpdateTarget {
-		//log.Printf("check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+		log.Printf("update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 		if rsp.Data[0] == 0x60 {
 			// allow next update:
-			log.Printf("update complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
-			g.updateLock.Lock()
+			log.Printf("update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
 			if g.updateStage == 2 {
 				g.updateStage = 0
 				g.nextUpdateA = !g.nextUpdateA
 				g.lastUpdateTarget = 0xFFFFFF
 			}
-			g.updateLock.Unlock()
+		} else {
+			// check again:
+			g.enqueueUpdateCheckRead()
 		}
 	}
+	g.updateLock.Unlock()
 }
 
 func (g *Game) enqueueMainReads() {
