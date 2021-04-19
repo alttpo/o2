@@ -136,7 +136,7 @@ func (a *Emitter) EmitBytes(b []byte) {
 				s.Write([]byte{',', ' '})
 			}
 		}
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s", "db", s.String()))
+		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
 	}
 	if a.Code != nil {
 		_, _ = a.Code.Write(b)
