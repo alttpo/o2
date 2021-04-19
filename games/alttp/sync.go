@@ -661,6 +661,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.local
 	offset := s.offset
+	mask := s.mask
 
 	initial := local.sramU16(offset)
 	var receivedFrom [16]string
@@ -668,11 +669,11 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	updated := initial
 	for _, p := range g.ActivePlayers() {
 		v := p.sramU16(offset)
-		v &= s.mask
+		v &= mask
 		newBits := v & ^updated
 		if newBits != 0 {
 			k := uint16(1)
-			for i := 0; i < 8; i++ {
+			for i := 0; i < 16; i++ {
 				if newBits&k == k {
 					receivedFrom[i] = p.Name
 				}
