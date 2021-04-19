@@ -29,9 +29,9 @@ body {
 html, select, option, input:not([type=submit]) {
     color: lightgray;
     text-shadow: -1px -1px 0 #333,
-                  1px -1px 0 #333,
-                 -1px  1px 0 #333,
-                  1px  1px 0 #333;
+    1px -1px 0 #333,
+    -1px 1px 0 #333,
+    1px 1px 0 #333;
 }
 
 form {
@@ -165,7 +165,6 @@ footer {
     white-space: pre;
 }
 
-
 /* Tabbed interface: */
 
 .tabbed {
@@ -221,6 +220,7 @@ footer {
 .flex-wrap {
     display: flex;
     flex-flow: wrap;
+    position: relative;
 }
 
 .flex-1 {
@@ -247,6 +247,7 @@ footer {
     grid-row-gap: 0.1em;
     grid-column-gap: 0.2em;
 }
+
 .grid > label {
     padding-top: 6px;
     white-space: nowrap;
@@ -260,13 +261,81 @@ footer {
 .grid-c1 {
     grid-column: 1;
 }
+
 .grid-c2 {
     grid-column-start: 2;
     grid-column-end: span 2;
 }
+
 .grid-c2-1 {
     grid-column: 2;
 }
+
 .grid-c2-2 {
     grid-column: 3;
+}
+
+/* tooltips */
+.react-hint {
+    padding: 5px;
+    position: absolute;
+    z-index: 9999;
+    cursor: default;
+    animation: .5s fadeIn;
+}
+
+.react-hint__content {
+    width: 18em;
+    padding: 10px;
+    border-radius: 5px;
+    background: #000;
+    color: #fff;
+}
+
+.react-hint:after {
+    content: '';
+    width: 0;
+    height: 0;
+    margin: auto;
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 5px solid transparent;
+}
+
+.react-hint--top:after {
+    top: auto;
+    border-bottom: none;
+    border-top-color: #000;
+}
+
+.react-hint--left:after {
+    left: auto;
+    border-right: none;
+    border-left-color: #000;
+}
+
+.react-hint--right:after {
+    right: auto;
+    border-left: none;
+    border-right-color: #000;
+}
+
+.react-hint--bottom:after {
+    bottom: auto;
+    border-top: none;
+    border-bottom-color: #000;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }

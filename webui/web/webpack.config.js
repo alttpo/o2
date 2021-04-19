@@ -12,6 +12,10 @@ module.exports = {
                 exclude: /node_modules/,
                 use: 'ts-loader',
             },
+            {
+                test: /\.css$/i,
+                use: ["style-loader", "css-loader"],
+            },
         ],
     },
     watchOptions: {

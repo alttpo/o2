@@ -1,6 +1,12 @@
 import 'preact/debug';
-import {Fragment, render} from "preact";
+import {Component, createRef, Fragment, h, render} from "preact";
 import {StateUpdater, useState} from "preact/hooks";
+
+// @ts-ignore
+import ReactHintFactory from 'react-hint'
+const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})
+// NOTE: copied into r/css.css
+//import 'react-hint/css/index.css'
 
 import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
 import SNESView from "./snesview";
@@ -148,6 +154,7 @@ const App = () => {
                     <a style="float:right" href="/log.txt">Download Logs</a>
                 </section>
             </footer>
+            <ReactHint autoPosition events />
         </Fragment>
     );
 }
