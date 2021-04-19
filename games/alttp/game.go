@@ -96,7 +96,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		rom:              rom,
 		running:          false,
 		stopped:          make(chan struct{}),
-		readComplete:     make(chan []snes.Response, 4),
+		readComplete:     make(chan []snes.Response, 256),
 		romFunctions:     make(map[romFunction]uint32),
 		lastUpdateTarget: 0xFFFFFF,
 		// ViewModel:
