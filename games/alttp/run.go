@@ -33,6 +33,7 @@ func (g *Game) readSubmit() {
 	// clear the queue:
 	g.readQueue = nil
 	g.readQueueLock.Unlock()
+
 	if len(readQueue) == 0 {
 		return
 	}

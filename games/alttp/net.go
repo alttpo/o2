@@ -87,7 +87,6 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
-			log.Println("requestIndex response")
 			if (g.localIndex < 0) || (g.localIndex != g.local.Index) {
 				g.localIndex = int(header.Index)
 				// copy local player data into players array at the appropriate index:
@@ -98,7 +97,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				// repoint local into the array:
 				g.local = &g.players[g.localIndex]
 				g.local.Index = g.localIndex
-				log.Printf("local.index = %d\n", g.localIndex)
+				log.Printf("[%02x] %s joined\n", g.localIndex, g.local.Name)
 			}
 			return
 
