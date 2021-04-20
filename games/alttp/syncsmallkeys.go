@@ -101,7 +101,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 		// Force our local timestamp equal to the remote winner to prevent the value bouncing back:
 		lw.Timestamp = ww.Timestamp
-		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- '%s'\n", offs, lw.Timestamp, ww.Value, winner.Name)
+		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name)
 
 		dungeonNumber := offs - smallKeyFirst
 		a.Comment(fmt.Sprintf("update %s small keys from %s", dungeonNammes[dungeonNumber], winner.Name))
