@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "watch": "webpack --watch",
-    "build": "webpack"
+    "build": "webpack",
+    "production": "webpack --env production"
   },
   "dependencies": {
     "htm": "^3.0.4",

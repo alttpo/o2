@@ -24,7 +24,7 @@ jobs:
         go-version: 1.16
 
     - run: cd webui/web && npm ci
-    - run: cd webui/web && npm run build
+    - run: cd webui/web && npm run production
 
     - run: go get github.com/go-bindata/go-bindata/v3/go-bindata@v3.1.3
     - name: Run GoReleaser
