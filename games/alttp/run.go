@@ -56,7 +56,7 @@ func (g *Game) readSubmit() {
 			g.readResponseLock.Unlock()
 
 			if err != nil {
-				log.Printf("alttp: readSubmit: complete: %s\n\n", err)
+				log.Printf("alttp: readSubmit: complete: %s\n", err)
 			}
 
 			// inform the main loop:
@@ -66,7 +66,7 @@ func (g *Game) readSubmit() {
 
 	err := sequence.EnqueueTo(q)
 	if err != nil {
-		log.Printf("alttp: readSubmit: enqueue: %s\n\n", err)
+		log.Printf("alttp: readSubmit: enqueue: %s\n", err)
 		return
 	}
 }
