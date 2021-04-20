@@ -65,7 +65,7 @@ the patched ROM and manually send it to your SNES device.">Patched ROM:&nbsp;3ï¸
             <div style="display: table-cell; height: 8em">
                 <span style="position: absolute; bottom: 0">
 O2 requires a ROM to be selected here so it knows what game you're playing.{' '}
-O2 requires that the ROM you play on your SNES to be patched specifically for O2 support.{' '}
+O2 requires that the ROM you play on your SNES to be patched for O2 support.{' '}
 O2 automatically patches your "Input ROM" for you.{' '}
 Use either the "Boot" button to upload the patched ROM to your SD2SNES / FX Pak Pro{' '}
 or use the "Download" button and manually open the patched ROM in your emulator.

@@ -97,9 +97,9 @@ Devices are auto-detected every 2 seconds for each driver."
                         <span style="position: absolute; bottom: 0">
 <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">QUsb2Snes</a>{' '}
 is required for connecting to an emulator. Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}
-follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch">here</a>.{' '}
+follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
 <strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
-For SD2SNES / FX Pak Pro, use the <a href="https://github.com/alttpo/o2/tree/main/content/fxpakpro/firmware">
+For SD2SNES / FX Pak Pro, use the <a href="https://github.com/alttpo/o2/tree/main/content/fxpakpro/firmware" target="_blank">
 recommended firmware</a>.
                         </span>
                     </div>
