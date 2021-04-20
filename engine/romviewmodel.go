@@ -2,8 +2,11 @@ package engine
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"o2/interfaces"
 	"o2/snes"
+	"path/filepath"
 )
 
 type ROMViewModel struct {
@@ -17,6 +20,48 @@ type ROMViewModel struct {
 	Title    string `json:"title"`
 	Region   string `json:"region"`
 	Version  string `json:"version"`
+}
+
+type ROMConfiguration struct {
+	Name     string `json:"name"` // filename loaded from (no path)
+}
+
+func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
+	if config == nil {
+		log.Printf("romviewmodel: loadConfiguration: no config\n")
+		return
+	}
+
+	if config.Name == "" {
+		log.Printf("romviewmodel: loadConfiguration: no rom name to load\n")
+		return
+	}
+
+	var err error
+	err = v.NameProvided(&ROMNameCommandArgs{Name: config.Name})
+	if err != nil {
+		log.Printf("romviewmodel: loadConfiguration: NameProvided command failed: %v\n", err)
+		return
+	}
+
+	dir, err := interfaces.ConfigDir()
+	if err != nil {
+		log.Printf("romviewmodel: loadConfiguration: NameProvided command failed: %v\n", err)
+		return
+	}
+
+	path := filepath.Join(dir, "roms", config.Name)
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Printf("romviewmodel: loadConfiguration: ReadFile('%s') failed: %v\n", path, err)
+		return
+	}
+
+	err = v.DataProvided(b)
+	if err != nil {
+		log.Printf("romviewmodel: loadConfiguration: DataProvided command failed: %v\n", err)
+		return
+	}
 }
 
 func (v *ROMViewModel) Update() {

@@ -1,12 +1,15 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"o2/client"
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
+	"path/filepath"
 	"sync"
 )
 
@@ -94,6 +97,42 @@ func (vm *ViewModel) Init() {
 			i.Init()
 		}
 	}
+
+	vm.LoadConfiguration()
+}
+
+func (vm *ViewModel) LoadConfiguration() bool {
+	// load saved config:
+	dir, err := interfaces.ConfigDir()
+	if err != nil {
+		log.Printf("viewmodel: could not find configuration directory: %v\n", err)
+		return false
+	}
+	path := filepath.Join(dir, "config.json")
+
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Printf("viewmodel: could not find read configuration file: %v\n", err)
+		return false
+	}
+
+	var config struct {
+		SNES   *SNESConfiguration   `json:"snes"`
+		ROM    *ROMConfiguration    `json:"rom"`
+		Server *ServerConfiguration `json:"server"`
+		// NOTE: cannot load Game config as it is not instantiated until a ROM is loaded.
+	}
+	err = json.Unmarshal(b, &config)
+	if err != nil {
+		log.Printf("viewmodel: could not json unmarshal configuration file: %v\n", err)
+		return false
+	}
+
+	vm.snesViewModel.LoadConfiguration(config.SNES)
+	vm.romViewModel.LoadConfiguration(config.ROM)
+	vm.serverViewModel.LoadConfiguration(config.Server)
+
+	return true
 }
 
 // updates all view models:

@@ -20,6 +20,38 @@ type ServerViewModel struct {
 	PlayerName  string `json:"playerName"`
 }
 
+type ServerConfiguration struct {
+	HostName   string `json:"hostName"`
+	GroupName  string `json:"groupName"`
+	Team       uint8  `json:"team"`
+	PlayerName string `json:"playerName"`
+}
+
+func (v *ServerViewModel) LoadConfiguration(config *ServerConfiguration) {
+	if config == nil {
+		log.Printf("serverviewmodel: loadConfiguration: no config\n")
+		return
+	}
+
+	args := &setFieldArgs{
+		HostName:   new(string),
+		GroupName:  new(string),
+		Team:       new(uint8),
+		PlayerName: new(string),
+	}
+	*args.HostName = config.HostName
+	*args.GroupName = config.GroupName
+	*args.Team = config.Team
+	*args.PlayerName = config.PlayerName
+
+	cmd := setFieldCmd{v}
+	err := cmd.Execute(args)
+	if err != nil {
+		log.Printf("serverviewmodel: loadConfiguration: setField command failed: %v\n", err)
+		return
+	}
+}
+
 func (v *ServerViewModel) Update() {
 	game := v.root.game
 	if game != nil {

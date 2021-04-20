@@ -35,6 +35,54 @@ type DriverViewModel struct {
 	IsConnected bool `json:"isConnected"`
 }
 
+type SNESConfiguration struct {
+	Driver string `json:"driver"`
+	Device string `json:"device"`
+}
+
+func (v *SNESViewModel) LoadConfiguration(config *SNESConfiguration) {
+	if config == nil {
+		log.Printf("snesviewmodel: loadConfiguration: no config\n")
+		return
+	}
+
+	// Init() has already been called
+	var devices []snes.DeviceDescriptor
+	for _, d := range v.Drivers {
+		if d.Name == config.Driver {
+			devices = d.devices
+			break
+		}
+	}
+	if devices == nil {
+		log.Printf("snesviewmodel: loadConfiguration: driver '%s' not found\n", config.Driver)
+		return
+	}
+
+	device := 0
+	for dvi, dv := range devices {
+		if dv.DisplayName() == config.Device {
+			device = dvi + 1
+			break
+		}
+	}
+
+	if device == 0 {
+		log.Printf("snesviewmodel: loadConfiguration: driver '%s' device '%s' not found\n", config.Driver, config.Device)
+		return
+	}
+
+	// connect to driver and device:
+	err := v.Connect(&ConnectCommandArgs{
+		Driver: config.Driver,
+		Device: device,
+	})
+	if err != nil {
+		log.Printf("snesviewmodel: loadConfiguration: error connecting to driver '%s' device '%s': %v\n", config.Driver, config.Device, err)
+		return
+	}
+}
+
 func NewSNESViewModel(c *ViewModel) *SNESViewModel {
 	v := &SNESViewModel{c: c}
 
