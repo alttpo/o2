@@ -8,25 +8,26 @@ import (
 )
 
 const smallKeyFirst = uint16(0xF37C)
+const smallKeyLast = uint16(0xF38B)
 
-// initSyncableWRAM called from Reset():
-func (g *Game) initSyncableWRAM() {
+// initSmallKeysSync called from Reset():
+func (g *Game) initSmallKeysSync() {
 	local := g.local
-	local.WRAM = make(map[uint16]*SyncableWRAM)
 
-	for offs := smallKeyFirst; offs < smallKeyFirst+0x10; offs++ {
+	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
 		local.WRAM[offs] = &SyncableWRAM{
+			Name:      fmt.Sprintf("%s small keys", dungeonNammes[offs-smallKeyFirst]),
+			Size:      1,
 			Timestamp: 0,
 			Value:     uint16(g.wram[offs]),
+			ValueUsed: uint16(g.wram[offs]),
 		}
 	}
 
-	// don't set timestamp on first read:
-	g.firstKeysRead = true
 }
 
-// handleReadWRAM called when WRAM is read from SNES:
-func (g *Game) handleReadWRAM() {
+// readWRAM called when WRAM is read from SNES:
+func (g *Game) readWRAM() {
 	local := g.local
 
 	// don't sample updates when not in game:
@@ -38,18 +39,25 @@ func (g *Game) handleReadWRAM() {
 	now := time.Now()
 	nowTs := uint32(now.UnixNano() / 1e6)
 
+	// read in all WRAM syncables:
 	for offs, w := range local.WRAM {
-		v := uint16(g.wram[offs])
+		var v uint16
+		if w.Size == 2 {
+			v = g.wramU16(uint32(offs))
+		} else {
+			v = uint16(g.wramU8(uint32(offs)))
+		}
 		if v != w.Value {
-			if !g.firstKeysRead {
+			if g.notFirstWRAMRead {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
 			w.ValueUsed = v
-			log.Printf("alttp: keys[$%04x] -> %08x, %02x\n", offs, w.Timestamp, w.Value)
+			log.Printf("alttp: wram[$%04x] -> %08x, %04x   ; %s\n", offs, w.Timestamp, w.Value, w.Name)
 		}
 	}
 
+	// Small Keys:
 	if local.IsInDungeon() {
 		dungeonNumber := local.Dungeon
 		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
@@ -58,16 +66,14 @@ func (g *Game) handleReadWRAM() {
 			currentKeyCount := uint16(g.wram[0xF36F])
 			w := local.WRAM[dungeonOffs]
 			if currentKeyCount != w.ValueUsed {
-				if !g.firstKeysRead {
+				if g.notFirstWRAMRead {
 					w.Timestamp = nowTs
 				}
 				w.ValueUsed = currentKeyCount
-				log.Printf("alttp: keys[$%04x] -> %08x, %02x ** current key counter\n", dungeonOffs, w.Timestamp, w.ValueUsed)
+				log.Printf("alttp: wram[$%04x] -> %08x, %04x   ; current key counter\n", dungeonOffs, w.Timestamp, w.ValueUsed)
 			}
 		}
 	}
-
-	g.firstKeysRead = false
 }
 
 func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
@@ -75,7 +81,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 	local := g.local
 
 	// compare timestamps amongst players:
-	for offs := range local.WRAM {
+	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
 		// find latest timestamp among players:
 		winner := local
 		for _, p := range g.ActivePlayers() {
@@ -104,7 +110,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name)
 
 		dungeonNumber := offs - smallKeyFirst
-		a.Comment(fmt.Sprintf("update %s small keys from %s", dungeonNammes[dungeonNumber], winner.Name))
+		a.Comment(fmt.Sprintf("update %s from %s", lw.Name, winner.Name))
 		a.LDA_imm8_b(uint8(ww.Value))
 		a.STA_long(0x7E0000 + uint32(offs))
 

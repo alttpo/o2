@@ -2,7 +2,6 @@ package alttp
 
 import (
 	"encoding/binary"
-	"hash/fnv"
 	"log"
 	"o2/client/protocol02"
 	"o2/snes"
@@ -82,6 +81,12 @@ func (g *Game) run() {
 	fastbeat := time.NewTicker(120 * time.Millisecond)
 	slowbeat := time.NewTicker(500 * time.Millisecond)
 
+	defer func() {
+		fastbeat.Stop()
+		slowbeat.Stop()
+		log.Println("alttp: run loop exited")
+	}()
+
 	for g.running {
 		select {
 		// wait for reads to complete:
@@ -113,6 +118,10 @@ func (g *Game) run() {
 				g.Reset()
 				break
 			}
+			if !g.IsRunning() {
+				return
+			}
+
 			err := g.handleNetMessage(msg)
 			if err != nil {
 				break
@@ -121,6 +130,10 @@ func (g *Game) run() {
 
 		// periodically send basic messages to the server to maintain our connection:
 		case <-fastbeat.C:
+			if !g.IsRunning() {
+				return
+			}
+
 			if g.queue != nil {
 				// make sure a read request is always in flight to keep our main loop running:
 				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
@@ -151,6 +164,10 @@ func (g *Game) run() {
 			break
 
 		case <-slowbeat.C:
+			if !g.IsRunning() {
+				return
+			}
+
 			if g.localIndex < 0 {
 				break
 			}
@@ -172,8 +189,6 @@ func (g *Game) run() {
 			break
 		}
 	}
-
-	log.Println("alttp: run loop exited")
 }
 
 func (g *Game) handleSNESRead(rsp snes.Response) {
@@ -211,11 +226,14 @@ func (g *Game) enqueueMainReads() {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0, 0) // $0010-$00FF
-	g.readEnqueue(0xF50100, 0x36, 0) // $0100-$0136
-	g.readEnqueue(0xF50400, 0x20, 0) // $0400-$041F
+	g.readEnqueue(0xF50010, 0xF0, 0) // [$0010..$00FF]
+	g.readEnqueue(0xF50100, 0x36, 0) // [$0100..$0136]
+	g.readEnqueue(0xF50400, 0x20, 0) // [$0400..$041F]
+	// $068E[2] and $0690[2] for controlling doors
+	g.readEnqueue(0xF5068E, 0x04, 0) // [$068E..$0691]
+	g.readEnqueue(0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
-	g.readEnqueue(0xF5F340, 0xF0, 0) // $F340-$F42F
+	g.readEnqueue(0xF5F340, 0xF0, 0) // [$F340..$F42F]
 }
 
 // called when all reads are completed:
@@ -261,7 +279,7 @@ func (g *Game) readMainComplete() {
 	dungeon := g.wramU16(0x040C)
 	if local.Dungeon != dungeon {
 		log.Printf(
-			"alttp: dungeon: [%04x] -> [%04x]\n",
+			"alttp: dungeon: %#04x -> %#04x\n",
 			local.Dungeon,
 			dungeon,
 		)
@@ -289,7 +307,9 @@ func (g *Game) readMainComplete() {
 	// copy $7EF000-4FF into `local.SRAM`:
 	copy(local.SRAM[:], g.wram[0xF000:0xF500])
 
-	g.handleReadWRAM()
+	// handle WRAM reads:
+	g.readWRAM()
+	g.notFirstWRAMRead = true
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
@@ -323,108 +343,17 @@ func (g *Game) wramU16(addr uint32) uint16 {
 
 // called when the local game frame advances:
 func (g *Game) frameAdvanced() {
-	local := g.local
-
+	// tick down TTLs of remote players:
 	for _, p := range g.ActivePlayers() {
 		p.DecTTL()
 	}
 
+	// update underworld supertile state sync bit masks based on sync toggles from front-end:
 	g.setUnderworldSyncMasks()
 
 	// generate any WRAM update code and send it to the SNES:
 	g.updateWRAM()
 
-	// don't send out any updates until we're connected:
-	if g.localIndex < 0 {
-		return
-	}
-
-	{
-		// send location packet every frame:
-		m := g.makeGamePacket(protocol02.Broadcast)
-
-		locStart := m.Len()
-		if err := SerializeLocation(local, m); err != nil {
-			panic(err)
-		}
-
-		// hash the location packet:
-		locHash := hash64(m.Bytes()[locStart:])
-		if g.locHashTTL > 0 {
-			g.locHashTTL--
-		}
-		if locHash != g.locHash || g.locHashTTL <= 0 {
-			// only send if different or TTL of last packet expired:
-			g.send(m)
-			g.locHashTTL = 60
-			g.locHash = locHash
-		}
-	}
-
-	{
-		// small keys update:
-		m := g.makeGamePacket(protocol02.Broadcast)
-		if err := SerializeWRAM(local, m); err != nil {
-			panic(err)
-		}
-		g.send(m)
-	}
-
-	if g.monotonicFrameTime&15 == 0 {
-		// Broadcast items and progress SRAM:
-		m := g.makeGamePacket(protocol02.Broadcast)
-		if m != nil {
-			// items earned
-			if err := SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
-				panic(err)
-			}
-			// progress made
-			if err := SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
-				panic(err)
-			}
-
-			// TODO: more ranges depending on ROM kind
-
-			// VT randomizer:
-			//serialize(r, 0x340, 0x390); // items earned
-			//serialize(r, 0x390, 0x3C5); // item limit counters
-			//serialize(r, 0x3C5, 0x43A); // progress made
-
-			// Door randomizer:
-			//serialize(r, 0x340, 0x390); // items earned
-			//serialize(r, 0x390, 0x3C5); // item limit counters
-			//serialize(r, 0x3C5, 0x43A); // progress made
-			//serialize(r, 0x4C0, 0x4CD); // chests
-			//serialize(r, 0x4E0, 0x4ED); // chest-keys
-
-			g.send(m)
-		}
-	}
-
-	if g.SyncUnderworld && g.monotonicFrameTime&31 == 0 {
-		// dungeon rooms
-		m := g.makeGamePacket(protocol02.Broadcast)
-		err := SerializeSRAM(g.local, m, 0x000, 0x250)
-		if err != nil {
-			panic(err)
-		}
-		g.send(m)
-	}
-
-	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
-		// overworld events; heart containers, overlays
-		m := g.makeGamePacket(protocol02.Broadcast)
-		err := SerializeSRAM(g.local, m, 0x280, 0x340)
-		if err != nil {
-			panic(err)
-		}
-		g.send(m)
-	}
-
-}
-
-func hash64(b []byte) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write(b)
-	return h.Sum64()
+	// send out any network updates:
+	g.sendPackets()
 }

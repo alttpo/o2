@@ -206,10 +206,15 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 	if g.SyncOverworld {
 		for i := range g.overworld {
+			s := &g.overworld[i]
+			if !s.IsEnabled() {
+				return false
+			}
+
 			// clone the assembler to a temporary:
 			ta := a.Clone()
 			// generate the update asm routine in the temporary assembler:
-			u := g.overworld[i].GenerateUpdate(ta)
+			u := s.GenerateUpdate(ta)
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Code.Len()+a.Code.Len()+10 <= 255 {
@@ -220,18 +225,46 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 	}
 
-	if g.SyncUnderworld {
+	{
 		updated16 := false
 		// clone to a temporary assembler for 16-bit mode:
 		a16 := a.Clone()
 		// switch to 16-bit mode:
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
-		for i := range g.underworld {
+
+		// sync all the underworld supertile state:
+		if g.SyncUnderworld {
+			for i := range g.underworld {
+				s := &g.underworld[i]
+				if !s.IsEnabled() {
+					return false
+				}
+
+				// clone the assembler to a temporary:
+				ta := a16.Clone()
+				// generate the update asm routine in the temporary assembler:
+				u := s.GenerateUpdate(ta)
+				if u {
+					// don't emit the routine if it pushes us over the code size limit:
+					if ta.Code.Len()+a16.Code.Len()+a.Code.Len()+10 <= 255 {
+						a16.Append(ta)
+						updated16 = true
+					}
+				}
+			}
+		}
+
+		// sync any other u16 data:
+		for _, s := range g.syncableBitU16 {
+			if !s.IsEnabled() {
+				return false
+			}
+
 			// clone the assembler to a temporary:
 			ta := a16.Clone()
 			// generate the update asm routine in the temporary assembler:
-			u := g.underworld[i].GenerateUpdate(ta)
+			u := s.GenerateUpdate(ta)
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Code.Len()+a16.Code.Len()+a.Code.Len()+10 <= 255 {
@@ -240,6 +273,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				}
 			}
 		}
+
+		// append to the current assembler:
 		if updated16 {
 			// switch back to 8-bit mode:
 			a16.Comment("switch back to 8-bit mode:")

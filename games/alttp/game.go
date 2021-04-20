@@ -45,7 +45,7 @@ type Game struct {
 	readComplete chan []snes.Response
 
 	lastReadCompleted time.Time
-	firstKeysRead     bool
+	notFirstWRAMRead  bool
 
 	nextUpdateA      bool
 	updateLock       sync.Mutex
@@ -61,9 +61,10 @@ type Game struct {
 	wram [0x20000]byte
 	sram [0x10000]byte
 
-	syncableItems map[uint16]SyncableItem
-	underworld    [0x128]syncableBitU16
-	overworld     [0xC0]syncableBitU8
+	syncableItems  map[uint16]SyncableItem
+	underworld     [0x128]syncableBitU16
+	overworld      [0xC0]syncableBitU8
+	syncableBitU16 map[uint16]*syncableBitU16
 
 	romFunctions map[romFunction]uint32
 
@@ -160,12 +161,15 @@ func (g *Game) Reset() {
 	// create a temporary Player instance until we get our Index assigned from the server:
 	g.localIndex = -1
 	g.local = &Player{g: g, Index: -1}
+	local := g.local
+	local.WRAM = make(map[uint16]*SyncableWRAM)
+
 	// preserve last-set info:
 	serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
 	if ok && serverViewModelIntf != nil {
 		serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
-		g.local.Name = serverViewModel.PlayerName
-		g.local.Team = serverViewModel.Team
+		local.Name = serverViewModel.PlayerName
+		local.Team = serverViewModel.Team
 	}
 
 	// initialize WRAM to non-zero values:

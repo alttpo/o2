@@ -40,6 +40,19 @@ type SyncableItem interface {
 func (g *Game) initSync() {
 	// reset map:
 	g.syncableItems = make(map[uint16]SyncableItem)
+	g.syncableBitU16 = make(map[uint16]*syncableBitU16)
+
+	// don't set WRAM timestamps on first read from SNES:
+	g.notFirstWRAMRead = false
+
+	// WRAM offsets for small keys, crystal switches, etc:
+	g.initSmallKeysSync()
+	g.local.WRAM[0x0400] = &SyncableWRAM{
+		Name:      "current dungeon supertile state",
+		Size:      2,
+		Timestamp: 0,
+		Value:     0xFFFF,
+	}
 
 	// define syncable items:
 	g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
@@ -467,18 +480,125 @@ func (g *Game) initSync() {
 		return true
 	})
 
-	// WRAM offsets for small keys, crystal switches, etc:
-	g.initSyncableWRAM()
+	openDoor := func(asm *asm.Emitter, initial, updated uint16) bool {
+		// must only be in dungeon module:
+		if !g.local.IsDungeon() {
+			return false
+		}
+		if g.local.SubModule != 0 {
+			return false
+		}
+
+		// only pay attention to the door bits changing:
+		initial &= 0xF000
+		updated &= 0xF000
+		if initial == updated {
+			return false
+		}
+
+		// determine which door opened (or the first door that opened if multiple?):
+		b := uint16(0x8000)
+		k := uint32(0)
+		for ; k < 4; k++ {
+			if updated&b != 0 {
+				break
+			}
+			b >>= 1
+		}
+
+		// emit some asm to open this door locally:
+		k2 := k << 1
+		doorTilemapAddr := g.wramU16(0x19A0+k2) >> 1
+		doorType := g.wramU16(0x19C0 + k2)
+		kind := ""
+		switch doorType & 3 {
+		case 0: // up
+			doorTilemapAddr += 0x81
+			kind = "UP"
+			break
+		case 1: // down
+			doorTilemapAddr += 0x42
+			kind = "DOWN"
+			break
+		case 2: // left
+			doorTilemapAddr += 0x42
+			kind = "LEFT"
+			break
+		case 3: // right
+			doorTilemapAddr += 0x42
+			kind = "RIGHT"
+			break
+		}
+
+		asm.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
+		asm.REP(0x30)
+		asm.LDA_imm16_w(doorTilemapAddr)
+		asm.STA_abs(0x068E)
+		asm.LDA_imm16_w(0x0008) // TODO: confirm this value?
+		asm.STA_abs(0x0690)
+		asm.SEP(0x30)
+		// set door open submodule:
+		asm.LDA_imm8_b(0x04)
+		asm.STA_dp(0x11)
+		asm.REP(0x30)
+		return true
+	}
+
+	// sync wram[$0400] for current dungeon supertile door state:
+	g.syncableBitU16[0x0400] = &syncableBitU16{
+		g:         g,
+		offset:    0x0400,
+		isEnabled: &g.SyncUnderworld,
+		names:     nil,
+		mask:      0xFFFF,
+		// one-off to read from WRAM[] instead of SRAM[]:
+		readU16:     func(p *Player, offs uint16) uint16 { return p.WRAM[offs].ValueUsed },
+		longAddress: longAddressWRAM,
+		// filter out players not in local player's current dungeon supertile:
+		playerPredicate: func(p *Player) bool {
+			// player must be in dungeon module:
+			if !p.IsDungeon() {
+				return false
+			}
+			if p.SubModule != 0 {
+				return false
+			}
+			// player must have same dungeon supertile as local:
+			if p.DungeonRoom != g.local.DungeonRoom {
+				return false
+			}
+			return true
+		},
+		// open the local door(s):
+		onUpdated: func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16) {
+			asm.Comment("open door based on wram[$0400] bits")
+			openDoor(asm, initial, updated)
+		},
+	}
 
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {
 		g.underworld[room] = syncableBitU16{
-			g:         g,
-			offset:    room << 1,
-			isEnabled: &g.SyncUnderworld,
-			names:     nil,
-			onUpdated: nil,
-			mask:      0xFFFF,
+			g:               g,
+			offset:          room << 1,
+			isEnabled:       &g.SyncUnderworld,
+			names:           nil,
+			mask:            0xFFFF,
+			playerPredicate: playerPredicateIdentity,
+			readU16:         playerReadSRAM,
+			longAddress:     longAddressSRAM,
+			onUpdated: func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16) {
+				// local player must only be in dungeon module:
+				if !g.local.IsDungeon() {
+					return
+				}
+				// only pay attention to supertile state changes when the local player is in that supertile:
+				if s.offset>>1 != g.local.DungeonRoom {
+					return
+				}
+
+				openDoor(asm, initial, updated)
+			},
 		}
 	}
 	g.setUnderworldSyncMasks()
@@ -528,7 +648,21 @@ func (g *Game) setUnderworldSyncMasks() {
 	g.underworld[0x035].mask &= ^uint16(0x0080)
 }
 
-type syncableCustomU8Update func(s *syncableCustomU8, asm *asm.Emitter) bool
+type (
+	playerPredicate func(p *Player) bool
+	playerReadU16   func(p *Player, offs uint16) uint16
+	longAddress     func(offs uint16) uint32
+
+	syncableCustomU8Update  func(s *syncableCustomU8, asm *asm.Emitter) bool
+	syncableBitU8OnUpdated  func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
+	syncableBitU16OnUpdated func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
+	syncableMaxU8OnUpdated  func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
+)
+
+func playerPredicateIdentity(p *Player) bool       { return true }
+func playerReadSRAM(p *Player, offs uint16) uint16 { return p.sramU16(offs) }
+func longAddressSRAM(offs uint16) uint32           { return 0x7EF000 + uint32(offs) }
+func longAddressWRAM(offs uint16) uint32           { return 0x7E0000 + uint32(offs) }
 
 type syncableCustomU8 struct {
 	g *Game
@@ -554,8 +688,6 @@ func (s *syncableCustomU8) Offset() uint16                       { return s.offs
 func (s *syncableCustomU8) Size() uint                           { return 1 }
 func (s *syncableCustomU8) IsEnabled() bool                      { return *s.isEnabled }
 func (s *syncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool { return s.generateUpdate(s, asm) }
-
-type syncableBitU8OnUpdated func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
 
 type syncableBitU8 struct {
 	g *Game
@@ -588,14 +720,14 @@ func (s *syncableBitU8) IsEnabled() bool { return *s.isEnabled }
 func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.local
-	offset := s.offset
+	offs := s.offset
 
-	initial := local.SRAM[offset]
+	initial := local.SRAM[offs]
 	var receivedFrom [8]string
 
 	updated := initial
 	for _, p := range g.ActivePlayers() {
-		v := p.SRAM[offset]
+		v := p.SRAM[offs]
 		v &= s.mask
 		newBits := v & ^updated
 		if newBits != 0 {
@@ -619,7 +751,7 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	//g.notifyNewItem(s.names[v])
 
-	addr := 0x7EF000 + uint32(offset)
+	longAddr := 0x7EF000 + uint32(offs)
 	newBits := updated & ^initial
 
 	if s.names != nil {
@@ -634,12 +766,12 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
 	} else {
-		asm.Comment(fmt.Sprintf("sram[$%04x] |= %#08b", offset, newBits))
+		asm.Comment(fmt.Sprintf("u8 [$%06x] |= %#08b", longAddr, newBits))
 	}
 
 	asm.LDA_imm8_b(newBits)
-	asm.ORA_long(addr)
-	asm.STA_long(addr)
+	asm.ORA_long(longAddr)
+	asm.STA_long(longAddr)
 
 	if s.onUpdated != nil {
 		s.onUpdated(s, asm, initial, updated)
@@ -647,8 +779,6 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 
 	return true
 }
-
-type syncableBitU16OnUpdated func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
 
 type syncableBitU16 struct {
 	g *Game
@@ -658,17 +788,23 @@ type syncableBitU16 struct {
 	names     []string
 	mask      uint16
 
-	onUpdated syncableBitU16OnUpdated
+	readU16         playerReadU16
+	longAddress     longAddress
+	playerPredicate playerPredicate
+	onUpdated       syncableBitU16OnUpdated
 }
 
 func (g *Game) newSyncableBitU16(offset uint16, enabled *bool, names []string, onUpdated syncableBitU16OnUpdated) *syncableBitU16 {
 	s := &syncableBitU16{
-		g:         g,
-		offset:    offset,
-		isEnabled: enabled,
-		names:     names,
-		onUpdated: onUpdated,
-		mask:      0xFFFF,
+		g:               g,
+		offset:          offset,
+		isEnabled:       enabled,
+		names:           names,
+		mask:            0xFFFF,
+		readU16:         playerReadSRAM,
+		longAddress:     longAddressSRAM,
+		playerPredicate: playerPredicateIdentity,
+		onUpdated:       onUpdated,
 	}
 	g.syncableItems[offset] = s
 	return s
@@ -681,17 +817,32 @@ func (s *syncableBitU16) IsEnabled() bool { return *s.isEnabled }
 func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.local
-	offset := s.offset
+
+	// filter out local player:
+	if !s.playerPredicate(local) {
+		return false
+	}
+
+	offs := s.offset
 	mask := s.mask
 
-	initial := local.sramU16(offset)
+	initial := s.readU16(local, offs)
 	var receivedFrom [16]string
 
 	updated := initial
 	for _, p := range g.ActivePlayers() {
-		v := p.sramU16(offset)
+		// filter out player:
+		if !s.playerPredicate(p) {
+			continue
+		}
+
+		// read player data:
+		v := s.readU16(p, offs)
 		v &= mask
+
 		newBits := v & ^updated
+
+		// attribute this bit to this player:
 		if newBits != 0 {
 			k := uint16(1)
 			for i := 0; i < 16; i++ {
@@ -713,7 +864,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	//g.notifyNewItem(s.names[v])
 
-	addr := 0x7EF000 + uint32(offset)
+	longAddr := s.longAddress(offs)
 	newBits := updated & ^initial
 
 	if s.names != nil {
@@ -728,12 +879,12 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
 	} else {
-		asm.Comment(fmt.Sprintf("sram[$%04x] |= %#08b", offset, newBits))
+		asm.Comment(fmt.Sprintf("u16[$%06x] |= %#016b", longAddr, newBits))
 	}
 
 	asm.LDA_imm16_w(newBits)
-	asm.ORA_long(addr)
-	asm.STA_long(addr)
+	asm.ORA_long(longAddr)
+	asm.STA_long(longAddr)
 
 	if s.onUpdated != nil {
 		s.onUpdated(s, asm, initial, updated)
@@ -741,8 +892,6 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 
 	return true
 }
-
-type syncableMaxU8OnUpdated func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
 type syncableMaxU8 struct {
 	g *Game

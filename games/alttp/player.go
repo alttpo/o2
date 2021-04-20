@@ -11,7 +11,13 @@ func (m Module) IsOverworld() bool {
 	return m == 0x09 || m == 0x0B
 }
 
+func (m Module) IsDungeon() bool {
+	return m == 0x07
+}
+
 type SyncableWRAM struct {
+	Name      string
+	Size      uint8
 	Timestamp uint32
 	Value     uint16
 	ValueUsed uint16
