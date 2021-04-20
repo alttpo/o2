@@ -71,7 +71,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 }
 
 export default ({ch, vm}: TopLevelProps) => {
-    return (<div style="display: table; min-width: 36em; width: 100%">
+    return (<div style="display: table; min-width: 36em; width: 100%; height: 100%">
         <div style="display: table-row; height: 100%;">
             <div style="display: table-cell">
                 <div style="display: grid; grid-template-columns: 1fr 3fr 1fr;">
@@ -91,15 +91,15 @@ Devices are auto-detected every 2 seconds for each driver."
         {
             (vm.snes?.drivers?.some(value => value.name == "qusb2snes"))
                 ? <div style="display: table-row; height: 100%">
-                    <div style="display: table-cell; height: 5em">
-                        <span style="position: absolute; bottom: 0">
+                    <div style="display: table-cell">
+                        <div>
 <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">QUsb2Snes</a>{' '}
 is only required when connecting to an emulator. Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}
 follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
 <strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
 For SD2SNES / FX Pak Pro, use the <a href="https://github.com/alttpo/o2/tree/main/content/fxpakpro/firmware" target="_blank">
 recommended firmware</a>.
-                        </span>
+                        </div>
                     </div>
                 </div>
                 : <Fragment/>

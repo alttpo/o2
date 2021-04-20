@@ -16,8 +16,8 @@ export default ({ch, vm}: TopLevelProps) => {
         e.currentTarget.form.reset();
     }
 
-    return (<div style="display: table; min-width: 28em; width: 100%">
-        <div class="grid" style="display: table-row; height: 100%">
+    return (<div style="display: table; min-width: 28em; width: 100%; height: 100%">
+        <div style="display: table-row; height: 100%">
             <div style="display: table-cell">
                 <div class="grid">
                 <h5 class="grid-ca">
@@ -62,14 +62,14 @@ the patched ROM and manually send it to your SNES device.">Patched ROM:&nbsp;3ï¸
             </div>
         </div>
         <div style="display: table-row; height: 100%">
-            <div style="display: table-cell; height: 8em">
-                <span style="position: absolute; bottom: 0">
+            <div style="display: table-cell">
+                <div>
 O2 requires a ROM to be selected here so it knows what game you're playing.{' '}
 O2 requires that the ROM you play on your SNES to be patched for O2 support.{' '}
 O2 automatically patches your "Input ROM" for you.{' '}
 Use either the "Boot" button to upload the patched ROM to your SD2SNES / FX Pak Pro{' '}
 or use the "Download" button and manually open the patched ROM in your emulator.
-                </span>
+                </div>
             </div>
         </div>
     </div>);
