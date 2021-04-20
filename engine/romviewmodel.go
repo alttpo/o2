@@ -6,6 +6,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/snes"
+	"os"
 	"path/filepath"
 )
 
@@ -23,7 +24,7 @@ type ROMViewModel struct {
 }
 
 type ROMConfiguration struct {
-	Name     string `json:"name"` // filename loaded from (no path)
+	Name string `json:"name"` // filename loaded from (no path)
 }
 
 func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
@@ -46,7 +47,7 @@ func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
 
 	dir, err := interfaces.ConfigDir()
 	if err != nil {
-		log.Printf("romviewmodel: loadConfiguration: NameProvided command failed: %v\n", err)
+		log.Printf("romviewmodel: loadConfiguration: could not find configuration directory: %v\n", err)
 		return
 	}
 
@@ -62,6 +63,40 @@ func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
 		log.Printf("romviewmodel: loadConfiguration: DataProvided command failed: %v\n", err)
 		return
 	}
+}
+
+func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
+	if config == nil {
+		log.Printf("romviewmodel: saveConfiguration: no config\n")
+		return
+	}
+
+	if v.Name == "" {
+		config.Name = ""
+		return
+	}
+
+	dir, err := interfaces.ConfigDir()
+	if err != nil {
+		log.Printf("romviewmodel: saveConfiguration: could not find configuration directory: %v\n", err)
+		return
+	}
+
+	// save the unpatched rom:
+	dir = filepath.Join(dir, "roms")
+	err = os.MkdirAll(dir, 0644)
+	if err != nil {
+		log.Printf("romviewmodel: saveConfiguration: could not make directories along the path '%s': %v\n", dir, err)
+	}
+
+	path := filepath.Join(dir, v.Name)
+	err = ioutil.WriteFile(path, v.c.unpatchedRomContents, 0644)
+	if err != nil {
+		log.Printf("romviewmodel: saveConfiguration: could not write unpatched rom to '%s': %v\n", path, err)
+		return
+	}
+
+	config.Name = v.Name
 }
 
 func (v *ROMViewModel) Update() {
@@ -136,7 +171,12 @@ func (v *ROMViewModel) DataProvided(romImage []byte) error {
 	if err != nil {
 		return err
 	}
-	return v.c.ROMSelected(rom)
+	err = v.c.ROMSelected(rom)
+	if err != nil {
+		return err
+	}
+	v.c.SaveConfiguration()
+	return nil
 }
 
 // ROMGetDataCommand This command should only be used by the web server

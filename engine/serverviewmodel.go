@@ -52,6 +52,18 @@ func (v *ServerViewModel) LoadConfiguration(config *ServerConfiguration) {
 	}
 }
 
+func (v *ServerViewModel) SaveConfiguration(config *ServerConfiguration) {
+	if config == nil {
+		log.Printf("serverviewmodel: saveConfiguration: no config\n")
+		return
+	}
+
+	config.HostName = v.HostName
+	config.GroupName = v.GroupName
+	config.PlayerName = v.PlayerName
+	config.Team = v.Team
+}
+
 func (v *ServerViewModel) Update() {
 	game := v.root.game
 	if game != nil {
@@ -109,7 +121,10 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 
 	log.Println("serverviewmodel: connect()")
 
-	defer vm.UpdateAndNotifyView()
+	defer func() {
+		vm.UpdateAndNotifyView()
+		vm.SaveConfiguration()
+	}()
 
 	if v.IsConnected {
 		return nil
@@ -138,11 +153,12 @@ func (ce *ServerDisconnectCommand) Execute(_ interfaces.CommandArgs) error {
 
 	log.Println("serverviewmodel: disconnect()")
 
-	defer vm.UpdateAndNotifyView()
-	defer vm.serverViewModel.MarkDirty()
-
 	vm.client.Disconnect()
 	vm.serverViewModel.IsConnected = vm.client.IsConnected()
+
+	vm.serverViewModel.MarkDirty()
+	vm.UpdateAndNotifyView()
+	vm.SaveConfiguration()
 
 	return nil
 }
@@ -163,7 +179,8 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		return fmt.Errorf("invalid args type for command")
 	}
 
-	game := c.v.root.game
+	vm := c.v.root
+	game := vm.game
 
 	if f.HostName != nil {
 		c.v.HostName = *f.HostName
@@ -171,7 +188,7 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.GroupName != nil {
 		c.v.GroupName = *f.GroupName
-		client := c.v.root.client
+		client := vm.client
 		if client != nil {
 			client.SetGroup(c.v.GroupName)
 		}
@@ -192,7 +209,8 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		c.v.MarkDirty()
 	}
 
-	c.v.root.UpdateAndNotifyView()
+	vm.UpdateAndNotifyView()
+	vm.SaveConfiguration()
 
 	return nil
 }

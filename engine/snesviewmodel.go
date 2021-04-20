@@ -83,6 +83,35 @@ func (v *SNESViewModel) LoadConfiguration(config *SNESConfiguration) {
 	}
 }
 
+func (v *SNESViewModel) SaveConfiguration(config *SNESConfiguration) {
+	if config == nil {
+		log.Printf("snesviewmodel: saveConfiguration: no config\n")
+		return
+	}
+
+	var drv *DriverViewModel = nil
+	for _, d := range v.Drivers {
+		if d.IsConnected {
+			drv = d
+			break
+		}
+	}
+
+	if drv == nil {
+		config.Driver = ""
+		config.Device = ""
+		return
+	}
+
+	config.Driver = drv.Name
+	if drv.SelectedDevice == 0 {
+		config.Device = ""
+		return
+	}
+
+	config.Device = drv.Devices[drv.SelectedDevice-1]
+}
+
 func NewSNESViewModel(c *ViewModel) *SNESViewModel {
 	v := &SNESViewModel{c: c}
 

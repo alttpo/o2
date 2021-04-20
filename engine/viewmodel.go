@@ -19,14 +19,17 @@ type ViewModel struct {
 	dev          snes.Queue
 	devLock      sync.Mutex
 
-	rom     *snes.ROM
-	nextRom *snes.ROM
+	unpatchedRomContents []byte
+	rom                  *snes.ROM
+	nextRom              *snes.ROM
 
 	factory     games.Factory
 	nextFactory games.Factory
 
 	game   games.Game
 	client *client.Client
+
+	isLoadingConfig bool
 
 	// dependency that notifies view of updated view model:
 	viewNotifier interfaces.ViewNotifier
@@ -102,17 +105,28 @@ func (vm *ViewModel) Init() {
 }
 
 func (vm *ViewModel) LoadConfiguration() bool {
+	if vm.isLoadingConfig {
+		return false
+	}
+
+	defer func() {
+		vm.isLoadingConfig = false
+		log.Printf("viewmodel: loadConfiguration: loaded\n")
+	}()
+	log.Printf("viewmodel: loadConfiguration: loading...\n")
+	vm.isLoadingConfig = true
+
 	// load saved config:
 	dir, err := interfaces.ConfigDir()
 	if err != nil {
-		log.Printf("viewmodel: could not find configuration directory: %v\n", err)
+		log.Printf("viewmodel: loadConfiguration: could not find configuration directory: %v\n", err)
 		return false
 	}
 	path := filepath.Join(dir, "config.json")
 
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Printf("viewmodel: could not find read configuration file: %v\n", err)
+		log.Printf("viewmodel: loadConfiguration: could not find read configuration file: %v\n", err)
 		return false
 	}
 
@@ -124,13 +138,58 @@ func (vm *ViewModel) LoadConfiguration() bool {
 	}
 	err = json.Unmarshal(b, &config)
 	if err != nil {
-		log.Printf("viewmodel: could not json unmarshal configuration file: %v\n", err)
+		log.Printf("viewmodel: loadConfiguration: could not json unmarshal configuration file: %v\n", err)
 		return false
 	}
 
 	vm.snesViewModel.LoadConfiguration(config.SNES)
 	vm.romViewModel.LoadConfiguration(config.ROM)
 	vm.serverViewModel.LoadConfiguration(config.Server)
+
+	return true
+}
+
+func (vm *ViewModel) SaveConfiguration() bool {
+	if vm.isLoadingConfig {
+		return false
+	}
+
+	log.Printf("viewmodel: saveConfiguration: saving configuration...\n")
+
+	var config struct {
+		SNES   *SNESConfiguration   `json:"snes"`
+		ROM    *ROMConfiguration    `json:"rom"`
+		Server *ServerConfiguration `json:"server"`
+		// TODO: Game configuration
+	}
+
+	config.SNES = new(SNESConfiguration)
+	config.ROM = new(ROMConfiguration)
+	config.Server = new(ServerConfiguration)
+	vm.snesViewModel.SaveConfiguration(config.SNES)
+	vm.romViewModel.SaveConfiguration(config.ROM)
+	vm.serverViewModel.SaveConfiguration(config.Server)
+
+	b, err := json.MarshalIndent(&config, "", "  ")
+	if err != nil {
+		log.Printf("viewmodel: saveConfiguration: could not json marshal configuration file: %v\n", err)
+		return false
+	}
+
+	dir, err := interfaces.ConfigDir()
+	if err != nil {
+		log.Printf("viewmodel: saveConfiguration: could not find configuration directory: %v\n", err)
+		return false
+	}
+	path := filepath.Join(dir, "config.json")
+
+	err = ioutil.WriteFile(path, b, 0644)
+	if err != nil {
+		log.Printf("viewmodel: saveConfiguration: could not write configuration file '%s': %v\n", path, err)
+		return false
+	}
+
+	log.Printf("viewmodel: saveConfiguration: saved configuration to file '%s'\n", path)
 
 	return true
 }
@@ -307,6 +366,10 @@ version: 1.%d
 		return nil
 	}
 
+	// make a backup copy of the unpatched ROM contents for saving later:
+	vm.unpatchedRomContents = make([]byte, len(rom.Contents))
+	copy(vm.unpatchedRomContents, rom.Contents)
+
 	// attempt to patch the ROM file:
 	patcher := vm.nextFactory.Patcher(rom)
 	if err := patcher.Patch(); err != nil {
@@ -323,7 +386,10 @@ version: 1.%d
 }
 
 func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
-	defer vm.UpdateAndNotifyView()
+	defer func() {
+		vm.UpdateAndNotifyView()
+		vm.SaveConfiguration()
+	}()
 
 	if pair == vm.driverDevice && vm.dev != nil {
 		// no change
@@ -366,7 +432,10 @@ func (vm *ViewModel) SNESDisconnected() {
 		return
 	}
 
-	defer vm.UpdateAndNotifyView()
+	defer func() {
+		vm.UpdateAndNotifyView()
+		vm.SaveConfiguration()
+	}()
 
 	// enqueue the close operation:
 	snesClosed := make(chan error)
@@ -402,8 +471,6 @@ func (vm *ViewModel) SNESDisconnected() {
 
 	lastDev = snes.NamedDriverDevicePair{}
 	vm.setStatus("Disconnected from SNES")
-
-	vm.UpdateAndNotifyView()
 }
 
 func (vm *ViewModel) ProvideViewNotifier(viewNotifier interfaces.ViewNotifier) {
