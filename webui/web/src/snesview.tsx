@@ -39,7 +39,6 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const connectButton = (drv: DriverViewModel) => {
             if (drv.isConnected) {
                 return <button type="button"
-                               class="grid-c2-2"
                                title={drv.displayDescription}
                                onClick={cmdDisconnect.bind(this, drv)}>Disconnect</button>;
             } else {
@@ -53,11 +52,10 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const {name} = drv;
 
         return <Fragment key={name}>
-            <label class="grid-c1"
-                   for={`device-${name}`}
+            <label for={`device-${name}`}
+                   style="white-space: nowrap"
                    title={drv.displayDescription}>{drv.displayName} driver:</label>
             <select
-                class="grid-c2-1"
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
@@ -76,8 +74,8 @@ export default ({ch, vm}: TopLevelProps) => {
     return (<div style="display: table; min-width: 36em; width: 100%">
         <div style="display: table-row; height: 100%;">
             <div style="display: table-cell">
-                <div class="grid">
-                    <h5 class="grid-ca">
+                <div style="display: grid; grid-template-columns: 1fr 3fr 1fr;">
+                    <h5 style="grid-column: 1 / span 3">
                 <span data-rh-at="left" data-rh="Select one of the below SNES drivers to connect to your SNES device.
 Devices are auto-detected every 2 seconds for each driver."
                 >Select a SNES device:&nbsp;1️⃣</span>
@@ -96,7 +94,7 @@ Devices are auto-detected every 2 seconds for each driver."
                     <div style="display: table-cell; height: 5em">
                         <span style="position: absolute; bottom: 0">
 <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">QUsb2Snes</a>{' '}
-is required for connecting to an emulator. Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}
+is only required when connecting to an emulator. Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}
 follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
 <strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
 For SD2SNES / FX Pak Pro, use the <a href="https://github.com/alttpo/o2/tree/main/content/fxpakpro/firmware" target="_blank">

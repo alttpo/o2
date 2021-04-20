@@ -151,7 +151,9 @@ const App = () => {
             <footer>
                 <section class="rounded darken padded-lr squeeze">
                     <span>{viewModel.status}</span>
-                    <a style="float:right" href="/log.txt">Download Logs</a>
+                    <span style="float:right">
+                        <a href="/log.txt">Download Logs</a>
+                    </span>
                 </section>
             </footer>
             <ReactHint autoPosition events />
