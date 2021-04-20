@@ -84,7 +84,7 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 
 	// save the unpatched rom:
 	dir = filepath.Join(dir, "roms")
-	err = os.MkdirAll(dir, 0644)
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		log.Printf("romviewmodel: saveConfiguration: could not make directories along the path '%s': %v\n", dir, err)
 	}

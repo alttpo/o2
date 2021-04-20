@@ -9,6 +9,7 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -181,6 +182,12 @@ func (vm *ViewModel) SaveConfiguration() bool {
 		log.Printf("viewmodel: saveConfiguration: could not find configuration directory: %v\n", err)
 		return false
 	}
+
+	err = os.MkdirAll(dir, 0755)
+	if err != nil {
+		log.Printf("viewmodel: saveConfiguration: could not make directories along the path '%s': %v\n", dir, err)
+	}
+
 	path := filepath.Join(dir, "config.json")
 
 	err = ioutil.WriteFile(path, b, 0644)
