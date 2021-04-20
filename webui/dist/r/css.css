@@ -19,11 +19,30 @@ html, select, option, button, input {
 
 body {
     margin: 0;
+    height: 100vh;
     background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(/r/bg.png);
     background-color: black;
     background-position: center top;
     background-repeat: repeat-y;
     background-size: cover;
+}
+
+#app {
+    height: 100%;
+}
+
+#main-wrapper {
+    min-height: calc(100% - 2em);
+}
+
+footer {
+    height: 2em;
+    width: 100%;
+}
+
+header {
+    margin-top: 4px;
+    width: 100%;
 }
 
 html, select, option, input:not([type=submit]) {
@@ -123,17 +142,6 @@ h4 {
 h5, h6 {
     font-size: 1.25rem;
     margin-bottom: 0.5rem;
-}
-
-header {
-    margin-top: 4px;
-    width: 100%;
-}
-
-footer {
-    position: fixed;
-    bottom: 0;
-    width: 100%;
 }
 
 .squeeze {

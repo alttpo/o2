@@ -4,16 +4,14 @@ import {StateUpdater, useState} from "preact/hooks";
 
 // @ts-ignore
 import ReactHintFactory from 'react-hint'
-const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})
-// NOTE: copied into r/css.css
-//import 'react-hint/css/index.css'
-
 import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
 import SNESView from "./snesview";
 import ROMView from "./romview";
 import ServerView from "./serverview";
 import GameView from "./gameview";
 import {JSXInternal} from "preact/src/jsx";
+
+const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})
 import TargetedEvent = JSXInternal.TargetedEvent;
 
 interface ViewModelUpdate {
@@ -120,34 +118,37 @@ const App = () => {
 
     return (
         <Fragment>
-            <header>
-                <section class="rounded darken padded squeeze">
-                    <h1>O2{
-                        (viewModel.game.isCreated) ? " - " + viewModel.game.gameName : ""
-                    }</h1>
-                </section>
-            </header>
-            <section class="squeeze">
-                <div class="flex-wrap">
-                    <div class="content flex-1">
-                        <SNESView ch={ch} vm={viewModel}/>
-                    </div>
-
-                    <div class="content flex-1">
-                        <ROMView ch={ch} vm={viewModel}/>
-                    </div>
-
-                    <div class="content flex-1">
-                        <ServerView ch={ch} vm={viewModel}/>
-                    </div>
-
-                    {viewModel.game.isCreated && (
+            <div id="main-wrapper">
+                <header>
+                    <section class="rounded darken padded squeeze">
+                        <h1>O2{
+                            (viewModel.game.isCreated) ? " - " + viewModel.game.gameName : ""
+                        }</h1>
+                    </section>
+                </header>
+                <section class="squeeze">
+                    <div class="flex-wrap">
                         <div class="content flex-1">
-                            <GameView ch={ch} vm={viewModel}/>
+                            <SNESView ch={ch} vm={viewModel}/>
                         </div>
-                    )}
-                </div>
-            </section>
+
+                        <div class="content flex-1">
+                            <ROMView ch={ch} vm={viewModel}/>
+                        </div>
+
+                        <div class="content flex-1">
+                            <ServerView ch={ch} vm={viewModel}/>
+                        </div>
+
+                        {viewModel.game.isCreated && (
+                            <div class="content flex-1">
+                                <GameView ch={ch} vm={viewModel}/>
+                            </div>
+                        )}
+                    </div>
+                </section>
+                <ReactHint autoPosition events/>
+            </div>
             <footer>
                 <section class="rounded darken padded-lr squeeze">
                     <span>{viewModel.status}</span>
@@ -156,7 +157,6 @@ const App = () => {
                     </span>
                 </section>
             </footer>
-            <ReactHint autoPosition events />
         </Fragment>
     );
 }
