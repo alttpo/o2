@@ -188,7 +188,9 @@ func (g *Game) Start() {
 	g.Reset()
 
 	go func() {
+		// run the game loop:
 		g.run()
+
 		// notify that the game is stopped:
 		close(g.stopped)
 	}()
@@ -199,7 +201,11 @@ func (g *Game) Stopped() <-chan struct{} {
 }
 
 func (g *Game) Stop() {
+	// signal to stop the game:
 	g.running = false
+
+	// wait until stopped:
+	<-g.stopped
 }
 
 func (g *Game) ActivePlayers() []*Player {

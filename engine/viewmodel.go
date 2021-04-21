@@ -281,7 +281,6 @@ func (vm *ViewModel) tryCreateGame() bool {
 	if vm.game != nil {
 		log.Println("viewmodel: tryCreateGame: stop game")
 		vm.game.Stop()
-		vm.game = nil
 	}
 
 	vm.rom = vm.nextRom
@@ -435,6 +434,9 @@ func (vm *ViewModel) SNESDisconnected() {
 	vm.devLock.Lock()
 
 	if vm.dev == nil {
+		if vm.game != nil {
+			vm.game.ProvideQueue(nil)
+		}
 		vm.driverDevice = snes.NamedDriverDevicePair{}
 		return
 	}
