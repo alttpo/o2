@@ -312,10 +312,12 @@ func (g *Game) readMainComplete() {
 }
 
 func (g *Game) wramU8(addr uint32) uint8 {
+	addr &= 0x01FFFF
 	return g.wram[addr]
 }
 
 func (g *Game) wramU16(addr uint32) uint16 {
+	addr &= 0x01FFFF
 	return binary.LittleEndian.Uint16(g.wram[addr : addr+2])
 }
 

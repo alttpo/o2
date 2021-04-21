@@ -79,6 +79,9 @@ func (p *Player) DecTTL() {
 }
 
 func (p *Player) sramU16(offset uint16) uint16 {
+	if offset >= 0x500 {
+		return 0xFFFF
+	}
 	return binary.LittleEndian.Uint16(p.SRAM[offset : offset+2])
 }
 
