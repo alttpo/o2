@@ -242,6 +242,42 @@ func (r *ROM) RAMSize() uint32 {
 	return 1024 << r.Header.RAMSize
 }
 
+// This is all for LoROM mapping:
+
+func (r *ROM) BusAddressToPC(busAddr uint32) uint32 {
+	page := busAddr & 0xFFFF
+	if page < 0x8000 {
+		return 0xFFFFFF
+	}
+
+	bank := busAddr >> 16
+	pcAddr := (bank << 15) | (page - 0x8000)
+	return pcAddr
+}
+
+func (r *ROM) U8(busAddr uint32) uint8 {
+	page := busAddr & 0xFFFF
+	if page < 0x8000 {
+		return 0xFF
+	}
+
+	bank := busAddr >> 16
+	pcAddr := (bank << 15) | (page - 0x8000)
+	return r.Contents[pcAddr]
+}
+
+func (r *ROM) U16(busAddr uint32) uint16 {
+	page := busAddr & 0xFFFF
+	if page < 0x8000 {
+		return 0xFFFF
+	}
+
+	bank := busAddr >> 16
+	pcAddr := (bank << 15) | (page - 0x8000)
+	// subtly wrong if crossing a page boundary
+	return binary.LittleEndian.Uint16(r.Contents[pcAddr : pcAddr+2])
+}
+
 type alwaysError struct{}
 
 func (alwaysError) Read(p []byte) (int, error) {
