@@ -49,7 +49,7 @@ func (d *Driver) DisplayDescription() string {
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
-	return DeviceDescriptor{
+	return &DeviceDescriptor{
 		Port: "",
 		Baud: &(baudRates[0]),
 	}
@@ -75,7 +75,11 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		//log.Printf("   USB serial %s\n", port.SerialNumber)
 
 		if port.SerialNumber == "DEMO00000000" {
-			devices = append(devices, DeviceDescriptor{
+			devices = append(devices, &DeviceDescriptor{
+				snes.DeviceDescriptorBase{
+					Id:          port.Name,
+					DisplayName: port.Name,
+				},
 				port.Name,
 				nil,
 				port.VID,
@@ -91,7 +95,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 	var err error
 
-	dd := ddg.(DeviceDescriptor)
+	dd := ddg.(*DeviceDescriptor)
 	portName := dd.Port
 	if portName == "" {
 		ddgs, err := d.Detect()
@@ -101,7 +105,7 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 
 		// pick first device found, if any:
 		if len(ddgs) > 0 {
-			portName = ddgs[0].(DeviceDescriptor).Port
+			portName = ddgs[0].(*DeviceDescriptor).Port
 		}
 	}
 	if portName == "" {

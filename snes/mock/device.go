@@ -3,16 +3,17 @@ package mock
 import "o2/snes"
 
 type DeviceDescriptor struct {
+	snes.DeviceDescriptorBase
 }
 
-func (m DeviceDescriptor) Equals(other snes.DeviceDescriptor) bool {
-	_, ok := other.(DeviceDescriptor)
-	if !ok {
-		return false
-	}
-	return true
+func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
+	return &d.DeviceDescriptorBase
 }
 
-func (m DeviceDescriptor) DisplayName() string {
+func (d *DeviceDescriptor) GetId() string {
+	return "mock"
+}
+
+func (d *DeviceDescriptor) GetDisplayName() string {
 	return "Mock"
 }

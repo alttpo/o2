@@ -6,20 +6,19 @@ import (
 )
 
 type DeviceDescriptor struct {
-	Port string
-	Baud *int
-	VID  string
-	PID  string
+	snes.DeviceDescriptorBase
+	Port string `json:"port"`
+	Baud *int   `json:"baud"`
+	VID  string `json:"vid"`
+	PID  string `json:"pid"`
 }
 
-func (d DeviceDescriptor) Equals(other snes.DeviceDescriptor) bool {
-	otherd, ok := other.(DeviceDescriptor)
-	if !ok {
-		return false
-	}
-	return d.Port == otherd.Port
+func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
+	return &d.DeviceDescriptorBase
 }
 
-func (d DeviceDescriptor) DisplayName() string {
+func (d *DeviceDescriptor) GetId() string { return d.Port }
+
+func (d *DeviceDescriptor) GetDisplayName() string {
 	return fmt.Sprintf("%s (%s:%s)", d.Port, d.VID, d.PID)
 }

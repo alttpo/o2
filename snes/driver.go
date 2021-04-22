@@ -6,11 +6,28 @@ import (
 	"sync"
 )
 
-// A struct that contains fields used to uniquely identify a device
-type DeviceDescriptor interface {
-	DisplayName() string
+// DeviceDescriptorBase MUST be embedded in all structs implementing DeviceDescriptor
+type DeviceDescriptorBase struct {
+	Id          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
 
-	Equals(other DeviceDescriptor) bool
+// DeviceDescriptor MUST embed DeviceDescriptorBase and MAY contain extra fields used to uniquely identify a device
+type DeviceDescriptor interface {
+	// Base is used to fetch the DeviceDescriptorBase embedded in implementing structs
+	Base() *DeviceDescriptorBase
+
+	// GetId value is copied to the Id field of DeviceDescriptorBase
+	GetId() string
+	// GetDisplayName value is copied to the DisplayName field of DeviceDescriptorBase
+	GetDisplayName() string
+}
+
+// MarshalDeviceDescriptor MUST be called to keep DeviceDescriptor in consistent state for marshaling
+func MarshalDeviceDescriptor(device DeviceDescriptor) DeviceDescriptor {
+	device.Base().Id = device.GetId()
+	device.Base().DisplayName = device.GetDisplayName()
+	return device
 }
 
 type Driver interface {
@@ -20,7 +37,7 @@ type Driver interface {
 	// Detect any present devices
 	Detect() ([]DeviceDescriptor, error)
 
-	// Returns a descriptor with all fields empty or defaulted
+	// Empty Returns a descriptor with all fields empty or defaulted
 	Empty() DeviceDescriptor
 }
 

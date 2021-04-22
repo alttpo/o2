@@ -31,12 +31,12 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Queue, error) {
 
 func (d *Driver) Detect() ([]snes.DeviceDescriptor, error) {
 	return []snes.DeviceDescriptor{
-		DeviceDescriptor{},
+		&DeviceDescriptor{},
 	}, nil
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
-	return DeviceDescriptor{}
+	return &DeviceDescriptor{}
 }
 
 func init() {

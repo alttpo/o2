@@ -148,7 +148,7 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 		return
 	}
 
-	//log.Printf("qusb2snes: ReadCommandResponse: NextFrame(%s)\n", name)
+	//log.Printf("qusb2snes: ReadCommandResponse: NextFrame(%s)\n", Name)
 	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	hdr, err := w.r.NextFrame()
 	if err != nil {
@@ -167,7 +167,7 @@ func (w *WebSocketClient) ReadCommandResponse(name string, rsp *qusbResult) (err
 		return
 	}
 
-	//log.Printf("qusb2snes: Decode(%s)\n", name)
+	//log.Printf("qusb2snes: Decode(%s)\n", Name)
 	w.ws.SetReadDeadline(time.Now().Add(timeout))
 	err = w.decoder.Decode(rsp)
 	if err != nil {

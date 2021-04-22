@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"o2/interfaces"
@@ -29,8 +30,8 @@ type DriverViewModel struct {
 	DisplayDescription string `json:"displayDescription"`
 	DisplayOrder       int    `json:"displayOrder"`
 
-	Devices        []string `json:"devices"`
-	SelectedDevice int      `json:"selectedDevice"`
+	Devices        []snes.DeviceDescriptor `json:"devices"`
+	SelectedDevice string                  `json:"selectedDevice"`
 
 	IsConnected bool `json:"isConnected"`
 }
@@ -47,40 +48,30 @@ func (v *SNESViewModel) LoadConfiguration(config *SNESConfiguration) {
 	}
 
 	// Init() has already been called
-	var devices []snes.DeviceDescriptor
-	for _, d := range v.Drivers {
-		if d.Name == config.Driver {
-			devices = d.devices
-			break
-		}
-	}
-	if devices == nil {
+	dvm := v.FindNamedDriver(config.Driver)
+	if dvm == nil {
 		log.Printf("snesviewmodel: loadConfiguration: driver '%s' not found\n", config.Driver)
 		return
 	}
 
-	device := 0
-	for dvi, dv := range devices {
-		if dv.DisplayName() == config.Device {
-			device = dvi + 1
+	var device snes.DeviceDescriptor
+	for _, dv := range dvm.Devices {
+		if dv.GetId() == config.Device {
+			device = dv
 			break
 		}
 	}
-
-	if device == 0 {
+	if device == nil {
 		log.Printf("snesviewmodel: loadConfiguration: driver '%s' device '%s' not found\n", config.Driver, config.Device)
 		return
 	}
 
 	// connect to driver and device:
-	err := v.Connect(&ConnectCommandArgs{
-		Driver: config.Driver,
-		Device: device,
+	dvm.SelectedDevice = device.GetId()
+	v.c.SNESConnected(snes.NamedDriverDevicePair{
+		NamedDriver: dvm.namedDriver,
+		Device:      device,
 	})
-	if err != nil {
-		log.Printf("snesviewmodel: loadConfiguration: error connecting to driver '%s' device '%s': %v\n", config.Driver, config.Device, err)
-		return
-	}
 }
 
 func (v *SNESViewModel) SaveConfiguration(config *SNESConfiguration) {
@@ -104,12 +95,7 @@ func (v *SNESViewModel) SaveConfiguration(config *SNESConfiguration) {
 	}
 
 	config.Driver = drv.Name
-	if drv.SelectedDevice == 0 {
-		config.Device = ""
-		return
-	}
-
-	config.Device = drv.Devices[drv.SelectedDevice-1]
+	config.Device = drv.SelectedDevice
 }
 
 func NewSNESViewModel(c *ViewModel) *SNESViewModel {
@@ -164,12 +150,12 @@ func (v *SNESViewModel) Init() {
 			dvm.DisplayDescription = dv.Name + " driver"
 		}
 
-		dvm.Devices = make([]string, len(devices))
-		for j := 0; j < len(devices); j++ {
-			dvm.Devices[j] = devices[j].DisplayName()
+		dvm.Devices = make([]snes.DeviceDescriptor, len(devices))
+		for i, dv := range devices {
+			dvm.Devices[i] = snes.MarshalDeviceDescriptor(dv)
 		}
 
-		dvm.SelectedDevice = 0
+		dvm.SelectedDevice = ""
 		dvm.IsConnected = false
 	}
 
@@ -191,7 +177,7 @@ func (v *SNESViewModel) Init() {
 				} else {
 					// check if all devices are equivalent:
 					for i := 0; i < len(devices); i++ {
-						if !devices[i].Equals(dvm.devices[i]) {
+						if devices[i].GetId() != dvm.devices[i].GetId() {
 							replace = true
 							break
 						}
@@ -204,10 +190,11 @@ func (v *SNESViewModel) Init() {
 
 				// swap out the array and recreate the view models:
 				dvm.devices = devices
-				dvm.Devices = make([]string, len(devices))
-				for j := 0; j < len(devices); j++ {
-					dvm.Devices[j] = devices[j].DisplayName()
+				dvm.Devices = make([]snes.DeviceDescriptor, len(devices))
+				for i, dv := range devices {
+					dvm.Devices[i] = snes.MarshalDeviceDescriptor(dv)
 				}
+
 				needUpdate = true
 			}
 
@@ -224,7 +211,7 @@ func (v *SNESViewModel) Update() {
 	for _, dvm := range v.Drivers {
 		dvm.IsConnected = v.c.IsConnectedToDriver(dvm.namedDriver)
 		if !dvm.IsConnected {
-			dvm.SelectedDevice = 0
+			dvm.SelectedDevice = ""
 		}
 	}
 
@@ -243,8 +230,8 @@ func (v *SNESViewModel) CommandFor(command string) (ce interfaces.Command, err e
 
 type ConnectCommandExecutor struct{ v *SNESViewModel }
 type ConnectCommandArgs struct {
-	Driver string `json:"driver"`
-	Device int    `json:"device"`
+	Driver string          `json:"driver"`
+	Device json.RawMessage `json:"device"`
 }
 
 func (c *ConnectCommandExecutor) CreateArgs() interfaces.CommandArgs { return &ConnectCommandArgs{} }
@@ -254,8 +241,30 @@ func (c *ConnectCommandExecutor) Execute(args interfaces.CommandArgs) error {
 
 func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 	driverName := args.Driver
-	deviceIndex := args.Device - 1
 
+	dvm := v.FindNamedDriver(driverName)
+	if dvm == nil {
+		return fmt.Errorf("snes driver not found by name '%s'", driverName)
+	}
+
+	// unmarshal the json:
+	device := dvm.namedDriver.Driver.Empty()
+	err := json.Unmarshal(args.Device, device)
+	if err != nil {
+		return fmt.Errorf("snes could not unmarshal device json: %w", err)
+	}
+
+	dvm.SelectedDevice = device.GetId()
+
+	v.c.SNESConnected(snes.NamedDriverDevicePair{
+		NamedDriver: dvm.namedDriver,
+		Device:      device,
+	})
+
+	return nil
+}
+
+func (v *SNESViewModel) FindNamedDriver(driverName string) *DriverViewModel {
 	var dvm *DriverViewModel = nil
 	for _, dvm = range v.Drivers {
 		if driverName != dvm.Name {
@@ -264,21 +273,7 @@ func (v *SNESViewModel) Connect(args *ConnectCommandArgs) error {
 
 		break
 	}
-	if dvm == nil {
-		return fmt.Errorf("driver not found by name")
-	}
-
-	if deviceIndex < 0 || deviceIndex >= len(dvm.devices) {
-		return fmt.Errorf("device index out of range")
-	}
-	dvm.SelectedDevice = deviceIndex + 1
-
-	v.c.SNESConnected(snes.NamedDriverDevicePair{
-		NamedDriver: dvm.namedDriver,
-		Device:      dvm.devices[deviceIndex],
-	})
-
-	return nil
+	return dvm
 }
 
 type DisconnectCommandExecutor struct{ v *SNESViewModel }

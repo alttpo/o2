@@ -31,7 +31,7 @@ func (d *Driver) DisplayDescription() string {
 }
 
 func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
-	dev, ok := desc.(DeviceDescriptor)
+	dev, ok := desc.(*DeviceDescriptor)
 	if !ok {
 		err = fmt.Errorf("desc is not of expected type")
 		return
@@ -39,7 +39,7 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 
 	qu := &Queue{
 		d:          d,
-		deviceName: dev.name,
+		deviceName: dev.Name,
 	}
 
 	err = NewWebSocketClient(&qu.ws, "ws://localhost:8080/", RandomName("o2"))
@@ -70,7 +70,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	if d.opened != nil {
 		devices = d.detected
 		if devices == nil {
-			devices = []snes.DeviceDescriptor{DeviceDescriptor{name: "Auto-detection disabled when connected"}}
+			devices = []snes.DeviceDescriptor{&DeviceDescriptor{Name: "Auto-detection disabled when connected"}}
 		}
 		return
 	}
@@ -122,7 +122,13 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	// make the device list:
 	devices = make([]snes.DeviceDescriptor, 0, len(list.Results))
 	for _, name := range list.Results {
-		devices = append(devices, DeviceDescriptor{name})
+		devices = append(devices, &DeviceDescriptor{
+			snes.DeviceDescriptorBase{
+				Id:          name,
+				DisplayName: name,
+			},
+			name,
+		})
 	}
 
 	d.detected = devices
@@ -131,7 +137,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 }
 
 func (d *Driver) Empty() snes.DeviceDescriptor {
-	return DeviceDescriptor{}
+	return &DeviceDescriptor{}
 }
 
 func init() {

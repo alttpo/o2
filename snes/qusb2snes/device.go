@@ -3,17 +3,18 @@ package qusb2snes
 import "o2/snes"
 
 type DeviceDescriptor struct {
-	name string
+	snes.DeviceDescriptorBase
+	Name string `json:"name"`
 }
 
-func (m DeviceDescriptor) Equals(other snes.DeviceDescriptor) bool {
-	_, ok := other.(DeviceDescriptor)
-	if !ok {
-		return false
-	}
-	return true
+func (m *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
+	return &m.DeviceDescriptorBase
 }
 
-func (m DeviceDescriptor) DisplayName() string {
-	return m.name
+func (m *DeviceDescriptor) GetId() string {
+	return m.Name
+}
+
+func (m *DeviceDescriptor) GetDisplayName() string {
+	return m.Name
 }
