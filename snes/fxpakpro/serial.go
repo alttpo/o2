@@ -22,7 +22,11 @@ func sendSerialProgress(f serial.Port, buf []byte, batchSize int, report func(se
 	total := len(buf)
 	for sent < total {
 		report(sent, total)
-		n, e := f.Write(buf[sent:sent+batchSize])
+		end := sent+batchSize
+		if end > total {
+			end = total
+		}
+		n, e := f.Write(buf[sent:end])
 		if e != nil {
 			return e
 		}
