@@ -58,7 +58,7 @@ func readU24(r io.Reader) (value uint32, err error) {
 	if err = binary.Read(r, binary.LittleEndian, &valueHi); err != nil {
 		return
 	}
-	value = uint32(valueLo) | (uint32(valueHi) << 16)
+	value = uint32(valueLo) | (uint32(valueHi) << 8)
 	return
 }
 
