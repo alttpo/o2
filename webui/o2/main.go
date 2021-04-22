@@ -43,9 +43,8 @@ func orElse(a, b string) string {
 	return a
 }
 
-func main() {
-	var err error
-
+// init is called first before all other package inits so it is best to set up log here:
+func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
 	ts := time.Now().Format("2006-01-02T15:04:05.000Z")
@@ -59,6 +58,10 @@ func main() {
 	} else {
 		log.Printf("could not open log file '%s' for writing\n", logPath)
 	}
+}
+
+func main() {
+	var err error
 
 	// Parse env vars:
 	listenHost = os.Getenv("O2_WEB_LISTEN_HOST")
