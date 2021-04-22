@@ -21,8 +21,8 @@ var dungeonNammes = []string{
 	"Gargoyle's Domain", // $387
 	"Turtle Rock",       // $388
 	"Ganon's Tower",     // $389
-	"",
-	"",
+	"Extra Dungeon 1",   // $38A unused
+	"Extra Dungeon 2",   // $38B unused
 }
 
 type SyncableItem interface {
