@@ -38,3 +38,5 @@ alttpo-patcher
 /webui/o2/bindata_debug.go
 content/*.mp4
 content/*.zip
+webui/o2/o2
+debug/
