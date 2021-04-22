@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
+	"net"
 	"o2/interfaces"
 )
 
@@ -130,7 +131,14 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 		return nil
 	}
 
-	err := vm.client.Connect(v.HostName, 4590)
+	hostport := fmt.Sprintf("%s:%d", v.HostName, 4590)
+	addr, err := net.ResolveUDPAddr("udp", hostport)
+	if err != nil {
+		log.Printf("serverviewmodel: %v\n", err)
+		return err
+	}
+
+	err = vm.client.Connect(addr)
 	v.IsConnected = vm.client.IsConnected()
 	v.MarkDirty()
 	if err != nil {

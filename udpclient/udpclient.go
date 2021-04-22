@@ -12,13 +12,11 @@ type UDPClient struct {
 	name string
 
 	c *net.UDPConn
+	addr     *net.UDPAddr
 
 	isConnected bool
 	read        chan []byte
 	write       chan []byte
-
-	hostname string
-	port     uint16
 }
 
 func NewUDPClient(name string) *UDPClient {
@@ -36,37 +34,29 @@ func MakeUDPClient(name string, c *UDPClient) *UDPClient {
 	return c
 }
 
-func (c *UDPClient) Hostname() string { return c.hostname }
-func (c *UDPClient) Port() uint16     { return c.port }
+func (c *UDPClient) Address() *net.UDPAddr { return c.addr }
 
 func (c *UDPClient) Write() chan<- []byte { return c.write }
 func (c *UDPClient) Read() <-chan []byte  { return c.read }
 
 func (c *UDPClient) IsConnected() bool { return c.isConnected }
 
-func (c *UDPClient) Connect(hostname string, port uint16) (err error) {
-	log.Printf("%s: connect to server '%s'\n", c.name, hostname)
+func (c *UDPClient) Connect(addr *net.UDPAddr) (err error) {
+	log.Printf("%s: connect to server '%s'\n", c.name, addr)
 
 	if c.isConnected {
 		return fmt.Errorf("%s: already connected", c.name)
 	}
 
-	c.hostname = hostname
-	c.port = port
+	c.addr = addr
 
-	hostport := fmt.Sprintf("%s:%d", hostname, port)
-	raddr, err := net.ResolveUDPAddr("udp", hostport)
-	if err != nil {
-		return
-	}
-
-	c.c, err = net.DialUDP("udp", nil, raddr)
+	c.c, err = net.DialUDP("udp", nil, addr)
 	if err != nil {
 		return
 	}
 
 	c.isConnected = true
-	log.Printf("%s: connected to server '%s'\n", c.name, hostname)
+	log.Printf("%s: connected to server '%s'\n", c.name, addr)
 
 	go c.readLoop()
 	go c.writeLoop()
@@ -75,7 +65,7 @@ func (c *UDPClient) Connect(hostname string, port uint16) (err error) {
 }
 
 func (c *UDPClient) Disconnect() {
-	log.Printf("%s: disconnect from server '%s'\n", c.name, c.hostname)
+	log.Printf("%s: disconnect from server '%s'\n", c.name, c.addr)
 
 	if !c.isConnected {
 		return
@@ -111,7 +101,7 @@ func (c *UDPClient) Disconnect() {
 		log.Printf("%s: close: %v\n", c.name, err)
 	}
 
-	log.Printf("%s: disconnected from server '%s'\n", c.name, c.hostname)
+	log.Printf("%s: disconnected from server '%s'\n", c.name, c.addr)
 
 	c.c = nil
 }
