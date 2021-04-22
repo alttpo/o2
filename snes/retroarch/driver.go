@@ -16,6 +16,9 @@ const driverName = "retroarch"
 
 type Driver struct {
 	detectors []*RAClient
+
+	devices []snes.DeviceDescriptor
+	opened  *Queue
 }
 
 func NewDriver(addresses []*net.UDPAddr) *Driver {
@@ -45,14 +48,38 @@ func (d *Driver) DisplayDescription() string {
 	return "Connect to a RetroArch emulator"
 }
 
-func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Queue, error) {
-	c := &Queue{}
-	c.BaseInit(driverName, c)
-	c.Init()
-	return c, nil
+func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
+	descriptor, ok := desc.(*DeviceDescriptor)
+	if !ok {
+		return nil, fmt.Errorf("retroarch: open: descriptor is not of expected type")
+	}
+
+	// find detector with same address:
+	//descriptor.addr
+	_ = descriptor
+
+	qu := &Queue{c: nil}
+	qu.BaseInit(driverName, qu)
+	qu.Init()
+
+	q = qu
+
+	// record that this device is opened:
+	d.opened = qu
+	go func() {
+		<-q.Closed()
+		d.opened = nil
+	}()
+
+	return
 }
 
 func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
+	if d.opened != nil {
+		devices = d.devices
+		return
+	}
+
 	devices = make([]snes.DeviceDescriptor, 0, len(d.detectors))
 	for i, detector := range d.detectors {
 		if !detector.IsConnected() {
@@ -64,15 +91,14 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 			}
 		}
 
-		request := []byte("READ_CORE_RAM 40FFC0 32\x00")
-		log.Printf("%s: write %s\n", detector.addr, string(request))
+		// issue a sample read:
+		request := []byte("READ_CORE_RAM 40FFC0 32\n")
+		log.Printf("%s: < %s", detector.addr, string(request))
 		err = detector.WriteTimeout(request, time.Second)
 		if err != nil {
 			err = nil
 			continue
 		}
-
-		log.Printf("%s: read\n", detector.addr)
 
 		var rsp []byte
 		rsp, err = detector.ReadTimeout(time.Second)
@@ -84,17 +110,24 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 			continue
 		}
 
-		log.Printf("%s: %s\n", detector.addr, string(rsp))
-
 		descriptor := &DeviceDescriptor{
 			DeviceDescriptorBase: snes.DeviceDescriptorBase{},
 			addr:                 detector.addr,
+		}
+
+		rsps := string(rsp)
+		log.Printf("%s: > %s", detector.addr, rsps)
+		if rsps == "READ_CORE_RAM 40ffc0 -1\n" {
+			descriptor.IsGameLoaded = false
+		} else {
+			descriptor.IsGameLoaded = true
 		}
 
 		snes.MarshalDeviceDescriptor(descriptor)
 		devices = append(devices, descriptor)
 	}
 
+	d.devices = devices
 	err = nil
 	return
 }

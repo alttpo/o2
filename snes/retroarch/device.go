@@ -10,6 +10,8 @@ type DeviceDescriptor struct {
 	snes.DeviceDescriptorBase
 
 	addr *net.UDPAddr
+
+	IsGameLoaded bool `json:"isGameLoaded"`
 }
 
 func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {

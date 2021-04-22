@@ -3,6 +3,8 @@ package retroarch
 import (
 	"fmt"
 	"o2/snes"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -11,10 +13,8 @@ type Queue struct {
 
 	closed chan struct{}
 
-	wram    [0x20000]byte
-	nothing [0x100]byte
-
-	frameTicker *time.Ticker
+	c    *RAClient
+	lock sync.Mutex
 }
 
 func (q *Queue) IsTerminalError(err error) bool {
@@ -26,22 +26,23 @@ func (q *Queue) Closed() <-chan struct{} {
 }
 
 func (q *Queue) Close() error {
-	q.frameTicker.Stop()
-	q.frameTicker = nil
+	defer q.lock.Unlock()
+	q.lock.Lock()
+
+	// don't close the underlying connection since it is reused for detection.
+
+	if q.c == nil {
+		return nil
+	}
+
+	q.c = nil
 	close(q.closed)
+
 	return nil
 }
 
 func (q *Queue) Init() {
 	q.closed = make(chan struct{})
-	q.frameTicker = time.NewTicker(16_639_265 * time.Nanosecond)
-	go func() {
-		// 5,369,317.5/89,341.5 ~= 60.0988 frames / sec ~= 16,639,265.605 ns / frame
-		for range q.frameTicker.C {
-			// increment frame timer:
-			q.wram[0x1A]++
-		}
-	}()
 }
 
 func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) snes.CommandSequence {
@@ -70,28 +71,35 @@ type readCommand struct {
 	Request snes.Read
 }
 
-func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
+func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("queue is not of expected internal type")
 	}
 
-	// wait 1ms before returning response to simulate the delay of FX Pak Pro device:
-	<-time.After(time.Millisecond * 1)
-
+	// nowhere to put the response?
 	completed := r.Request.Completion
 	if completed == nil {
 		return nil
 	}
 
+	var sb strings.Builder
+	sb.WriteString("READ_CORE_RAM ")
+	// TODO: translate address to bus address
+	sb.WriteString(fmt.Sprintf("%06x %d\n", r.Request.Address, r.Request.Size))
+	reqStr := sb.String()
+
+	err = q.c.WriteTimeout([]byte(reqStr), time.Second)
+	if err != nil {
+		q.Close()
+		return
+	}
+
 	var data []byte
-	if r.Request.Address >= 0xF50000 && r.Request.Address < 0xF70000 {
-		// read from wram:
-		o := r.Request.Address - 0xF50000
-		data = q.wram[o : o+uint32(r.Request.Size)]
-	} else {
-		// read from nothing:
-		data = q.nothing[0:r.Request.Size]
+	data, err = q.c.ReadTimeout(time.Second)
+	if err != nil {
+		q.Close()
+		return
 	}
 
 	completed(snes.Response{
