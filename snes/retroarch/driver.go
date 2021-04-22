@@ -105,9 +105,10 @@ func init() {
 		// [55355..55362]. realistically we probably won't be running any more than a few instances on
 		// the same machine at one time. i picked 8 since i currently have an 8-core CPU :)
 		var sb strings.Builder
-		for i := 0; i < 8; i++ {
+		const count = 1
+		for i := 0; i < count; i++ {
 			sb.WriteString(fmt.Sprintf("localhost:%d", 55355+i))
-			if i < 7 {
+			if i < count-1 {
 				sb.WriteByte(',')
 			}
 		}
@@ -118,7 +119,7 @@ func init() {
 	hosts := strings.Split(hostsStr, ",")
 
 	// resolve the addresses:
-	addresses := make([]*net.UDPAddr, 0, 8)
+	addresses := make([]*net.UDPAddr, 0, len(hosts))
 	for _, host := range hosts {
 		addr, err := net.ResolveUDPAddr("udp", host)
 		if err != nil {
