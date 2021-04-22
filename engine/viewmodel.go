@@ -403,7 +403,7 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	}
 
 	var err error
-	log.Printf("viewmodel: snesconnected: open: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.GetDisplayName())
+	log.Printf("viewmodel: snesconnected: open: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.GetId())
 	vm.dev, err = pair.NamedDriver.Driver.Open(pair.Device)
 	if err != nil {
 		log.Printf("viewmodel: snesconnected: open: %v\n", err)
@@ -421,7 +421,7 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	go func() {
 		// wait for the SNES to be closed:
 		<-vm.dev.Closed()
-		log.Printf("viewmodel: snesconnected: closed: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.GetDisplayName())
+		log.Printf("viewmodel: snesconnected: closed: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.GetId())
 		vm.SNESDisconnected()
 	}()
 
