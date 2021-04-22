@@ -11,8 +11,8 @@ import (
 type UDPClient struct {
 	name string
 
-	c *net.UDPConn
-	addr     *net.UDPAddr
+	c    *net.UDPConn
+	addr *net.UDPAddr
 
 	isConnected bool
 	read        chan []byte
@@ -38,6 +38,9 @@ func (c *UDPClient) Address() *net.UDPAddr { return c.addr }
 
 func (c *UDPClient) Write() chan<- []byte { return c.write }
 func (c *UDPClient) Read() <-chan []byte  { return c.read }
+
+func (c *UDPClient) SetReadDeadline(t time.Time) error  { return c.c.SetReadDeadline(t) }
+func (c *UDPClient) SetWriteDeadline(t time.Time) error { return c.c.SetWriteDeadline(t) }
 
 func (c *UDPClient) IsConnected() bool { return c.isConnected }
 
@@ -130,7 +133,7 @@ func (c *UDPClient) readLoop() {
 		var n, _, err = c.c.ReadFromUDP(b)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) {
-				log.Print(err)
+				log.Printf("%s: read: %s\n", c.name, err)
 			}
 			return
 		}
@@ -161,7 +164,7 @@ func (c *UDPClient) writeLoop() {
 		var _, err = c.c.Write(w)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) {
-				log.Print(err)
+				log.Printf("%s: write: %s\n", c.name, err)
 			}
 			return
 		}
