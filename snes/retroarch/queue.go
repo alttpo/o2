@@ -3,6 +3,7 @@ package retroarch
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"o2/snes"
 	"o2/snes/lorom"
 	"strings"
@@ -147,7 +148,7 @@ type writeCommand struct {
 
 const hextable = "0123456789abcdef"
 
-func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
+func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("queue is not of expected internal type")
@@ -162,10 +163,10 @@ func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err 
 
 	var sb strings.Builder
 	sb.WriteString("WRITE_CORE_RAM ")
-	sb.WriteString(fmt.Sprintf("%06x ", lorom.PakAddressToBus(r.Request.Address)))
+	sb.WriteString(fmt.Sprintf("%06x ", lorom.PakAddressToBus(cmd.Request.Address)))
 	// emit hex data:
-	lasti := len(r.Request.Data) - 1
-	for i, v := range r.Request.Data {
+	lasti := len(cmd.Request.Data) - 1
+	for i, v := range cmd.Request.Data {
 		sb.WriteByte(hextable[(v>>4)&0xF])
 		sb.WriteByte(hextable[v&0xF])
 		if i < lasti {
@@ -175,20 +176,21 @@ func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err 
 	sb.WriteByte('\n')
 	reqStr := sb.String()
 
+	log.Printf("retroarch: > %s", reqStr)
 	err = q.c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
 	if err != nil {
 		q.Close()
 		return
 	}
 
-	completed := r.Request.Completion
+	completed := cmd.Request.Completion
 	if completed != nil {
 		completed(snes.Response{
 			IsWrite: true,
-			Address: r.Request.Address,
-			Size:    r.Request.Size,
-			Extra:   r.Request.Extra,
-			Data:    r.Request.Data,
+			Address: cmd.Request.Address,
+			Size:    cmd.Request.Size,
+			Extra:   cmd.Request.Extra,
+			Data:    cmd.Request.Data,
 		})
 	}
 
