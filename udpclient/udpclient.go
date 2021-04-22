@@ -39,6 +39,32 @@ func (c *UDPClient) Address() *net.UDPAddr { return c.addr }
 func (c *UDPClient) Write() chan<- []byte { return c.write }
 func (c *UDPClient) Read() <-chan []byte  { return c.read }
 
+var ErrTimeout = fmt.Errorf("timeout")
+
+func (c *UDPClient) WriteTimeout(m []byte, d time.Duration) error {
+	timer := time.NewTimer(d)
+
+	select {
+	case c.write <- m:
+		timer.Stop()
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("%s: writeTimeout: %w\n", c.name, ErrTimeout)
+	}
+}
+
+func (c *UDPClient) ReadTimeout(d time.Duration) ([]byte, error) {
+	timer := time.NewTimer(d)
+
+	select {
+	case m := <-c.read:
+		timer.Stop()
+		return m, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("%s: readTimeout: %w\n", c.name, ErrTimeout)
+	}
+}
+
 func (c *UDPClient) SetReadDeadline(t time.Time) error  { return c.c.SetReadDeadline(t) }
 func (c *UDPClient) SetWriteDeadline(t time.Time) error { return c.c.SetWriteDeadline(t) }
 
