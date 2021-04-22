@@ -3,6 +3,7 @@ package retroarch
 import (
 	"fmt"
 	"o2/snes"
+	"o2/snes/lorom"
 	"strings"
 	"sync"
 	"time"
@@ -92,8 +93,7 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err e
 
 	var sb strings.Builder
 	sb.WriteString("READ_CORE_RAM ")
-	// TODO: translate address to bus address
-	sb.WriteString(fmt.Sprintf("%06x %d\n", r.Request.Address, r.Request.Size))
+	sb.WriteString(fmt.Sprintf("%06x %d\n", lorom.PakAddressToBus(r.Request.Address), r.Request.Size))
 	reqStr := sb.String()
 
 	err = c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
@@ -141,8 +141,7 @@ func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err 
 
 	var sb strings.Builder
 	sb.WriteString("WRITE_CORE_RAM ")
-	// TODO: translate address to bus address
-	sb.WriteString(fmt.Sprintf("%06x ", r.Request.Address))
+	sb.WriteString(fmt.Sprintf("%06x ", lorom.PakAddressToBus(r.Request.Address)))
 	// emit hex data:
 	lasti := len(r.Request.Data) - 1
 	for i, v := range r.Request.Data {
