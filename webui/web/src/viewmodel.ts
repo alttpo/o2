@@ -24,10 +24,17 @@ export interface DriverViewModel {
     displayDescription: string;
     displayOrder: number;
 
-    devices: string[];
-    selectedDevice: number;
+    devices: DeviceViewModel[];
+    selectedDevice: string;
 
     isConnected: boolean;
+}
+
+export interface DeviceViewModel {
+    id: string;
+    displayName: string;
+
+    [k: string]: any;
 }
 
 export interface ROMViewModel {

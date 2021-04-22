@@ -8,14 +8,14 @@ type SNESDriverProps = {
     drv: DriverViewModel;
 };
 type SNESDriverState = {
-    deviceIndex: number;
-    selectedDevice: number;
+    deviceIndex: string;
+    selectedDevice: string;
 };
 
 class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     constructor() {
         super();
-        this.state = {deviceIndex: 0, selectedDevice: 0};
+        this.state = {deviceIndex: "", selectedDevice: ""};
     }
 
     static getDerivedStateFromProps(props: SNESDriverProps, state: SNESDriverState): SNESDriverState {
@@ -29,7 +29,10 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     render({ch, snes, drv}: SNESDriverProps, state: SNESDriverState) {
         const cmdConnect = (drv: DriverViewModel, e: Event) => {
             e.preventDefault();
-            ch.command('snes', 'connect', {driver: drv.name, device: state.deviceIndex});
+            ch.command('snes', 'connect', {
+                driver: drv.name,
+                device: drv.devices.find(dv => dv.id == state.deviceIndex)
+            });
         }
         const cmdDisconnect = (drv: DriverViewModel, e: Event) => {
             e.preventDefault();
@@ -44,7 +47,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
             } else {
                 return <button type="button"
                                title={drv.displayDescription}
-                               disabled={(snes.isConnected && !drv.isConnected) || (state.deviceIndex == 0)}
+                               disabled={(snes.isConnected && !drv.isConnected) || (state.deviceIndex == "")}
                                onClick={cmdConnect.bind(this, drv)}>Connect</button>;
             }
         };
@@ -59,10 +62,12 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
-                onChange={(e) => this.setState({deviceIndex: (e.currentTarget.selectedIndex)})}>
-                <option selected={0 == drv.selectedDevice}>(Select {drv.displayName} Device)</option>
-                {(drv.devices || []).map((dev, i) =>
-                    <option selected={(i + 1) == drv.selectedDevice}>{dev}</option>
+                onChange={(e) => this.setState({deviceIndex: (e.currentTarget.value)})}>
+                <option selected={"" == drv.selectedDevice}>(Select {drv.displayName} Device)</option>
+                {(drv.devices || []).map(dev =>
+                    <option selected={dev.id == drv.selectedDevice}
+                            value={dev.id}
+                    >{dev.displayName}</option>
                 )}
             </select>
             {connectButton(drv)}
