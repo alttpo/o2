@@ -66,12 +66,23 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 
 		request := []byte("READ_CORE_RAM 40FFC0 32\x00")
 		log.Printf("%s: write %s\n", detector.addr, string(request))
-		_ = detector.SetWriteDeadline(time.Now().Add(time.Second))
-		detector.Write() <- request
+		err = detector.WriteTimeout(request, time.Second)
+		if err != nil {
+			err = nil
+			continue
+		}
 
 		log.Printf("%s: read\n", detector.addr)
-		_ = detector.SetReadDeadline(time.Now().Add(time.Second))
-		rsp := <-detector.Read()
+
+		var rsp []byte
+		rsp, err = detector.ReadTimeout(time.Second)
+		if err != nil {
+			err = nil
+			continue
+		}
+		if rsp == nil {
+			continue
+		}
 
 		log.Printf("%s: %s\n", detector.addr, string(rsp))
 
