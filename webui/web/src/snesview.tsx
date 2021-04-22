@@ -56,8 +56,12 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 
         return <Fragment key={name}>
             <label for={`device-${name}`}
-                   style="white-space: nowrap"
-                   title={drv.displayDescription}>{drv.displayName} driver:</label>
+                   style="white-space: nowrap; padding-top: 0.35em"
+                   title={drv.displayDescription}
+            >{drv.displayName} driver:</label>
+            <span style="color: green; font-size: 1.4em; padding-top: 0.15em; margin: 0 2px 0 auto;"
+                  title={'' + (drv.devices?.length || 0) + ' device(s) found'}
+            >({drv.devices?.length || 0})</span>
             <select
                 disabled={snes.isConnected && !drv.isConnected}
                 id={`device-${name}`}
@@ -79,8 +83,8 @@ export default ({ch, vm}: TopLevelProps) => {
     return (<div style="display: table; min-width: 36em; width: 100%; height: 100%">
         <div style="display: table-row; height: 100%">
             <div style="display: table-cell">
-                <div style="display: grid; grid-template-columns: 1fr 3fr 1fr;">
-                    <h5 style="grid-column: 1 / span 3">
+                <div style="display: grid; grid-template-columns: 4fr 1fr 10fr 4fr;">
+                    <h5 style="grid-column: 1 / span 4">
                 <span data-rh-at="left" data-rh="Select one of the below SNES drivers to connect to your SNES device.
 Devices are auto-detected every 2 seconds for each driver."
                 >Select a SNES device:&nbsp;1️⃣</span>
