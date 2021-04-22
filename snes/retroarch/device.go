@@ -19,7 +19,11 @@ func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
 }
 
 func (d *DeviceDescriptor) GetId() string {
-	return fmt.Sprintf("retroarch-%s", d.addr)
+	// dirty hack to work with JSON unmarshaled descriptors which won't have `addr` coming back:
+	if d.addr == nil {
+		return d.Id
+	}
+	return d.addr.String()
 }
 
 func (d *DeviceDescriptor) GetDisplayName() string {

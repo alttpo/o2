@@ -54,11 +54,20 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		return nil, fmt.Errorf("retroarch: open: descriptor is not of expected type")
 	}
 
-	// find detector with same address:
-	//descriptor.addr
-	_ = descriptor
+	// find detector with same id:
+	var c *RAClient
+	for _, detector := range d.detectors {
+		if descriptor.GetId() == detector.GetId() {
+			c = detector
+			break
+		}
+	}
 
-	qu := &Queue{c: nil}
+	if c == nil {
+		return nil, fmt.Errorf("retroarch: open: could not find socket by device='%s'\n", descriptor.GetId())
+	}
+
+	qu := &Queue{c: c}
 	qu.BaseInit(driverName, qu)
 	qu.Init()
 
@@ -75,6 +84,7 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 }
 
 func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
+	// stop auto-detection if connected already:
 	if d.opened != nil {
 		devices = d.devices
 		return

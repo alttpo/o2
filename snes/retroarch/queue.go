@@ -77,6 +77,13 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err e
 		return fmt.Errorf("queue is not of expected internal type")
 	}
 
+	q.lock.Lock()
+	c := q.c
+	q.lock.Unlock()
+	if c == nil {
+		return fmt.Errorf("retroarch: read: connection is closed")
+	}
+
 	// nowhere to put the response?
 	completed := r.Request.Completion
 	if completed == nil {
@@ -89,14 +96,14 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err e
 	sb.WriteString(fmt.Sprintf("%06x %d\n", r.Request.Address, r.Request.Size))
 	reqStr := sb.String()
 
-	err = q.c.WriteTimeout([]byte(reqStr), time.Second)
+	err = c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
 	if err != nil {
 		q.Close()
 		return
 	}
 
 	var data []byte
-	data, err = q.c.ReadTimeout(time.Second)
+	data, err = c.ReadTimeout(time.Millisecond * 500)
 	if err != nil {
 		q.Close()
 		return
@@ -117,8 +124,42 @@ type writeCommand struct {
 	Request snes.Write
 }
 
-func (r *writeCommand) Execute(_ snes.Queue, keepAlive snes.KeepAlive) error {
-	<-time.After(time.Millisecond * 1)
+const hextable = "0123456789abcdef"
+
+func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
+	q, ok := queue.(*Queue)
+	if !ok {
+		return fmt.Errorf("queue is not of expected internal type")
+	}
+
+	q.lock.Lock()
+	c := q.c
+	q.lock.Unlock()
+	if c == nil {
+		return fmt.Errorf("retroarch: write: connection is closed")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("WRITE_CORE_RAM ")
+	// TODO: translate address to bus address
+	sb.WriteString(fmt.Sprintf("%06x ", r.Request.Address))
+	// emit hex data:
+	lasti := len(r.Request.Data) - 1
+	for i, v := range r.Request.Data {
+		sb.WriteByte(hextable[(v>>4)&0xF])
+		sb.WriteByte(hextable[v&0xF])
+		if i < lasti {
+			sb.WriteByte(' ')
+		}
+	}
+	sb.WriteByte('\n')
+	reqStr := sb.String()
+
+	err = q.c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
+	if err != nil {
+		q.Close()
+		return
+	}
 
 	completed := r.Request.Completion
 	if completed != nil {
@@ -130,5 +171,7 @@ func (r *writeCommand) Execute(_ snes.Queue, keepAlive snes.KeepAlive) error {
 			Data:    r.Request.Data,
 		})
 	}
-	return nil
+
+	err = nil
+	return
 }

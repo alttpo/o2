@@ -10,3 +10,7 @@ type RAClient struct {
 
 	addr *net.UDPAddr
 }
+
+func (c *RAClient) GetId() string {
+	return c.addr.String()
+}
