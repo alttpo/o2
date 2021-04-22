@@ -1,7 +1,10 @@
 package snes
 
+type KeepAlive chan<- struct{}
+
 type Command interface {
-	Execute(queue Queue) error
+	// Execute takes exclusive control of the queue device; keepAlive must be sent to periodically
+	Execute(queue Queue, keepAlive KeepAlive) error
 }
 
 type Completion func(Command, error)
@@ -25,20 +28,13 @@ func (seq CommandSequence) EnqueueTo(queue Queue) (err error) {
 
 type NoOpCommand struct{}
 
-func (c *NoOpCommand) Execute(queue Queue) error {
+func (c *NoOpCommand) Execute(queue Queue, keepAlive KeepAlive) error {
 	return nil
 }
 
 // Special Command to close the device connection
 type CloseCommand struct{}
 
-func (c *CloseCommand) Execute(queue Queue) error {
-	return nil
-}
-
-// Special Command to drain any subsequent Commands from the queue without executing them
-type DrainQueueCommand struct{}
-
-func (c *DrainQueueCommand) Execute(queue Queue) error {
+func (c *CloseCommand) Execute(queue Queue, keepAlive KeepAlive) error {
 	return nil
 }

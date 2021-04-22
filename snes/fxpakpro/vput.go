@@ -14,7 +14,7 @@ func (q *Queue) newVPUT(batch []snes.Write) *vput {
 }
 
 // Command interface:
-func (c *vput) Execute(queue snes.Queue) error {
+func (c *vput) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	f := queue.(*Queue).f
 
 	reqs := c.batch

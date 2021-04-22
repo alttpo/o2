@@ -17,7 +17,7 @@ func newMKDIR(name string) *mkdir {
 	return &mkdir{name: name}
 }
 
-func (c *mkdir) Execute(queue snes.Queue) error {
+func (c *mkdir) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	f := queue.(*Queue).f
 
 	sb := make([]byte, 512)

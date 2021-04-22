@@ -19,7 +19,7 @@ func newPUTFile(path string, rom []byte, report func(int, int)) *putfile {
 	}
 }
 
-func (c *putfile) Execute(queue snes.Queue) error {
+func (c *putfile) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	f := queue.(*Queue).f
 
 	sb := make([]byte, 512)
@@ -49,11 +49,14 @@ func (c *putfile) Execute(queue snes.Queue) error {
 	}
 
 	// send data:
-	if c.report == nil {
-		err = sendSerial(f, c.rom)
-	} else {
-		err = sendSerialProgress(f, c.rom, 65536, c.report)
-	}
+	err = sendSerialProgress(f, c.rom, 65536, func(sent int, total int) {
+		// keep our command alive while we send data:
+		keepAlive <- struct{}{}
+		// report on progress:
+		if c.report != nil {
+			c.report(sent, total)
+		}
+	})
 	if err != nil {
 		return err
 	}

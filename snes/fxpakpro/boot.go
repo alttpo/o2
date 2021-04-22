@@ -13,7 +13,7 @@ func newBOOT(path string) *boot {
 	return &boot{path: path}
 }
 
-func (c *boot) Execute(queue snes.Queue) error {
+func (c *boot) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	f := queue.(*Queue).f
 
 	sb := make([]byte, 512)

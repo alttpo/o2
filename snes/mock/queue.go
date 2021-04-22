@@ -70,7 +70,7 @@ type readCommand struct {
 	Request snes.Read
 }
 
-func (r *readCommand) Execute(queue snes.Queue) error {
+func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("queue is not of expected internal type")
@@ -109,7 +109,7 @@ type writeCommand struct {
 	Request snes.Write
 }
 
-func (r *writeCommand) Execute(_ snes.Queue) error {
+func (r *writeCommand) Execute(_ snes.Queue, keepAlive snes.KeepAlive) error {
 	<-time.After(time.Millisecond * 1)
 
 	completed := r.Request.Completion

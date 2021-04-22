@@ -14,7 +14,7 @@ func (q *Queue) newVGET(batch []snes.Read) *vget {
 }
 
 // Command interface:
-func (c *vget) Execute(queue snes.Queue) error {
+func (c *vget) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error {
 	f := queue.(*Queue).f
 
 	reqs := c.batch

@@ -104,7 +104,7 @@ type readCommand struct {
 	Requests []snes.Read
 }
 
-func (r *readCommand) Execute(queue snes.Queue) (err error) {
+func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("qusb2snes: readCommand: queue is not of expected internal type")
@@ -118,14 +118,14 @@ func (r *readCommand) Execute(queue snes.Queue) (err error) {
 	//log.Println("qusb2snes: GetAddress request start")
 
 	if q.info.DeviceName == "SD2SNES" {
-		return r.sendBatched(q)
+		return r.sendBatched(q, keepAlive)
 	}
 
 	// Most devices don't support batched requests:
-	return r.sendIndividual(q)
+	return r.sendIndividual(q, keepAlive)
 }
 
-func (r *readCommand) sendBatched(q *Queue) (err error) {
+func (r *readCommand) sendBatched(q *Queue, keepAlive snes.KeepAlive) (err error) {
 	operands := make([]string, 0, 2*len(r.Requests))
 	sumExpected := 0
 	for _, req := range r.Requests {
@@ -149,6 +149,8 @@ func (r *readCommand) sendBatched(q *Queue) (err error) {
 		return
 	}
 
+	keepAlive <- struct{}{}
+
 	n := 0
 	for _, req := range r.Requests {
 		size := int(req.Size)
@@ -171,7 +173,7 @@ func (r *readCommand) sendBatched(q *Queue) (err error) {
 	return
 }
 
-func (r *readCommand) sendIndividual(q *Queue) (err error) {
+func (r *readCommand) sendIndividual(q *Queue, keepAlive snes.KeepAlive) (err error) {
 	for _, req := range r.Requests {
 		sumExpected := int(req.Size)
 		operands := []string{fmt.Sprintf("%x", req.Address), fmt.Sprintf("%x", req.Size)}
@@ -190,6 +192,8 @@ func (r *readCommand) sendIndividual(q *Queue) (err error) {
 		if err != nil {
 			return
 		}
+
+		keepAlive <- struct{}{}
 
 		completed := req.Completion
 		if completed != nil {
@@ -210,7 +214,7 @@ type writeCommand struct {
 	Requests []snes.Write
 }
 
-func (r *writeCommand) Execute(queue snes.Queue) (err error) {
+func (r *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("qusb2snes: writeCommand: queue is not of expected internal type")
@@ -244,6 +248,8 @@ func (r *writeCommand) Execute(queue snes.Queue) (err error) {
 			err = fmt.Errorf("qusb2snes: writeCommand: writeClientBinary: %w", err)
 			return
 		}
+
+		keepAlive <- struct{}{}
 
 		completed := req.Completion
 		if completed != nil {

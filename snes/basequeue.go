@@ -3,6 +3,7 @@ package snes
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 const chanSize = 8
@@ -44,7 +45,16 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 		return
 	}
 
-	b.cq <- cmd
+	timeout := time.NewTimer(time.Millisecond * 5000)
+	select {
+	case b.cq <- cmd:
+		timeout.Stop()
+		break
+	case <-timeout.C:
+		err = fmt.Errorf("%s: timed out enqueuing command", b.name)
+		break
+	}
+
 	return
 }
 
@@ -78,6 +88,7 @@ func (b *BaseQueue) handleQueue() {
 	}
 	defer doClose()
 
+channelLoop:
 	for pair := range b.cq {
 		//log.Printf("%s: dequeue command\n", b.name)
 		cmd := pair.Command
@@ -92,14 +103,34 @@ func (b *BaseQueue) handleQueue() {
 			log.Printf("%s: processing CloseCommand\n", b.name)
 			terminal = true
 		}
-		if _, ok := cmd.(*DrainQueueCommand); ok {
-			// close and recreate queue:
-			log.Printf("%s: processing DrainQueueCommand\n", b.name)
-			doClose()
-			b.cq = make(chan CommandWithCompletion, chanSize)
+
+		// give the command 5 seconds to execute:
+		{
+			done := make(chan struct{})
+			keepAlive := make(chan struct{}, 1)
+			go func() {
+				err = cmd.Execute(q, keepAlive)
+				close(done)
+			}()
+
+			const timeoutDuration = time.Millisecond * 5000
+			timeout := time.NewTimer(timeoutDuration)
+		timeoutLoop:
+			for {
+				select {
+				case <-done:
+					timeout.Stop()
+					break timeoutLoop
+				case <-keepAlive:
+					timeout.Reset(timeoutDuration)
+					break
+				case <-timeout.C:
+					log.Printf("%s: timed out executing command\n", b.name)
+					break channelLoop
+				}
+			}
 		}
 
-		err = cmd.Execute(q)
 		// wrap the error if it is a terminal case:
 		if err != nil && q.IsTerminalError(err) {
 			err = ErrDeviceDisconnected{err}
