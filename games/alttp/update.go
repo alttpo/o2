@@ -6,28 +6,9 @@ import (
 	"log"
 	"o2/snes"
 	"o2/snes/asm"
+	"o2/snes/lorom"
 	"strings"
 )
-
-func snesBankToLinear(addr uint32) uint32 {
-	bank := addr >> 16
-	linbank := ((bank & 1) << 15) + ((bank >> 1) << 16)
-	linoffs := linbank + (addr & 0x7FFF)
-	return linoffs
-}
-
-func xlatSNEStoPak(snes uint32) uint32 {
-	if snes&0x8000 == 0 {
-		if snes >= 0x700000 && snes < 0x7E0000 {
-			sram := snesBankToLinear(snes-0x700000) + 0xE00000
-			return sram
-		} else if snes >= 0x7E0000 && snes < 0x800000 {
-			wram := (snes - 0x7E0000) + 0xE50000
-			return wram
-		}
-	}
-	return snes
-}
 
 func (g *Game) updateWRAM() {
 	if !g.local.IsInGame() {
@@ -99,7 +80,7 @@ func (g *Game) updateWRAM() {
 
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
-	target := xlatSNEStoPak(targetSNES)
+	target := lorom.BusAddressToPak(targetSNES)
 	g.lastUpdateTarget = target
 
 	// write generated asm routine to SRAM:
@@ -114,7 +95,7 @@ func (g *Game) updateWRAM() {
 			{
 				// JSR $7C00 | JSR $7E00
 				// update the $7C or $7E byte in the JSR instruction:
-				Address: xlatSNEStoPak(preMainAddr + 2),
+				Address: lorom.BusAddressToPak(preMainAddr + 2),
 				Size:    1,
 				Data:    []byte{uint8(targetSNES >> 8)},
 			},
