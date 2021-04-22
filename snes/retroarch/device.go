@@ -1,9 +1,15 @@
 package retroarch
 
-import "o2/snes"
+import (
+	"fmt"
+	"net"
+	"o2/snes"
+)
 
 type DeviceDescriptor struct {
 	snes.DeviceDescriptorBase
+
+	addr *net.UDPAddr
 }
 
 func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
@@ -11,9 +17,9 @@ func (d *DeviceDescriptor) Base() *snes.DeviceDescriptorBase {
 }
 
 func (d *DeviceDescriptor) GetId() string {
-	return "retroarch"
+	return fmt.Sprintf("retroarch-%s", d.addr)
 }
 
 func (d *DeviceDescriptor) GetDisplayName() string {
-	return "RetroArch"
+	return fmt.Sprintf("RetroArch at %s", d.addr)
 }
