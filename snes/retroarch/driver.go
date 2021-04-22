@@ -9,13 +9,13 @@ import (
 	"o2/udpclient"
 	"os"
 	"strings"
+	"time"
 )
 
 const driverName = "retroarch"
 
 type Driver struct {
 	detectors []*RAClient
-	devices   []snes.DeviceDescriptor
 }
 
 func NewDriver(addresses []*net.UDPAddr) *Driver {
@@ -53,27 +53,37 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (snes.Queue, error) {
 }
 
 func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
-	if d.devices == nil {
-		d.devices = make([]snes.DeviceDescriptor, 0, len(d.detectors))
-
-		for i, detector := range d.detectors {
+	devices = make([]snes.DeviceDescriptor, 0, len(d.detectors))
+	for i, detector := range d.detectors {
+		if !detector.IsConnected() {
 			// "connect" to this UDP endpoint:
 			err = detector.Connect(detector.addr)
 			if err != nil {
 				log.Printf("retroarch: detect: detector[%d]: connect: %v\n", i, err)
 				continue
 			}
-
-			descriptor := &DeviceDescriptor{
-				DeviceDescriptorBase: snes.DeviceDescriptorBase{},
-				addr:                 detector.addr,
-			}
-			snes.MarshalDeviceDescriptor(descriptor)
-			d.devices = append(d.devices, descriptor)
 		}
+
+		request := []byte("READ_CORE_RAM 40FFC0 32\x00")
+		log.Printf("%s: write %s\n", detector.addr, string(request))
+		_ = detector.SetWriteDeadline(time.Now().Add(time.Second))
+		detector.Write() <- request
+
+		log.Printf("%s: read\n", detector.addr)
+		_ = detector.SetReadDeadline(time.Now().Add(time.Second))
+		rsp := <-detector.Read()
+
+		log.Printf("%s: %s\n", detector.addr, string(rsp))
+
+		descriptor := &DeviceDescriptor{
+			DeviceDescriptorBase: snes.DeviceDescriptorBase{},
+			addr:                 detector.addr,
+		}
+
+		snes.MarshalDeviceDescriptor(descriptor)
+		devices = append(devices, descriptor)
 	}
 
-	devices = d.devices
 	err = nil
 	return
 }
@@ -112,6 +122,9 @@ func init() {
 	for _, host := range hosts {
 		addr, err := net.ResolveUDPAddr("udp", host)
 		if err != nil {
+			log.Printf("retroarch: resolve('%s'): %v\n", host, err)
+			// drop the address if it doesn't resolve:
+			// TODO: consider retrying the resolve later? maybe not worth worrying about.
 			continue
 		}
 
