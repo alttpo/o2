@@ -149,6 +149,13 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 
+	// decode location and assign DungeonRoom or OverworldArea:
+	if p.Location&(1<<16) != 0 {
+		p.DungeonRoom = uint16(p.Location & 0xFFFF)
+	} else {
+		p.OverworldArea = uint16(p.Location & 0xFFFF)
+	}
+
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
