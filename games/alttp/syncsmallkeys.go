@@ -16,7 +16,7 @@ func (g *Game) initSmallKeysSync() {
 
 	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
 		local.WRAM[offs] = &SyncableWRAM{
-			Name:      fmt.Sprintf("%s small keys", dungeonNammes[offs-smallKeyFirst]),
+			Name:      fmt.Sprintf("%s small keys", dungeonNames[offs-smallKeyFirst]),
 			Size:      1,
 			Timestamp: 0,
 			Value:     uint16(g.wram[offs]),
