@@ -1,6 +1,7 @@
 package retroarch
 
 import (
+	"bytes"
 	"fmt"
 	"o2/snes"
 	"o2/snes/lorom"
@@ -72,7 +73,7 @@ type readCommand struct {
 	Request snes.Read
 }
 
-func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
+func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
 	q, ok := queue.(*Queue)
 	if !ok {
 		return fmt.Errorf("queue is not of expected internal type")
@@ -86,14 +87,14 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err e
 	}
 
 	// nowhere to put the response?
-	completed := r.Request.Completion
+	completed := cmd.Request.Completion
 	if completed == nil {
 		return nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString("READ_CORE_RAM ")
-	sb.WriteString(fmt.Sprintf("%06x %d\n", lorom.PakAddressToBus(r.Request.Address), r.Request.Size))
+	sb.WriteString(fmt.Sprintf("%06x %d\n", lorom.PakAddressToBus(cmd.Request.Address), cmd.Request.Size))
 	reqStr := sb.String()
 
 	err = c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
@@ -102,18 +103,38 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err e
 		return
 	}
 
-	var data []byte
-	data, err = c.ReadTimeout(time.Millisecond * 500)
+	var rsp []byte
+	rsp, err = c.ReadTimeout(time.Millisecond * 500)
 	if err != nil {
 		q.Close()
 		return
 	}
 
+	// parse ASCII response:
+	var n int
+	var addr uint32
+	r := bytes.NewReader(rsp)
+	n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
+	if err != nil {
+		q.Close()
+		return
+	}
+
+	data := make([]byte, 0, cmd.Request.Size)
+	for {
+		var v byte
+		n, err = fmt.Fscanf(r, " %02x", &v)
+		if err != nil || n == 0 {
+			break
+		}
+		data = append(data, v)
+	}
+
 	completed(snes.Response{
 		IsWrite: false,
-		Address: r.Request.Address,
-		Size:    r.Request.Size,
-		Extra:   r.Request.Extra,
+		Address: cmd.Request.Address,
+		Size:    cmd.Request.Size,
+		Extra:   cmd.Request.Extra,
 		Data:    data,
 	})
 
