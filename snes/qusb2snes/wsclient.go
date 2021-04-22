@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -19,6 +20,7 @@ type WebSocketClient struct {
 	urlstr  string
 	appName string
 
+	lock    sync.Mutex
 	closed  chan struct{}
 	ws      net.Conn
 	r       *wsutil.Reader
@@ -92,11 +94,15 @@ func (w *WebSocketClient) checkOpen() (err error) {
 func (w *WebSocketClient) Close() (err error) {
 	//log.Printf("qusb2snes: [%s] close websocket\n", w.appName)
 
+	defer w.lock.Unlock()
+	w.lock.Lock()
+
 	if w.ws != nil {
 		err = w.ws.Close()
 		close(w.closed)
 	}
 
+	w.closed = nil
 	w.ws = nil
 	w.r = nil
 	w.w = nil
