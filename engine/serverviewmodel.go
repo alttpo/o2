@@ -130,7 +130,7 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 		return nil
 	}
 
-	err := vm.client.Connect(v.HostName)
+	err := vm.client.Connect(v.HostName, 4590)
 	v.IsConnected = vm.client.IsConnected()
 	v.MarkDirty()
 	if err != nil {
