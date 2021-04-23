@@ -105,7 +105,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 
 		// issue a sample read:
 		request := []byte("READ_CORE_RAM 40FFC0 32\n")
-		log.Printf("%s: < %s", detector.addr, string(request))
+		//log.Printf("%s: < %s", detector.addr, string(request))
 		err = detector.WriteTimeout(request, time.Second)
 		if err != nil {
 			err = nil
@@ -128,7 +128,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		}
 
 		rsps := string(rsp)
-		log.Printf("%s: > %s", detector.addr, rsps)
+		//log.Printf("%s: > %s", detector.addr, rsps)
 		if rsps == "READ_CORE_RAM 40ffc0 -1\n" {
 			descriptor.IsGameLoaded = false
 		} else {
