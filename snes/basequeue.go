@@ -45,15 +45,8 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 		return
 	}
 
-	timeout := time.NewTimer(time.Millisecond * 5000)
-	select {
-	case b.cq <- cmd:
-		timeout.Stop()
-		break
-	case <-timeout.C:
-		err = fmt.Errorf("%s: timed out enqueuing command", b.name)
-		break
-	}
+	// don't need a timeout here since the queue should always guarantee process forward with its own timeouts
+	b.cq <- cmd
 
 	return
 }
@@ -104,8 +97,10 @@ channelLoop:
 			terminal = true
 		}
 
-		// give the command 5 seconds to execute:
 		{
+			// give the command 15 seconds to execute:
+			const timeoutDuration = time.Second * 15
+
 			done := make(chan struct{})
 			keepAlive := make(chan struct{}, 1)
 			go func() {
@@ -113,7 +108,6 @@ channelLoop:
 				close(done)
 			}()
 
-			const timeoutDuration = time.Millisecond * 5000
 			timeout := time.NewTimer(timeoutDuration)
 		timeoutLoop:
 			for {
@@ -125,6 +119,7 @@ channelLoop:
 					timeout.Reset(timeoutDuration)
 					break
 				case <-timeout.C:
+					timeout.Stop()
 					log.Printf("%s: timed out executing command\n", b.name)
 					break channelLoop
 				}
