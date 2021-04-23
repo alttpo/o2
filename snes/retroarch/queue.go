@@ -48,30 +48,58 @@ func (q *Queue) Init() {
 	q.closed = make(chan struct{})
 }
 
-func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) snes.CommandSequence {
-	seq := make(snes.CommandSequence, 0, len(reqs))
-	for _, req := range reqs {
-		seq = append(seq, snes.CommandWithCompletion{
-			Command:    &readCommand{req},
+func (q *Queue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) (cmds snes.CommandSequence) {
+	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
+
+	for len(reqs) >= 8 {
+		// queue up a batch read command:
+		batch := reqs[:8]
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    &readCommand{batch},
+			Completion: batchComplete,
+		})
+
+		// move to next batch:
+		reqs = reqs[8:]
+	}
+
+	if len(reqs) > 0 && len(reqs) <= 8 {
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    &readCommand{reqs},
 			Completion: batchComplete,
 		})
 	}
-	return seq
+
+	return cmds
 }
 
-func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) snes.CommandSequence {
-	seq := make(snes.CommandSequence, 0, len(reqs))
-	for _, req := range reqs {
-		seq = append(seq, snes.CommandWithCompletion{
-			Command:    &writeCommand{req},
+func (q *Queue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) (cmds snes.CommandSequence) {
+	cmds = make(snes.CommandSequence, 0, len(reqs)/8+1)
+
+	for len(reqs) >= 8 {
+		// queue up a batch read command:
+		batch := reqs[:8]
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    &writeCommand{batch},
+			Completion: batchComplete,
+		})
+
+		// move to next batch:
+		reqs = reqs[8:]
+	}
+
+	if len(reqs) > 0 && len(reqs) <= 8 {
+		cmds = append(cmds, snes.CommandWithCompletion{
+			Command:    &writeCommand{reqs},
 			Completion: batchComplete,
 		})
 	}
-	return seq
+
+	return cmds
 }
 
 type readCommand struct {
-	Request snes.Read
+	Batch []snes.Read
 }
 
 func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err error) {
@@ -87,63 +115,71 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 		return fmt.Errorf("retroarch: read: connection is closed")
 	}
 
-	// nowhere to put the response?
-	completed := cmd.Request.Completion
-	if completed == nil {
-		return nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("READ_CORE_RAM ")
-	sb.WriteString(fmt.Sprintf("%06x %d\n", lorom.PakAddressToBus(cmd.Request.Address), cmd.Request.Size))
-	reqStr := sb.String()
-
-	err = c.WriteTimeout([]byte(reqStr), time.Second * 5)
-	if err != nil {
-		q.Close()
-		return
-	}
-
-	var rsp []byte
-	rsp, err = c.ReadTimeout(time.Second * 5)
-	if err != nil {
-		q.Close()
-		return
-	}
-
-	// parse ASCII response:
-	var n int
-	var addr uint32
-	r := bytes.NewReader(rsp)
-	n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
-	if err != nil {
-		q.Close()
-		return
-	}
-
-	data := make([]byte, 0, cmd.Request.Size)
-	for {
-		var v byte
-		n, err = fmt.Fscanf(r, " %02x", &v)
-		if err != nil || n == 0 {
-			break
+	for _, req := range cmd.Batch {
+		// nowhere to put the response?
+		completed := req.Completion
+		if completed == nil {
+			continue
 		}
-		data = append(data, v)
-	}
 
-	completed(snes.Response{
-		IsWrite: false,
-		Address: cmd.Request.Address,
-		Size:    cmd.Request.Size,
-		Extra:   cmd.Request.Extra,
-		Data:    data,
-	})
+		var sb strings.Builder
+		sb.WriteString("READ_CORE_RAM ")
+		expectedAddr := lorom.PakAddressToBus(req.Address)
+		sb.WriteString(fmt.Sprintf("%06x %d\n", expectedAddr, req.Size))
+		reqStr := sb.String()
+
+		err = c.WriteTimeout([]byte(reqStr), time.Second*5)
+		if err != nil {
+			q.Close()
+			return
+		}
+
+		var rsp []byte
+		rsp, err = c.ReadTimeout(time.Second * 5)
+		if err != nil {
+			q.Close()
+			return
+		}
+
+		// parse ASCII response:
+		var n int
+		var addr uint32
+		r := bytes.NewReader(rsp)
+		n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
+		if err != nil {
+			q.Close()
+			return
+		}
+		if addr != expectedAddr {
+			err = fmt.Errorf("retroarch: read response for wrong request %06x != %06x", addr, expectedAddr)
+			q.Close()
+			return
+		}
+
+		data := make([]byte, 0, req.Size)
+		for {
+			var v byte
+			n, err = fmt.Fscanf(r, " %02x", &v)
+			if err != nil || n == 0 {
+				break
+			}
+			data = append(data, v)
+		}
+
+		completed(snes.Response{
+			IsWrite: false,
+			Address: req.Address,
+			Size:    req.Size,
+			Extra:   req.Extra,
+			Data:    data,
+		})
+	}
 
 	return nil
 }
 
 type writeCommand struct {
-	Request snes.Write
+	Batch []snes.Write
 }
 
 const hextable = "0123456789abcdef"
@@ -161,37 +197,39 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 		return fmt.Errorf("retroarch: write: connection is closed")
 	}
 
-	var sb strings.Builder
-	sb.WriteString("WRITE_CORE_RAM ")
-	sb.WriteString(fmt.Sprintf("%06x ", lorom.PakAddressToBus(cmd.Request.Address)))
-	// emit hex data:
-	lasti := len(cmd.Request.Data) - 1
-	for i, v := range cmd.Request.Data {
-		sb.WriteByte(hextable[(v>>4)&0xF])
-		sb.WriteByte(hextable[v&0xF])
-		if i < lasti {
-			sb.WriteByte(' ')
+	for _, req := range cmd.Batch {
+		var sb strings.Builder
+		sb.WriteString("WRITE_CORE_RAM ")
+		sb.WriteString(fmt.Sprintf("%06x ", lorom.PakAddressToBus(req.Address)))
+		// emit hex data:
+		lasti := len(req.Data) - 1
+		for i, v := range req.Data {
+			sb.WriteByte(hextable[(v>>4)&0xF])
+			sb.WriteByte(hextable[v&0xF])
+			if i < lasti {
+				sb.WriteByte(' ')
+			}
 		}
-	}
-	sb.WriteByte('\n')
-	reqStr := sb.String()
+		sb.WriteByte('\n')
+		reqStr := sb.String()
 
-	log.Printf("retroarch: > %s", reqStr)
-	err = q.c.WriteTimeout([]byte(reqStr), time.Second * 5)
-	if err != nil {
-		q.Close()
-		return
-	}
+		log.Printf("retroarch: > %s", reqStr)
+		err = q.c.WriteTimeout([]byte(reqStr), time.Second*5)
+		if err != nil {
+			q.Close()
+			return
+		}
 
-	completed := cmd.Request.Completion
-	if completed != nil {
-		completed(snes.Response{
-			IsWrite: true,
-			Address: cmd.Request.Address,
-			Size:    cmd.Request.Size,
-			Extra:   cmd.Request.Extra,
-			Data:    cmd.Request.Data,
-		})
+		completed := req.Completion
+		if completed != nil {
+			completed(snes.Response{
+				IsWrite: true,
+				Address: req.Address,
+				Size:    req.Size,
+				Extra:   req.Extra,
+				Data:    req.Data,
+			})
+		}
 	}
 
 	err = nil
