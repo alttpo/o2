@@ -109,14 +109,8 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		// issue a sample read:
 		request := []byte("READ_CORE_RAM 40FFC0 32\n")
 		//log.Printf("%s: < %s", detector.addr, string(request))
-		err = detector.WriteTimeout(request, time.Second)
-		if err != nil {
-			err = nil
-			continue
-		}
-
 		var rsp []byte
-		rsp, err = detector.ReadTimeout(time.Second)
+		rsp, err = detector.WriteThenReadTimeout(request, time.Second)
 		if err != nil {
 			err = nil
 			continue

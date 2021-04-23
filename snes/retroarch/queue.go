@@ -129,15 +129,8 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 		sb.WriteString(fmt.Sprintf("%06x %d\n", expectedAddr, req.Size))
 		reqStr := sb.String()
 
-		err = c.WriteTimeout([]byte(reqStr), time.Second*5)
-		if err != nil {
-			q.Close()
-			return
-		}
-		keepAlive <- struct{}{}
-
 		var rsp []byte
-		rsp, err = c.ReadTimeout(time.Second * 5)
+		rsp, err = c.WriteThenReadTimeout([]byte(reqStr), time.Second*5)
 		if err != nil {
 			q.Close()
 			return
