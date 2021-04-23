@@ -88,8 +88,14 @@ func (c *UDPClient) WriteThenReadTimeout(m []byte, d time.Duration) (rsp []byte,
 	return c.ReadTimeout(d)
 }
 
-func (c *UDPClient) Lock()   { c.seqLock.Lock() }
-func (c *UDPClient) Unlock() { c.seqLock.Unlock() }
+func (c *UDPClient) Lock() {
+	//fmt.Printf("%s lock\n", c.name)
+	c.seqLock.Lock()
+}
+func (c *UDPClient) Unlock() {
+	//fmt.Printf("%s unlock\n", c.name)
+	c.seqLock.Unlock()
+}
 
 func (c *UDPClient) SetReadDeadline(t time.Time) error  { return c.c.SetReadDeadline(t) }
 func (c *UDPClient) SetWriteDeadline(t time.Time) error { return c.c.SetWriteDeadline(t) }
