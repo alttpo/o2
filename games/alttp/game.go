@@ -58,8 +58,11 @@ type Game struct {
 	locHashTTL int
 	locHash    uint64
 
-	wram [0x20000]byte
-	sram [0x10000]byte
+	// staging area to read data into first before validating e.g. not in reset state or in SD2SNES menu, etc.:
+	wramStaging [0x20000]byte
+	// game-valid memory:
+	wram        [0x20000]byte
+	sram        [0x10000]byte
 
 	syncableItems  map[uint16]SyncableItem
 	underworld     [0x128]syncableBitU16

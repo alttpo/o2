@@ -126,6 +126,8 @@ func (g *Game) enqueueUpdateCheckRead() {
 	addr := g.lastUpdateTarget
 	if addr != 0xFFFFFF {
 		g.readEnqueue(addr, 0x01, nil)
+		// must always read module number LAST to validate the prior reads:
+		g.enqueueMainRead()
 		go g.readSubmit()
 	}
 }

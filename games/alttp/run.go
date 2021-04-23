@@ -75,7 +75,9 @@ func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
 
-	g.enqueueMainReads()
+	g.enqueueSupportingReads()
+	// must always read module number LAST to validate the prior reads:
+	g.enqueueMainRead()
 	go g.readSubmit()
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
@@ -95,17 +97,8 @@ func (g *Game) run() {
 				return
 			}
 
-			for _, rsp := range rsps {
-				// copy the data into our wram shadow:
-				g.handleSNESRead(rsp)
-				// 0 indicates to re-enqueue the read every time:
-				if rsp.Extra == 0 {
-					g.readEnqueue(rsp.Address, rsp.Size, rsp.Extra)
-				}
-			}
-
 			// process the last read data:
-			g.readMainComplete()
+			g.readMainComplete(rsps)
 			g.lastReadCompleted = time.Now()
 
 			go g.readSubmit()
@@ -139,7 +132,9 @@ func (g *Game) run() {
 				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
 				if timeSinceRead >= time.Millisecond*512 {
 					log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
-					g.enqueueMainReads()
+					g.enqueueSupportingReads()
+					// must always read module number LAST to validate the prior reads:
+					g.enqueueMainRead()
 					go g.readSubmit()
 				} else {
 					// read the SRAM copy for underworld and overworld:
@@ -147,6 +142,8 @@ func (g *Game) run() {
 					g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
 					g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
 					g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
+					// must always read module number LAST to validate the prior reads:
+					g.enqueueMainRead()
 					go g.readSubmit()
 				}
 			}
@@ -191,42 +188,32 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) handleSNESRead(rsp snes.Response) {
-	//log.Printf("read completed: %06x size=%02x\n", rsp.Address, rsp.Size)
-
-	// copy data read into our wram array:
-	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	if rsp.Address >= 0xF50000 && rsp.Address < 0xF70000 {
-		copy(g.wram[(rsp.Address-0xF50000):], rsp.Data)
-	}
-	if rsp.Address >= 0xE00000 && rsp.Address < 0xF00000 {
-		copy(g.sram[(rsp.Address-0xE00000):], rsp.Data)
+func (g *Game) isReadWRAM(rsp snes.Response) (start, end uint32, ok bool) {
+	ok = rsp.Address >= 0xF50000 && rsp.Address < 0xF70000
+	if !ok {
+		return
 	}
 
-	g.updateLock.Lock()
-	if rsp.Address == g.lastUpdateTarget {
-		log.Printf("alttp: update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
-		if rsp.Data[0] == 0x60 {
-			// allow next update:
-			log.Printf("alttp: update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
-			if g.updateStage == 2 {
-				g.updateStage = 0
-				g.nextUpdateA = !g.nextUpdateA
-				g.lastUpdateTarget = 0xFFFFFF
-			}
-		} else {
-			// check again:
-			g.enqueueUpdateCheckRead()
-		}
-	}
-	g.updateLock.Unlock()
+	start = rsp.Address - 0xF50000
+	end = start + uint32(rsp.Size)
+	return
 }
 
-func (g *Game) enqueueMainReads() {
+func (g *Game) isReadSRAM(rsp snes.Response) (start, end uint32, ok bool) {
+	ok = rsp.Address >= 0xE00000 && rsp.Address < 0xF00000
+	if !ok {
+		return
+	}
+
+	start = rsp.Address - 0xE00000
+	end = start + uint32(rsp.Size)
+	return
+}
+
+func (g *Game) enqueueSupportingReads() {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50010, 0xF0, 0) // [$0010..$00FF]
 	g.readEnqueue(0xF50100, 0x36, 0) // [$0100..$0136]
 	g.readEnqueue(0xF50400, 0x20, 0) // [$0400..$041F]
 	// $068E[2] and $0690[2] for controlling doors
@@ -236,8 +223,69 @@ func (g *Game) enqueueMainReads() {
 	g.readEnqueue(0xF5F340, 0xF0, 0) // [$F340..$F42F]
 }
 
+func (g *Game) enqueueMainRead() {
+	// NOTE: order matters! must read the module number LAST to make sure all reads prior are valid.
+	g.readEnqueue(0xF50010, 0xF0, 0) // [$0010..$00FF]
+}
+
 // called when all reads are completed:
-func (g *Game) readMainComplete() {
+func (g *Game) readMainComplete(rsps []snes.Response) {
+	// assume module is invalid until we read it:
+	moduleStaging := uint8(0xFF)
+	for _, rsp := range rsps {
+		// check WRAM reads:
+		if start, end, ok := g.isReadWRAM(rsp); ok {
+			copy(g.wramStaging[start:end], rsp.Data)
+			// did we read the module number?
+			if start <= 0x10 && 0x10 <= end {
+				moduleStaging = g.wramStaging[0x10]
+			}
+		}
+		// ignore SRAM for staging.
+
+		// handle update routine check:
+		g.updateLock.Lock()
+		if rsp.Address == g.lastUpdateTarget {
+			log.Printf("alttp: update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+			// when executed, the routine replaces its first instruction with RTS ($60):
+			if rsp.Data[0] == 0x60 {
+				// allow next update:
+				log.Printf("alttp: update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+				if g.updateStage == 2 {
+					g.updateStage = 0
+					g.nextUpdateA = !g.nextUpdateA
+					g.lastUpdateTarget = 0xFFFFFF
+				}
+			} else {
+				// check again:
+				g.enqueueUpdateCheckRead()
+			}
+		}
+		g.updateLock.Unlock()
+
+		// 0 indicates to re-enqueue the read every time:
+		if rsp.Extra == 0 {
+			g.readEnqueue(rsp.Address, rsp.Size, rsp.Extra)
+		}
+	}
+
+	// validate new reads in staging area before copying to wram/sram:
+	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
+		return
+	}
+
+	// copy the read data into our view of memory:
+	for _, rsp := range rsps {
+		// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+		if start, end, ok := g.isReadWRAM(rsp); ok {
+			copy(g.wram[start:end], rsp.Data)
+		}
+		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
+		if start, end, ok := g.isReadSRAM(rsp); ok {
+			copy(g.sram[start:end], rsp.Data)
+		}
+	}
+
 	// assign local variables from WRAM:
 	local := g.local
 
