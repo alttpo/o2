@@ -67,6 +67,9 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		return nil, fmt.Errorf("retroarch: open: could not find socket by device='%s'\n", descriptor.GetId())
 	}
 
+	// fill back in the addr for the descriptor:
+	descriptor.addr = c.addr
+
 	c.MuteLog(false)
 	qu := &Queue{c: c}
 	qu.BaseInit(driverName, qu)
