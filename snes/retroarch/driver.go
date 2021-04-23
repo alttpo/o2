@@ -67,6 +67,7 @@ func (d *Driver) Open(desc snes.DeviceDescriptor) (q snes.Queue, err error) {
 		return nil, fmt.Errorf("retroarch: open: could not find socket by device='%s'\n", descriptor.GetId())
 	}
 
+	c.MuteLog(false)
 	qu := &Queue{c: c}
 	qu.BaseInit(driverName, qu)
 	qu.Init()
@@ -92,6 +93,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 
 	devices = make([]snes.DeviceDescriptor, 0, len(d.detectors))
 	for i, detector := range d.detectors {
+		detector.MuteLog(true)
 		if !detector.IsConnected() {
 			// "connect" to this UDP endpoint:
 			err = detector.Connect(detector.addr)

@@ -98,14 +98,14 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	sb.WriteString(fmt.Sprintf("%06x %d\n", lorom.PakAddressToBus(cmd.Request.Address), cmd.Request.Size))
 	reqStr := sb.String()
 
-	err = c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
+	err = c.WriteTimeout([]byte(reqStr), time.Second * 2)
 	if err != nil {
 		q.Close()
 		return
 	}
 
 	var rsp []byte
-	rsp, err = c.ReadTimeout(time.Millisecond * 500)
+	rsp, err = c.ReadTimeout(time.Second * 2)
 	if err != nil {
 		q.Close()
 		return
@@ -177,7 +177,7 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 	reqStr := sb.String()
 
 	log.Printf("retroarch: > %s", reqStr)
-	err = q.c.WriteTimeout([]byte(reqStr), time.Millisecond * 200)
+	err = q.c.WriteTimeout([]byte(reqStr), time.Second * 2)
 	if err != nil {
 		q.Close()
 		return
