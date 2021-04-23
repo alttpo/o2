@@ -114,6 +114,7 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	if c == nil {
 		return fmt.Errorf("retroarch: read: connection is closed")
 	}
+	keepAlive <- struct{}{}
 
 	for _, req := range cmd.Batch {
 		// nowhere to put the response?
@@ -133,6 +134,7 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 			q.Close()
 			return
 		}
+		keepAlive <- struct{}{}
 
 		var rsp []byte
 		rsp, err = c.ReadTimeout(time.Second * 5)
@@ -140,6 +142,7 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 			q.Close()
 			return
 		}
+		keepAlive <- struct{}{}
 
 		// parse ASCII response:
 		var n int
@@ -196,6 +199,7 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 	if c == nil {
 		return fmt.Errorf("retroarch: write: connection is closed")
 	}
+	keepAlive <- struct{}{}
 
 	for _, req := range cmd.Batch {
 		var sb strings.Builder
@@ -219,6 +223,7 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 			q.Close()
 			return
 		}
+		keepAlive <- struct{}{}
 
 		completed := req.Completion
 		if completed != nil {
