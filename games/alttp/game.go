@@ -36,9 +36,6 @@ type Game struct {
 	running bool
 	stopped chan struct{}
 
-	readQueueLock sync.Mutex
-	readQueue     []snes.Read
-
 	readResponseLock sync.Mutex
 	readResponse     []snes.Response
 

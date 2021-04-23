@@ -8,14 +8,8 @@ import (
 	"time"
 )
 
-func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
-	defer func() {
-		g.readQueueLock.Unlock()
-	}()
-
-	g.readQueueLock.Lock()
-
-	g.readQueue = append(g.readQueue, snes.Read{
+func (g *Game) readEnqueue(q []snes.Read, addr uint32, size uint8, extra interface{}) []snes.Read {
+	q = append(q, snes.Read{
 		Address: addr,
 		Size:    size,
 		Extra:   extra,
@@ -26,16 +20,11 @@ func (g *Game) readEnqueue(addr uint32, size uint8, extra interface{}) {
 			g.readResponse = append(g.readResponse, rsp)
 		},
 	})
+
+	return q
 }
 
-func (g *Game) readSubmit() {
-	g.readQueueLock.Lock()
-	// copy out the current queue contents:
-	readQueue := g.readQueue[:]
-	// clear the queue:
-	g.readQueue = nil
-	g.readQueueLock.Unlock()
-
+func (g *Game) readSubmit(readQueue []snes.Read) {
 	if len(readQueue) == 0 {
 		return
 	}
@@ -63,11 +52,13 @@ func (g *Game) readSubmit() {
 		},
 	)
 
+	//log.Printf("alttp: readSubmit: enqueue start %d reads\n", len(readQueue))
 	err := sequence.EnqueueTo(q)
 	if err != nil {
 		log.Printf("alttp: readSubmit: enqueue: %s\n", err)
 		return
 	}
+	//log.Printf("alttp: readSubmit: enqueue complete\n")
 }
 
 // run in a separate goroutine
@@ -75,10 +66,11 @@ func (g *Game) run() {
 	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
 	// 0x1EA5D = 01 (was 02)
 
-	g.enqueueSupportingReads()
+	q := make([]snes.Read, 0, 8)
+	q = g.enqueueSupportingReads(q)
 	// must always read module number LAST to validate the prior reads:
-	g.enqueueMainRead()
-	go g.readSubmit()
+	q = g.enqueueMainRead(q, 0)
+	g.readSubmit(q)
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
 	slowbeat := time.NewTicker(500 * time.Millisecond)
@@ -98,17 +90,16 @@ func (g *Game) run() {
 			}
 
 			// process the last read data:
-			g.readMainComplete(rsps)
+			q := g.readMainComplete(rsps)
 			g.lastReadCompleted = time.Now()
 
-			go g.readSubmit()
+			g.readSubmit(q)
 			break
 
 		// wait for network message from server:
 		case msg := <-g.client.Read():
 			if msg == nil {
-				// disconnected from server; reset state:
-				g.Reset()
+				// disconnected?
 				break
 			}
 			if !g.IsRunning() {
@@ -132,19 +123,21 @@ func (g *Game) run() {
 				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
 				if timeSinceRead >= time.Millisecond*512 {
 					log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
-					g.enqueueSupportingReads()
+					q := make([]snes.Read, 0, 8)
+					q = g.enqueueSupportingReads(q)
 					// must always read module number LAST to validate the prior reads:
-					g.enqueueMainRead()
-					go g.readSubmit()
+					q = g.enqueueMainRead(q, 0)
+					g.readSubmit(q)
 				} else {
+					q := make([]snes.Read, 0, 8)
 					// read the SRAM copy for underworld and overworld:
-					g.readEnqueue(0xF5F000, 0xFE, 1) // [$F000..$F0FD]
-					g.readEnqueue(0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
-					g.readEnqueue(0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
-					g.readEnqueue(0xF5F280, 0xC0, 1) // [$F280..$F33F]
+					q = g.readEnqueue(q, 0xF5F000, 0xFE, 1) // [$F000..$F0FD]
+					q = g.readEnqueue(q, 0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
+					q = g.readEnqueue(q, 0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
+					q = g.readEnqueue(q, 0xF5F280, 0xC0, 1) // [$F280..$F33F]
 					// must always read module number LAST to validate the prior reads:
-					g.enqueueMainRead()
-					go g.readSubmit()
+					q = g.enqueueMainRead(q, nil)
+					g.readSubmit(q)
 				}
 			}
 
@@ -210,25 +203,30 @@ func (g *Game) isReadSRAM(rsp snes.Response) (start, end uint32, ok bool) {
 	return
 }
 
-func (g *Game) enqueueSupportingReads() {
+func (g *Game) enqueueSupportingReads(q []snes.Read) []snes.Read {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	g.readEnqueue(0xF50100, 0x36, 0) // [$0100..$0136]
-	g.readEnqueue(0xF50400, 0x20, 0) // [$0400..$041F]
+	q = g.readEnqueue(q, 0xF50100, 0x36, 0) // [$0100..$0136]
+	q = g.readEnqueue(q, 0xF50400, 0x20, 0) // [$0400..$041F]
 	// $1980..19E9 for reading underworld door state
-	g.readEnqueue(0xF51980, 0x6A, 0) // [$1980..$19E9]
+	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
-	g.readEnqueue(0xF5F340, 0xF0, 0) // [$F340..$F42F]
+	q = g.readEnqueue(q, 0xF5F340, 0xF0, 0) // [$F340..$F42F]
+
+	return q
 }
 
-func (g *Game) enqueueMainRead() {
+func (g *Game) enqueueMainRead(q []snes.Read, extra interface{}) []snes.Read {
 	// NOTE: order matters! must read the module number LAST to make sure all reads prior are valid.
-	g.readEnqueue(0xF50010, 0xF0, 0) // [$0010..$00FF]
+	q = g.readEnqueue(q, 0xF50010, 0xF0, extra) // [$0010..$00FF]
+	return q
 }
 
 // called when all reads are completed:
-func (g *Game) readMainComplete(rsps []snes.Response) {
+func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
+	q := make([]snes.Read, 0, 8)
+
 	// assume module is invalid until we read it:
 	moduleStaging := uint8(0xFF)
 	for _, rsp := range rsps {
@@ -257,14 +255,16 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				}
 			} else {
 				// check again:
-				g.enqueueUpdateCheckRead()
+				q = g.enqueueUpdateCheckRead(q)
+				// TODO: this may or may not be redundant
+				q = g.enqueueMainRead(q, nil)
 			}
 		}
 		g.updateLock.Unlock()
 
 		// 0 indicates to re-enqueue the read every time:
 		if rsp.Extra == 0 {
-			g.readEnqueue(rsp.Address, rsp.Size, rsp.Extra)
+			q = g.readEnqueue(q, rsp.Address, rsp.Size, rsp.Extra)
 		}
 	}
 
@@ -274,7 +274,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			log.Println("alttp: game now in invalid state")
 		}
 		g.invalid = true
-		return
+		return q
 	}
 
 	if g.invalid {
@@ -293,6 +293,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			copy(g.sram[start:end], rsp.Data)
 		}
 	}
+
+	//log.Printf("alttp: read %d responses\n", len(rsps))
 
 	// assign local variables from WRAM:
 	local := g.local
@@ -369,7 +371,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
-		return
+		return q
 	}
 
 	// increment frame timer:
@@ -385,6 +387,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.monotonicFrameTime++
 
 	g.frameAdvanced()
+
+	return q
 }
 
 func (g *Game) wramU8(addr uint32) uint8 {

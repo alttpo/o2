@@ -111,7 +111,12 @@ func (g *Game) updateWRAM() {
 			}
 
 			g.updateStage = 2
-			g.enqueueUpdateCheckRead()
+
+			q := make([]snes.Read, 0, 8)
+			q = g.enqueueUpdateCheckRead(q)
+			// must always read module number LAST to validate the prior reads:
+			q = g.enqueueMainRead(q, 0)
+			g.readSubmit(q)
 		},
 	).EnqueueTo(q)
 	if err != nil {
@@ -120,16 +125,14 @@ func (g *Game) updateWRAM() {
 	}
 }
 
-func (g *Game) enqueueUpdateCheckRead() {
+func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {
 	log.Println("alttp: update: enqueueUpdateCheckRead")
 	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
 	addr := g.lastUpdateTarget
 	if addr != 0xFFFFFF {
-		g.readEnqueue(addr, 0x01, nil)
-		// must always read module number LAST to validate the prior reads:
-		g.enqueueMainRead()
-		go g.readSubmit()
+		q = g.readEnqueue(q, addr, 0x01, nil)
 	}
+	return q
 }
 
 func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
