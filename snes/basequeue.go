@@ -83,7 +83,7 @@ func (b *BaseQueue) handleQueue() {
 
 channelLoop:
 	for pair := range b.cq {
-		//log.Printf("%s: dequeue command\n", b.name)
+		//log.Printf("%s: dequeue command; len = %d\n", b.name, len(b.cq))
 		cmd := pair.Command
 
 		if cmd == nil {
@@ -103,6 +103,7 @@ channelLoop:
 
 			done := make(chan struct{})
 			keepAlive := make(chan struct{}, 1)
+			//started := time.Now()
 			go func() {
 				err = cmd.Execute(q, keepAlive)
 				close(done)
@@ -124,6 +125,8 @@ channelLoop:
 					break channelLoop
 				}
 			}
+			//stopped := time.Now()
+			//log.Printf("%s: command execution took %d msec", b.name, stopped.Sub(started).Milliseconds())
 		}
 
 		// wrap the error if it is a terminal case:
