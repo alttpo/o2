@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -19,13 +20,15 @@ type UDPClient struct {
 	isConnected bool
 	read        chan []byte
 	write       chan []byte
+
+	seqLock sync.Mutex
 }
 
 func NewUDPClient(name string) *UDPClient {
 	return &UDPClient{
-		name:   name,
-		read:   make(chan []byte, 64),
-		write:  make(chan []byte, 64),
+		name:  name,
+		read:  make(chan []byte, 64),
+		write: make(chan []byte, 64),
 	}
 }
 
@@ -71,6 +74,18 @@ func (c *UDPClient) ReadTimeout(d time.Duration) ([]byte, error) {
 		timer.Stop()
 		return nil, fmt.Errorf("%s: readTimeout: %w", c.name, ErrTimeout)
 	}
+}
+
+func (c *UDPClient) WriteThenReadTimeout(m []byte, d time.Duration) (rsp []byte, err error) {
+	// hold a lock so we're guaranteed write->read consistency:
+	defer c.seqLock.Unlock()
+	c.seqLock.Lock()
+
+	err = c.WriteTimeout(m, d)
+	if err != nil {
+		return
+	}
+	return c.ReadTimeout(d)
 }
 
 func (c *UDPClient) SetReadDeadline(t time.Time) error  { return c.c.SetReadDeadline(t) }
