@@ -115,7 +115,7 @@ func (g *Game) updateWRAM() {
 			q := make([]snes.Read, 0, 8)
 			q = g.enqueueUpdateCheckRead(q)
 			// must always read module number LAST to validate the prior reads:
-			q = g.enqueueMainRead(q, 0)
+			q = g.enqueueMainRead(q, nil)
 			g.readSubmit(q)
 		},
 	).EnqueueTo(q)
