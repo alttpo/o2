@@ -270,7 +270,16 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
+		if !g.invalid {
+			log.Println("alttp: game now in invalid state")
+		}
+		g.invalid = true
 		return
+	}
+
+	if g.invalid {
+		log.Println("alttp: game now in valid state")
+		g.invalid = false
 	}
 
 	// copy the read data into our view of memory:

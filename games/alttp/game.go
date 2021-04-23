@@ -61,8 +61,10 @@ type Game struct {
 	// staging area to read data into first before validating e.g. not in reset state or in SD2SNES menu, etc.:
 	wramStaging [0x20000]byte
 	// game-valid memory:
-	wram        [0x20000]byte
-	sram        [0x10000]byte
+	wram [0x20000]byte
+	sram [0x10000]byte
+
+	invalid          bool
 
 	syncableItems  map[uint16]SyncableItem
 	underworld     [0x128]syncableBitU16
