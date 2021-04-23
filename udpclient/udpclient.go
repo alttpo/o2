@@ -14,6 +14,8 @@ type UDPClient struct {
 	c    *net.UDPConn
 	addr *net.UDPAddr
 
+	muteLog bool
+
 	isConnected bool
 	read        chan []byte
 	write       chan []byte
@@ -21,9 +23,9 @@ type UDPClient struct {
 
 func NewUDPClient(name string) *UDPClient {
 	return &UDPClient{
-		name:  name,
-		read:  make(chan []byte, 64),
-		write: make(chan []byte, 64),
+		name:   name,
+		read:   make(chan []byte, 64),
+		write:  make(chan []byte, 64),
 	}
 }
 
@@ -32,6 +34,10 @@ func MakeUDPClient(name string, c *UDPClient) *UDPClient {
 	c.read = make(chan []byte, 64)
 	c.write = make(chan []byte, 64)
 	return c
+}
+
+func (c *UDPClient) MuteLog(muted bool) {
+	c.muteLog = muted
 }
 
 func (c *UDPClient) Address() *net.UDPAddr { return c.addr }
@@ -61,7 +67,7 @@ func (c *UDPClient) ReadTimeout(d time.Duration) ([]byte, error) {
 		timer.Stop()
 		return m, nil
 	case <-timer.C:
-		return nil, fmt.Errorf("%s: readTimeout: %w\n", c.name, ErrTimeout)
+		return nil, fmt.Errorf("%s: readTimeout: %w", c.name, ErrTimeout)
 	}
 }
 
@@ -70,8 +76,15 @@ func (c *UDPClient) SetWriteDeadline(t time.Time) error { return c.c.SetWriteDea
 
 func (c *UDPClient) IsConnected() bool { return c.isConnected }
 
+func (c *UDPClient) log(fmt string, args ...interface{}) {
+	if c.muteLog {
+		return
+	}
+	log.Printf(fmt, args...)
+}
+
 func (c *UDPClient) Connect(addr *net.UDPAddr) (err error) {
-	log.Printf("%s: connect to server '%s'\n", c.name, addr)
+	c.log("%s: connect to server '%s'\n", c.name, addr)
 
 	if c.isConnected {
 		return fmt.Errorf("%s: already connected", c.name)
@@ -85,7 +98,7 @@ func (c *UDPClient) Connect(addr *net.UDPAddr) (err error) {
 	}
 
 	c.isConnected = true
-	log.Printf("%s: connected to server '%s'\n", c.name, addr)
+	c.log("%s: connected to server '%s'\n", c.name, addr)
 
 	go c.readLoop()
 	go c.writeLoop()
@@ -94,7 +107,7 @@ func (c *UDPClient) Connect(addr *net.UDPAddr) (err error) {
 }
 
 func (c *UDPClient) Disconnect() {
-	log.Printf("%s: disconnect from server '%s'\n", c.name, c.addr)
+	c.log("%s: disconnect from server '%s'\n", c.name, c.addr)
 
 	if !c.isConnected {
 		return
@@ -103,12 +116,12 @@ func (c *UDPClient) Disconnect() {
 	c.isConnected = false
 	err := c.c.SetReadDeadline(time.Now())
 	if err != nil {
-		log.Printf("%s: setreaddeadline: %v\n", c.name, err)
+		c.log("%s: setreaddeadline: %v\n", c.name, err)
 	}
 
 	err = c.c.SetWriteDeadline(time.Now())
 	if err != nil {
-		log.Printf("%s: setwritedeadline: %v\n", c.name, err)
+		c.log("%s: setwritedeadline: %v\n", c.name, err)
 	}
 
 	// signal a disconnect took place:
@@ -127,10 +140,10 @@ func (c *UDPClient) Disconnect() {
 	// close the underlying connection:
 	err = c.c.Close()
 	if err != nil {
-		log.Printf("%s: close: %v\n", c.name, err)
+		c.log("%s: close: %v\n", c.name, err)
 	}
 
-	log.Printf("%s: disconnected from server '%s'\n", c.name, c.addr)
+	c.log("%s: disconnected from server '%s'\n", c.name, c.addr)
 
 	c.c = nil
 }
@@ -144,11 +157,11 @@ func (c *UDPClient) Close() {
 
 // must run in a goroutine
 func (c *UDPClient) readLoop() {
-	log.Printf("%s: readLoop started\n", c.name)
+	c.log("%s: readLoop started\n", c.name)
 
 	defer func() {
 		c.Disconnect()
-		log.Printf("%s: disconnected; readLoop exited\n", c.name)
+		c.log("%s: disconnected; readLoop exited\n", c.name)
 	}()
 
 	// we only need a single receive buffer:
@@ -159,7 +172,7 @@ func (c *UDPClient) readLoop() {
 		var n, _, err = c.c.ReadFromUDP(b)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) {
-				log.Printf("%s: read: %s\n", c.name, err)
+				c.log("%s: read: %s\n", c.name, err)
 			}
 			return
 		}
@@ -174,11 +187,11 @@ func (c *UDPClient) readLoop() {
 
 // must run in a goroutine
 func (c *UDPClient) writeLoop() {
-	log.Printf("%s: writeLoop started\n", c.name)
+	c.log("%s: writeLoop started\n", c.name)
 
 	defer func() {
 		c.Disconnect()
-		log.Printf("%s: disconnected; writeLoop exited\n", c.name)
+		c.log("%s: disconnected; writeLoop exited\n", c.name)
 	}()
 
 	for w := range c.write {
@@ -190,7 +203,7 @@ func (c *UDPClient) writeLoop() {
 		var _, err = c.c.Write(w)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) {
-				log.Printf("%s: write: %s\n", c.name, err)
+				c.log("%s: write: %s\n", c.name, err)
 			}
 			return
 		}
