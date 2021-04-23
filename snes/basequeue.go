@@ -103,7 +103,7 @@ channelLoop:
 
 			done := make(chan struct{})
 			keepAlive := make(chan struct{}, 1)
-			//started := time.Now()
+			started := time.Now()
 			go func() {
 				err = cmd.Execute(q, keepAlive)
 				close(done)
@@ -125,8 +125,10 @@ channelLoop:
 					break channelLoop
 				}
 			}
-			//stopped := time.Now()
-			//log.Printf("%s: command execution took %d msec", b.name, stopped.Sub(started).Milliseconds())
+			stopped := time.Now()
+			executionTime := stopped.Sub(started).Milliseconds()
+			_ = executionTime
+			//log.Printf("%s: command execution took %d msec", b.name, executionTime)
 		}
 
 		// wrap the error if it is a terminal case:
@@ -135,7 +137,7 @@ channelLoop:
 			terminal = true
 		}
 		if pair.Completion != nil {
-			pair.Completion(cmd, err)
+			go pair.Completion(cmd, err)
 		} else if err != nil {
 			log.Println(err)
 		}
