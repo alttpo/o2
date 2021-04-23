@@ -138,13 +138,17 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	reqStr := sb.String()
 	var rsp []byte
 
-	defer c.Unlock()
+	defer func() {
+		c.Unlock()
+		if err != nil {
+			q.Close()
+		}
+	}()
 	c.Lock()
 
 	// send all commands up front in one packet:
 	err = c.WriteTimeout([]byte(reqStr), time.Second*5)
 	if err != nil {
-		q.Close()
 		return
 	}
 	keepAlive <- struct{}{}
@@ -161,7 +165,6 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 
 		rsp, err = c.ReadTimeout(time.Second * 5)
 		if err != nil {
-			q.Close()
 			return
 		}
 		keepAlive <- struct{}{}
@@ -173,12 +176,10 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 		var addr uint32
 		n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
 		if err != nil {
-			q.Close()
 			return
 		}
 		if addr != expectedAddr {
 			err = fmt.Errorf("retroarch: read response for wrong request %06x != %06x", addr, expectedAddr)
-			q.Close()
 			return
 		}
 
@@ -201,7 +202,8 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 		})
 	}
 
-	return nil
+	err = nil
+	return
 }
 
 type writeCommand struct {
