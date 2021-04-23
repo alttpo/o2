@@ -55,6 +55,7 @@ func (c *UDPClient) WriteTimeout(m []byte, d time.Duration) error {
 		timer.Stop()
 		return nil
 	case <-timer.C:
+		timer.Stop()
 		return fmt.Errorf("%s: writeTimeout: %w\n", c.name, ErrTimeout)
 	}
 }
@@ -67,6 +68,7 @@ func (c *UDPClient) ReadTimeout(d time.Duration) ([]byte, error) {
 		timer.Stop()
 		return m, nil
 	case <-timer.C:
+		timer.Stop()
 		return nil, fmt.Errorf("%s: readTimeout: %w", c.name, ErrTimeout)
 	}
 }
