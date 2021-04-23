@@ -116,6 +116,8 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	}
 	keepAlive <- struct{}{}
 
+	// build multiple requests:
+	var sb strings.Builder
 	for _, req := range cmd.Batch {
 		// nowhere to put the response?
 		completed := req.Completion
@@ -123,14 +125,36 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 			continue
 		}
 
-		var sb strings.Builder
 		sb.WriteString("READ_CORE_RAM ")
 		expectedAddr := lorom.PakAddressToBus(req.Address)
 		sb.WriteString(fmt.Sprintf("%06x %d\n", expectedAddr, req.Size))
-		reqStr := sb.String()
+	}
 
-		var rsp []byte
-		rsp, err = c.WriteThenReadTimeout([]byte(reqStr), time.Second*5)
+	reqStr := sb.String()
+	var rsp []byte
+
+	defer c.Unlock()
+	c.Lock()
+
+	// send all commands up front in one packet:
+	err = c.WriteTimeout([]byte(reqStr), time.Second*5)
+	if err != nil {
+		q.Close()
+		return
+	}
+	keepAlive <- struct{}{}
+
+	// responses come in multiple packets:
+	for _, req := range cmd.Batch {
+		// nowhere to put the response?
+		completed := req.Completion
+		if completed == nil {
+			continue
+		}
+
+		expectedAddr := lorom.PakAddressToBus(req.Address)
+
+		rsp, err = c.ReadTimeout(time.Second * 5)
 		if err != nil {
 			q.Close()
 			return
@@ -138,9 +162,10 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 		keepAlive <- struct{}{}
 
 		// parse ASCII response:
+		r := bytes.NewReader(rsp)
+
 		var n int
 		var addr uint32
-		r := bytes.NewReader(rsp)
 		n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
 		if err != nil {
 			q.Close()
