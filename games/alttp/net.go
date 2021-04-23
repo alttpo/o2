@@ -80,8 +80,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 
 		// reset player TTL:
-		g.players[header.Index].SetTTL(255)
 		g.players[header.Index].Index = int(header.Index)
+		g.players[header.Index].SetTTL(255)
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
