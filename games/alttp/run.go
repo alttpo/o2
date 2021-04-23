@@ -216,8 +216,7 @@ func (g *Game) enqueueSupportingReads() {
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	g.readEnqueue(0xF50100, 0x36, 0) // [$0100..$0136]
 	g.readEnqueue(0xF50400, 0x20, 0) // [$0400..$041F]
-	// $068E[2] and $0690[2] for controlling doors
-	g.readEnqueue(0xF5068E, 0x04, 0) // [$068E..$0691]
+	// $1980..19E9 for reading underworld door state
 	g.readEnqueue(0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
 	g.readEnqueue(0xF5F340, 0xF0, 0) // [$F340..$F42F]
