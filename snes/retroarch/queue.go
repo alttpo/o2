@@ -2,10 +2,12 @@ package retroarch
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"o2/snes"
 	"o2/snes/lorom"
+	"o2/udpclient"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,9 @@ type Queue struct {
 }
 
 func (q *Queue) IsTerminalError(err error) bool {
+	if errors.Is(err, udpclient.ErrTimeout) {
+		return true
+	}
 	return false
 }
 
