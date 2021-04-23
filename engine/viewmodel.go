@@ -449,7 +449,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	// enqueue the close operation:
 	snesClosed := make(chan error)
 	lastDev := vm.driverDevice
-	log.Printf("viewmodel: snesdisconnected: closing driver='%s', device='%s'\n", lastDev.NamedDriver.Name, lastDev.Device.GetDisplayName())
+	log.Printf("viewmodel: snesdisconnected: closing driver='%s', device='%s'\n", lastDev.NamedDriver.Name, lastDev.Device.GetId())
 	err := vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command: &snes.CloseCommand{},
 		Completion: func(cmd snes.Command, err error) {
