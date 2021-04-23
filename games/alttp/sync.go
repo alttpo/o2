@@ -98,7 +98,9 @@ func (g *Game) initSync() {
 			received = "Silver Bow"
 			maxV = 3
 		}
-		asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+		notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
+		asm.Comment(notification)
+		g.pushNotification(notification)
 
 		asm.LDA_long(0x7EF377) // arrows
 		asm.CMP_imm8_b(0x01)   // are arrows present?
@@ -278,7 +280,9 @@ func (g *Game) initSync() {
 		}
 
 		received := hc.String()
-		asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+		notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
+		asm.Comment(notification)
+		g.pushNotification(notification)
 
 		asm.LDA_imm8_b(updated & ^uint8(7))
 		asm.STA_long(0x7EF000 + uint32(0x36C))
@@ -619,7 +623,9 @@ func (g *Game) initSync() {
 	g.overworld[0x5B].onUpdated = func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
 		if initial&0x20 == 0 && updated&0x20 == 0x20 {
 			if g.local.OverworldArea == 0x5B {
-				a.Comment("create pyramid hole:")
+				notification := "create pyramid hole:"
+				a.Comment(notification)
+				g.pushNotification(notification)
 				a.JSL(g.romFunctions[fnOverworldCreatePyramidHole])
 			}
 		}

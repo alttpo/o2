@@ -122,7 +122,9 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 			}
 			k <<= 1
 		}
-		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
+		notification := fmt.Sprintf("got %s:", strings.Join(received, ", "))
+		asm.Comment(notification)
+		g.pushNotification(notification)
 	} else {
 		asm.Comment(fmt.Sprintf("u8 [$%06x] |= %#08b", longAddr, newBits))
 	}
@@ -235,7 +237,9 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 			}
 			k <<= 1
 		}
-		asm.Comment(fmt.Sprintf("got %s:", strings.Join(received, ", ")))
+		notification := fmt.Sprintf("got %s:", strings.Join(received, ", "))
+		asm.Comment(notification)
+		g.pushNotification(notification)
 	} else {
 		asm.Comment(fmt.Sprintf("u16[$%06x] |= %#016b", longAddr, newBits))
 	}
@@ -312,7 +316,9 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 		i := int(maxV) - 1
 		if i >= 0 && i < len(s.names) {
 			received := s.names[i]
-			asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+			notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
+			asm.Comment(notification)
+			g.pushNotification(notification)
 		}
 	} else {
 		asm.Comment(fmt.Sprintf("sram[$%04x] = $%02x", offset, maxV))
@@ -438,7 +444,9 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 		i := int(maxV) - 1
 		if i >= 0 && i < len(s.names) {
 			received := s.names[i]
-			asm.Comment(fmt.Sprintf("got %s from %s:", received, maxP.Name))
+			notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
+			asm.Comment(notification)
+			g.pushNotification(notification)
 		}
 	}
 

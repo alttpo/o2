@@ -17,6 +17,24 @@ func (g *Game) notifyView() {
 	g.viewModels.NotifyView("game", g)
 }
 
+func (g *Game) pushNotification(notification string) {
+	// record history of notifications:
+	historyVM, ok := g.viewModels.GetViewModel("game/notification/history")
+	if !ok {
+		historyVM = make([]string, 0, 200)
+	}
+
+	history, ok := historyVM.([]string)
+	if !ok {
+		history = make([]string, 0, 200)
+	}
+	history = append(history, notification)
+	g.viewModels.SetViewModel("game/notification/history", history)
+
+	// send latest notification:
+	g.viewModels.NotifyView("game/notification/current", notification)
+}
+
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	switch command {
 	case "setField":

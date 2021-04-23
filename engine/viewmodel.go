@@ -73,6 +73,14 @@ func (vm *ViewModel) GetViewModel(view string) (interface{}, bool) {
 	return viewModel, ok
 }
 
+func (vm *ViewModel) SetViewModel(view string, viewModel interface{}) {
+	defer vm.viewModelsLock.Unlock()
+	vm.viewModelsLock.Lock()
+
+	// cache the viewModel for new websocket connections so they get the updates on first connect:
+	vm.viewModels[view] = viewModel
+}
+
 func (vm *ViewModel) NotifyView(view string, model interface{}) {
 	defer vm.viewModelsLock.Unlock()
 	vm.viewModelsLock.Lock()

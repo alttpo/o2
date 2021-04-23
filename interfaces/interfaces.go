@@ -35,8 +35,12 @@ type ViewNotifier interface {
 
 // ViewModelContainer allows callers to get the view model value by name and to provide a new value to the view
 type ViewModelContainer interface {
+	// ViewNotifier NotifyView sets the viewModel and notifies the subscriber:
 	ViewNotifier
 
+	// SetViewModel sets the viewModel without notifying subscribers:
+	SetViewModel(view string, viewModel interface{})
+	// GetViewModel gets the last-set viewModel instance:
 	GetViewModel(view string) (interface{}, bool)
 }
 
