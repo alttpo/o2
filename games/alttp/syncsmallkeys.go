@@ -111,7 +111,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 		dungeonNumber := offs - smallKeyFirst
 		notification := fmt.Sprintf("update %s from %s", lw.Name, winner.Name)
-		a.Comment(notification)
+		a.Comment(notification + ":")
 		g.pushNotification(notification)
 		a.LDA_imm8_b(uint8(ww.Value))
 		a.STA_long(0x7E0000 + uint32(offs))

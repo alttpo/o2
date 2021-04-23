@@ -98,8 +98,8 @@ func (g *Game) initSync() {
 			received = "Silver Bow"
 			maxV = 3
 		}
-		notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
-		asm.Comment(notification)
+		notification := fmt.Sprintf("got %s from %s", received, maxP.Name)
+		asm.Comment(notification + ":")
 		g.pushNotification(notification)
 
 		asm.LDA_long(0x7EF377) // arrows
@@ -280,8 +280,8 @@ func (g *Game) initSync() {
 		}
 
 		received := hc.String()
-		notification := fmt.Sprintf("got %s from %s:", received, maxP.Name)
-		asm.Comment(notification)
+		notification := fmt.Sprintf("got %s from %s", received, maxP.Name)
+		asm.Comment(notification + ":")
 		g.pushNotification(notification)
 
 		asm.LDA_imm8_b(updated & ^uint8(7))
