@@ -47,6 +47,16 @@ func (g *Game) readWRAM() {
 		} else {
 			v = uint16(g.wramU8(uint32(offs)))
 		}
+
+		// if awaiting a write, don't update our value until it matches expected:
+		if w.IsWriting {
+			if w.ValueExpected == v {
+				w.IsWriting = false
+				w.Value = v
+			}
+			continue
+		}
+
 		if v != w.Value {
 			if g.notFirstWRAMRead {
 				w.Timestamp = nowTs
@@ -82,6 +92,12 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 	// compare timestamps amongst players:
 	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
+		lw := local.WRAM[offs]
+		// don't process a value awaiting a write:
+		if lw.IsWriting {
+			continue
+		}
+
 		// find latest timestamp among players:
 		winner := local
 		for _, p := range g.ActivePlayers() {
@@ -102,15 +118,16 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 			continue
 		}
 
-		lw := local.WRAM[offs]
 		ww := winner.WRAM[offs]
 
 		// Force our local timestamp equal to the remote winner to prevent the value bouncing back:
+		lw.IsWriting = true
 		lw.Timestamp = ww.Timestamp
+		lw.ValueExpected = ww.Value
 		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name)
 
 		dungeonNumber := offs - smallKeyFirst
-		notification := fmt.Sprintf("update %s from %s", lw.Name, winner.Name)
+		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name)
 		a.Comment(notification + ":")
 		g.pushNotification(notification)
 		a.LDA_imm8_b(uint8(ww.Value))

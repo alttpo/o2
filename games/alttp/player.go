@@ -16,11 +16,13 @@ func (m Module) IsDungeon() bool {
 }
 
 type SyncableWRAM struct {
-	Name      string
-	Size      uint8
-	Timestamp uint32
-	Value     uint16
-	ValueUsed uint16
+	Name          string
+	Size          uint8
+	Timestamp     uint32
+	Value         uint16
+	ValueUsed     uint16
+	IsWriting     bool
+	ValueExpected uint16
 }
 
 type Player struct {
