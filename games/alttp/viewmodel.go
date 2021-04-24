@@ -39,7 +39,14 @@ func (g *Game) pushNotification(notification string) {
 	g.nextNotification = notification
 
 	// send latest notification:
-	g.viewModels.NotifyView("game/notification/current", notification)
+	current := struct{
+		I int `json:"i"`
+		M string `json:"m"`
+	}{
+		I: len(history),
+		M: notification,
+	}
+	g.viewModels.NotifyView("game/notification/current", current)
 }
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {

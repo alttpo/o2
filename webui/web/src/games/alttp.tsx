@@ -39,11 +39,11 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     }, [vm["game/notification/history"]]);
 
     useEffect(() => {
-        let current = vm["game/notification/current"] as string;
+        let current = vm["game/notification/current"] as {m:string};
         if (current) {
             setNotifHistory(lastHistory => {
                 let newHistory = [...lastHistory];
-                newHistory.push(current);
+                newHistory.push(current.m);
                 return newHistory;
             });
             // scroll to bottom:
