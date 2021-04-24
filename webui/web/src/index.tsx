@@ -9,7 +9,6 @@ import SNESView from "./snesview";
 import ROMView from "./romview";
 import ServerView from "./serverview";
 import GameView from "./gameview";
-import {JSXInternal} from "preact/src/jsx";
 
 const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})
 
@@ -130,6 +129,8 @@ const App = () => {
                         <div class="content flex-1">
                             <ServerView ch={ch.current} vm={vm}/>
                         </div>
+
+                        <hr/>
 
                         {vm.game?.isCreated && (
                             <div class="content flex-1">
