@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"o2/interfaces"
 	"o2/snes"
+	"o2/webui/dist"
 	"path/filepath"
 	"sync"
 	"time"
@@ -111,7 +112,7 @@ func NewWebServer(listenAddr string) *WebServer {
 	}))
 
 	// serve static content from go-bindata:
-	s.mux.Handle("/", MaxAge(http.FileServer(AssetFile())))
+	s.mux.Handle("/", MaxAge(http.FileServer(http.FS(dist.Content))))
 
 	// handle the broadcast channel:
 	go s.handleBroadcast()
