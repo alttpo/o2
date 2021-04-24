@@ -24,12 +24,11 @@ type Game struct {
 	// client can be nil at any time
 	client *client.Client
 	// viewModels can be nil at any time
-	viewModels interfaces.ViewModelContainer
+	viewModels       interfaces.ViewModelContainer
 	nextNotification string
 
-	localIndex int // index into the players array that local points to (or -1 if not connected)
-	local      *Player
-	players    [MaxPlayers]Player
+	local   *Player
+	players [MaxPlayers]Player
 
 	activePlayersClean bool
 	activePlayers      []*Player
@@ -62,7 +61,7 @@ type Game struct {
 	wram [0x20000]byte
 	sram [0x10000]byte
 
-	invalid          bool
+	invalid bool
 
 	syncableItems  map[uint16]SyncableItem
 	underworld     [0x128]syncableBitU16
@@ -162,7 +161,6 @@ func (g *Game) Reset() {
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
-	g.localIndex = -1
 	g.local = &Player{g: g, Index: -1}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)

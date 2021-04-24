@@ -7,7 +7,7 @@ import (
 
 func (g *Game) sendPackets() {
 	// don't send out any network updates until we're connected:
-	if g.localIndex < 0 {
+	if g.local.Index < 0 {
 		return
 	}
 

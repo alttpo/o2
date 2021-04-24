@@ -30,7 +30,7 @@ func (g *Game) makeGamePacket(kind protocol02.Kind) (m *bytes.Buffer) {
 	m = protocol02.MakePacket(
 		c.Group(),
 		kind,
-		uint16(g.localIndex),
+		uint16(g.local.Index),
 	)
 
 	// script protocol:
@@ -73,30 +73,29 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			panic(fmt.Errorf("error parsing protocol 02 header: %w", err))
 		}
 
+		index := int(header.Index)
+
 		// pre-emptively avoid panics in accessing players array out of bounds:
-		if header.Index >= MaxPlayers {
+		if index >= MaxPlayers {
 			log.Printf("alttp: player index %v received in packet beyond max player count %v!\n", header.Index, MaxPlayers)
 			return
 		}
 
 		// reset player TTL:
-		p := &g.players[header.Index]
-		p.Index = int(header.Index)
+		p := &g.players[index]
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
-			if (g.localIndex < 0) || (g.localIndex != g.local.Index) {
-				g.localIndex = int(header.Index)
+			if (g.local.Index < 0) || (g.local.Index != index) {
 				// copy local player data into players array at the appropriate index:
-				g.players[g.localIndex] = *g.local
+				g.players[index] = *g.local
 				// clear out old Player:
 				g.local.Index = -1
 				g.local.TTL = 0
 				// repoint local into the array:
-				g.local = &g.players[g.localIndex]
-				g.local.Index = g.localIndex
+				g.local = p
 			}
 			break
 
@@ -104,7 +103,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			fallthrough
 		case protocol02.Broadcast:
 			//log.Printf("%s\n", header.Kind.String())
-			err = g.players[header.Index].Deserialize(r)
+			err = p.Deserialize(r)
 			break
 		default:
 			panic(fmt.Errorf("unknown message kind %02x", header.Kind))
@@ -115,6 +114,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 
 		// reset player TTL:
+		p.Index = int(header.Index)
 		p.SetTTL(255)
 
 		// wait until we see a name packet to announce:

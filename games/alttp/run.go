@@ -100,6 +100,11 @@ func (g *Game) run() {
 		case msg := <-g.client.Read():
 			if msg == nil {
 				// disconnected?
+				for _, p := range g.ActivePlayers() {
+					// reset TTL for all players to make them inactive:
+					p.DecTTL(255)
+				}
+				g.local.Index = -1
 				break
 			}
 			if !g.IsRunning() {
@@ -141,7 +146,7 @@ func (g *Game) run() {
 				}
 			}
 
-			if g.localIndex < 0 && g.client != nil {
+			if g.local.Index < 0 && g.client != nil {
 				// request our player index:
 				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
 				if m == nil {
@@ -158,7 +163,7 @@ func (g *Game) run() {
 				return
 			}
 
-			if g.localIndex < 0 {
+			if g.local.Index < 0 {
 				break
 			}
 
@@ -407,7 +412,7 @@ func (g *Game) wramU16(addr uint32) uint16 {
 func (g *Game) frameAdvanced() {
 	// tick down TTLs of remote players:
 	for _, p := range g.ActivePlayers() {
-		p.DecTTL()
+		p.DecTTL(1)
 	}
 
 	// update underworld supertile state sync bit masks based on sync toggles from front-end:

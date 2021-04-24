@@ -76,16 +76,18 @@ func (p *Player) SetTTL(ttl int) {
 	p.TTL = ttl
 }
 
-func (p *Player) DecTTL() {
+func (p *Player) DecTTL(amount int) {
 	if p.TTL <= 0 {
 		return
 	}
 
-	p.TTL--
+	p.TTL -= amount
 	if p.TTL <= 0 {
+		p.g.activePlayersClean = false
+		p.TTL = 0
+		p.showJoinMessage = false
 		log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
 		p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
-		p.g.activePlayersClean = false
 	}
 }
 
