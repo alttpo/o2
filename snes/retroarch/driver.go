@@ -37,7 +37,7 @@ func NewDriver(addresses []*net.UDPAddr) *Driver {
 }
 
 func (d *Driver) DisplayOrder() int {
-	return 2
+	return 1
 }
 
 func (d *Driver) DisplayName() string {

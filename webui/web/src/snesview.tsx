@@ -114,14 +114,23 @@ recommended firmware</a>.
                 : <Fragment/>)
         }
         {
+            (vm.snes?.drivers?.some(drv => drv.name == "retroarch" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
+                ? <div style="display: table-row; height: 100%">
+                    <div style="display: table-cell">
+                        <div style="margin-top: 4px">
+Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
+<strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
+                        </div>
+                    </div>
+                </div>
+                : <Fragment/>
+        }
+        {
             (vm.snes?.drivers?.some(drv => drv.name == "qusb2snes" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
                 ? <div style="display: table-row; height: 100%">
                     <div style="display: table-cell">
                         <div style="margin-top: 4px">
-<a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">QUsb2Snes</a>{' '}
-is only required when connecting to an emulator. Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}
-follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
-<strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
+                            <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">Download QUsb2Snes here</a>
                         </div>
                     </div>
                 </div>
