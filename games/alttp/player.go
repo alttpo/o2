@@ -83,7 +83,7 @@ func (p *Player) DecTTL() {
 
 	p.TTL--
 	if p.TTL <= 0 {
-		log.Printf("alttp: [%02x]: %s left\n", uint8(p.Index), p.Name)
+		log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
 		p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
 		p.g.activePlayersClean = false
 	}

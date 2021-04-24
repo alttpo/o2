@@ -299,6 +299,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	// assign local variables from WRAM:
 	local := g.local
 
+	local.SetTTL(255)
+
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
 	if local.Module != newModule || local.SubModule != newSubModule {
 		log.Printf(

@@ -97,7 +97,6 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				// repoint local into the array:
 				g.local = &g.players[g.localIndex]
 				g.local.Index = g.localIndex
-				log.Printf("alttp: player[%02x] %s joined\n", g.localIndex, g.local.Name)
 			}
 			break
 
