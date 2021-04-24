@@ -2,14 +2,14 @@
 import {CommandHandler} from "./index";
 import {JSX} from "preact";
 
-export class ViewModel {
+export interface ViewModel {
     [k: string]: any;
 
-    status: string;
-    snes: SNESViewModel;
-    rom: ROMViewModel;
-    server: ServerViewModel;
-    game: GameViewModel;
+    status?: string;
+    snes?: SNESViewModel;
+    rom?: ROMViewModel;
+    server?: ServerViewModel;
+    game?: GameViewModel;
 }
 
 export interface SNESViewModel {

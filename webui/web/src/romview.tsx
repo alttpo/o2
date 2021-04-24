@@ -36,25 +36,25 @@ so that it can write to the game's memory."
                     </form>
 
                     <label class="grid-c1">Name:</label>
-                    <input class="grid-c2 mono" readonly value={rom.name}/>
+                    <input class="grid-c2 mono" readonly value={rom?.name}/>
 
                     <label class="grid-c1">Title:</label>
-                    <input class="grid-c2 mono" readonly value={rom.title}/>
+                    <input class="grid-c2 mono" readonly value={rom?.title}/>
 
                     <label class="grid-c1">Version:</label>
-                    <input class="grid-c2 mono" readonly value={rom.region + " " + rom.version}/>
+                    <input class="grid-c2 mono" readonly value={rom?.region + " " + rom?.version}/>
 
                     <label class="grid-c1"><span data-rh-at="left" data-rh="O2 can only communicate with patched ROMs running
 on SNES devices. Either click 'Boot' to send the ROM to your SNES device if supported or click 'Download' to download
 the patched ROM and manually send it to your SNES device.">Patched ROM:&nbsp;3️⃣</span></label>
                     <button class="grid-c2-1"
-                            disabled={!rom.isLoaded || !vm.snes.isConnected}
+                            disabled={!rom?.isLoaded || !vm.snes?.isConnected}
                             title="Send the O2 patched ROM to the SNES and boot it"
                             onClick={e => ch.command("rom", "boot", {})}>Boot
                     </button>
                     <form class="grid-c2-2" method="get" action="/rom/patched.smc">
                         <input type="submit"
-                               disabled={!rom.isLoaded}
+                               disabled={!rom?.isLoaded}
                                title="Download the O2 patched ROM"
                                value="Download"/>
                     </form>

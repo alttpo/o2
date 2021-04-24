@@ -4,6 +4,8 @@ import {setField} from "../util";
 
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
+    const [notifHistory, setNotifHistory] = useState([] as string[]);
+    const [notifCurrent, setNotifCurrent] = useState('');
     const [syncItems, setsyncItems] = useState(true);
     const [syncDungeonItems, setsyncDungeonItems] = useState(true);
     const [syncProgress, setsyncProgress] = useState(true);
@@ -17,6 +19,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [code, set_code] = useState('A903 8F59F37E');
 
     useEffect(() => {
+        setNotifHistory(vm["game/notification/history"] as string[]);
+        setNotifCurrent(vm["game/notification/current"] as string);
         setsyncItems(game.syncItems);
         setsyncDungeonItems(game.syncDungeonItems);
         setsyncProgress(game.syncProgress);
@@ -27,11 +31,16 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncChests(game.syncChests);
     }, [game]);
 
+    useEffect(() => {
+        notifHistory.push(notifCurrent);
+        setNotifHistory(notifHistory);
+    }, [notifHistory, notifCurrent]);
+
     const sendGameCommand = ch.command.bind(ch, "game");
 
     const getTargetChecked = (e: Event) => (e.target as HTMLInputElement).checked;
 
-    return <div style="display: table; min-width: 20em">
+    return <div style="display: table; min-width: 20em; width: 100%">
         <h5>Game: {game.gameName}</h5>
         <div style="display: table-row">
             <div style="display: table-cell">
@@ -125,6 +134,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                             onClick={e => sendGameCommand('asm', {code: code})}
                     >Execute
                     </button>
+
+                    <div style="grid-column: 1 / span 2">
+                        <textarea value={notifHistory.join("\n")} cols={50} rows={8} readonly={true}/>
+                    </div>
                 </div>
             </div>
         </div>

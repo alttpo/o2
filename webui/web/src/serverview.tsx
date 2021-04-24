@@ -15,10 +15,10 @@ function ServerView({ch, server}: ServerProps) {
     const [team, setTeam] = useState(0);
 
     useEffect(() => {
-        setHostName(server.hostName);
-        setGroupName(server.groupName);
-        setPlayerName(server.playerName);
-        setTeam(server.team);
+        setHostName(server?.hostName);
+        setGroupName(server?.groupName);
+        setPlayerName(server?.playerName);
+        setTeam(server?.team);
     }, [server]);
 
     // NOTE: `ch` can be null during app init
@@ -35,7 +35,7 @@ function ServerView({ch, server}: ServerProps) {
     };
 
     const connectButton = () => {
-        if (server.isConnected) {
+        if (server?.isConnected) {
             return <button type="button"
                            class="grid-c2"
                            onClick={cmdDisconnect.bind(this)}>Disconnect</button>;
@@ -55,7 +55,7 @@ and enter a group name you wish to join. Groups are created on the fly by whoeve
         <label class="grid-c1" for="hostName">Hostname:</label>
         <input type="text"
                value={hostName}
-               disabled={server.isConnected}
+               disabled={server?.isConnected}
                title="Connect to an O2 server (default is `alttp.online`)"
                id="hostName"
                class="grid-c2"

@@ -1,10 +1,10 @@
 import 'preact/debug';
 import {Component, createRef, Fragment, h, render} from "preact";
-import {StateUpdater, useState} from "preact/hooks";
+import {useEffect, useRef, useState} from "preact/hooks";
 
 // @ts-ignore
 import ReactHintFactory from 'react-hint'
-import {GameViewModel, ROMViewModel, ServerViewModel, SNESViewModel, ViewModel} from './viewmodel';
+import {ViewModel} from './viewmodel';
 import SNESView from "./snesview";
 import ROMView from "./romview";
 import ServerView from "./serverview";
@@ -12,7 +12,7 @@ import GameView from "./gameview";
 import {JSXInternal} from "preact/src/jsx";
 
 const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})
-import TargetedEvent = JSXInternal.TargetedEvent;
+
 
 interface ViewModelUpdate {
     v: string;
@@ -64,57 +64,48 @@ export class TopLevelProps {
 const App = () => {
     type TabName = "snes" | "rom" | "server" | "game";
 
-    const [ws, setWs] = useState<WebSocket>(null);
-    const [ch, setCh] = useState<CommandHandler>(null);
-    const [tabSelected, setTabSelected] = useState<TabName>("snes");
-
-    const viewModelState: { [k: string]: [any, StateUpdater<any>] } = {
-        status: useState<string>(""),
-        snes: useState<SNESViewModel>({
+    const ws = useRef<WebSocket>(null);
+    const ch = useRef<CommandHandler>(null);
+    const [viewModel, setViewModel] = useState<ViewModel>({
+        status: "",
+        snes: {
             drivers: [], isConnected: false
-        }),
-        rom: useState<ROMViewModel>({
+        },
+        rom: {
             isLoaded: false, region: "", name: "", title: "", version: ""
-        }),
-        server: useState<ServerViewModel>({
+        },
+        server: {
             isConnected: false, hostName: "", groupName: "", playerName: "", team: 0
-        }),
-        game: useState<GameViewModel>({
+        },
+        game: {
             isCreated: false,
             gameName: ""
-        })
-    };
+        }
+    });
 
-    const viewModel = {
-        status: viewModelState.status[0],
-        snes: viewModelState.snes[0],
-        server: viewModelState.server[0],
-        rom: viewModelState.rom[0],
-        game: viewModelState.game[0],
-    };
-
-    const tabChanged = (e: TargetedEvent<HTMLInputElement, Event>) => {
-        setTabSelected(e.currentTarget.value as TabName);
-    };
-
-    const connect = () => {
+    useEffect(() => {
         const {protocol, host} = window.location;
         const url = `${protocol === "https:" ? "wss:" : "ws:"}//${host}/ws/`;
 
         console.log("connect");
-        const ws = new WebSocket(url);
-        ws.onmessage = (e: MessageEvent<string>) => {
-            let msg = JSON.parse(e.data) as ViewModelUpdate;
-            let element = viewModelState[msg.v];
-            element[1](msg.m);
-        };
-        setWs(ws);
-        setCh(new CommandHandler(ws));
-    };
+        ws.current = new WebSocket(url);
+        ch.current = new CommandHandler(ws.current);
 
-    if (ws === null) {
-        connect();
-    }
+        return () => {
+            ws.current.close();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!ws.current) return;
+
+        ws.current.onmessage = (e: MessageEvent<string>) => {
+            let msg = JSON.parse(e.data) as ViewModelUpdate;
+            setViewModel(vm => ({...vm, [msg.v]: msg.m}));
+        };
+    }, [viewModel]);
+
+    const vm = viewModel;
 
     return (
         <Fragment>
@@ -122,27 +113,27 @@ const App = () => {
                 <header>
                     <section class="rounded darken padded squeeze">
                         <h1>O2{
-                            (viewModel.game.isCreated) ? " - " + viewModel.game.gameName : ""
+                            (vm.game?.isCreated || false) ? " - " + vm.game.gameName : ""
                         }</h1>
                     </section>
                 </header>
                 <section class="squeeze">
                     <div class="flex-wrap">
                         <div class="content flex-1">
-                            <SNESView ch={ch} vm={viewModel}/>
+                            <SNESView ch={ch.current} vm={vm}/>
                         </div>
 
                         <div class="content flex-1">
-                            <ROMView ch={ch} vm={viewModel}/>
+                            <ROMView ch={ch.current} vm={vm}/>
                         </div>
 
                         <div class="content flex-1">
-                            <ServerView ch={ch} vm={viewModel}/>
+                            <ServerView ch={ch.current} vm={vm}/>
                         </div>
 
-                        {viewModel.game.isCreated && (
+                        {vm.game?.isCreated && (
                             <div class="content flex-1">
-                                <GameView ch={ch} vm={viewModel}/>
+                                <GameView ch={ch.current} vm={vm}/>
                             </div>
                         )}
                     </div>
@@ -151,7 +142,7 @@ const App = () => {
             </div>
             <footer>
                 <section class="rounded darken padded-lr squeeze">
-                    <span>{viewModel.status}</span>
+                    <span>{vm.status}</span>
                     <span style="float:right">
                         <a href="/log.txt">Download Logs</a>
                     </span>
