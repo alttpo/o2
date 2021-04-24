@@ -63,7 +63,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
                   title={'' + (drv.devices?.length || 0) + ' device(s) found'}
             >({drv.devices?.length || 0})</span>
             <select
-                disabled={snes.isConnected && !drv.isConnected}
+                disabled={snes.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
                 onChange={(e) => this.setState({deviceIndex: (e.currentTarget.value)})}>
