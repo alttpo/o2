@@ -25,6 +25,7 @@ type Game struct {
 	client *client.Client
 	// viewModels can be nil at any time
 	viewModels interfaces.ViewModelContainer
+	nextNotification string
 
 	localIndex int // index into the players array that local points to (or -1 if not connected)
 	local      *Player

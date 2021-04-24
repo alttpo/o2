@@ -1,11 +1,9 @@
 import {GameALTTPViewModel, GameViewProps} from "../viewmodel";
-import {useEffect, useState} from "preact/hooks";
+import {useEffect, useRef, useState} from "preact/hooks";
 import {setField} from "../util";
 
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
-    const [notifHistory, setNotifHistory] = useState([] as string[]);
-    const [notifCurrent, setNotifCurrent] = useState('');
     const [syncItems, setsyncItems] = useState(true);
     const [syncDungeonItems, setsyncDungeonItems] = useState(true);
     const [syncProgress, setsyncProgress] = useState(true);
@@ -15,12 +13,13 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncOverworld, setsyncOverworld] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
 
+    const [notifHistory, setNotifHistory] = useState([] as string[]);
+    const historyTextarea = useRef(null);
+
     const [showASM, set_showASM] = useState(false);
     const [code, set_code] = useState('A903 8F59F37E');
 
     useEffect(() => {
-        setNotifHistory(vm["game/notification/history"] as string[]);
-        setNotifCurrent(vm["game/notification/current"] as string);
         setsyncItems(game.syncItems);
         setsyncDungeonItems(game.syncDungeonItems);
         setsyncProgress(game.syncProgress);
@@ -32,9 +31,27 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     }, [game]);
 
     useEffect(() => {
-        notifHistory.push(notifCurrent);
-        setNotifHistory(notifHistory);
-    }, [notifHistory, notifCurrent]);
+        let history = vm["game/notification/history"] as string[];
+        if (!history) {
+            history = [];
+        }
+        setNotifHistory(history);
+    }, [vm["game/notification/history"]]);
+
+    useEffect(() => {
+        let current = vm["game/notification/current"] as string;
+        if (current) {
+            setNotifHistory(lastHistory => {
+                let newHistory = [...lastHistory];
+                newHistory.push(current);
+                return newHistory;
+            });
+            // scroll to bottom:
+            if (historyTextarea.current) {
+                historyTextarea.current.scrollTop = historyTextarea.current.scrollHeight;
+            }
+        }
+    }, [vm["game/notification/current"]]);
 
     const sendGameCommand = ch.command.bind(ch, "game");
 
@@ -135,8 +152,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     >Execute
                     </button>
 
-                    <div style="grid-column: 1 / span 2">
-                        <textarea value={notifHistory.join("\n")} cols={50} rows={8} readonly={true}/>
+                    <div style="grid-column: 1 / span 2; margin-top: 0.5em">
+                        updates:
+                    </div>
+                    <div style="grid-column: 1 / span 2; margin-top: 0.5em">
+                        <textarea ref={historyTextarea}
+                                  value={notifHistory.join("\n")}
+                                  style="width: 100%; height: 4.8em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
+                                  rows={4}
+                                  readonly={true}/>
                     </div>
                 </div>
             </div>
