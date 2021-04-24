@@ -54,6 +54,10 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 
         const {name} = drv;
 
+        if (snes.isConnected && !drv.isConnected) {
+            return <Fragment key={name}/>
+        }
+
         return <Fragment key={name}>
             <label for={`device-${name}`}
                    style="white-space: nowrap; padding-top: 0.35em"
@@ -98,7 +102,7 @@ Devices are auto-detected every 2 seconds for each driver."
             </div>
         </div>
         {
-            ((vm.snes?.drivers?.some(value => value.name == "fxpakpro"))
+            ((vm.snes?.drivers?.some(drv => drv.name == "fxpakpro" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
                 ? <div style="display: table-row; height: 100%">
                     <div style="display: table-cell">
                         <div style="margin-top: 4px">
@@ -110,7 +114,7 @@ recommended firmware</a>.
                 : <Fragment/>)
         }
         {
-            (vm.snes?.drivers?.some(value => value.name == "qusb2snes"))
+            (vm.snes?.drivers?.some(drv => drv.name == "qusb2snes" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
                 ? <div style="display: table-row; height: 100%">
                     <div style="display: table-cell">
                         <div style="margin-top: 4px">
