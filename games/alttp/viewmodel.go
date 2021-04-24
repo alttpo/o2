@@ -28,25 +28,10 @@ func (g *Game) pushNotification(notification string) {
 	if !ok {
 		history = make([]string, 0, 200)
 	}
-	// append the prior notification:
-	if g.nextNotification != "" {
-		history = append(history, g.nextNotification)
-	}
-	// don't send history; only keep it updated locally so that only new websockets get it:
-	g.viewModels.SetViewModel("game/notification/history", history)
 
-	// save this notification for the next append:
-	g.nextNotification = notification
-
-	// send latest notification:
-	current := struct{
-		I int `json:"i"`
-		M string `json:"m"`
-	}{
-		I: len(history),
-		M: notification,
-	}
-	g.viewModels.NotifyView("game/notification/current", current)
+	// append the notification:
+	history = append(history, notification)
+	g.viewModels.NotifyView("game/notification/history", history)
 }
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {

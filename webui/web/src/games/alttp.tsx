@@ -38,20 +38,19 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setNotifHistory(history);
     }, [vm["game/notification/history"]]);
 
+    const mounted = useRef(false);
     useEffect(() => {
-        let current = vm["game/notification/current"] as {m:string};
-        if (current) {
-            setNotifHistory(lastHistory => {
-                let newHistory = [...lastHistory];
-                newHistory.push(current.m);
-                return newHistory;
-            });
+        if (!mounted.current) {
+            // do componentDidMount logic
+            mounted.current = true;
+        } else {
+            // do componentDidUpdate logic
             // scroll to bottom:
             if (historyTextarea.current) {
                 historyTextarea.current.scrollTop = historyTextarea.current.scrollHeight;
             }
         }
-    }, [vm["game/notification/current"]]);
+    });
 
     const sendGameCommand = ch.command.bind(ch, "game");
 
