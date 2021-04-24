@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 )
 
@@ -61,14 +62,15 @@ type Player struct {
 
 	SRAM [0x500]byte
 
-	WRAM map[uint16]*SyncableWRAM
+	WRAM            map[uint16]*SyncableWRAM
+	showJoinMessage bool
 }
 
 func (p *Player) SetTTL(ttl int) {
 	if p.TTL <= 0 && ttl > 0 {
 		// Activating new player:
 		p.g.activePlayersClean = false
-		log.Printf("alttp: [%02x]: %s joined\n", uint8(p.Index), p.Name)
+		p.showJoinMessage = true
 	}
 
 	p.TTL = ttl
@@ -82,6 +84,7 @@ func (p *Player) DecTTL() {
 	p.TTL--
 	if p.TTL <= 0 {
 		log.Printf("alttp: [%02x]: %s left\n", uint8(p.Index), p.Name)
+		p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
 		p.g.activePlayersClean = false
 	}
 }

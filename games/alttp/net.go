@@ -80,8 +80,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 
 		// reset player TTL:
-		g.players[header.Index].Index = int(header.Index)
-		g.players[header.Index].SetTTL(255)
+		p := &g.players[header.Index]
+		p.Index = int(header.Index)
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
@@ -99,16 +99,32 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				g.local.Index = g.localIndex
 				log.Printf("alttp: player[%02x] %s joined\n", g.localIndex, g.local.Name)
 			}
-			return
+			break
 
 		case protocol02.BroadcastToSector:
 			fallthrough
 		case protocol02.Broadcast:
 			//log.Printf("%s\n", header.Kind.String())
-			return g.players[header.Index].Deserialize(r)
+			err = g.players[header.Index].Deserialize(r)
+			break
 		default:
 			panic(fmt.Errorf("unknown message kind %02x", header.Kind))
 		}
+
+		if err != nil {
+			return
+		}
+
+		// reset player TTL:
+		p.SetTTL(255)
+
+		// wait until we see a name packet to announce:
+		if p.showJoinMessage && p.Name != "" {
+			log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
+			p.g.pushNotification(fmt.Sprintf("%s joined", p.Name))
+			p.showJoinMessage = false
+		}
+
 		return
 	default:
 		return
