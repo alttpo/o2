@@ -100,11 +100,12 @@ func (g *Game) run() {
 		case msg := <-g.client.Read():
 			if msg == nil {
 				// disconnected?
-				for _, p := range g.ActivePlayers() {
+				for i := range g.players {
+					p := &g.players[i]
 					// reset TTL for all players to make them inactive:
 					p.DecTTL(255)
+					p.Index = -1
 				}
-				g.local.Index = -1
 				break
 			}
 			if !g.IsRunning() {

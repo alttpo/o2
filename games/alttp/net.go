@@ -83,17 +83,21 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 
 		// reset player TTL:
 		p := &g.players[index]
+		p.Index = index
+		p.SetTTL(255)
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
 			if (g.local.Index < 0) || (g.local.Index != index) {
-				// copy local player data into players array at the appropriate index:
-				g.players[index] = *g.local
-				// clear out old Player:
-				g.local.Index = -1
-				g.local.TTL = 0
+				if p != g.local {
+					// copy local player data into players array at the appropriate index:
+					g.players[index] = *g.local
+					// clear out old Player:
+					g.local.Index = -1
+					g.local.TTL = 0
+				}
 				// repoint local into the array:
 				g.local = p
 			}
@@ -110,12 +114,9 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 
 		if err != nil {
+			log.Printf("alttp: net: deserialize: %v\n", err)
 			return
 		}
-
-		// reset player TTL:
-		p.Index = int(header.Index)
-		p.SetTTL(255)
 
 		// wait until we see a name packet to announce:
 		if p.showJoinMessage && p.Name != "" {

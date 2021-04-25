@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -113,25 +114,27 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		var msgType MessageType
 		if err = binary.Read(r, binary.LittleEndian, &msgType); err != nil {
 			//log.Println(err)
-			return
+			break
 		}
 
 		// check bounds for message type:
 		if msgType == 0 || msgType >= MsgMaxMessageType {
-			log.Println("alttp: msgType out of bounds")
+			err = fmt.Errorf("alttp: msgType %#02x out of bounds", msgType)
 			// no good recourse to be able to skip over the message
-			return
+			break
 		}
 
 		// call deserializer for the message type:
 		//log.Printf("deserializing message type %02x\n", msgType)
 		if err = deserTable[msgType](p, r); err != nil {
 			//log.Println(err)
-			return
+			break
 		}
 	}
 
-	err = nil
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
 	return
 }
 
@@ -440,7 +443,7 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	lastName := p.Name
 	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
 	if lastName != p.Name {
-		log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
+		p.showJoinMessage = true
 	}
 	return
 }
