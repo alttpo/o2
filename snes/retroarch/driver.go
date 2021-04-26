@@ -9,7 +9,6 @@ import (
 	"o2/util"
 	"o2/util/env"
 	"strings"
-	"time"
 )
 
 const driverName = "retroarch"
@@ -99,6 +98,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		detector.MuteLog(true)
 		if !detector.IsConnected() {
 			// "connect" to this UDP endpoint:
+			detector.version = ""
 			err = detector.Connect(detector.addr)
 			if err != nil {
 				log.Printf("retroarch: detect: detector[%d]: connect: %v\n", i, err)
@@ -106,16 +106,22 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 			}
 		}
 
-		// issue a sample read:
-		request := []byte("READ_CORE_RAM 40FFC0 32\n")
-		//log.Printf("%s: < %s", detector.addr, string(request))
-		var rsp []byte
-		rsp, err = detector.WriteThenReadTimeout(request, time.Second)
+		// not a valid device without a version detected:
+		err = detector.Version()
 		if err != nil {
-			err = nil
+			log.Printf("retroarch: detect: detector[%d]: version: %v\n", i, err)
 			continue
 		}
-		if rsp == nil {
+		if !detector.HasVersion() {
+			continue
+		}
+
+		// issue a sample read:
+		var data []byte
+		data, err = detector.ReadMemory(0x40FFC0, 32)
+		if err != nil {
+			err = nil
+			detector.version = ""
 			continue
 		}
 
@@ -124,9 +130,8 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 			addr:                 detector.addr,
 		}
 
-		rsps := string(rsp)
 		//log.Printf("%s: > %s", detector.addr, rsps)
-		if rsps == "READ_CORE_RAM 40ffc0 -1\n" {
+		if len(data) != 32 {
 			descriptor.IsGameLoaded = false
 		} else {
 			descriptor.IsGameLoaded = true
