@@ -76,19 +76,21 @@ type Game struct {
 	serverFrame        uint64 // total frame count according to server (taken from first player to enter group)
 	monotonicFrameTime uint8  // always increments by 1 whenever game frame increases by any amount N
 
+	shouldUpdatePlayersList bool
+
 	// serializable ViewModel:
-	clean            bool
-	IsCreated        bool   `json:"isCreated"`
-	GameName         string `json:"gameName"`
-	SyncItems        bool   `json:"syncItems"`
-	SyncDungeonItems bool   `json:"syncDungeonItems"`
-	SyncProgress     bool   `json:"syncProgress"`
-	SyncHearts       bool   `json:"syncHearts"`
-	SyncSmallKeys    bool   `json:"syncSmallKeys"`
-	SyncUnderworld   bool   `json:"syncUnderworld"`
-	SyncOverworld    bool   `json:"syncOverworld"`
-	SyncChests       bool   `json:"syncChests"`
-	lastSyncChests   bool
+	clean                   bool
+	IsCreated               bool   `json:"isCreated"`
+	GameName                string `json:"gameName"`
+	SyncItems               bool   `json:"syncItems"`
+	SyncDungeonItems        bool   `json:"syncDungeonItems"`
+	SyncProgress            bool   `json:"syncProgress"`
+	SyncHearts              bool   `json:"syncHearts"`
+	SyncSmallKeys           bool   `json:"syncSmallKeys"`
+	SyncUnderworld          bool   `json:"syncUnderworld"`
+	SyncOverworld           bool   `json:"syncOverworld"`
+	SyncChests              bool   `json:"syncChests"`
+	lastSyncChests          bool
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {

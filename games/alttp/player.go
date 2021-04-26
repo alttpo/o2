@@ -93,7 +93,7 @@ func (p *Player) Joined() {
 	// Activating new player:
 	p.showJoinMessage = true
 	p.g.activePlayersClean = false
-	p.g.updatePlayersList()
+	p.g.shouldUpdatePlayersList = true
 }
 
 func (p *Player) Left() {
@@ -108,7 +108,7 @@ func (p *Player) Left() {
 	p.g.activePlayersClean = false
 
 	// refresh the players list
-	p.g.updatePlayersList()
+	p.g.shouldUpdatePlayersList = true
 }
 
 func (p *Player) sramU16(offset uint16) uint16 {

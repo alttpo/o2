@@ -94,7 +94,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		panic(err)
 	}
 	if p.Team != lastTeam {
-		p.g.updatePlayersList()
+		p.g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
@@ -152,6 +152,8 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.SubSubModule); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
+
+	lastLocation := p.Location
 	if p.Location, err = readU24(r); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
@@ -161,6 +163,10 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		p.DungeonRoom = uint16(p.Location & 0xFFFF)
 	} else {
 		p.OverworldArea = uint16(p.Location & 0xFFFF)
+	}
+
+	if p.Location != lastLocation {
+		p.g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
@@ -191,8 +197,12 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 
+	lastColor := p.PlayerColor
 	if err = binary.Read(r, binary.LittleEndian, &p.PlayerColor); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
+	}
+	if p.PlayerColor != lastColor {
+		p.g.shouldUpdatePlayersList = true
 	}
 
 	var inSM uint8
@@ -449,7 +459,7 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	if lastName != p.Name {
 		p.showJoinMessage = true
 		// refresh the players list
-		p.g.updatePlayersList()
+		p.g.shouldUpdatePlayersList = true
 	}
 	return
 }

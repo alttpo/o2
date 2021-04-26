@@ -57,7 +57,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
 
     const getTargetChecked = (e: Event) => (e.target as HTMLInputElement).checked;
 
-    return <div style="display: grid; min-width: 20em; width: 100%">
+    return <div style="display: grid; min-width: 20em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em;">
         <h5 style="grid-column: 1">Game: {game.gameName}</h5>
         <div style="grid-column: 1">
             <div style="display: grid; grid-template-columns: 1fr 1fr;">
@@ -134,7 +134,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
                     <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
                     <div title="Team number">{p.team}</div>
-                    <div title="Location">{p.location}</div>
+                    <div title="Location">{("00000" + p.location.toString(16)).substr(-5)}</div>
                 </Fragment>))
             }
         </div>

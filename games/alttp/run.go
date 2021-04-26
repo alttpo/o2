@@ -106,6 +106,10 @@ func (g *Game) run() {
 					p.DecTTL(255)
 					p.Index = -1
 				}
+				if g.shouldUpdatePlayersList {
+					g.shouldUpdatePlayersList = false
+					g.updatePlayersList()
+				}
 				break
 			}
 			if !g.IsRunning() {
@@ -352,11 +356,15 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	}
 	local.Dungeon = dungeon
 
+	lastLocation := local.Location
 	local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
 	if inDungeon != 0 {
 		local.Location |= uint32(dungeonRoom)
 	} else {
 		local.Location |= uint32(overworldArea)
+	}
+	if local.Location != lastLocation {
+		g.shouldUpdatePlayersList = true
 	}
 
 	if local.Module.IsOverworld() {
@@ -376,6 +384,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	// handle WRAM reads:
 	g.readWRAM()
 	g.notFirstWRAMRead = true
+
+	if g.shouldUpdatePlayersList {
+		g.updatePlayersList()
+	}
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
