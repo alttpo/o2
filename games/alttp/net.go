@@ -100,6 +100,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				}
 				// repoint local into the array:
 				g.local = p
+				p.Index = index
 			}
 			break
 
