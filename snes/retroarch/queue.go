@@ -1,7 +1,6 @@
 package retroarch
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -121,88 +120,11 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	}
 	keepAlive <- struct{}{}
 
-	// build multiple requests:
-	var sb strings.Builder
-	for _, req := range cmd.Batch {
-		// nowhere to put the response?
-		completed := req.Completion
-		if completed == nil {
-			continue
-		}
-
-		sb.WriteString("READ_CORE_RAM ")
-		expectedAddr := lorom.PakAddressToBus(req.Address)
-		sb.WriteString(fmt.Sprintf("%06x %d\n", expectedAddr, req.Size))
-	}
-
-	reqStr := sb.String()
-	var rsp []byte
-
-	defer func() {
-		c.Unlock()
-		if err != nil {
-			q.Close()
-		}
-	}()
-	c.Lock()
-
-	// send all commands up front in one packet:
-	err = c.WriteTimeout([]byte(reqStr), time.Second*5)
+	err = c.ReadMemoryBatch(cmd.Batch, keepAlive)
 	if err != nil {
-		return
-	}
-	keepAlive <- struct{}{}
-
-	// responses come in multiple packets:
-	for _, req := range cmd.Batch {
-		// nowhere to put the response?
-		completed := req.Completion
-		if completed == nil {
-			continue
-		}
-
-		expectedAddr := lorom.PakAddressToBus(req.Address)
-
-		rsp, err = c.ReadTimeout(time.Second * 5)
-		if err != nil {
-			return
-		}
-		keepAlive <- struct{}{}
-
-		// parse ASCII response:
-		r := bytes.NewReader(rsp)
-
-		var n int
-		var addr uint32
-		n, err = fmt.Fscanf(r, "READ_CORE_RAM %x", &addr)
-		if err != nil {
-			return
-		}
-		if addr != expectedAddr {
-			err = fmt.Errorf("retroarch: read response for wrong request %06x != %06x", addr, expectedAddr)
-			return
-		}
-
-		data := make([]byte, 0, req.Size)
-		for {
-			var v byte
-			n, err = fmt.Fscanf(r, " %02x", &v)
-			if err != nil || n == 0 {
-				break
-			}
-			data = append(data, v)
-		}
-
-		completed(snes.Response{
-			IsWrite: false,
-			Address: req.Address,
-			Size:    req.Size,
-			Extra:   req.Extra,
-			Data:    data,
-		})
+		c.Close()
 	}
 
-	err = nil
 	return
 }
 

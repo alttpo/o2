@@ -102,7 +102,7 @@ channelLoop:
 			const timeoutDuration = time.Second * 15
 
 			done := make(chan struct{})
-			keepAlive := make(chan struct{}, 1)
+			keepAlive := make(chan struct{}, 16)
 			started := time.Now()
 			go func() {
 				err = cmd.Execute(q, keepAlive)
