@@ -84,7 +84,6 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		// reset player TTL:
 		p := &g.players[index]
 		p.Index = index
-		p.SetTTL(255)
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
@@ -118,6 +117,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			log.Printf("alttp: net: deserialize: %v\n", err)
 			return
 		}
+
+		p.SetTTL(255)
 
 		// wait until we see a name packet to announce:
 		if p.showJoinMessage && p.Name != "" {
