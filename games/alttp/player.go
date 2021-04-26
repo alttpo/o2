@@ -88,6 +88,8 @@ func (p *Player) DecTTL(amount int) {
 		p.showJoinMessage = false
 		log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
 		p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
+		// refresh the players list
+		p.g.ActivePlayers()
 	}
 }
 

@@ -123,6 +123,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
 			p.g.pushNotification(fmt.Sprintf("%s joined", p.Name))
 			p.showJoinMessage = false
+			// refresh the players list
+			g.ActivePlayers()
 		}
 
 		return

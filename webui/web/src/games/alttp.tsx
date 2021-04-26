@@ -56,111 +56,118 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
 
     const getTargetChecked = (e: Event) => (e.target as HTMLInputElement).checked;
 
-    return <div style="display: table; min-width: 20em; width: 100%">
-        <h5>Game: {game.gameName}</h5>
-        <div style="display: table-row">
-            <div style="display: table-cell">
-                <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                    <label for="syncItems">
-                        <input type="checkbox"
-                               id="syncItems"
-                               checked={syncItems}
-                               onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}
-                        />Sync Items
-                    </label>
+    return <div style="display: grid; min-width: 20em; width: 100%">
+        <h5 style="grid-column: 1">Game: {game.gameName}</h5>
+        <div style="grid-column: 1">
+            <div style="display: grid; grid-template-columns: 1fr 1fr;">
+                <label for="syncItems">
+                    <input type="checkbox"
+                           id="syncItems"
+                           checked={syncItems}
+                           onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}
+                    />Sync Items
+                </label>
 
-                    <label for="syncDungeonItems"
-                           title="Big Keys, Compasses, Maps">
-                        <input type="checkbox"
-                               id="syncDungeonItems"
-                               checked={syncDungeonItems}
-                               onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}
-                        />Sync Dungeon Items
-                    </label>
+                <label for="syncDungeonItems"
+                       title="Big Keys, Compasses, Maps">
+                    <input type="checkbox"
+                           id="syncDungeonItems"
+                           checked={syncDungeonItems}
+                           onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}
+                    />Sync Dungeon Items
+                </label>
 
-                    <label for="syncProgress">
-                        <input type="checkbox"
-                               id="syncProgress"
-                               checked={syncProgress}
-                               onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}
-                        />Sync Progress
-                    </label>
+                <label for="syncProgress">
+                    <input type="checkbox"
+                           id="syncProgress"
+                           checked={syncProgress}
+                           onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}
+                    />Sync Progress
+                </label>
 
-                    <label for="syncHearts">
-                        <input type="checkbox"
-                               id="syncHearts"
-                               checked={syncHearts}
-                               onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}
-                        />Sync Hearts
-                    </label>
+                <label for="syncHearts">
+                    <input type="checkbox"
+                           id="syncHearts"
+                           checked={syncHearts}
+                           onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}
+                    />Sync Hearts
+                </label>
 
-                    <label for="syncSmallKeys">
-                        <input type="checkbox"
-                               id="syncSmallKeys"
-                               checked={syncSmallKeys}
-                               onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
-                        />Sync Small Keys
-                    </label>
+                <label for="syncSmallKeys">
+                    <input type="checkbox"
+                           id="syncSmallKeys"
+                           checked={syncSmallKeys}
+                           onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
+                    />Sync Small Keys
+                </label>
 
-                    <label for="syncUnderworld">
-                        <input type="checkbox"
-                               id="syncUnderworld"
-                               checked={syncUnderworld}
-                               onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
-                        />Sync Underworld
-                    </label>
+                <label for="syncUnderworld">
+                    <input type="checkbox"
+                           id="syncUnderworld"
+                           checked={syncUnderworld}
+                           onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
+                    />Sync Underworld
+                </label>
 
-                    <label for="syncOverworld">
-                        <input type="checkbox"
-                               id="syncOverworld"
-                               checked={syncOverworld}
-                               onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
-                        />Sync Overworld
-                    </label>
+                <label for="syncOverworld">
+                    <input type="checkbox"
+                           id="syncOverworld"
+                           checked={syncOverworld}
+                           onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
+                    />Sync Overworld
+                </label>
 
-                    <label for="syncChests">
-                        <input type="checkbox"
-                               id="syncChests"
-                               checked={syncChests}
-                               onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
-                        />Sync Chests
-                    </label>
-                </div>
+                <label for="syncChests">
+                    <input type="checkbox"
+                           id="syncChests"
+                           checked={syncChests}
+                           onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
+                    />Sync Chests
+                </label>
             </div>
         </div>
-        <div style="display: table-row">
-            <div style="display: table-cell">
-                <div style="display: grid; grid-template-columns: 3fr 1fr;">
-                    <div style="grid-column: 1 / span 2">
-                        <label for="showASM">
-                            <input type="checkbox"
-                                   id="showASM"
-                                   checked={showASM}
-                                   onChange={e => set_showASM((e.target as HTMLInputElement).checked)}
-                            />Custom ASM
-                        </label>
+        <h5 style="grid-row: 1; grid-column: 2">Players</h5>
+        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto">
+            {
+                (vm["game/players"] || []).map((p: any) => (
+                    <div key={p.index} style="white-space: nowrap">
+                        <span class="mono">[{("0" + p.index.toString(16)).substr(-2)}]</span>&nbsp;
+                        <span style="color: yellow">{p.name}</span>
                     </div>
+                ))
+            }
+        </div>
+        <div style="grid-column: 1 / span 2">
+            <div style="display: grid; grid-template-columns: 3fr 1fr;">
+                <div style="grid-column: 1 / span 2">
+                    <label for="showASM">
+                        <input type="checkbox"
+                               id="showASM"
+                               checked={showASM}
+                               onChange={e => set_showASM((e.target as HTMLInputElement).checked)}
+                        />Custom ASM
+                    </label>
+                </div>
 
-                    <textarea id="asm" cols={40} rows={3} value={code}
-                              style="height: 3.8em"
-                              hidden={!showASM}
-                              onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
-                    <button hidden={!showASM}
-                            disabled={!vm.snes.isConnected}
-                            onClick={e => sendGameCommand('asm', {code: code})}
-                    >Execute
-                    </button>
+                <textarea id="asm" cols={40} rows={3} value={code}
+                          style="height: 3.8em"
+                          hidden={!showASM}
+                          onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
+                <button hidden={!showASM}
+                        disabled={!vm.snes.isConnected}
+                        onClick={e => sendGameCommand('asm', {code: code})}
+                >Execute
+                </button>
 
-                    <div style="grid-column: 1 / span 2; margin-top: 0.5em">
-                        updates:
-                    </div>
-                    <div style="grid-column: 1 / span 2; margin-top: 0.5em">
+                <div style="grid-column: 1 / span 2; margin-top: 0.5em">
+                    updates:
+                </div>
+                <div style="grid-column: 1 / span 2; margin-top: 0.5em">
                         <textarea ref={historyTextarea}
                                   value={notifHistory.join("\n")}
                                   style="width: 100%; height: 4.8em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
                                   rows={4}
                                   readonly={true}/>
-                    </div>
                 </div>
             </div>
         </div>
