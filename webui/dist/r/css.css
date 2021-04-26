@@ -19,7 +19,7 @@ html, select, option, button, input {
 
 body {
     margin: 0;
-    height: 100vh;
+    height: calc(100vh - 2em - 8px);
     background-image: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(/r/bg.png);
     background-color: black;
     background-position: center top;
@@ -32,7 +32,7 @@ body {
 }
 
 #main-wrapper {
-    min-height: calc(100% - 2em);
+    min-height: 100%;
 }
 
 footer {
