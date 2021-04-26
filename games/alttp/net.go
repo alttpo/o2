@@ -124,7 +124,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			p.g.pushNotification(fmt.Sprintf("%s joined", p.Name))
 			p.showJoinMessage = false
 			// refresh the players list
-			g.ActivePlayers()
+			g.updatePlayersList()
 		}
 
 		return

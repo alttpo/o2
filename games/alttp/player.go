@@ -67,13 +67,15 @@ type Player struct {
 }
 
 func (p *Player) SetTTL(ttl int) {
+	joined := false
 	if p.TTL <= 0 && ttl > 0 {
-		// Activating new player:
-		p.g.activePlayersClean = false
-		p.showJoinMessage = true
+		joined = true
 	}
 
 	p.TTL = ttl
+	if joined {
+		p.Joined()
+	}
 }
 
 func (p *Player) DecTTL(amount int) {
@@ -83,14 +85,30 @@ func (p *Player) DecTTL(amount int) {
 
 	p.TTL -= amount
 	if p.TTL <= 0 {
-		p.g.activePlayersClean = false
-		p.TTL = 0
-		p.showJoinMessage = false
-		log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
-		p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
-		// refresh the players list
-		p.g.ActivePlayers()
+		p.Left()
 	}
+}
+
+func (p *Player) Joined() {
+	// Activating new player:
+	p.showJoinMessage = true
+	p.g.activePlayersClean = false
+	p.g.updatePlayersList()
+}
+
+func (p *Player) Left() {
+	// Player left the game:
+	p.TTL = 0
+	p.showJoinMessage = false
+
+	log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
+	p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
+
+	// refresh the ActivePlayers():
+	p.g.activePlayersClean = false
+
+	// refresh the players list
+	p.g.updatePlayersList()
 }
 
 func (p *Player) sramU16(offset uint16) uint16 {

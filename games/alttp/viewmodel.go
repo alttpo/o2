@@ -34,6 +34,40 @@ func (g *Game) pushNotification(notification string) {
 	g.viewModels.NotifyView("game/notification/history", history)
 }
 
+type PlayerViewModel struct {
+	Index    int    `json:"index"`
+	Team     int    `json:"team"`
+	Name     string `json:"name"`
+	Location int    `json:"location"`
+
+	// TODO: more player details
+}
+
+func (g *Game) updatePlayersList() {
+	activePlayers := g.ActivePlayers()
+
+	playerViewModels := make([]*PlayerViewModel, 0, len(activePlayers))
+	for _, p := range activePlayers {
+		// build player view model:
+		name := p.Name
+
+		// give the player a sensible name:
+		if name == "" {
+			name = fmt.Sprintf("player #%02x", p.Index)
+		}
+
+		playerViewModels = append(playerViewModels, &PlayerViewModel{
+			Index:    p.Index,
+			Team:     int(p.Team),
+			Location: int(p.Location),
+			Name:     name,
+		})
+	}
+
+	// send the players list:
+	g.viewModels.NotifyView("game/players", playerViewModels)
+}
+
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	switch command {
 	case "setField":

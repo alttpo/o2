@@ -1,5 +1,6 @@
 import {GameALTTPViewModel, GameViewProps} from "../viewmodel";
 import {useEffect, useRef, useState} from "preact/hooks";
+import {Fragment} from "preact";
 import {setField} from "../util";
 
 export function GameViewALTTP({ch, vm}: GameViewProps) {
@@ -127,14 +128,14 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
-        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto">
+        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-template-columns: 1fr 7fr 1fr 1fr">
             {
-                (vm["game/players"] || []).map((p: any) => (
-                    <div key={p.index} style="white-space: nowrap">
-                        <span class="mono">[{("0" + p.index.toString(16)).substr(-2)}]</span>&nbsp;
-                        <span style="color: yellow">{p.name}</span>
-                    </div>
-                ))
+                (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
+                    <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
+                    <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
+                    <div title="Team number">{p.team}</div>
+                    <div title="Location">{p.location}</div>
+                </Fragment>))
             }
         </div>
         <div style="grid-column: 1 / span 2">
@@ -163,11 +164,11 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     updates:
                 </div>
                 <div style="grid-column: 1 / span 2; margin-top: 0.5em">
-                        <textarea ref={historyTextarea}
-                                  value={notifHistory.join("\n")}
-                                  style="width: 100%; height: 4.8em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
-                                  rows={4}
-                                  readonly={true}/>
+                    <textarea ref={historyTextarea}
+                              value={notifHistory.join("\n")}
+                              style="width: 100%; height: 5.8em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
+                              rows={5}
+                              readonly={true}/>
                 </div>
             </div>
         </div>

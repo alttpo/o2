@@ -142,9 +142,11 @@ func (g *Game) Notify(key string, value interface{}) {
 	switch key {
 	case "team":
 		g.local.Team = value.(uint8)
+		g.updatePlayersList()
 		break
 	case "playerName":
 		g.local.Name = value.(string)
+		g.updatePlayersList()
 		break
 	}
 }
@@ -212,12 +214,6 @@ func (g *Game) Stop() {
 
 	// wait until stopped:
 	<-g.stopped
-}
-
-type PlayerViewModel struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-	// TODO: more player details
 }
 
 func (g *Game) ActivePlayers() []*Player {

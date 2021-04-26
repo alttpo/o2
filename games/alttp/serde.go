@@ -89,8 +89,12 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		panic(fmt.Errorf("serializationVersion mismatch"))
 	}
 
+	lastTeam := p.Team
 	if err = binary.Read(r, binary.LittleEndian, &p.Team); err != nil {
 		panic(err)
+	}
+	if p.Team != lastTeam {
+		p.g.updatePlayersList()
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
@@ -444,6 +448,8 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
 	if lastName != p.Name {
 		p.showJoinMessage = true
+		// refresh the players list
+		p.g.updatePlayersList()
 	}
 	return
 }
