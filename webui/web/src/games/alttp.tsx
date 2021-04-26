@@ -138,7 +138,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
                     <div class="mono" title="Team number">{p.team}</div>
                     <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
-                    <div style="color: green; white-space: nowrap" title="Location">{ ((p.location & 0x10000) != 0) ? p.underworld : p.overworld }</div>
+                    <div style={"color: " + ( ((p.location & 0x10000) != 0) ? "green" : "cyan" ) + "; white-space: nowrap"} title="Location">{
+                        ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
+                    }</div>
                 </Fragment>))
             }
         </div>
