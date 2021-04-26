@@ -35,15 +35,22 @@ func (g *Game) pushNotification(notification string) {
 }
 
 type PlayerViewModel struct {
-	Index    int    `json:"index"`
-	Team     int    `json:"team"`
-	Name     string `json:"name"`
-	Location int    `json:"location"`
+	Index int    `json:"index"`
+	Team  int    `json:"team"`
+	Name  string `json:"name"`
+	Color uint16 `json:"color"`
+
+	Location    int    `json:"location"`
+	Overworld   string `json:"overworld"`
+	Underworld  string `json:"underworld"`
+	DungeonName string `json:"dungeonName"`
 
 	// TODO: more player details
 }
 
 func (g *Game) updatePlayersList() {
+	g.shouldUpdatePlayersList = false
+
 	activePlayers := g.ActivePlayers()
 
 	playerViewModels := make([]*PlayerViewModel, 0, len(activePlayers))
@@ -56,11 +63,32 @@ func (g *Game) updatePlayersList() {
 			name = fmt.Sprintf("player #%02x", p.Index)
 		}
 
+		dungeonName := "N/A"
+		dungeonNumber := p.Dungeon >> 1
+		if dungeonNumber < uint16(len(dungeonNames)) {
+			dungeonName = dungeonNames[dungeonNumber]
+		}
+
+		underworldName := "N/A"
+		if name, ok := underworldNames[p.DungeonRoom]; ok {
+			underworldName = name
+		}
+
+		overworldName := "N/A"
+		if name, ok := overworldNames[p.OverworldArea]; ok {
+			overworldName = name
+		}
+
 		playerViewModels = append(playerViewModels, &PlayerViewModel{
-			Index:    p.Index,
-			Team:     int(p.Team),
-			Location: int(p.Location),
-			Name:     name,
+			Index: p.Index,
+			Team:  int(p.Team),
+			Name:  name,
+			Color: p.PlayerColor,
+
+			Location:    int(p.Location),
+			Overworld:   overworldName,
+			Underworld:  underworldName,
+			DungeonName: dungeonName,
 		})
 	}
 

@@ -128,13 +128,17 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
-        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-template-columns: 1fr 7fr 1fr 1fr">
+        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1em 2em 6em 9em; grid-column-gap: 0.5em">
+            <div style="font-weight: bold">##</div>
+            <div style="font-weight: bold">team</div>
+            <div style="font-weight: bold">name</div>
+            <div style="font-weight: bold">location</div>
             {
                 (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
                     <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
+                    <div class="mono" title="Team number">{p.team}</div>
                     <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
-                    <div title="Team number">{p.team}</div>
-                    <div title="Location">{("00000" + p.location.toString(16)).substr(-5)}</div>
+                    <div style="color: green; white-space: nowrap" title="Location">{ ((p.location & 0x10000) != 0) ? p.underworld : p.overworld }</div>
                 </Fragment>))
             }
         </div>

@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"fmt"
 	"o2/client"
 	"o2/engine"
 	"o2/games"
@@ -222,7 +221,6 @@ func (g *Game) ActivePlayers() []*Player {
 	if !g.activePlayersClean {
 		g.activePlayers = make([]*Player, 0, len(g.activePlayers))
 
-		playerViewModels := make([]*PlayerViewModel, 0, len(g.activePlayers))
 		for i, p := range g.players {
 			if p.Index < 0 {
 				continue
@@ -232,19 +230,7 @@ func (g *Game) ActivePlayers() []*Player {
 			}
 
 			g.activePlayers = append(g.activePlayers, &g.players[i])
-
-			// build player view model:
-			name := g.players[i].Name
-			if name == "" {
-				name = fmt.Sprintf("player[%2x]", i)
-			}
-			playerViewModels = append(playerViewModels, &PlayerViewModel{
-				Index: i,
-				Name:  name,
-			})
 		}
-		// send the players list:
-		g.viewModels.NotifyView("game/players", playerViewModels)
 
 		g.activePlayersClean = true
 	}

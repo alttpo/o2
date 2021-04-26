@@ -107,7 +107,6 @@ func (g *Game) run() {
 					p.Index = -1
 				}
 				if g.shouldUpdatePlayersList {
-					g.shouldUpdatePlayersList = false
 					g.updatePlayersList()
 				}
 				break
@@ -353,6 +352,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 			local.Dungeon,
 			dungeon,
 		)
+		g.shouldUpdatePlayersList = true
 	}
 	local.Dungeon = dungeon
 

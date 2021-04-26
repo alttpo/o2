@@ -176,9 +176,14 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 
+	lastDungeon := p.Dungeon
 	if err = binary.Read(r, binary.LittleEndian, &p.Dungeon); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
+	if p.Dungeon != lastDungeon {
+		p.g.shouldUpdatePlayersList = true
+	}
+
 	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
