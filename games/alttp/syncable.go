@@ -167,6 +167,7 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	s.pendingUpdate = true
 	s.updatingTo = updated
+	s.notification = ""
 
 	longAddr := 0x7EF000 + uint32(offs)
 	newBits := updated & ^initial
@@ -176,14 +177,19 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 		k := uint8(1)
 		for i := 0; i < len(s.names); i++ {
 			if initial&k == 0 && updated&k == k {
-				item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
-				received = append(received, item)
+				if s.names[i] != "" {
+					item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
+					received = append(received, item)
+				}
 			}
 			k <<= 1
 		}
-		s.notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
-		asm.Comment(s.notification + ":")
-	} else {
+		if len(received) > 0 {
+			s.notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
+			asm.Comment(s.notification + ":")
+		}
+	}
+	if s.notification == "" {
 		asm.Comment(fmt.Sprintf("u8 [$%06x] |= %#08b", longAddr, newBits))
 	}
 
@@ -308,6 +314,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	s.pendingUpdate = true
 	s.updatingTo = updated
+	s.notification = ""
 
 	longAddr := s.longAddress(offs)
 	newBits := updated & ^initial
@@ -317,14 +324,19 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 		k := uint16(1)
 		for i := 0; i < len(s.names); i++ {
 			if initial&k == 0 && updated&k == k {
-				item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
-				received = append(received, item)
+				if s.names[i] != "" {
+					item := fmt.Sprintf("%s from %s", s.names[i], receivedFrom[i])
+					received = append(received, item)
+				}
 			}
 			k <<= 1
 		}
-		s.notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
-		asm.Comment(s.notification + ":")
-	} else {
+		if len(received) > 0 {
+			s.notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
+			asm.Comment(s.notification + ":")
+		}
+	}
+	if s.notification == "" {
 		asm.Comment(fmt.Sprintf("u16[$%06x] |= %#016b", longAddr, newBits))
 	}
 
@@ -422,14 +434,18 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	s.pendingUpdate = true
 	s.updatingTo = maxV
+	s.notification = ""
 	if s.names != nil {
 		i := int(maxV) - 1
 		if i >= 0 && i < len(s.names) {
-			received := s.names[i]
-			s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
-			asm.Comment(s.notification + ":")
+			if s.names[i] != "" {
+				received := s.names[i]
+				s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
+				asm.Comment(s.notification + ":")
+			}
 		}
-	} else {
+	}
+	if s.notification == "" {
 		asm.Comment(fmt.Sprintf("sram[$%04x] = $%02x", offset, maxV))
 	}
 
@@ -526,13 +542,19 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	// notify local player of new item received:
 	s.pendingUpdate = true
 	s.updatingTo = maxV
+	s.notification = ""
 	if s.names != nil {
 		i := int(maxV) - 1
 		if i >= 0 && i < len(s.names) {
-			received := s.names[i]
-			s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
-			asm.Comment(s.notification + ":")
+			if s.names[i] != "" {
+				received := s.names[i]
+				s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
+				asm.Comment(s.notification + ":")
+			}
 		}
+	}
+	if s.notification == "" {
+		asm.Comment(fmt.Sprintf("got bottle value %#02x from %s:", maxV, maxP.Name))
 	}
 
 	asm.LDA_imm8_b(maxV)
