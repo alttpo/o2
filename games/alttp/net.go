@@ -63,7 +63,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		if header.ClientType != 1 {
 			return
 		}
-		return g.players[header.Index].Deserialize(r)
+		return g.Deserialize(r, &g.players[header.Index])
 
 	// current production server protocol:
 	case 2:
@@ -108,7 +108,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			fallthrough
 		case protocol02.Broadcast:
 			//log.Printf("%s\n", header.Kind.String())
-			err = p.Deserialize(r)
+			err = g.Deserialize(r, p)
 			break
 		default:
 			panic(fmt.Errorf("unknown message kind %02x", header.Kind))
@@ -119,12 +119,12 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			return
 		}
 
-		p.SetTTL(255)
+		g.SetTTL(p, 255)
 
 		// wait until we see a name packet to announce:
 		if p.showJoinMessage && p.Name != "" {
 			log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
-			p.g.pushNotification(fmt.Sprintf("%s joined", p.Name))
+			g.PushNotification(fmt.Sprintf("%s joined", p.Name))
 			p.showJoinMessage = false
 			g.activePlayersClean = false
 			g.shouldUpdatePlayersList = true

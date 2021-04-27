@@ -17,7 +17,7 @@ func (g *Game) notifyView() {
 	g.viewModels.NotifyView("game", g)
 }
 
-func (g *Game) pushNotification(notification string) {
+func (g *Game) PushNotification(notification string) {
 	// record history of notifications:
 	historyVM, ok := g.viewModels.GetViewModel("game/notification/history")
 	if !ok {

@@ -103,7 +103,7 @@ func (g *Game) run() {
 				for i := range g.players {
 					p := &g.players[i]
 					// reset TTL for all players to make them inactive:
-					p.DecTTL(255)
+					g.DecTTL(p, 255)
 					p.Index = -1
 				}
 				if g.shouldUpdatePlayersList {
@@ -306,9 +306,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	//log.Printf("alttp: read %d responses\n", len(rsps))
 
 	// assign local variables from WRAM:
-	local := g.local
+	local := g.LocalPlayer()
 
-	local.SetTTL(255)
+	g.SetTTL(local, 255)
 
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
 	if local.Module != newModule || local.SubModule != newSubModule {
@@ -425,7 +425,7 @@ func (g *Game) wramU16(addr uint32) uint16 {
 func (g *Game) frameAdvanced() {
 	// tick down TTLs of remote players:
 	for _, p := range g.ActivePlayers() {
-		p.DecTTL(1)
+		g.DecTTL(p, 1)
 	}
 
 	// update underworld supertile state sync bit masks based on sync toggles from front-end:

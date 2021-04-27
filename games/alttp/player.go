@@ -27,8 +27,6 @@ type SyncableWRAM struct {
 }
 
 type Player struct {
-	g *Game
-
 	Index int
 	TTL   int
 
@@ -66,7 +64,7 @@ type Player struct {
 	showJoinMessage bool
 }
 
-func (p *Player) SetTTL(ttl int) {
+func (g *Game) SetTTL(p *Player, ttl int) {
 	joined := false
 	if p.TTL <= 0 && ttl > 0 {
 		joined = true
@@ -74,41 +72,41 @@ func (p *Player) SetTTL(ttl int) {
 
 	p.TTL = ttl
 	if joined {
-		p.Joined()
+		g.PlayerJoined(p)
 	}
 }
 
-func (p *Player) DecTTL(amount int) {
+func (g *Game) DecTTL(p *Player, amount int) {
 	if p.TTL <= 0 {
 		return
 	}
 
 	p.TTL -= amount
 	if p.TTL <= 0 {
-		p.Left()
+		g.PlayerLeft(p)
 	}
 }
 
-func (p *Player) Joined() {
+func (g *Game) PlayerJoined(p *Player) {
 	// Activating new player:
 	p.showJoinMessage = true
-	p.g.activePlayersClean = false
-	p.g.shouldUpdatePlayersList = true
+	g.activePlayersClean = false
+	g.shouldUpdatePlayersList = true
 }
 
-func (p *Player) Left() {
+func (g *Game) PlayerLeft(p *Player) {
 	// Player left the game:
 	p.TTL = 0
 	p.showJoinMessage = false
 
 	log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
-	p.g.pushNotification(fmt.Sprintf("%s left", p.Name))
+	g.PushNotification(fmt.Sprintf("%s left", p.Name))
 
 	// refresh the ActivePlayers():
-	p.g.activePlayersClean = false
+	g.activePlayersClean = false
 
 	// refresh the players list
-	p.g.shouldUpdatePlayersList = true
+	g.shouldUpdatePlayersList = true
 }
 
 func (p *Player) sramU16(offset uint16) uint16 {

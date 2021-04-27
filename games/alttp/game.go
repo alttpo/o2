@@ -27,6 +27,8 @@ type Game struct {
 	viewModels       interfaces.ViewModelContainer
 	nextNotification string
 
+	deserTable []DeserializeFunc
+
 	local   *Player
 	players [MaxPlayers]Player
 
@@ -78,18 +80,18 @@ type Game struct {
 	shouldUpdatePlayersList bool
 
 	// serializable ViewModel:
-	clean                   bool
-	IsCreated               bool   `json:"isCreated"`
-	GameName                string `json:"gameName"`
-	SyncItems               bool   `json:"syncItems"`
-	SyncDungeonItems        bool   `json:"syncDungeonItems"`
-	SyncProgress            bool   `json:"syncProgress"`
-	SyncHearts              bool   `json:"syncHearts"`
-	SyncSmallKeys           bool   `json:"syncSmallKeys"`
-	SyncUnderworld          bool   `json:"syncUnderworld"`
-	SyncOverworld           bool   `json:"syncOverworld"`
-	SyncChests              bool   `json:"syncChests"`
-	lastSyncChests          bool
+	clean            bool
+	IsCreated        bool   `json:"isCreated"`
+	GameName         string `json:"gameName"`
+	SyncItems        bool   `json:"syncItems"`
+	SyncDungeonItems bool   `json:"syncDungeonItems"`
+	SyncProgress     bool   `json:"syncProgress"`
+	SyncHearts       bool   `json:"syncHearts"`
+	SyncSmallKeys    bool   `json:"syncSmallKeys"`
+	SyncUnderworld   bool   `json:"syncUnderworld"`
+	SyncOverworld    bool   `json:"syncOverworld"`
+	SyncChests       bool   `json:"syncChests"`
+	lastSyncChests   bool
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
@@ -118,6 +120,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		lastSyncChests:   false,
 	}
 
+	g.initSerde()
 	g.fillRomFunctions()
 
 	return g
@@ -161,11 +164,11 @@ func (g *Game) Reset() {
 
 	// clear out players array:
 	for i := range g.players {
-		g.players[i] = Player{g: g}
+		g.players[i] = Player{Index: -1}
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
-	g.local = &Player{g: g, Index: -1}
+	g.local = &Player{Index: -1}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
 
@@ -215,6 +218,10 @@ func (g *Game) Stop() {
 
 	// wait until stopped:
 	<-g.stopped
+}
+
+func (g *Game) LocalPlayer() *Player {
+	return g.local
 }
 
 func (g *Game) ActivePlayers() []*Player {

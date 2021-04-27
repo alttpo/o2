@@ -59,7 +59,7 @@ func (g *Game) initSync() {
 	// define syncable items:
 	g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
 		g := s.g
-		local := g.local
+		local := g.LocalPlayer()
 		offset := s.offset
 
 		initial := local.SRAM[offset]
@@ -234,7 +234,7 @@ func (g *Game) initSync() {
 	// heart containers:
 	g.newSyncableCustomU8(0x36C, &g.SyncHearts, func(s *syncableCustomU8, asm *asm.Emitter) bool {
 		g := s.g
-		local := g.local
+		local := g.LocalPlayer()
 
 		initial := (local.SRAM[0x36C] & ^uint8(7)) | (local.SRAM[0x36B] & 3)
 
@@ -364,10 +364,11 @@ func (g *Game) initSync() {
 	// progress flags 1/2:
 	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
 		offset := s.offset
-		initial := s.g.local.SRAM[offset]
+		local := s.g.LocalPlayer()
+		initial := local.SRAM[offset]
 
 		// check to make sure zelda telepathic follower removed if have uncle's gear:
-		if initial&0x01 == 0x01 && s.g.local.SRAM[0x3CC] == 0x05 {
+		if initial&0x01 == 0x01 && local.SRAM[0x3CC] == 0x05 {
 			asm.Comment("already have uncle's gear; remove telepathic zelda follower:")
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x05)
@@ -436,7 +437,7 @@ func (g *Game) initSync() {
 	// progress flags 2/2:
 	g.newSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
 		offset := s.offset
-		initial := s.g.local.SRAM[offset]
+		initial := s.g.LocalPlayer().SRAM[offset]
 
 		newBits := initial
 		for _, p := range g.ActivePlayers() {
@@ -628,7 +629,7 @@ func (g *Game) initSync() {
 			if g.local.OverworldArea == 0x5B {
 				notification := "create pyramid hole:"
 				a.Comment(notification)
-				g.pushNotification(notification)
+				g.PushNotification(notification)
 				a.JSL(g.romFunctions[fnOverworldCreatePyramidHole])
 			}
 		}

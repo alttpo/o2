@@ -17,13 +17,19 @@ type (
 	syncableMaxU8OnUpdated  func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 )
 
+type GameSyncable interface {
+	LocalPlayer() *Player
+	ActivePlayers() []*Player
+	PushNotification(notification string)
+}
+
 func playerPredicateIdentity(_ *Player) bool       { return true }
 func playerReadSRAM(p *Player, offs uint16) uint16 { return p.sramU16(offs) }
 func longAddressSRAM(offs uint16) uint32           { return 0x7EF000 + uint32(offs) }
 func longAddressWRAM(offs uint16) uint32           { return 0x7E0000 + uint32(offs) }
 
 type syncableCustomU8 struct {
-	g *Game
+	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
@@ -58,13 +64,13 @@ func (s *syncableCustomU8) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.local.SRAM[s.offset] != s.updatingTo {
+	if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
 		return false
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.pushNotification(s.notification)
+		g.PushNotification(s.notification)
 		s.notification = ""
 	}
 
@@ -74,7 +80,7 @@ func (s *syncableCustomU8) CanUpdate() bool {
 }
 
 type syncableBitU8 struct {
-	g *Game
+	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
@@ -112,13 +118,13 @@ func (s *syncableBitU8) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.local.SRAM[s.offset] != s.updatingTo {
+	if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
 		return false
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.pushNotification(s.notification)
+		g.PushNotification(s.notification)
 		s.notification = ""
 	}
 
@@ -129,7 +135,7 @@ func (s *syncableBitU8) CanUpdate() bool {
 
 func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
-	local := g.local
+	local := g.LocalPlayer()
 	offs := s.offset
 
 	initial := local.SRAM[offs]
@@ -193,7 +199,7 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 }
 
 type syncableBitU16 struct {
-	g *Game
+	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
@@ -237,13 +243,13 @@ func (s *syncableBitU16) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.local.sramU16(s.offset) != s.updatingTo {
+	if g.LocalPlayer().sramU16(s.offset) != s.updatingTo {
 		return false
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.pushNotification(s.notification)
+		g.PushNotification(s.notification)
 		s.notification = ""
 	}
 
@@ -254,7 +260,7 @@ func (s *syncableBitU16) CanUpdate() bool {
 
 func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
-	local := g.local
+	local := g.LocalPlayer()
 
 	// filter out local player:
 	if !s.playerPredicate(local) {
@@ -334,7 +340,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 }
 
 type syncableMaxU8 struct {
-	g *Game
+	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
@@ -373,13 +379,13 @@ func (s *syncableMaxU8) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.local.SRAM[s.offset] != s.updatingTo {
+	if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
 		return false
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.pushNotification(s.notification)
+		g.PushNotification(s.notification)
 		s.notification = ""
 	}
 
@@ -390,7 +396,7 @@ func (s *syncableMaxU8) CanUpdate() bool {
 
 func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
-	local := g.local
+	local := g.LocalPlayer()
 	offset := s.offset
 
 	maxP := local
@@ -438,7 +444,7 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 }
 
 type syncableBottle struct {
-	g *Game
+	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
@@ -471,13 +477,13 @@ func (s *syncableBottle) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.local.SRAM[s.offset] != s.updatingTo {
+	if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
 		return false
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.pushNotification(s.notification)
+		g.PushNotification(s.notification)
 		s.notification = ""
 	}
 
@@ -488,7 +494,7 @@ func (s *syncableBottle) CanUpdate() bool {
 
 func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
-	local := g.local
+	local := g.LocalPlayer()
 	offset := s.offset
 
 	initial := local.SRAM[offset]

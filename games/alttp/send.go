@@ -18,7 +18,7 @@ func (g *Game) sendPackets() {
 		m := g.makeGamePacket(protocol02.Broadcast)
 
 		locStart := m.Len()
-		if err := SerializeLocation(local, m); err != nil {
+		if err := g.SerializeLocation(local, m); err != nil {
 			panic(err)
 		}
 
@@ -38,11 +38,11 @@ func (g *Game) sendPackets() {
 	{
 		m := g.makeGamePacket(protocol02.Broadcast)
 		// small keys:
-		if err := SerializeWRAM(local, m, smallKeyFirst, 0x10); err != nil {
+		if err := g.SerializeWRAM(local, m, smallKeyFirst, 0x10); err != nil {
 			panic(err)
 		}
 		// current dungeon supertile door state:
-		if err := SerializeWRAM(local, m, 0x0400, 1); err != nil {
+		if err := g.SerializeWRAM(local, m, 0x0400, 1); err != nil {
 			panic(err)
 		}
 		g.send(m)
@@ -53,11 +53,11 @@ func (g *Game) sendPackets() {
 		m := g.makeGamePacket(protocol02.Broadcast)
 		if m != nil {
 			// items earned
-			if err := SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
+			if err := g.SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
 				panic(err)
 			}
 			// progress made
-			if err := SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
+			if err := g.SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
 				panic(err)
 			}
 
@@ -82,7 +82,7 @@ func (g *Game) sendPackets() {
 	if g.SyncUnderworld && g.monotonicFrameTime&31 == 0 {
 		// dungeon rooms
 		m := g.makeGamePacket(protocol02.Broadcast)
-		err := SerializeSRAM(g.local, m, 0x000, 0x250)
+		err := g.SerializeSRAM(g.local, m, 0x000, 0x250)
 		if err != nil {
 			panic(err)
 		}
@@ -92,7 +92,7 @@ func (g *Game) sendPackets() {
 	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
 		// overworld events; heart containers, overlays
 		m := g.makeGamePacket(protocol02.Broadcast)
-		err := SerializeSRAM(g.local, m, 0x280, 0x340)
+		err := g.SerializeSRAM(g.local, m, 0x280, 0x340)
 		if err != nil {
 			panic(err)
 		}

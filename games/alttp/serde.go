@@ -34,20 +34,22 @@ const (
 
 type DeserializeFunc func(p *Player, r io.Reader) error
 
-var deserTable = []DeserializeFunc{
-	nil,
-	DeserializeLocation,
-	DeserializeSfx,
-	DeserializeSprites1,
-	DeserializeSprites2,
-	DeserializeWRAM,
-	DeserializeSRAM,
-	DeserializeTilemaps,
-	DeserializeObjects,
-	DeserializeAncillae,
-	DeserializeTorches,
-	DeserializePvP,
-	DeserializePlayerName,
+func (g *Game) initSerde() {
+	g.deserTable = []DeserializeFunc{
+		nil,
+		g.DeserializeLocation,
+		g.DeserializeSfx,
+		g.DeserializeSprites1,
+		g.DeserializeSprites2,
+		g.DeserializeWRAM,
+		g.DeserializeSRAM,
+		g.DeserializeTilemaps,
+		g.DeserializeObjects,
+		g.DeserializeAncillae,
+		g.DeserializeTorches,
+		g.DeserializePvP,
+		g.DeserializePlayerName,
+	}
 }
 
 func readU24(r io.Reader) (value uint32, err error) {
@@ -75,7 +77,7 @@ func writeU24(w io.Writer, value uint32) (err error) {
 	return
 }
 
-func (p *Player) Deserialize(r io.Reader) (err error) {
+func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 	var (
 		serializationVersion uint8
 		frame                uint8
@@ -94,7 +96,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 		panic(err)
 	}
 	if p.Team != lastTeam {
-		p.g.shouldUpdatePlayersList = true
+		g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
@@ -130,7 +132,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 
 		// call deserializer for the message type:
 		//log.Printf("deserializing message type %02x\n", msgType)
-		if err = deserTable[msgType](p, r); err != nil {
+		if err = g.deserTable[msgType](p, r); err != nil {
 			//log.Println(err)
 			break
 		}
@@ -142,7 +144,7 @@ func (p *Player) Deserialize(r io.Reader) (err error) {
 	return
 }
 
-func DeserializeLocation(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.Module); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
@@ -166,7 +168,7 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 	}
 
 	if p.Location != lastLocation {
-		p.g.shouldUpdatePlayersList = true
+		g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {
@@ -181,7 +183,7 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 	if p.Dungeon != lastDungeon {
-		p.g.shouldUpdatePlayersList = true
+		g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
@@ -207,7 +209,7 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 	if p.PlayerColor != lastColor {
-		p.g.shouldUpdatePlayersList = true
+		g.shouldUpdatePlayersList = true
 	}
 
 	var inSM uint8
@@ -220,13 +222,13 @@ func DeserializeLocation(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeSfx(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeSfx(p *Player, r io.Reader) (err error) {
 	var dummy [2]byte
 	_, err = r.Read(dummy[:])
 	return
 }
 
-func DeserializeSprites1(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeSprites1(p *Player, r io.Reader) (err error) {
 	var (
 		length uint8
 	)
@@ -270,16 +272,16 @@ func DeserializeSprites1(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeSprites2(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeSprites2(p *Player, r io.Reader) (err error) {
 	var dummy [1]byte
 	if _, err = r.Read(dummy[:]); err != nil {
 		panic(fmt.Errorf("error deserializing sprite2: %w", err))
 	}
 	// TODO: pass in start flag
-	return DeserializeSprites1(p, r)
+	return g.DeserializeSprites1(p, r)
 }
 
-func DeserializeWRAM(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 	var count uint8
 	var offsStart uint16
 
@@ -325,7 +327,7 @@ func DeserializeWRAM(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeSRAM(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeSRAM(p *Player, r io.Reader) (err error) {
 	// something about SM:
 	var dummy [2]byte
 	if _, err = r.Read(dummy[:]); err != nil {
@@ -349,7 +351,7 @@ func DeserializeSRAM(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 	var (
 		timestamp uint32
 		location  uint32
@@ -402,11 +404,11 @@ func DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeObjects(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeObjects(p *Player, r io.Reader) (err error) {
 	panic(fmt.Errorf("not implemented"))
 }
 
-func DeserializeAncillae(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeAncillae(p *Player, r io.Reader) (err error) {
 	var count uint8
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
 		panic(fmt.Errorf("error deserializing ancillae: %w", err))
@@ -434,7 +436,7 @@ func DeserializeAncillae(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializeTorches(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeTorches(p *Player, r io.Reader) (err error) {
 	var (
 		count uint8
 	)
@@ -450,11 +452,11 @@ func DeserializeTorches(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func DeserializePvP(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializePvP(p *Player, r io.Reader) (err error) {
 	panic(fmt.Errorf("not implemented"))
 }
 
-func DeserializePlayerName(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	var name [20]byte
 	if _, err = r.Read(name[:]); err != nil {
 		panic(fmt.Errorf("error deserializing name: %w", err))
@@ -464,12 +466,12 @@ func DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	if lastName != p.Name {
 		p.showJoinMessage = true
 		// refresh the players list
-		p.g.shouldUpdatePlayersList = true
+		g.shouldUpdatePlayersList = true
 	}
 	return
 }
 
-func SerializeLocation(p *Player, w io.Writer) (err error) {
+func (g *Game) SerializeLocation(p *Player, w io.Writer) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, uint8(MsgLocation)); err != nil {
 		panic(fmt.Errorf("error serializing location: %w", err))
 	}
@@ -527,7 +529,7 @@ func SerializeLocation(p *Player, w io.Writer) (err error) {
 	return
 }
 
-func SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err error) {
+func (g *Game) SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, uint8(MsgSRAM)); err != nil {
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
@@ -561,7 +563,7 @@ func SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16) (err erro
 	return
 }
 
-func SerializeWRAM(p *Player, w io.Writer, start uint16, count uint8) (err error) {
+func (g *Game) SerializeWRAM(p *Player, w io.Writer, start uint16, count uint8) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, uint8(MsgWRAM)); err != nil {
 		panic(fmt.Errorf("error serializing wram: %w", err))
 	}
