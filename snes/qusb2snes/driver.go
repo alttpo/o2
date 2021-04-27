@@ -3,9 +3,10 @@ package qusb2snes
 import (
 	"crypto/rand"
 	"fmt"
-	"o2/interfaces"
+	"log"
 	"o2/snes"
-	"os"
+	"o2/util"
+	"o2/util/env"
 	"sync"
 )
 
@@ -86,7 +87,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	}()
 	if err != nil {
 		// intercept "connection refused" errors to silence them:
-		if interfaces.IsConnectionRefused(err) {
+		if util.IsConnectionRefused(err) {
 			err = nil
 			return
 		}
@@ -141,7 +142,8 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
-	if interfaces.IsTruthy(os.Getenv("O2_QUSB2SNES_DISABLE")) {
+	if util.IsTruthy(env.GetOrDefault("O2_QUSB2SNES_DISABLE", "0")) {
+		log.Printf("disabling qusb2snes snes driver\n")
 		return
 	}
 	snes.Register(driverName, &Driver{})

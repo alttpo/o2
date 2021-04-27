@@ -3,6 +3,7 @@ package alttp
 import (
 	"fmt"
 	"o2/interfaces"
+	"o2/util"
 )
 
 func (g *Game) notifyView() {
@@ -170,7 +171,7 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 
 type sendCustomAsmCmd struct{ g *Game }
 type sendCustomAsmArgs struct {
-	Code interfaces.HexBytes `json:"code"`
+	Code util.HexBytes `json:"code"`
 }
 
 func (c *sendCustomAsmCmd) CreateArgs() interfaces.CommandArgs { return &sendCustomAsmArgs{} }

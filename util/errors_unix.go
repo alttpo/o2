@@ -1,6 +1,6 @@
 //+build !windows
 
-package interfaces
+package util
 
 import (
 	"errors"

@@ -9,6 +9,7 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
+	"o2/util"
 	"os"
 	"path/filepath"
 	"sync"
@@ -126,7 +127,7 @@ func (vm *ViewModel) LoadConfiguration() bool {
 	vm.isLoadingConfig = true
 
 	// load saved config:
-	dir, err := interfaces.ConfigDir()
+	dir, err := util.ConfigDir()
 	if err != nil {
 		log.Printf("viewmodel: loadConfiguration: could not find configuration directory: %v\n", err)
 		return false
@@ -185,7 +186,7 @@ func (vm *ViewModel) SaveConfiguration() bool {
 		return false
 	}
 
-	dir, err := interfaces.ConfigDir()
+	dir, err := util.ConfigDir()
 	if err != nil {
 		log.Printf("viewmodel: saveConfiguration: could not find configuration directory: %v\n", err)
 		return false

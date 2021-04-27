@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
-	"o2/interfaces"
+	"log"
 	"o2/snes"
-	"os"
+	"o2/util"
+	"o2/util/env"
 )
 
 const (
@@ -167,7 +168,8 @@ func (d *Driver) Open(ddg snes.DeviceDescriptor) (snes.Queue, error) {
 }
 
 func init() {
-	if interfaces.IsTruthy(os.Getenv("O2_FXPAKPRO_DISABLE")) {
+	if util.IsTruthy(env.GetOrDefault("O2_FXPAKPRO_DISABLE", "0")) {
+		log.Printf("disabling fxpakpro snes driver\n")
 		return
 	}
 	snes.Register(driverName, &Driver{})

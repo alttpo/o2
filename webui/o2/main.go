@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"o2/engine"
+	"o2/util/env"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -64,12 +65,9 @@ func main() {
 	var err error
 
 	// Parse env vars:
-	listenHost = os.Getenv("O2_WEB_LISTEN_HOST")
-	if listenHost == "" {
-		listenHost = "0.0.0.0"
-	}
+	listenHost = env.GetOrDefault("O2_WEB_LISTEN_HOST", "0.0.0.0")
 
-	listenPort, err = strconv.Atoi(orElse(os.Getenv("O2_WEB_LISTEN_PORT"), "27637"))
+	listenPort, err = strconv.Atoi(env.GetOrDefault("O2_WEB_LISTEN_PORT", "27637"))
 	if err != nil {
 		listenPort = 27637
 	}
@@ -78,7 +76,7 @@ func main() {
 	}
 	listenAddr := net.JoinHostPort(listenHost, strconv.Itoa(listenPort))
 
-	browserHost = orElse(os.Getenv("O2_WEB_BROWSER_HOST"), "127.0.0.1")
+	browserHost = env.GetOrDefault("O2_WEB_BROWSER_HOST", "127.0.0.1")
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
 	// construct our viewModel and web server:

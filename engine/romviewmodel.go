@@ -6,6 +6,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/snes"
+	"o2/util"
 	"os"
 	"path/filepath"
 )
@@ -45,7 +46,7 @@ func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
 		return
 	}
 
-	dir, err := interfaces.ConfigDir()
+	dir, err := util.ConfigDir()
 	if err != nil {
 		log.Printf("romviewmodel: loadConfiguration: could not find configuration directory: %v\n", err)
 		return
@@ -76,7 +77,7 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 		return
 	}
 
-	dir, err := interfaces.ConfigDir()
+	dir, err := util.ConfigDir()
 	if err != nil {
 		log.Printf("romviewmodel: saveConfiguration: could not find configuration directory: %v\n", err)
 		return

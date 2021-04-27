@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"o2/interfaces"
 	"o2/snes"
 	"o2/udpclient"
-	"os"
+	"o2/util"
+	"o2/util/env"
 	"strings"
 	"time"
 )
@@ -146,13 +146,13 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
-	if interfaces.IsTruthy(os.Getenv("O2_RETROARCH_DISABLE")) {
+	if util.IsTruthy(env.GetOrDefault("O2_RETROARCH_DISABLE", "0")) {
+		log.Printf("disabling retroarch snes driver\n")
 		return
 	}
 
 	// comma-delimited list of host:port pairs:
-	hostsStr := os.Getenv("O2_RETROARCH_HOSTS")
-	if hostsStr == "" {
+	hostsStr := env.GetOrSupply("O2_RETROARCH_HOSTS", func() string {
 		// default network_cmd_port for RA is UDP 55355. we want to support connecting to multiple
 		// instances so let's auto-detect RA instances listening on UDP ports in the range
 		// [55355..55362]. realistically we probably won't be running any more than a few instances on
@@ -165,8 +165,8 @@ func init() {
 				sb.WriteByte(',')
 			}
 		}
-		hostsStr = sb.String()
-	}
+		return sb.String()
+	})
 
 	// split the hostsStr list by commas:
 	hosts := strings.Split(hostsStr, ",")
