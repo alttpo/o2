@@ -334,55 +334,6 @@ func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	return true
 }
 
-type syncableMaxU16 struct {
-	g *Game
-
-	offset    uint16
-	isEnabled *bool
-}
-
-func (g *Game) newSyncableMaxU16(offset uint16, enabled *bool) {
-	g.syncableItems[offset] = &syncableMaxU16{
-		g:         g,
-		offset:    offset,
-		isEnabled: enabled,
-	}
-}
-
-func (s *syncableMaxU16) Offset() uint16  { return s.offset }
-func (s *syncableMaxU16) Size() uint      { return 2 }
-func (s *syncableMaxU16) IsEnabled() bool { return *s.isEnabled }
-
-func (s *syncableMaxU16) GenerateUpdate(asm *asm.Emitter) bool {
-	g := s.g
-	local := g.local
-	offset := s.offset
-
-	maxP := local
-	maxV := local.sramU16(offset)
-	initial := maxV
-	for _, p := range g.ActivePlayers() {
-		v := p.sramU16(offset)
-		if v > maxV {
-			maxV, maxP = v, p
-		}
-	}
-
-	if maxV == initial {
-		// no change:
-		return false
-	}
-
-	// notify local player of new item received:
-	_ = maxP
-	//g.notifyNewItem(s.names[v])
-
-	asm.LDA_imm16_w(maxV)
-	asm.STA_long(0x7EF000 + uint32(offset))
-
-	return true
-}
-
 type syncableBottle struct {
 	g *Game
 
