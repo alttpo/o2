@@ -32,6 +32,8 @@ type SyncableItem interface {
 	Size() uint
 	// IsEnabled whether sync is enabled for this item:
 	IsEnabled() bool
+	// CanUpdate checks whether this item is available to be updated after the last write:
+	CanUpdate() bool
 	// GenerateUpdate generates a 65816 asm routine to update WRAM if applicable
 	// returns true if program was generated, false if asm was not modified
 	GenerateUpdate(asm *asm.Emitter) bool
@@ -89,8 +91,6 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		_ = maxP
-
 		received := ""
 		if maxV == 1 {
 			received = "Bow"
@@ -98,9 +98,10 @@ func (g *Game) initSync() {
 			received = "Silver Bow"
 			maxV = 3
 		}
-		notification := fmt.Sprintf("got %s from %s", received, maxP.Name)
-		asm.Comment(notification + ":")
-		g.pushNotification(notification)
+		s.pendingUpdate = true
+		s.updatingTo = maxV
+		s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
+		asm.Comment(s.notification + ":")
 
 		asm.LDA_long(0x7EF377) // arrows
 		asm.CMP_imm8_b(0x01)   // are arrows present?
@@ -252,7 +253,8 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		_ = maxP
+		s.pendingUpdate = true
+		s.updatingTo = updated
 
 		oldHearts := initial & ^uint8(7)
 		oldPieces := initial & uint8(3)
@@ -280,9 +282,8 @@ func (g *Game) initSync() {
 		}
 
 		received := hc.String()
-		notification := fmt.Sprintf("got %s from %s", received, maxP.Name)
-		asm.Comment(notification + ":")
-		g.pushNotification(notification)
+		s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
+		asm.Comment(s.notification + ":")
 
 		asm.LDA_imm8_b(updated & ^uint8(7))
 		asm.STA_long(0x7EF000 + uint32(0x36C))
@@ -392,7 +393,8 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		//g.notifyNewItem(s.names[v])
+		s.pendingUpdate = true
+		s.updatingTo = newBits
 
 		orBits := newBits & ^initial
 		asm.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
@@ -448,7 +450,8 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		//g.notifyNewItem(s.names[v])
+		s.pendingUpdate = true
+		s.updatingTo = newBits
 
 		orBits := newBits & ^initial
 		asm.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
