@@ -173,6 +173,11 @@ h5, h6 {
     white-space: pre;
 }
 
+.no-padding-margin {
+    padding: 0;
+    margin: 0;
+}
+
 /* Tabbed interface: */
 
 .tabbed {

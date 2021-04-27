@@ -5,6 +5,12 @@ import {setField} from "../util";
 
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
+
+    const [colorRed, setcolorRed] = useState(31);
+    const [colorGreen, setcolorGreen] = useState(31);
+    const [colorBlue, setcolorBlue] = useState(31);
+    const [color, setcolor] = useState(0x7fff);
+
     const [syncItems, setsyncItems] = useState(true);
     const [syncDungeonItems, setsyncDungeonItems] = useState(true);
     const [syncProgress, setsyncProgress] = useState(true);
@@ -57,10 +63,45 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
 
     const getTargetChecked = (e: Event) => (e.target as HTMLInputElement).checked;
 
+    const bgr16 = (r: number, g: number, b: number) => ((b & 31) << 10) | ((g & 31) << 5) | (r & 31);
+    const setColorValue = (colorPart: string, setcolorPart: (c: number) => void, e: Event) => {
+        let color = 0;
+        const value = (e.target as HTMLInputElement).valueAsNumber;
+        setcolorPart(value);
+
+        // BGR order from MSB to LSB, 0bbbbbgggggrrrrr
+        switch (colorPart) {
+            case 'red':
+                setcolor(bgr16(value, colorGreen, colorBlue));
+                break;
+            case 'green':
+                setcolor(bgr16(colorRed, value, colorBlue));
+                break;
+            case 'blue':
+                setcolor(bgr16(colorRed, colorGreen, value));
+                break;
+        }
+    };
+
     return <div style="display: grid; min-width: 20em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em;">
         <h5 style="grid-column: 1">Game: {game.gameName}</h5>
         <div style="grid-column: 1">
             <div style="display: grid; grid-template-columns: 1fr 1fr;">
+                <label>color:</label>
+                <input type="text" value={("0000" + color.toString(16)).substr(-4)} />
+                <label for="red">Red:</label>
+                <input id="red" class="no-padding-margin"
+                       type="range" min={0} max={31}
+                       value={colorRed} onInput={setColorValue.bind(this, 'red', setcolorRed)}/>
+                <label for="green">Green:</label>
+                <input id="green" class="no-padding-margin"
+                       type="range" min={0} max={31}
+                       value={colorGreen} onInput={setColorValue.bind(this, 'green', setcolorGreen)}/>
+                <label for="blue">Blue:</label>
+                <input id="blue" class="no-padding-margin"
+                       type="range" min={0} max={31}
+                       value={colorBlue} onInput={setColorValue.bind(this, 'blue', setcolorBlue)}/>
+
                 <label for="syncItems">
                     <input type="checkbox"
                            id="syncItems"
@@ -128,7 +169,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
-        <div style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1em 2em 6em 9em; grid-column-gap: 0.5em">
+        <div
+            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1em 2em 6em 9em; grid-column-gap: 0.5em">
             <div style="font-weight: bold">##</div>
             <div style="font-weight: bold">team</div>
             <div style="font-weight: bold">name</div>
@@ -138,7 +180,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
                     <div class="mono" title="Team number">{p.team}</div>
                     <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
-                    <div style={"color: " + ( ((p.location & 0x10000) != 0) ? "green" : "cyan" ) + "; white-space: nowrap"} title="Location">{
+                    <div
+                        style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan") + "; white-space: nowrap"}
+                        title="Location">{
                         ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
                     }</div>
                 </Fragment>))
