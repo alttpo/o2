@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"o2/interfaces"
+	"o2/util/env"
 )
 
 type ServerViewModel struct {
@@ -131,8 +132,20 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 		return nil
 	}
 
-	hostport := fmt.Sprintf("%s:%d", v.HostName, 4590)
-	addr, err := net.ResolveUDPAddr("udp", hostport)
+	host, port, err := net.SplitHostPort(v.HostName)
+	if err != nil {
+		if addrError, ok := err.(*net.AddrError); ok {
+			if addrError.Err == "missing port in address" {
+				host = v.HostName
+				port = defaultServerPort
+			}
+		} else {
+			return err
+		}
+	}
+
+	hostPort := net.JoinHostPort(host, port)
+	addr, err := net.ResolveUDPAddr("udp", hostPort)
 	if err != nil {
 		log.Printf("serverviewmodel: %v\n", err)
 		return err
@@ -221,4 +234,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	vm.SaveConfiguration()
 
 	return nil
+}
+
+var defaultServerPort string
+
+func init() {
+	defaultServerPort = env.GetOrDefault("O2_DEFAULT_SERVER_PORT", "4590")
 }
