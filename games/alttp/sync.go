@@ -609,6 +609,56 @@ func (g *Game) initSync() {
 			},
 		}
 	}
+
+	// notify about bosses defeated:
+	// u16[$7ef190] |= 0b0000100000000000 Armos
+	g.underworld[0xC8].names = make([]string, 16)
+	g.underworld[0xC8].names[0xb] = "Armos defeated"
+
+	// u16[$7ef066] |= 0b0000100000000000 Lanmola
+	g.underworld[0x33].names = make([]string, 16)
+	g.underworld[0x33].names[0xb] = "Lanmola defeated"
+
+	// u16[$7ef00e] |= 0b0000100000000000 Moldorm
+	g.underworld[0x07].names = make([]string, 16)
+	g.underworld[0x07].names[0xb] = "Moldorm defeated"
+
+	// u16[$7ef040] |= 0b0000100000000000 Agahnim
+	g.underworld[0x20].names = make([]string, 16)
+	g.underworld[0x20].names[0xb] = "Agahnim defeated"
+
+	// u16[$7ef0b4] |= 0b0000100000000000 Helmasaur
+	g.underworld[0x5A].names = make([]string, 16)
+	g.underworld[0x5A].names[0xb] = "Helmasaur defeated"
+
+	// u16[$7ef158] |= 0b0000100000000000 Blind
+	g.underworld[0xAC].names = make([]string, 16)
+	g.underworld[0xAC].names[0xb] = "Blind defeated"
+
+	// u16[$7ef052] |= 0b0000100000000000 Mothula
+	g.underworld[0x29].names = make([]string, 16)
+	g.underworld[0x29].names[0xb] = "Mothula defeated"
+
+	// u16[$7ef1bc] |= 0b0000100000000000 Kholdstare
+	g.underworld[0xDE].names = make([]string, 16)
+	g.underworld[0xDE].names[0xb] = "Kholdstare defeated"
+
+	// u16[$7ef00c] |= 0b0000100000000000 Arrghus
+	g.underworld[0x06].names = make([]string, 16)
+	g.underworld[0x06].names[0xb] = "Arrghus defeated"
+
+	// u16[$7ef120] |= 0b0000100000000000 Vitreous
+	g.underworld[0x90].names = make([]string, 16)
+	g.underworld[0x90].names[0xb] = "Vitreous defeated"
+
+	// u16[$7ef148] |= 0b0000100000000000 Trinexx
+	g.underworld[0xA4].names = make([]string, 16)
+	g.underworld[0xA4].names[0xb] = "Trinexx defeated"
+
+	// u16[$7ef01a] |= 0b0000100000000000 Agahnim 2
+	g.underworld[0x0D].names = make([]string, 16)
+	g.underworld[0x0D].names[0xb] = "Agahnim 2 defeated"
+
 	g.setUnderworldSyncMasks()
 
 	// overworld areas:
