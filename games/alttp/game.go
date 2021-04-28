@@ -79,6 +79,9 @@ type Game struct {
 
 	shouldUpdatePlayersList bool
 
+	lastColor uint16
+	last15 uint8
+
 	// serializable ViewModel:
 	clean            bool
 	IsCreated        bool   `json:"isCreated"`
@@ -161,6 +164,9 @@ func (g *Game) IsRunning() bool {
 
 func (g *Game) Reset() {
 	g.clean = false
+
+	// an impossible color in 15-bit BGR:
+	g.lastColor = 0xffff
 
 	// clear out players array:
 	for i := range g.players {

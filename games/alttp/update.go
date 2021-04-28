@@ -225,6 +225,28 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
 
+		// update link palette:
+		local := g.LocalPlayer()
+		lightColor := local.PlayerColor
+		if g.lastColor != lightColor {
+			// link palette occupies last 16 colors of palette copy in WRAM ($7EC6E0..FF):
+			// set light color on tunic:
+			a16.LDA_imm16_w(lightColor)
+			a16.STA_long(0x7EC6E0 + (0x0C << 1))
+			a16.STA_long(0x7EC6E0 + (0x0A << 1))
+			// set dark color on tunic; make 75% as bright:
+			darkColor := ((lightColor & 31) * 3 / 4) |
+				((((lightColor >> 5) & 31) * 3 / 4) << 5) |
+				((((lightColor >> 10) & 31) * 3 / 4) << 10)
+			a16.LDA_imm16_w(darkColor)
+			a16.STA_long(0x7EC6E0 + (0x0B << 1))
+			a16.STA_long(0x7EC6E0 + (0x09 << 1))
+			// set $15 to non-zero to indicate palette copy:
+			a16.INC_dp(0x15)
+			updated16 = true
+		}
+		g.lastColor = lightColor
+
 		// sync all the underworld supertile state:
 		if g.SyncUnderworld {
 			for i := range g.underworld {

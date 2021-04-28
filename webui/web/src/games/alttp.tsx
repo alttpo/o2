@@ -63,45 +63,73 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
 
     const getTargetChecked = (e: Event) => (e.target as HTMLInputElement).checked;
 
+    // BGR order from MSB to LSB, 0bbbbbgggggrrrrr
     const bgr16 = (r: number, g: number, b: number) => ((b & 31) << 10) | ((g & 31) << 5) | (r & 31);
+
+    const bgr16torgb24 = (u16: number) => {
+        const blu5 = (u16 & 0x7E00) >> 10;
+        const grn5 = (u16 & 0x03E0) >> 5;
+        const red5 = (u16 & 0x001F);
+
+        const blu8 = (blu5 << 3) | (blu5 >> 2);
+        const grn8 = (grn5 << 3) | (grn5 >> 2);
+        const red8 = (red5 << 3) | (red5 >> 2);
+
+        const rgb24 = (red8 << 16) | (grn8 << 8) | blu8;
+        return rgb24;
+    };
+
+    const hexrgb24 = (rgb: number) => {
+        const hex = "#" + ("000000" + rgb.toString(16)).substr(-6);
+        return hex;
+    };
+
     const setColorValue = (colorPart: string, setcolorPart: (c: number) => void, e: Event) => {
-        let color = 0;
         const value = (e.target as HTMLInputElement).valueAsNumber;
         setcolorPart(value);
 
-        // BGR order from MSB to LSB, 0bbbbbgggggrrrrr
+        let bgr;
         switch (colorPart) {
             case 'red':
-                setcolor(bgr16(value, colorGreen, colorBlue));
+                bgr = bgr16(value, colorGreen, colorBlue);
                 break;
             case 'green':
-                setcolor(bgr16(colorRed, value, colorBlue));
+                bgr = bgr16(colorRed, value, colorBlue);
                 break;
             case 'blue':
-                setcolor(bgr16(colorRed, colorGreen, value));
+                bgr = bgr16(colorRed, colorGreen, value);
                 break;
         }
+
+        setcolor(bgr);
+        sendGameCommand("color", {c: bgr});
     };
 
     return <div style="display: grid; min-width: 20em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em;">
         <h5 style="grid-column: 1">Game: {game.gameName}</h5>
         <div style="grid-column: 1">
-            <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                <label>color:</label>
-                <input type="text" value={("0000" + color.toString(16)).substr(-4)} />
-                <label for="red">Red:</label>
-                <input id="red" class="no-padding-margin"
-                       type="range" min={0} max={31}
-                       value={colorRed} onInput={setColorValue.bind(this, 'red', setcolorRed)}/>
-                <label for="green">Green:</label>
-                <input id="green" class="no-padding-margin"
-                       type="range" min={0} max={31}
-                       value={colorGreen} onInput={setColorValue.bind(this, 'green', setcolorGreen)}/>
-                <label for="blue">Blue:</label>
-                <input id="blue" class="no-padding-margin"
-                       type="range" min={0} max={31}
-                       value={colorBlue} onInput={setColorValue.bind(this, 'blue', setcolorBlue)}/>
+            <div style="display: grid; grid-template-columns: 2fr 2fr 5fr;">
+                <label style="grid-column: 1 / span 2">color:</label>
+                <input type="text" readonly={true} value={("0000" + color.toString(16)).substr(-4)}/>
 
+                <div style={
+                    "grid-column: 1; grid-row: 2 / span 3; border: 1px solid white; margin: 6px; background-color: " +
+                    hexrgb24(bgr16torgb24(color))
+                }/>
+                <label for="red">red:</label>
+                <input id="red" class="no-padding-margin"
+                       type="range" min={0} max={31} step={1}
+                       value={colorRed} onInput={setColorValue.bind(this, 'red', setcolorRed)}/>
+                <label for="green">green:</label>
+                <input id="green" class="no-padding-margin"
+                       type="range" min={0} max={31} step={1}
+                       value={colorGreen} onInput={setColorValue.bind(this, 'green', setcolorGreen)}/>
+                <label for="blue">blue:</label>
+                <input id="blue" class="no-padding-margin"
+                       type="range" min={0} max={31} step={1}
+                       value={colorBlue} onInput={setColorValue.bind(this, 'blue', setcolorBlue)}/>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr;">
                 <label for="syncItems">
                     <input type="checkbox"
                            id="syncItems"

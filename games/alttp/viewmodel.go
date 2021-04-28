@@ -101,6 +101,8 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	switch command {
 	case "setField":
 		return &setFieldCmd{g}, nil
+	case "color":
+		return &setColorCmd{g}, nil
 	case "asm":
 		return &sendCustomAsmCmd{g}, nil
 	default:
@@ -166,6 +168,24 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 
 	g.notifyView()
 
+	return nil
+}
+
+type setColorCmd struct{ g *Game }
+type setColorArgs struct {
+	Color uint16 `json:"c"`
+}
+
+func (s *setColorCmd) CreateArgs() interfaces.CommandArgs { return &setColorArgs{} }
+func (s *setColorCmd) Execute(args interfaces.CommandArgs) error {
+	f, ok := args.(*setColorArgs)
+	if !ok {
+		return fmt.Errorf("invalid args type for command")
+	}
+
+	// set local player color:
+	s.g.local.PlayerColor = f.Color
+	s.g.updatePlayersList()
 	return nil
 }
 
