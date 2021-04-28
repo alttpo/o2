@@ -316,3 +316,10 @@ func (a *Emitter) LDY_abs(offs uint16) {
 	d[1], d[2] = imm16(offs)
 	a.emit3("ldy.w", "$%02[2]x%02[1]x", d)
 }
+
+func (a *Emitter) INC_dp(addr uint8) {
+	var d [2]byte
+	d[0] = 0xE6
+	d[1] = addr
+	a.emit2("inc.b", "$%02[1]x", d)
+}
