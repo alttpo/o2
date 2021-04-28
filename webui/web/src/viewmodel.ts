@@ -61,6 +61,7 @@ export interface GameViewModel {
 }
 
 export interface GameALTTPViewModel extends GameViewModel {
+    playerColor: number;
     syncItems: boolean;
     syncDungeonItems: boolean;
     syncProgress: boolean;
@@ -69,6 +70,7 @@ export interface GameALTTPViewModel extends GameViewModel {
     syncUnderworld: boolean;
     syncOverworld: boolean;
     syncChests: boolean;
+    syncTunicColor: boolean;
 }
 
 export type GameViewProps = {

@@ -225,16 +225,29 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
 
-		{
+		if g.SyncTunicColor {
 			// update Link's palette:
 			local := g.LocalPlayer()
 			lightColor := local.PlayerColor
-			currentColor := g.wramU16(0xC6E0 + (0x0C << 1))
+
+			// show current link palette colors:
+			//currentColor9 := g.wramU16(0xC6E0 + (0x9 << 1))
+			//currentColorA := g.wramU16(0xC6E0 + (0xA << 1))
+			//currentColorB := g.wramU16(0xC6E0 + (0xB << 1))
+			currentColorC := g.wramU16(0xC6E0 + (0xC << 1))
+			//if currentColorC != lightColor {
+			//	log.Printf("palette: [%s]\n", util.DelimitedGen(
+			//		[]interface{}{currentColor9, currentColorA, currentColorB, currentColorC},
+			//		func(v interface{}) string {
+			//			return fmt.Sprintf("$%04x", v.(uint16))
+			//		},
+			//	))
+			//}
 
 			canUpdate := false
 			if g.colorPendingUpdate > 0 {
 				g.colorPendingUpdate--
-				if currentColor == g.colorUpdatedTo {
+				if currentColorC == g.colorUpdatedTo {
 					g.colorPendingUpdate = 0
 					canUpdate = true
 				}
@@ -242,15 +255,23 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				canUpdate = true
 			}
 
-			if canUpdate && currentColor != lightColor {
+			if canUpdate && currentColorC != lightColor {
 				// link palette occupies last 16 colors of palette copy in WRAM ($7EC6E0..FF):
+				// $7EC4E0..FF is a second copy of the palette used for restoring colors during special effects
 				a16.Comment("update link palette:")
 
-				// set light color on tunic:
+				// vanilla palette with green tunic from $9..$C is [$3647, $3b68, $0a4a, $12ef]
+				// $9 =  dark tunic color
+				// $A = light tunic color
+				// $B =  dark cap color
+				// $C = light cap color
+
+				// set light color on cap:
 				a16.LDA_imm16_w(lightColor)
 				a16.STA_long(0x7EC6E0 + (0x0C << 1))
-				a16.STA_long(0x7EC6E0 + (0x0A << 1))
 				a16.STA_long(0x7EC4E0 + (0x0C << 1))
+				// set light color on tunic:
+				a16.STA_long(0x7EC6E0 + (0x0A << 1))
 				a16.STA_long(0x7EC4E0 + (0x0A << 1))
 
 				// set dark color on tunic; make 75% as bright:
@@ -258,13 +279,16 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					((((lightColor >> 5) & 31) * 3 / 4) << 5) |
 					((((lightColor >> 10) & 31) * 3 / 4) << 10)
 
+				// set dark color on cap:
 				a16.LDA_imm16_w(darkColor)
 				a16.STA_long(0x7EC6E0 + (0x0B << 1))
-				a16.STA_long(0x7EC6E0 + (0x09 << 1))
 				a16.STA_long(0x7EC4E0 + (0x0B << 1))
+				// set dark color on tunic:
+				a16.STA_long(0x7EC6E0 + (0x09 << 1))
 				a16.STA_long(0x7EC4E0 + (0x09 << 1))
 
 				// set $15 to non-zero to indicate palette copy:
+				// TODO: is this safe to do as a 16-bit operation? should be fine for 99.9998% of the time.
 				a16.INC_dp(0x15)
 
 				updated16 = true

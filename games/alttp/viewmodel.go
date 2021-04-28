@@ -7,12 +7,19 @@ import (
 )
 
 func (g *Game) notifyView() {
+	if g.shouldUpdatePlayersList {
+		g.updatePlayersList()
+		g.clean = false
+	}
 	if g.clean {
 		return
 	}
 
 	// update the public serializable ViewModel:
 	g.clean = true
+
+	// copy into the view model:
+	g.PlayerColor = g.local.PlayerColor
 
 	// notify view of changes:
 	g.viewModels.NotifyView("game", g)
@@ -101,8 +108,6 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	switch command {
 	case "setField":
 		return &setFieldCmd{g}, nil
-	case "color":
-		return &setColorCmd{g}, nil
 	case "asm":
 		return &sendCustomAsmCmd{g}, nil
 	default:
@@ -112,15 +117,17 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 
 type setFieldCmd struct{ g *Game }
 type setFieldArgs struct {
+	PlayerColor      *uint16 `json:"playerColor"`
 	// Checkboxes:
-	SyncItems        *bool `json:"syncItems"`
-	SyncDungeonItems *bool `json:"syncDungeonItems"`
-	SyncProgress     *bool `json:"syncProgress"`
-	SyncHearts       *bool `json:"syncHearts"`
-	SyncSmallKeys    *bool `json:"syncSmallKeys"`
-	SyncUnderworld   *bool `json:"syncUnderworld"`
-	SyncOverworld    *bool `json:"syncOverworld"`
-	SyncChests       *bool `json:"syncChests"`
+	SyncItems        *bool   `json:"syncItems"`
+	SyncDungeonItems *bool   `json:"syncDungeonItems"`
+	SyncProgress     *bool   `json:"syncProgress"`
+	SyncHearts       *bool   `json:"syncHearts"`
+	SyncSmallKeys    *bool   `json:"syncSmallKeys"`
+	SyncUnderworld   *bool   `json:"syncUnderworld"`
+	SyncOverworld    *bool   `json:"syncOverworld"`
+	SyncChests       *bool   `json:"syncChests"`
+	SyncTunicColor   *bool   `json:"syncTunicColor"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -165,27 +172,18 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		g.SyncChests = *f.SyncChests
 		g.clean = false
 	}
+	if f.SyncTunicColor != nil {
+		g.SyncTunicColor = *f.SyncTunicColor
+		g.clean = false
+	}
+	if f.PlayerColor != nil {
+		g.local.PlayerColor = *f.PlayerColor
+		g.shouldUpdatePlayersList = true
+		g.clean = false
+	}
 
 	g.notifyView()
 
-	return nil
-}
-
-type setColorCmd struct{ g *Game }
-type setColorArgs struct {
-	Color uint16 `json:"c"`
-}
-
-func (s *setColorCmd) CreateArgs() interfaces.CommandArgs { return &setColorArgs{} }
-func (s *setColorCmd) Execute(args interfaces.CommandArgs) error {
-	f, ok := args.(*setColorArgs)
-	if !ok {
-		return fmt.Errorf("invalid args type for command")
-	}
-
-	// set local player color:
-	s.g.local.PlayerColor = f.Color
-	s.g.updatePlayersList()
 	return nil
 }
 

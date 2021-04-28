@@ -80,13 +80,14 @@ type Game struct {
 	shouldUpdatePlayersList bool
 
 	colorPendingUpdate int
-	colorUpdatedTo uint16
-	last15         uint8
+	colorUpdatedTo     uint16
+	last15             uint8
 
 	// serializable ViewModel:
 	clean            bool
 	IsCreated        bool   `json:"isCreated"`
 	GameName         string `json:"gameName"`
+	PlayerColor      uint16 `json:"playerColor"`
 	SyncItems        bool   `json:"syncItems"`
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
 	SyncProgress     bool   `json:"syncProgress"`
@@ -96,6 +97,7 @@ type Game struct {
 	SyncOverworld    bool   `json:"syncOverworld"`
 	SyncChests       bool   `json:"syncChests"`
 	lastSyncChests   bool
+	SyncTunicColor   bool `json:"syncTunicColor"`
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
@@ -171,11 +173,11 @@ func (g *Game) Reset() {
 
 	// clear out players array:
 	for i := range g.players {
-		g.players[i] = Player{Index: -1}
+		g.players[i] = Player{Index: -1, PlayerColor: 0x12ef}
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
-	g.local = &Player{Index: -1}
+	g.local = &Player{Index: -1, PlayerColor: 0x12ef}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
 

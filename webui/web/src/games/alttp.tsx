@@ -9,7 +9,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [colorRed, setcolorRed] = useState(31);
     const [colorGreen, setcolorGreen] = useState(31);
     const [colorBlue, setcolorBlue] = useState(31);
-    const [color, setcolor] = useState(0x7fff);
+    const [playerColor, setplayerColor] = useState(0x7fff);
 
     const [syncItems, setsyncItems] = useState(true);
     const [syncDungeonItems, setsyncDungeonItems] = useState(true);
@@ -19,6 +19,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncUnderworld, setsyncUnderworld] = useState(true);
     const [syncOverworld, setsyncOverworld] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
+    const [syncTunicColor, setsyncTunicColor] = useState(true);
 
     const [notifHistory, setNotifHistory] = useState([] as string[]);
     const historyTextarea = useRef(null);
@@ -27,6 +28,14 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [code, set_code] = useState('A903 8F59F37E');
 
     useEffect(() => {
+        setplayerColor(game.playerColor);
+        const blu5 = (game.playerColor & 0x7E00) >> 10;
+        const grn5 = (game.playerColor & 0x03E0) >> 5;
+        const red5 = (game.playerColor & 0x001F);
+        setcolorRed(red5);
+        setcolorGreen(grn5);
+        setcolorBlue(blu5);
+
         setsyncItems(game.syncItems);
         setsyncDungeonItems(game.syncDungeonItems);
         setsyncProgress(game.syncProgress);
@@ -35,6 +44,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncUnderworld(game.syncUnderworld);
         setsyncOverworld(game.syncOverworld);
         setsyncChests(game.syncChests);
+        setsyncTunicColor(game.syncTunicColor);
     }, [game]);
 
     useEffect(() => {
@@ -101,20 +111,26 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                 break;
         }
 
-        setcolor(bgr);
-        sendGameCommand("color", {c: bgr});
+        setplayerColor(bgr);
+        sendGameCommand("setField", {"playerColor": bgr});
     };
 
     return <div style="display: grid; min-width: 20em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em;">
         <h5 style="grid-column: 1">Game: {game.gameName}</h5>
         <div style="grid-column: 1">
             <div style="display: grid; grid-template-columns: 2fr 2fr 5fr;">
-                <label style="grid-column: 1 / span 2">color:</label>
-                <input type="text" readonly={true} value={("0000" + color.toString(16)).substr(-4)}/>
+                <label for="syncTunicColor" style="grid-column: 1 / span 2">
+                    <input type="checkbox"
+                           id="syncTunicColor"
+                           checked={syncTunicColor}
+                           onChange={setField.bind(this, sendGameCommand, setsyncTunicColor, "syncTunicColor", getTargetChecked)}
+                    />Sync Tunic Color:
+                </label>
+                <input type="text" readonly={true} value={("0000" + playerColor.toString(16)).substr(-4)}/>
 
                 <div style={
                     "grid-column: 1; grid-row: 2 / span 3; border: 1px solid white; margin: 6px; background-color: " +
-                    hexrgb24(bgr16torgb24(color))
+                    hexrgb24(bgr16torgb24(playerColor))
                 }/>
                 <label for="red">red:</label>
                 <input id="red" class="no-padding-margin"
