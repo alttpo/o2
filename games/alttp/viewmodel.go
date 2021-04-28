@@ -117,17 +117,17 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 
 type setFieldCmd struct{ g *Game }
 type setFieldArgs struct {
-	PlayerColor      *uint16 `json:"playerColor"`
+	PlayerColor *uint16 `json:"playerColor"`
 	// Checkboxes:
-	SyncItems        *bool   `json:"syncItems"`
-	SyncDungeonItems *bool   `json:"syncDungeonItems"`
-	SyncProgress     *bool   `json:"syncProgress"`
-	SyncHearts       *bool   `json:"syncHearts"`
-	SyncSmallKeys    *bool   `json:"syncSmallKeys"`
-	SyncUnderworld   *bool   `json:"syncUnderworld"`
-	SyncOverworld    *bool   `json:"syncOverworld"`
-	SyncChests       *bool   `json:"syncChests"`
-	SyncTunicColor   *bool   `json:"syncTunicColor"`
+	SyncItems        *bool `json:"syncItems"`
+	SyncDungeonItems *bool `json:"syncDungeonItems"`
+	SyncProgress     *bool `json:"syncProgress"`
+	SyncHearts       *bool `json:"syncHearts"`
+	SyncSmallKeys    *bool `json:"syncSmallKeys"`
+	SyncUnderworld   *bool `json:"syncUnderworld"`
+	SyncOverworld    *bool `json:"syncOverworld"`
+	SyncChests       *bool `json:"syncChests"`
+	SyncTunicColor   *bool `json:"syncTunicColor"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -182,6 +182,12 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		g.clean = false
 	}
 
+	// save configuration:
+	configurationSystem := g.configurationSystem
+	if configurationSystem != nil {
+		configurationSystem.SaveConfiguration()
+	}
+	// notify view of new values:
 	g.notifyView()
 
 	return nil

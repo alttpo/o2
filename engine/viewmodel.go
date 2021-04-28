@@ -43,6 +43,15 @@ type ViewModel struct {
 	snesViewModel   *SNESViewModel
 	romViewModel    *ROMViewModel
 	serverViewModel *ServerViewModel
+
+	config Config
+}
+
+type Config struct {
+	SNES   *SNESConfiguration         `json:"snes"`
+	ROM    *ROMConfiguration          `json:"rom"`
+	Server *ServerConfiguration       `json:"server"`
+	Games  map[string]json.RawMessage `json:"games"`
 }
 
 func NewViewModel() *ViewModel {
@@ -140,21 +149,25 @@ func (vm *ViewModel) LoadConfiguration() bool {
 		return false
 	}
 
-	var config struct {
-		SNES   *SNESConfiguration   `json:"snes"`
-		ROM    *ROMConfiguration    `json:"rom"`
-		Server *ServerConfiguration `json:"server"`
-		// NOTE: cannot load Game config as it is not instantiated until a ROM is loaded.
-	}
-	err = json.Unmarshal(b, &config)
+	err = json.Unmarshal(b, &vm.config)
 	if err != nil {
 		log.Printf("viewmodel: loadConfiguration: could not json unmarshal configuration file: %v\n", err)
 		return false
 	}
 
-	vm.snesViewModel.LoadConfiguration(config.SNES)
-	vm.romViewModel.LoadConfiguration(config.ROM)
-	vm.serverViewModel.LoadConfiguration(config.Server)
+	if vm.config.Games == nil {
+		vm.config.Games = make(map[string]json.RawMessage)
+	}
+	vm.snesViewModel.LoadConfiguration(vm.config.SNES)
+	vm.romViewModel.LoadConfiguration(vm.config.ROM)
+	vm.serverViewModel.LoadConfiguration(vm.config.Server)
+
+	game := vm.game
+	if game != nil {
+		if gameConfig, ok := vm.config.Games[game.Name()]; ok {
+			game.LoadConfiguration(gameConfig)
+		}
+	}
 
 	return true
 }
@@ -166,21 +179,32 @@ func (vm *ViewModel) SaveConfiguration() bool {
 
 	log.Printf("viewmodel: saveConfiguration: saving configuration...\n")
 
-	var config struct {
-		SNES   *SNESConfiguration   `json:"snes"`
-		ROM    *ROMConfiguration    `json:"rom"`
-		Server *ServerConfiguration `json:"server"`
-		// TODO: Game configuration
+	vm.config.SNES = new(SNESConfiguration)
+	vm.config.ROM = new(ROMConfiguration)
+	vm.config.Server = new(ServerConfiguration)
+	if vm.config.Games == nil {
+		vm.config.Games = make(map[string]json.RawMessage)
 	}
 
-	config.SNES = new(SNESConfiguration)
-	config.ROM = new(ROMConfiguration)
-	config.Server = new(ServerConfiguration)
-	vm.snesViewModel.SaveConfiguration(config.SNES)
-	vm.romViewModel.SaveConfiguration(config.ROM)
-	vm.serverViewModel.SaveConfiguration(config.Server)
+	vm.snesViewModel.SaveConfiguration(vm.config.SNES)
+	vm.romViewModel.SaveConfiguration(vm.config.ROM)
+	vm.serverViewModel.SaveConfiguration(vm.config.Server)
 
-	b, err := json.MarshalIndent(&config, "", "  ")
+	game := vm.game
+	if game != nil {
+		gameName := game.Name()
+		// gameConfig must be json.Marshal-able:
+		gameConfig := game.ConfigurationModel()
+		marshaled, err := json.MarshalIndent(gameConfig, "    ", "  ")
+		if err != nil {
+			log.Printf("viewmodel: saveConfiguration: could not json marshal game '%s' configuration: %v\n", gameName, err)
+			return false
+		}
+		// override named game configuration; keep other games' configuration as-is:
+		vm.config.Games[gameName] = marshaled
+	}
+
+	b, err := json.MarshalIndent(&vm.config, "", "  ")
 	if err != nil {
 		log.Printf("viewmodel: saveConfiguration: could not json marshal configuration file: %v\n", err)
 		return false
@@ -305,6 +329,8 @@ func (vm *ViewModel) tryCreateGame() bool {
 	// intercept root.viewNotifier to let us cache viewModel updates from the game:
 	// game will notify us of its viewModel on Start()/Reset():
 	vm.game.ProvideViewModelContainer(vm)
+
+	vm.game.ProvideConfigurationSystem(vm)
 
 	go func() {
 		// wait until the game is stopped:

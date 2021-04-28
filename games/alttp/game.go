@@ -1,6 +1,8 @@
 package alttp
 
 import (
+	"encoding/json"
+	"log"
 	"o2/client"
 	"o2/engine"
 	"o2/games"
@@ -23,9 +25,10 @@ type Game struct {
 	queue snes.Queue
 	// client can be nil at any time
 	client *client.Client
+	// configurationSystem will only be nil until provided
+	configurationSystem interfaces.ConfigurationSystem
 	// viewModels can be nil at any time
-	viewModels       interfaces.ViewModelContainer
-	nextNotification string
+	viewModels interfaces.ViewModelContainer
 
 	deserTable []DeserializeFunc
 
@@ -132,6 +135,10 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 	return g
 }
 
+func (g *Game) Name() string {
+	return gameName
+}
+
 func (g *Game) Title() string {
 	return "ALTTP"
 }
@@ -140,10 +147,28 @@ func (g *Game) Description() string {
 	return strings.TrimRight(string(g.rom.Header.Title[:]), " ")
 }
 
+func (g *Game) LoadConfiguration(config json.RawMessage) {
+	// kind of dirty to just unmarshal the public `json` tagged fields, but it works:
+	err := json.Unmarshal(config, g)
+	if err != nil {
+		log.Printf("alttp: loadConfiguration: %v\n", err)
+		return
+	}
+	g.IsCreated = true
+}
+
+func (g *Game) ConfigurationModel() interface{} {
+	// kind of dirty to just marshal the public `json` tagged fields, but it works:
+	return g
+}
+
 func (g *Game) ProvideQueue(queue snes.Queue)       { g.queue = queue }
 func (g *Game) ProvideClient(client *client.Client) { g.client = client }
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
 	g.viewModels = container
+}
+func (g *Game) ProvideConfigurationSystem(configurationSystem interfaces.ConfigurationSystem) {
+	g.configurationSystem = configurationSystem
 }
 
 // Notify is called by root ViewModel

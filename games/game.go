@@ -1,6 +1,7 @@
 package games
 
 import (
+	"encoding/json"
 	"o2/client"
 	"o2/interfaces"
 	"o2/snes"
@@ -8,6 +9,13 @@ import (
 
 type Game interface {
 	interfaces.KeyValueNotifier
+
+	// Name returns the factory name that instantiated this Game instance
+	Name() string
+
+	ProvideConfigurationSystem(configurationSystem interfaces.ConfigurationSystem)
+	LoadConfiguration(config json.RawMessage)
+	ConfigurationModel() interface{}
 
 	ProvideQueue(queue snes.Queue)
 	ProvideClient(client *client.Client)
