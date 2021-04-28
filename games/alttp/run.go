@@ -222,6 +222,8 @@ func (g *Game) enqueueSupportingReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
 	q = g.readEnqueue(q, 0xF5F340, 0xF0, 0) // [$F340..$F42F]
+	// Link's palette:
+	q = g.readEnqueue(q, 0xF5C6E0, 0x20, 0)
 
 	return q
 }
