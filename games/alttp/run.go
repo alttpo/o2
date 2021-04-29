@@ -2,9 +2,11 @@ package alttp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 	"o2/client/protocol02"
 	"o2/snes"
+	"strings"
 	"time"
 )
 
@@ -60,6 +62,8 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 	}
 	//log.Printf("alttp: readSubmit: enqueue complete\n")
 }
+
+const debugSprites = false
 
 // run in a separate goroutine
 func (g *Game) run() {
@@ -144,6 +148,14 @@ func (g *Game) run() {
 					q = g.readEnqueue(q, 0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
 					q = g.readEnqueue(q, 0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
 					q = g.readEnqueue(q, 0xF5F280, 0xC0, 1) // [$F280..$F33F]
+
+					if debugSprites {
+						// DEBUG read sprite WRAM:
+						q = g.readEnqueue(q, 0xF50D00, 0xF0, 1) // [$0D00..$0DEF]
+						q = g.readEnqueue(q, 0xF50DF0, 0xF0, 1) // [$0DF0..$0EDF]
+						q = g.readEnqueue(q, 0xF50EE0, 0xC0, 1) // [$0EE0..$0F9F]
+					}
+
 					// must always read module number LAST to validate the prior reads:
 					q = g.enqueueMainRead(q, nil)
 					g.readSubmit(q)
@@ -382,6 +394,25 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 	// copy $7EF000-4FF into `local.SRAM`:
 	copy(local.SRAM[:], g.wram[0xF000:0xF500])
+
+	if debugSprites {
+		// display sprite data:
+		sb := strings.Builder{}
+		// reset 41 rows up
+		sb.WriteString("\033[42A\033[80D")
+		// [$0D00..$0DEF]
+		// [$0E20..$0E8F]
+		// [$0EF0..$0F9F]
+		for i := 0; i < 0x2A; i++ {
+			// clear to end of line:
+			sb.WriteString(fmt.Sprintf("\033[K$%04x: ", 0xD00+(i<<4)))
+			for j := 0; j < 16; j++ {
+				sb.WriteString(fmt.Sprintf(" %02x", g.wram[0x0D00+(i<<4)+j]))
+			}
+			sb.WriteByte('\n')
+		}
+		fmt.Printf(sb.String())
+	}
 
 	// handle WRAM reads:
 	g.readWRAM()
