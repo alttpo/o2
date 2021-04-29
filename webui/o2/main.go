@@ -55,7 +55,7 @@ func init() {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		log.Printf("logging to '%s'\n", logPath)
-		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
 	} else {
 		log.Printf("could not open log file '%s' for writing\n", logPath)
 	}
