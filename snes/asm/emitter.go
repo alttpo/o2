@@ -238,6 +238,13 @@ func (a *Emitter) LDA_abs(addr uint16) {
 	a.emit3("lda.w", "$%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) LDA_abs_x(addr uint16) {
+	var d [3]byte
+	d[0] = 0xBD
+	d[1], d[2] = imm16(addr)
+	a.emit3("lda.w", "$%02[2]x%02[1]x,X", d)
+}
+
 func (a *Emitter) STA_long(addr uint32) {
 	var d [4]byte
 	d[0] = 0x8F
@@ -250,6 +257,13 @@ func (a *Emitter) STA_abs(addr uint16) {
 	d[0] = 0x8D
 	d[1], d[2] = imm16(addr)
 	a.emit3("sta.w", "$%02[2]x%02[1]x", d)
+}
+
+func (a *Emitter) STA_abs_x(addr uint16) {
+	var d [3]byte
+	d[0] = 0x9D
+	d[1], d[2] = imm16(addr)
+	a.emit3("sta.w", "$%02[2]x%02[1]x,X", d)
 }
 
 func (a *Emitter) STA_dp(addr uint8) {
@@ -290,6 +304,20 @@ func (a *Emitter) BEQ(m int8) {
 	a.emit2("beq", "$%02x", d)
 }
 
+func (a *Emitter) BPL(m int8) {
+	var d [2]byte
+	d[0] = 0x10
+	d[1] = uint8(m)
+	a.emit2("bpl", "$%02x", d)
+}
+
+func (a *Emitter) BRA(m int8) {
+	var d [2]byte
+	d[0] = 0x80
+	d[1] = uint8(m)
+	a.emit2("bra", "$%02x", d)
+}
+
 func (a *Emitter) ADC_imm8_b(m uint8) {
 	if a.IsM16bit() {
 		panic(fmt.Errorf("asm: ADC_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
@@ -317,9 +345,48 @@ func (a *Emitter) LDY_abs(offs uint16) {
 	a.emit3("ldy.w", "$%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) STZ_abs(offs uint16) {
+	var d [3]byte
+	d[0] = 0x9C
+	d[1], d[2] = imm16(offs)
+	a.emit3("stz.w", "$%02[2]x%02[1]x", d)
+}
+
+func (a *Emitter) STZ_abs_x(addr uint16) {
+	var d [3]byte
+	d[0] = 0x9E
+	d[1], d[2] = imm16(addr)
+	a.emit3("stz.w", "$%02[2]x%02[1]x,X", d)
+}
+
 func (a *Emitter) INC_dp(addr uint8) {
 	var d [2]byte
 	d[0] = 0xE6
 	d[1] = addr
 	a.emit2("inc.b", "$%02[1]x", d)
+}
+
+func (a *Emitter) LDA_dp(addr uint8) {
+	var d [2]byte
+	d[0] = 0xA5
+	d[1] = addr
+	a.emit2("lda.b", "$%02[1]x", d)
+}
+
+func (a *Emitter) LDX_imm8_b(m uint8) {
+	if a.IsX16bit() {
+		panic(fmt.Errorf("asm: LDX_imm8_b called but 'x' flag is 16-bit; call SEP(0x10) or AssumeSEP(0x10) first"))
+	}
+	var d [2]byte
+	d[0] = 0xA2
+	d[1] = m
+	a.emit2("ldx.b", "#$%02x", d)
+}
+
+func (a *Emitter) DEX() {
+	a.emit1("dex", [1]byte{0xCA})
+}
+
+func (a *Emitter) DEY() {
+	a.emit1("dey", [1]byte{0x88})
 }
