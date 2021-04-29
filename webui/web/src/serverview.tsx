@@ -9,6 +9,8 @@ type ServerProps = {
 };
 
 function ServerView({ch, server}: ServerProps) {
+    const [collapsed, set_collapsed] = useState(false);
+
     const [hostName, setHostName] = useState('');
     const [groupName, setGroupName] = useState('');
     const [playerName, setPlayerName] = useState('');
@@ -48,10 +50,13 @@ function ServerView({ch, server}: ServerProps) {
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
     const getTargetValueInt = (e: Event) => parseInt((e.target as HTMLInputElement).value, 10);
-    return <div class="grid" style="grid-template-columns: 1fr 1fr; min-width: 16em">
-        <h5 style="grid-column: 1 / span 2"><span data-rh-at="left" data-rh="To play online with other players, connect to a server
+    return <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr; min-width: 16em">
+        <h5 style="grid-column: 1 / span 2">
+            <span data-rh-at="left" data-rh="To play online with other players, connect to a server
 and enter a group name you wish to join. Groups are created on the fly by whoever enters the group name first."
-        >Connect to a server:&nbsp;4️⃣</span></h5>
+        >Connect to a server:&nbsp;4️⃣</span>
+            <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
+        </h5>
         <label for="hostName">Hostname:</label>
         <input type="text"
                value={hostName}

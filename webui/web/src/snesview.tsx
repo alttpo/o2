@@ -1,6 +1,7 @@
 import {DriverViewModel, SNESViewModel} from "./viewmodel";
 import {CommandHandler, TopLevelProps} from "./index";
 import {Component, Fragment} from 'preact';
+import {useState} from "preact/hooks";
 
 type SNESDriverProps = {
     ch: CommandHandler;
@@ -84,56 +85,46 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 }
 
 export default ({ch, vm}: TopLevelProps) => {
-    return (<div style="display: table; min-width: 36em; width: 100%; height: 100%">
-        <div style="display: table-row; height: 100%">
-            <div style="display: table-cell">
-                <div style="display: grid; grid-template-columns: 4fr 1fr 10fr 4fr;">
-                    <h5 style="grid-column: 1 / span 4">
+    const [collapsed, set_collapsed] = useState(false);
+
+    return (<div class={"collapsible" + (collapsed ? " collapsed" : "")} style="display: table; min-width: 36em; width: 100%; height: 100%">
+        <h5>
                 <span data-rh-at="left" data-rh="Select one of the below SNES drivers to connect to your SNES device.
 Devices are auto-detected every 2 seconds for each driver."
                 >Select a SNES device:&nbsp;1️⃣</span>
-                    </h5>
-                    {
-                        (vm.snes?.drivers || []).map(drv => (
-                            <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
-                        ))
-                    }
-                </div>
-            </div>
+            <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
+        </h5>
+        <div class="grid" style="grid-template-columns: 4fr 1fr 10fr 4fr;">
+            {
+                (vm.snes?.drivers || []).map(drv => (
+                    <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
+                ))
+            }
         </div>
         {
             ((vm.snes?.drivers?.some(drv => drv.name == "fxpakpro" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ? <div style="display: table-row; height: 100%">
-                    <div style="display: table-cell">
-                        <div style="margin-top: 4px">
+                ?
+                    <div style="margin-top: 4px">
 For SD2SNES / FX Pak Pro, use the <a href="https://github.com/alttpo/o2/tree/main/content/fxpakpro/firmware" target="_blank">
 recommended firmware</a>.
-                        </div>
                     </div>
-                </div>
                 : <Fragment/>)
         }
         {
             (vm.snes?.drivers?.some(drv => drv.name == "retroarch" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ? <div style="display: table-row; height: 100%">
-                    <div style="display: table-cell">
-                        <div style="margin-top: 4px">
+                ?
+                    <div style="margin-top: 4px">
 Recommended emulator is RetroArch 1.9.0 with bsnes-mercury core;{' '}follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}
 <strong>IMPORTANT:</strong> RA 1.9.1 does NOT work. Use RA 1.9.0 and earlier versions.<br/>
-                        </div>
                     </div>
-                </div>
                 : <Fragment/>
         }
         {
             (vm.snes?.drivers?.some(drv => drv.name == "qusb2snes" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ? <div style="display: table-row; height: 100%">
-                    <div style="display: table-cell">
-                        <div style="margin-top: 4px">
-                            <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">Download QUsb2Snes here</a>
-                        </div>
+                ?
+                    <div style="margin-top: 4px">
+                        <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">Download QUsb2Snes here</a>
                     </div>
-                </div>
                 : <Fragment/>
         }
     </div>);

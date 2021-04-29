@@ -273,6 +273,15 @@ h5, h6 {
     white-space: nowrap;
 }
 
+.collapsible.collapsed > *:not(:first-child) {
+    display: none;
+}
+
+.collapse-icon {
+    float: right;
+    cursor: pointer;
+}
+
 /* tooltips */
 .react-hint {
     padding: 5px;

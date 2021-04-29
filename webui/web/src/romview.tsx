@@ -2,9 +2,12 @@ import {JSXInternal} from "preact/src/jsx";
 
 import {TopLevelProps} from "./index";
 import TargetedEvent = JSXInternal.TargetedEvent;
+import {useState} from "preact/hooks";
 
 export default ({ch, vm}: TopLevelProps) => {
     const rom = vm.rom;
+
+    const [collapsed, set_collapsed] = useState(false);
 
     function fileChosen(e: TargetedEvent<HTMLInputElement, Event>) {
         // send ROM filename and contents:
@@ -17,12 +20,13 @@ export default ({ch, vm}: TopLevelProps) => {
     }
 
     return (<div style="min-width: 22em; width: 100%; height: 100%">
-        <div class="grid" style="grid-template-columns: 1fr 1fr 1fr">
+        <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr 1fr">
             <h5 style="grid-column: 1 / span 3">
-        <span data-rh-at="left" data-rh="O2 needs to know which game you want to play. This
+                <span data-rh-at="left" data-rh="O2 needs to know which game you want to play. This
 is determined only by the ROM that you select. O2 requires that the ROM you play on your SNES to be
 patched for O2 support. O2 automatically patches your Input ROM for you."
-        >Select a game ROM:&nbsp;2️⃣</span>
+                >Select a game ROM:&nbsp;2️⃣</span>
+                <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
             </h5>
             <label for="romFile">Input ROM:</label>
             <form style="grid-column-end: span 2">
