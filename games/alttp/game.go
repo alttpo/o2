@@ -155,6 +155,7 @@ func (g *Game) LoadConfiguration(config json.RawMessage) {
 		return
 	}
 	g.IsCreated = true
+	g.local.PlayerColor = g.PlayerColor
 }
 
 func (g *Game) ConfigurationModel() interface{} {
@@ -220,9 +221,6 @@ func (g *Game) Reset() {
 	}
 
 	g.initSync()
-
-	// inform the view:
-	g.notifyView()
 }
 
 func (g *Game) Start() {
@@ -231,7 +229,7 @@ func (g *Game) Start() {
 	}
 	g.running = true
 
-	g.Reset()
+	g.NotifyView()
 
 	go func() {
 		// run the game loop:

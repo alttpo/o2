@@ -159,15 +159,9 @@ func (vm *ViewModel) LoadConfiguration() bool {
 		vm.config.Games = make(map[string]json.RawMessage)
 	}
 	vm.snesViewModel.LoadConfiguration(vm.config.SNES)
+	// loading ROM will instantiate Game instance which should load its own configuration
 	vm.romViewModel.LoadConfiguration(vm.config.ROM)
 	vm.serverViewModel.LoadConfiguration(vm.config.Server)
-
-	game := vm.game
-	if game != nil {
-		if gameConfig, ok := vm.config.Games[game.Name()]; ok {
-			game.LoadConfiguration(gameConfig)
-		}
-	}
 
 	return true
 }
@@ -320,17 +314,24 @@ func (vm *ViewModel) tryCreateGame() bool {
 	vm.factory = vm.nextFactory
 
 	log.Println("viewmodel: tryCreateGame: create new game")
-	vm.game = vm.factory.NewGame(vm.rom)
+	game := vm.factory.NewGame(vm.rom)
+	vm.game = game
 
 	// provide the game with its deps:
-	vm.game.ProvideQueue(vm.dev)
-	vm.game.ProvideClient(vm.client)
-
+	game.ProvideQueue(vm.dev)
+	game.ProvideClient(vm.client)
 	// intercept root.viewNotifier to let us cache viewModel updates from the game:
 	// game will notify us of its viewModel on Start()/Reset():
-	vm.game.ProvideViewModelContainer(vm)
+	game.ProvideViewModelContainer(vm)
+	game.ProvideConfigurationSystem(vm)
 
-	vm.game.ProvideConfigurationSystem(vm)
+	// initialize the game state:
+	game.Reset()
+
+	// load configuration:
+	if gameConfig, ok := vm.config.Games[game.Name()]; ok {
+		game.LoadConfiguration(gameConfig)
+	}
 
 	go func() {
 		// wait until the game is stopped:
@@ -342,7 +343,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 
 	// start the game instance:
 	log.Println("viewmodel: tryCreateGame: start game")
-	vm.game.Start()
+	game.Start()
 
 	return true
 }

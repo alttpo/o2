@@ -6,7 +6,7 @@ import (
 	"o2/util"
 )
 
-func (g *Game) notifyView() {
+func (g *Game) NotifyView() {
 	if g.shouldUpdatePlayersList {
 		g.updatePlayersList()
 		g.clean = false
@@ -188,7 +188,7 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		configurationSystem.SaveConfiguration()
 	}
 	// notify view of new values:
-	g.notifyView()
+	g.NotifyView()
 
 	return nil
 }
