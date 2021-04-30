@@ -22,8 +22,15 @@ type Queue struct {
 	lock sync.Mutex
 }
 
+var (
+	ErrClosed = fmt.Errorf("connection is closed")
+)
+
 func (q *Queue) IsTerminalError(err error) bool {
 	if errors.Is(err, udpclient.ErrTimeout) {
+		return true
+	}
+	if errors.Is(err, ErrClosed) {
 		return true
 	}
 	return false
@@ -117,7 +124,7 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 	c := q.c
 	q.lock.Unlock()
 	if c == nil {
-		return fmt.Errorf("retroarch: read: connection is closed")
+		return fmt.Errorf("retroarch: read: %w", ErrClosed)
 	}
 	keepAlive <- struct{}{}
 
@@ -222,7 +229,7 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 	c := q.c
 	q.lock.Unlock()
 	if c == nil {
-		return fmt.Errorf("retroarch: write: connection is closed")
+		return fmt.Errorf("retroarch: write: %w", ErrClosed)
 	}
 	keepAlive <- struct{}{}
 
