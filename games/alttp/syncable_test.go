@@ -38,12 +38,12 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 		p1sram    uint8
 	}
 	tests := []struct {
-	name             string
-	fields           fields
-	want             bool
-	wantAsm          []byte
-	wantNotification string
-}{
+		name             string
+		fields           fields
+		want             bool
+		wantAsm          []byte
+		wantNotification string
+	}{
 		{
 			name: "syncableBitU8 syncs from zero to most bits",
 			fields: fields{
@@ -54,8 +54,8 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 				p0sram:    0x00,
 				p1sram:    0x66,
 			},
-			want:    true,
-			wantAsm: []byte{0xa9, 0x66, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
+			want:             true,
+			wantAsm:          []byte{0xa9, 0x66, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
 			wantNotification: "got 1 from p1, 2 from p1, 5 from p1, 6 from p1",
 		},
 		{
@@ -68,8 +68,8 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 				p0sram:    0x24,
 				p1sram:    0x66,
 			},
-			want:    true,
-			wantAsm: []byte{0xa9, 0x42, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
+			want:             true,
+			wantAsm:          []byte{0xa9, 0x42, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
 			wantNotification: "got 1 from p1, 6 from p1",
 		},
 		{
@@ -82,8 +82,8 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 				p0sram:    0x42,
 				p1sram:    0x77,
 			},
-			want:    true,
-			wantAsm: []byte{0xa9, 0x35, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
+			want:             true,
+			wantAsm:          []byte{0xa9, 0x35, 0xf, 0x79, 0xf3, 0x7e, 0x8f, 0x79, 0xf3, 0x7e},
 			wantNotification: "got 2 from p1, 5 from p1",
 		},
 	}

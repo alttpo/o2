@@ -352,18 +352,62 @@ func (g *Game) initSync() {
 			"Red Boomerang",
 			"Blue Boomerang",
 		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+			// mushroom/powder:
 			if initial&0x10 == 0 && updated&0x10 != 0 {
 				// set powder in inventory:
+				a.Comment("set Magic Powder in inventory:")
 				a.LDA_long(0x7EF344)
 				a.BNE(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF344)
 			} else if initial&0x20 == 0 && updated&0x20 != 0 {
 				// set mushroom in inventory:
+				a.Comment("set Mushroom in inventory:")
 				a.LDA_long(0x7EF344)
 				a.BNE(6)
 				a.LDA_imm8_b(1)
 				a.STA_long(0x7EF344)
+			}
+
+			// shovel/flute:
+			if initial&0x01 == 0 && updated&0x01 != 0 {
+				// flute (activated):
+				a.Comment("set Flute (activated) in inventory:")
+				a.LDA_long(0x7EF34C)
+				a.BNE(6)
+				a.LDA_imm8_b(3)
+				a.STA_long(0x7EF34C)
+			} else if initial&0x02 == 0 && updated&0x02 != 0 {
+				// flute (activated):
+				a.Comment("set Flute in inventory:")
+				a.LDA_long(0x7EF34C)
+				a.BNE(6)
+				a.LDA_imm8_b(2)
+				a.STA_long(0x7EF34C)
+			} else if initial&0x04 == 0 && updated&0x04 != 0 {
+				// flute (activated):
+				a.Comment("set Shovel in inventory:")
+				a.LDA_long(0x7EF34C)
+				a.BNE(6)
+				a.LDA_imm8_b(1)
+				a.STA_long(0x7EF34C)
+			}
+
+			// red/blue boomerang:
+			if initial&0x40 == 0 && updated&0x40 != 0 {
+				// set powder in inventory:
+				a.Comment("set Red Boomerang in inventory:")
+				a.LDA_long(0x7EF341)
+				a.BNE(6)
+				a.LDA_imm8_b(2)
+				a.STA_long(0x7EF341)
+			} else if initial&0x80 == 0 && updated&0x80 != 0 {
+				// set mushroom in inventory:
+				a.Comment("set Blue Boomerang in inventory:")
+				a.LDA_long(0x7EF341)
+				a.BNE(6)
+				a.LDA_imm8_b(1)
+				a.STA_long(0x7EF341)
 			}
 		})
 
