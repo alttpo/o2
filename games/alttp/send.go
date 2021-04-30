@@ -52,28 +52,27 @@ func (g *Game) sendPackets() {
 		// Broadcast items and progress SRAM:
 		m := g.makeGamePacket(protocol02.Broadcast)
 		if m != nil {
-			// items earned
-			if err := g.SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
-				panic(err)
+			if g.isVTRandomizer() {
+				// VT randomizer:
+				if err := g.SerializeSRAM(local, m, 0x340, 0x43A); err != nil {
+					panic(err)
+				}
+
+				// Door randomizer = VT + these:
+				//serialize(r, 0x4C0, 0x4CD); // chests
+				//serialize(r, 0x4E0, 0x4ED); // chest-keys
+			} else {
+				// assume vanilla game:
+
+				// items earned
+				if err := g.SerializeSRAM(local, m, 0x340, 0x37C); err != nil {
+					panic(err)
+				}
+				// progress made
+				if err := g.SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
+					panic(err)
+				}
 			}
-			// progress made
-			if err := g.SerializeSRAM(local, m, 0x3C5, 0x3CA); err != nil {
-				panic(err)
-			}
-
-			// TODO: more ranges depending on ROM kind
-
-			// VT randomizer:
-			//serialize(r, 0x340, 0x390); // items earned
-			//serialize(r, 0x390, 0x3C5); // item limit counters
-			//serialize(r, 0x3C5, 0x43A); // progress made
-
-			// Door randomizer:
-			//serialize(r, 0x340, 0x390); // items earned
-			//serialize(r, 0x390, 0x3C5); // item limit counters
-			//serialize(r, 0x3C5, 0x43A); // progress made
-			//serialize(r, 0x4C0, 0x4CD); // chests
-			//serialize(r, 0x4E0, 0x4ED); // chest-keys
 
 			g.send(m)
 		}

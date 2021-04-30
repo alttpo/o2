@@ -71,7 +71,7 @@ func (g *Game) run() {
 	// 0x1EA5D = 01 (was 02)
 
 	q := make([]snes.Read, 0, 8)
-	q = g.enqueueSupportingReads(q)
+	q = g.enqueueWRAMReads(q)
 	// must always read module number LAST to validate the prior reads:
 	q = g.enqueueMainRead(q, 0)
 	g.readSubmit(q)
@@ -137,17 +137,13 @@ func (g *Game) run() {
 				if timeSinceRead >= time.Millisecond*512 {
 					log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 					q := make([]snes.Read, 0, 8)
-					q = g.enqueueSupportingReads(q)
+					q = g.enqueueWRAMReads(q)
 					// must always read module number LAST to validate the prior reads:
 					q = g.enqueueMainRead(q, 0)
 					g.readSubmit(q)
 				} else {
 					q := make([]snes.Read, 0, 8)
-					// read the SRAM copy for underworld and overworld:
-					q = g.readEnqueue(q, 0xF5F000, 0xFE, 1) // [$F000..$F0FD]
-					q = g.readEnqueue(q, 0xF5F0FE, 0xFE, 1) // [$F0FE..$F1FB]
-					q = g.readEnqueue(q, 0xF5F1FC, 0x54, 1) // [$F1FC..$F24F]
-					q = g.readEnqueue(q, 0xF5F280, 0xC0, 1) // [$F280..$F33F]
+					q = g.enqueueSRAMRead(q, 1)
 
 					if debugSprites {
 						// DEBUG read sprite WRAM:
@@ -224,7 +220,16 @@ func (g *Game) isReadSRAM(rsp snes.Response) (start, end uint32, ok bool) {
 	return
 }
 
-func (g *Game) enqueueSupportingReads(q []snes.Read) []snes.Read {
+func (g *Game) enqueueSRAMRead(q []snes.Read, extra interface{}) []snes.Read {
+	// read the SRAM copy for underworld and overworld:
+	q = g.readEnqueue(q, 0xF5F000, 0xFE, extra) // [$F000..$F0FD]
+	q = g.readEnqueue(q, 0xF5F0FE, 0xFE, extra) // [$F0FE..$F1FB]
+	q = g.readEnqueue(q, 0xF5F1FC, 0x54, extra) // [$F1FC..$F24F]
+	q = g.readEnqueue(q, 0xF5F280, 0xC0, extra) // [$F280..$F33F]
+	return q
+}
+
+func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
@@ -233,10 +238,9 @@ func (g *Game) enqueueSupportingReads(q []snes.Read) []snes.Read {
 	// $1980..19E9 for reading underworld door state
 	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
-	q = g.readEnqueue(q, 0xF5F340, 0xF0, 0) // [$F340..$F42F]
+	q = g.readEnqueue(q, 0xF5F340, 0xFF, 0) // [$F340..$F43E]
 	// Link's palette:
 	q = g.readEnqueue(q, 0xF5C6E0, 0x20, 0)
-
 	return q
 }
 

@@ -94,7 +94,7 @@ type Header struct {
 	CheckSum           uint16   `rom:"FFDE"`
 }
 
-func (h *Header) Version() int { return h.version }
+func (h *Header) HeaderVersion() int { return h.version }
 
 type NativeVectors struct {
 	Unused1 [4]byte //`rom:"FFE0"`

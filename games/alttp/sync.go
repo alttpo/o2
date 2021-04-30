@@ -57,64 +57,68 @@ func (g *Game) initSync() {
 	}
 
 	// define syncable items:
-	g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
-		g := s.g
-		local := g.LocalPlayer()
-		offset := s.offset
+	if !g.isVTRandomizer() {
+		// these item slots are disabled for sync under VT randomizers since they can be swapped at will:
+		g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+			g := s.g
+			local := g.LocalPlayer()
+			offset := s.offset
 
-		initial := local.SRAM[offset]
-		// treat w/ and w/o arrows as the same:
-		if initial == 2 {
-			initial = 1
-		} else if initial >= 4 {
-			initial = 3
-		}
-
-		maxP := local
-		maxV := initial
-		for _, p := range g.ActivePlayers() {
-			v := p.SRAM[offset]
+			initial := local.SRAM[offset]
 			// treat w/ and w/o arrows as the same:
-			if v == 2 {
-				v = 1
-			} else if v >= 4 {
-				v = 3
+			if initial == 2 {
+				initial = 1
+			} else if initial >= 4 {
+				initial = 3
 			}
-			if v > maxV {
-				maxV, maxP = v, p
+
+			maxP := local
+			maxV := initial
+			for _, p := range g.ActivePlayers() {
+				v := p.SRAM[offset]
+				// treat w/ and w/o arrows as the same:
+				if v == 2 {
+					v = 1
+				} else if v >= 4 {
+					v = 3
+				}
+				if v > maxV {
+					maxV, maxP = v, p
+				}
 			}
-		}
 
-		if maxV == initial {
-			// no change:
-			return false
-		}
+			if maxV == initial {
+				// no change:
+				return false
+			}
 
-		// notify local player of new item received:
-		received := ""
-		if maxV == 1 {
-			received = "Bow"
-		} else if maxV == 3 {
-			received = "Silver Bow"
-			maxV = 3
-		}
-		s.pendingUpdate = true
-		s.updatingTo = maxV
-		s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
-		asm.Comment(s.notification + ":")
+			// notify local player of new item received:
+			received := ""
+			if maxV == 1 {
+				received = "Bow"
+			} else if maxV == 3 {
+				received = "Silver Bow"
+				maxV = 3
+			}
+			s.pendingUpdate = true
+			s.updatingTo = maxV
+			s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name)
+			asm.Comment(s.notification + ":")
 
-		asm.LDA_long(0x7EF377) // arrows
-		asm.CMP_imm8_b(0x01)   // are arrows present?
-		asm.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
-		asm.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
-		asm.STA_long(0x7EF000 + uint32(offset))
+			asm.LDA_long(0x7EF377) // arrows
+			asm.CMP_imm8_b(0x01)   // are arrows present?
+			asm.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
+			asm.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
+			asm.STA_long(0x7EF000 + uint32(offset))
 
-		return true
-	})
-	g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
+			return true
+		})
+		g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
+		g.newSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"}, nil)
+		g.newSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"}, nil)
+	}
 	g.newSyncableMaxU8(0x342, &g.SyncItems, []string{"Hookshot"}, nil)
 	// skip 0x343 bomb count
-	g.newSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"}, nil)
 	g.newSyncableMaxU8(0x345, &g.SyncItems, []string{"Fire Rod"}, nil)
 	g.newSyncableMaxU8(0x346, &g.SyncItems, []string{"Ice Rod"}, nil)
 	g.newSyncableMaxU8(0x347, &g.SyncItems, []string{"Bombos Medallion"}, nil)
@@ -122,7 +126,6 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x349, &g.SyncItems, []string{"Quake Medallion"}, nil)
 	g.newSyncableMaxU8(0x34A, &g.SyncItems, []string{"Lamp"}, nil)
 	g.newSyncableMaxU8(0x34B, &g.SyncItems, []string{"Hammer"}, nil)
-	g.newSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"}, nil)
 	g.newSyncableMaxU8(0x34D, &g.SyncItems, []string{"Bug Catching Net"}, nil)
 	g.newSyncableMaxU8(0x34E, &g.SyncItems, []string{"Book of Mudora"}, nil)
 	// skip 0x34F current bottle selection
@@ -337,6 +340,45 @@ func (g *Game) initSync() {
 	// magic reduction (1/1, 1/2, 1/4):
 	g.newSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"}, nil)
 
+	if g.isVTRandomizer() {
+		// Randomizer item flags:
+		g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
+			"Flute (activated)",
+			"Flute",
+			"Shovel",
+			"",
+			"Magic Powder",
+			"Mushroom",
+			"Red Boomerang",
+			"Blue Boomerang",
+		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+			if initial&0x10 == 0 && updated&0x10 != 0 {
+				// set powder in inventory:
+				a.LDA_long(0x7EF344)
+				a.BNE(6)
+				a.LDA_imm8_b(2)
+				a.STA_long(0x7EF344)
+			} else if initial&0x20 == 0 && updated&0x20 != 0 {
+				// set mushroom in inventory:
+				a.LDA_long(0x7EF344)
+				a.BNE(6)
+				a.LDA_imm8_b(1)
+				a.STA_long(0x7EF344)
+			}
+		})
+
+		g.newSyncableBitU8(0x38E, &g.SyncItems, []string{
+			"",
+			"",
+			"",
+			"",
+			"",
+			"", // 2nd Progressive Box
+			"Bow",
+			"Silver Bow",
+		}, nil)
+	}
+
 	// world state:
 	g.newSyncableMaxU8(0x3C5, &g.SyncProgress, []string{
 		"Hyrule Castle Dungeon started",
@@ -487,6 +529,16 @@ func (g *Game) initSync() {
 
 		return true
 	})
+
+	if g.isVTRandomizer() {
+		// NPC flags:
+		g.newSyncableMaxU8(0x410, &g.SyncProgress, nil, nil)
+		g.newSyncableMaxU8(0x411, &g.SyncProgress, nil, nil)
+		// Progressive shield
+		g.newSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
+		// coat for festive
+		g.newSyncableMaxU8(0x41A, &g.SyncItems, nil, nil)
+	}
 
 	openDoor := func(asm *asm.Emitter, initial, updated uint16) bool {
 		// must only be in dungeon module:
