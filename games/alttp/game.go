@@ -207,12 +207,14 @@ func (g *Game) Reset() {
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
 
-	// preserve last-set info:
-	serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
-	if ok && serverViewModelIntf != nil {
-		serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
-		local.Name = serverViewModel.PlayerName
-		local.Team = serverViewModel.Team
+	if g.viewModels != nil {
+		// preserve last-set info:
+		serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
+		if ok && serverViewModelIntf != nil {
+			serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
+			local.Name = serverViewModel.PlayerName
+			local.Team = serverViewModel.Team
+		}
 	}
 
 	// initialize WRAM to non-zero values:
