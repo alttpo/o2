@@ -149,8 +149,26 @@ func TestSystem_SetupPatch(t *testing.T) {
 			name: "Step",
 			verify: func(t *testing.T, q *System) {
 				q.CPU.Reset()
-				q.CPU.Step()
+				cycles, aborted := q.CPU.Step()
+				if actual, expected := cycles, 3; actual != expected {
+					t.Errorf("Step() failed, cycles actual = %v, expected = %v", actual, expected)
+				}
+				if actual, expected := aborted, false; actual != expected {
+					t.Errorf("Step() failed, cycles actual = %v, expected = %v", actual, expected)
+				}
 				if actual, expected := q.CPU.PC, uint16(0x8002); actual != expected {
+					t.Errorf("Step() failed, PC actual = %04x, expected = %04x", actual, expected)
+				}
+			},
+		},
+		{
+			name: "Run",
+			verify: func(t *testing.T, q *System) {
+				q.CPU.Reset()
+				for q.CPU.PC != 0x8006 {
+					_, _ = q.CPU.Step()
+				}
+				if actual, expected := q.CPU.PC, uint16(0x8006); actual != expected {
 					t.Errorf("Step() failed, PC actual = %04x, expected = %04x", actual, expected)
 				}
 			},

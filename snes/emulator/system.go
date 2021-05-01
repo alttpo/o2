@@ -23,6 +23,8 @@ type System struct {
 func (s *System) CreateEmulator() (err error) {
 	// create primary A bus for SNES:
 	s.Bus, _ = bus.New()
+	// Create CPU:
+	s.CPU, _ = cpu65c816.New(s.Bus)
 
 	// map in ROM to Bus; parts of this mapping will be overwritten:
 	for b := uint32(0); b < 0x40; b++ {
@@ -114,9 +116,6 @@ func (s *System) CreateEmulator() (err error) {
 			}
 		}
 	}
-
-	// Create CPU and reset:
-	s.CPU, _ = cpu65c816.New(s.Bus)
 
 	return
 }
