@@ -1,9 +1,13 @@
 package emulator
 
 import (
+	"bytes"
+	"o2/snes"
+	"o2/snes/asm"
 	"o2/snes/emulator/bus"
 	"o2/snes/emulator/cpu65c816"
 	"o2/snes/emulator/memory"
+	"o2/util"
 )
 
 type System struct {
@@ -16,16 +20,16 @@ type System struct {
 	SRAM [0x10000]byte
 }
 
-func (q *System) CreateEmulator() (err error) {
+func (s *System) CreateEmulator() (err error) {
 	// create primary A bus for SNES:
-	q.Bus, _ = bus.New()
+	s.Bus, _ = bus.New()
 
 	// map in ROM to Bus; parts of this mapping will be overwritten:
 	for b := uint32(0); b < 0x40; b++ {
 		halfBank := b << 15
 		bank := b << 16
-		err = q.Bus.Attach(
-			memory.NewRAM(q.ROM[halfBank:halfBank+0x8000], bank|0x8000),
+		err = s.Bus.Attach(
+			memory.NewRAM(s.ROM[halfBank:halfBank+0x8000], bank|0x8000),
 			"rom",
 			bank|0x8000,
 			bank|0xFFFF,
@@ -35,8 +39,8 @@ func (q *System) CreateEmulator() (err error) {
 		}
 
 		// mirror:
-		err = q.Bus.Attach(
-			memory.NewRAM(q.ROM[halfBank:halfBank+0x8000], (bank+0x80_0000)|0x8000),
+		err = s.Bus.Attach(
+			memory.NewRAM(s.ROM[halfBank:halfBank+0x8000], (bank+0x80_0000)|0x8000),
 			"rom",
 			(bank+0x80_0000)|0x8000,
 			(bank+0x80_0000)|0xFFFF,
@@ -47,11 +51,11 @@ func (q *System) CreateEmulator() (err error) {
 	}
 
 	// SRAM (banks 70-7D,F0-FF) (7E,7F) will be overwritten with WRAM:
-	for b := uint32(0); b < uint32(len(q.SRAM)>>15); b++ {
+	for b := uint32(0); b < uint32(len(s.SRAM)>>15); b++ {
 		bank := b << 16
 		halfBank := b << 15
-		err = q.Bus.Attach(
-			memory.NewRAM(q.SRAM[halfBank:halfBank+0x8000], bank+0x70_0000),
+		err = s.Bus.Attach(
+			memory.NewRAM(s.SRAM[halfBank:halfBank+0x8000], bank+0x70_0000),
 			"sram",
 			bank+0x70_0000,
 			bank+0x70_7FFF,
@@ -61,8 +65,8 @@ func (q *System) CreateEmulator() (err error) {
 		}
 
 		// mirror:
-		err = q.Bus.Attach(
-			memory.NewRAM(q.SRAM[halfBank:halfBank+0x8000], bank+0xF0_0000),
+		err = s.Bus.Attach(
+			memory.NewRAM(s.SRAM[halfBank:halfBank+0x8000], bank+0xF0_0000),
 			"sram",
 			bank+0xF0_0000,
 			bank+0xF0_7FFF,
@@ -74,8 +78,8 @@ func (q *System) CreateEmulator() (err error) {
 
 	// WRAM:
 	{
-		err = q.Bus.Attach(
-			memory.NewRAM(q.WRAM[0:0x20000], 0x7E0000),
+		err = s.Bus.Attach(
+			memory.NewRAM(s.WRAM[0:0x20000], 0x7E0000),
 			"wram",
 			0x7E_0000,
 			0x7F_FFFF,
@@ -87,8 +91,8 @@ func (q *System) CreateEmulator() (err error) {
 		// map in first $2000 of each bank as a mirror of WRAM:
 		for b := uint32(0); b < 0x70; b++ {
 			bank := b << 16
-			err = q.Bus.Attach(
-				memory.NewRAM(q.WRAM[0:0x2000], bank),
+			err = s.Bus.Attach(
+				memory.NewRAM(s.WRAM[0:0x2000], bank),
 				"wram",
 				bank,
 				bank|0x1FFF,
@@ -99,8 +103,8 @@ func (q *System) CreateEmulator() (err error) {
 		}
 		for b := uint32(0x80); b < 0x100; b++ {
 			bank := b << 16
-			err = q.Bus.Attach(
-				memory.NewRAM(q.WRAM[0:0x2000], bank),
+			err = s.Bus.Attach(
+				memory.NewRAM(s.WRAM[0:0x2000], bank),
 				"wram",
 				bank,
 				bank|0x1FFF,
@@ -112,8 +116,73 @@ func (q *System) CreateEmulator() (err error) {
 	}
 
 	// Create CPU and reset:
-	q.CPU, _ = cpu65c816.New(q.Bus)
-	q.CPU.Reset()
+	s.CPU, _ = cpu65c816.New(s.Bus)
+
+	return
+}
+
+func (s *System) SetupPatch() (err error) {
+	a := asm.Emitter{
+		Code: &bytes.Buffer{},
+		Text: nil,
+	}
+	a.SetBase(0x00_8000)
+	a.SEP(0x30)
+	a.JSL(0x70_7FFA)
+	a.BRA(-5)
+
+	// copy asm into ROM:
+	aw := util.ArrayWriter{Buffer: s.ROM[0x0000:0x7FFF]}
+	_, err = a.Code.WriteTo(&aw)
+	if err != nil {
+		return
+	}
+
+	// entry point at 0x70_7FFA
+	a.Code = &bytes.Buffer{}
+	a.SetBase(0x70_7FFA)
+	a.JSR_abs(0x7C00)
+	a.RTL()
+	aw = util.ArrayWriter{Buffer: s.SRAM[0x7FFA:0x7FFF]}
+	_, err = a.Code.WriteTo(&aw)
+	if err != nil {
+		return
+	}
+
+	// assemble the RTS instructions at the two A/B update routine locations:
+	a.Code = &bytes.Buffer{}
+	a.SetBase(0x70_7C00)
+	a.RTS()
+	aw = util.ArrayWriter{Buffer: s.SRAM[0x7C00:0x7FFF]}
+	_, err = a.Code.WriteTo(&aw)
+	if err != nil {
+		return
+	}
+
+	a.Code = &bytes.Buffer{}
+	a.SetBase(0x70_7E00)
+	a.RTS()
+	aw = util.ArrayWriter{Buffer: s.SRAM[0x7E00:0x7FFF]}
+	_, err = a.Code.WriteTo(&aw)
+	if err != nil {
+		return
+	}
+
+	// build ROM header:
+	var rom *snes.ROM
+	rom, err = snes.NewROM("test", s.ROM[:])
+	if err != nil {
+		return
+	}
+
+	copy(rom.Header.Title[:], "TEST")
+	rom.EmulatedVectors.RESET = 0x8000
+	rom.Header.RAMSize = 5 // 1024 << 5 = 32768 bytes
+
+	err = rom.WriteHeader()
+	if err != nil {
+		return
+	}
 
 	return
 }
