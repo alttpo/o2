@@ -120,7 +120,7 @@ func (s *System) CreateEmulator() (err error) {
 	return
 }
 
-func MakeTestROM() (rom *snes.ROM, err error) {
+func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	var b [0x1_0000]byte
 
 	a := asm.Emitter{
@@ -145,7 +145,7 @@ func MakeTestROM() (rom *snes.ROM, err error) {
 	}
 
 	// build ROM header:
-	copy(rom.Header.Title[:], "TEST")
+	copy(rom.Header.Title[:], title)
 	rom.EmulatedVectors.RESET = 0x8000
 	rom.Header.RAMSize = 5 // 1024 << 5 = 32768 bytes
 

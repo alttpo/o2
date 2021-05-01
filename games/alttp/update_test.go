@@ -2,7 +2,6 @@ package alttp
 
 import (
 	"bytes"
-	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/util"
@@ -12,7 +11,7 @@ import (
 
 func TestGame_generateUpdateAsm(t *testing.T) {
 	type fields struct {
-		rom              *snes.ROM
+		ROMTitle         string
 		IsCreated        bool
 		GameName         string
 		PlayerColor      uint16
@@ -26,26 +25,18 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 		SyncChests       bool
 		SyncTunicColor   bool
 	}
-	type args struct {
-		a *asm.Emitter
-	}
-
-	rom, err := emulator.MakeTestROM()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tests := []struct {
 		name   string
 		fields fields
-		args   args
 		want   bool
+		setup  func(t *testing.T, g *Game)
 		verify func(t *testing.T, g *Game, system *emulator.System)
 	}{
 		{
 			name: "No update",
 			fields: fields{
-				rom:              rom,
+				ROMTitle:         "ZELDANODENSETSU",
 				IsCreated:        true,
 				GameName:         "ALTTP",
 				PlayerColor:      0x12ef,
@@ -59,19 +50,50 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				SyncChests:       true,
 				SyncTunicColor:   false,
 			},
-			args: args{
-				a: &asm.Emitter{
-					Code: &bytes.Buffer{},
-					Text: &strings.Builder{},
-				},
-			},
 			want: false,
+		},
+		{
+			name: "VT: mushroom",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle:         "VT test",
+				IsCreated:        true,
+				GameName:         "ALTTP",
+				PlayerColor:      0x12ef,
+				SyncItems:        true,
+				SyncDungeonItems: true,
+				SyncProgress:     true,
+				SyncHearts:       true,
+				SyncSmallKeys:    true,
+				SyncUnderworld:   true,
+				SyncOverworld:    true,
+				SyncChests:       true,
+				SyncTunicColor:   false,
+			},
+			setup: func(t *testing.T, g *Game) {
+				g.local.SRAM[0x38C] = 0
+				g.players[1].Index = 1
+				g.players[1].TTL = 255
+				g.players[1].SRAM[0x38C] = 0x20
+			},
+			want: true,
+			verify: func(t *testing.T, g *Game, system *emulator.System) {
+				offset := uint16(0x38C)
+				if actual, expected := system.WRAM[0xF000 + offset], uint8(0x20); actual != expected {
+					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
+				}
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			rom, err := emulator.MakeTestROM(tt.fields.ROMTitle)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			g := &Game{
-				rom:              tt.fields.rom,
+				rom:              rom,
 				IsCreated:        tt.fields.IsCreated,
 				GameName:         tt.fields.GameName,
 				PlayerColor:      tt.fields.PlayerColor,
@@ -87,6 +109,10 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			}
 			g.Reset()
 
+			if tt.setup != nil {
+				tt.setup(t, g)
+			}
+
 			system := emulator.System{}
 			if err := system.CreateEmulator(); err != nil {
 				t.Fatal(err)
@@ -99,20 +125,32 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if got := g.generateUpdateAsm(tt.args.a); got != tt.want {
-				t.Logf("%s", tt.args.a.Text.String())
-				t.Errorf("generateUpdateAsm() = %v, want %v", got, tt.want)
+			a := &asm.Emitter{
+				Code: &bytes.Buffer{},
+				Text: &strings.Builder{},
+			}
+			// default to 8-bit:
+			a.AssumeSEP(0x30)
+			updated := g.generateUpdateAsm(a)
+			if updated != tt.want {
+				t.Logf("%s", a.Text.String())
+				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.want)
 				return
 			}
-			t.Logf("%s", tt.args.a.Text.String())
+			if updated {
+				a.SEP(0x30)
+				a.RTS()
+			}
+			t.Logf("%s", a.Text.String())
 
 			aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
-			if _, err := tt.args.a.Code.WriteTo(&aw); err != nil {
+			if _, err := a.Code.WriteTo(&aw); err != nil {
 				t.Fatal(err)
 			}
 
 			system.CPU.Reset()
 			for cycles := 0; cycles < 0x1000; {
+				//t.Logf("%s", system.CPU.DisassembleCurrentPC())
 				nCycles, _ := system.CPU.Step()
 				cycles += nCycles
 				if system.CPU.PC == 0x8006 {

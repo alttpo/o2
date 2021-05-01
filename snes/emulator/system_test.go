@@ -181,7 +181,7 @@ func TestSystem_SetupPatch(t *testing.T) {
 			if err := q.CreateEmulator(); err != nil {
 				t.Fatal(err)
 			}
-			rom, err := MakeTestROM()
+			rom, err := MakeTestROM("TEST")
 			if err != nil {
 				t.Fatal(err)
 			}
