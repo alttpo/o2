@@ -7,7 +7,7 @@ func Delimited(items []string) string {
 	sb := strings.Builder{}
 	for i, s := range items {
 		sb.WriteString(s)
-		if i < l - 1 {
+		if i < l-1 {
 			sb.WriteByte(',')
 		}
 	}
@@ -20,7 +20,7 @@ func DelimitedGen(items []interface{}, mapper func(interface{}) string) string {
 	for i, v := range items {
 		s := mapper(v)
 		sb.WriteString(s)
-		if i < l - 1 {
+		if i < l-1 {
 			sb.WriteByte(',')
 		}
 	}

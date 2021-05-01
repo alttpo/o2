@@ -10,7 +10,7 @@ const (
 
 func (k Kind) String() string {
 	var rsp string = ""
-	if k & 0x80 != 0 {
+	if k&0x80 != 0 {
 		rsp = " response"
 	}
 	switch k & 0x7F {
