@@ -120,7 +120,9 @@ func (s *System) CreateEmulator() (err error) {
 	return
 }
 
-func (s *System) SetupPatch() (err error) {
+func MakeTestROM() (rom *snes.ROM, err error) {
+	var b [0x1_0000]byte
+
 	a := asm.Emitter{
 		Code: &bytes.Buffer{},
 		Text: nil,
@@ -131,18 +133,39 @@ func (s *System) SetupPatch() (err error) {
 	a.BRA(-5)
 
 	// copy asm into ROM:
-	aw := util.ArrayWriter{Buffer: s.ROM[0x0000:0x7FFF]}
+	aw := util.ArrayWriter{Buffer: b[0x0000:0x7FFF]}
 	_, err = a.Code.WriteTo(&aw)
 	if err != nil {
 		return
 	}
 
+	rom, err = snes.NewROM("test.sfc", b[:])
+	if err != nil {
+		return
+	}
+
+	// build ROM header:
+	copy(rom.Header.Title[:], "TEST")
+	rom.EmulatedVectors.RESET = 0x8000
+	rom.Header.RAMSize = 5 // 1024 << 5 = 32768 bytes
+
+	err = rom.WriteHeader()
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func (s *System) SetupPatch() (err error) {
+	a := asm.Emitter{}
 	// entry point at 0x70_7FFA
 	a.Code = &bytes.Buffer{}
 	a.SetBase(0x70_7FFA)
 	a.JSR_abs(0x7C00)
 	a.RTL()
-	aw = util.ArrayWriter{Buffer: s.SRAM[0x7FFA:0x7FFF]}
+
+	aw := util.ArrayWriter{Buffer: s.SRAM[0x7FFA:0x7FFF]}
 	_, err = a.Code.WriteTo(&aw)
 	if err != nil {
 		return
@@ -152,6 +175,7 @@ func (s *System) SetupPatch() (err error) {
 	a.Code = &bytes.Buffer{}
 	a.SetBase(0x70_7C00)
 	a.RTS()
+
 	aw = util.ArrayWriter{Buffer: s.SRAM[0x7C00:0x7FFF]}
 	_, err = a.Code.WriteTo(&aw)
 	if err != nil {
@@ -161,24 +185,9 @@ func (s *System) SetupPatch() (err error) {
 	a.Code = &bytes.Buffer{}
 	a.SetBase(0x70_7E00)
 	a.RTS()
+
 	aw = util.ArrayWriter{Buffer: s.SRAM[0x7E00:0x7FFF]}
 	_, err = a.Code.WriteTo(&aw)
-	if err != nil {
-		return
-	}
-
-	// build ROM header:
-	var rom *snes.ROM
-	rom, err = snes.NewROM("test", s.ROM[:])
-	if err != nil {
-		return
-	}
-
-	copy(rom.Header.Title[:], "TEST")
-	rom.EmulatedVectors.RESET = 0x8000
-	rom.Header.RAMSize = 5 // 1024 << 5 = 32768 bytes
-
-	err = rom.WriteHeader()
 	if err != nil {
 		return
 	}
