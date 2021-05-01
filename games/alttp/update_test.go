@@ -14,13 +14,23 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 		ROMTitle string
 	}
 
-	tests := []struct {
+	type sramTest struct {
+		offset        uint16
+		localValue    uint8
+		remoteValue   uint8
+		expectedValue uint8
+	}
+
+	type test struct {
 		name   string
 		fields fields
+		sram   []sramTest
 		want   bool
-		setup  func(t *testing.T, g *Game)
-		verify func(t *testing.T, g *Game, system *emulator.System)
-	}{
+		setup  func(t *testing.T, g *Game, tt *test)
+		verify func(t *testing.T, g *Game, system *emulator.System, tt *test)
+	}
+
+	tests := []test{
 		{
 			name: "No update",
 			fields: fields{
@@ -34,23 +44,19 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
-			setup: func(t *testing.T, g *Game) {
-				g.local.SRAM[0x38C] = 0
-				g.players[1].Index = 1
-				g.players[1].TTL = 255
-				g.players[1].SRAM[0x38C] = 0x20
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x20,
+					expectedValue: 0x20,
+				},
+				{
+					offset:        0x344,
+					expectedValue: 1,
+				},
 			},
 			want: true,
-			verify: func(t *testing.T, g *Game, system *emulator.System) {
-				offset := uint16(0x38C)
-				if actual, expected := system.WRAM[0xF000+offset], uint8(0x20); actual != expected {
-					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
-				}
-				offset = uint16(0x344)
-				if actual, expected := system.WRAM[0xF000+offset], uint8(0x01); actual != expected {
-					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
-				}
-			},
 		},
 		{
 			name: "VT powder",
@@ -58,26 +64,23 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
-			setup: func(t *testing.T, g *Game) {
-				g.local.SRAM[0x38C] = 0
-				g.players[1].Index = 1
-				g.players[1].TTL = 255
-				g.players[1].SRAM[0x38C] = 0x10
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x10,
+					expectedValue: 0x10,
+				},
+				{
+					offset:        0x344,
+					expectedValue: 2,
+				},
 			},
 			want: true,
-			verify: func(t *testing.T, g *Game, system *emulator.System) {
-				offset := uint16(0x38C)
-				if actual, expected := system.WRAM[0xF000+offset], uint8(0x10); actual != expected {
-					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
-				}
-				offset = uint16(0x344)
-				if actual, expected := system.WRAM[0xF000+offset], uint8(0x02); actual != expected {
-					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
-				}
-			},
 		},
 	}
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			rom, err := emulator.MakeTestROM(tt.fields.ROMTitle)
 			if err != nil {
@@ -101,8 +104,16 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			}
 			g.Reset()
 
+			// set up SRAM per each player:
+			g.players[1].Index = 1
+			g.players[1].TTL = 255
+			for _, sram := range tt.sram {
+				g.local.SRAM[sram.offset] = sram.localValue
+				g.players[1].SRAM[sram.offset] = sram.remoteValue
+			}
+
 			if tt.setup != nil {
-				tt.setup(t, g)
+				tt.setup(t, g, tt)
 			}
 
 			system := emulator.System{}
@@ -155,9 +166,16 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				return
 			}
 
+			// verify SRAM values:
+			for _, sram := range tt.sram {
+				if actual, expected := system.WRAM[0xF000+sram.offset], sram.expectedValue; actual != expected {
+					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", sram.offset, actual, expected)
+				}
+			}
+
 			// call verify function for test:
 			if tt.verify != nil {
-				tt.verify(t, g, &system)
+				tt.verify(t, g, &system, tt)
 			}
 		})
 	}
