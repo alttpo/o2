@@ -126,25 +126,35 @@ func (c *CPU) Disassemble(myPC uint16) string {
 
 	bytes := instructions[opcode].size - sizeAdjust
 	name := instructions[opcode].name
-	w0 := c.nRead(c.RK, myPC+0)
-	w1 := c.nRead(c.RK, myPC+1)
-	w2 := c.nRead(c.RK, myPC+2)
-	w3 := c.nRead(c.RK, myPC+3)
 
+	var arg string
 	switch bytes {
 	case 4:
+		w0 := c.nRead(c.RK, myPC+0)
+		w1 := c.nRead(c.RK, myPC+1)
+		w2 := c.nRead(c.RK, myPC+2)
+		w3 := c.nRead(c.RK, myPC+3)
 		numeric = fmt.Sprintf("%02x %02x %02x %02x", w0, w1, w2, w3)
+		arg = c.formatInstructionMode(mode, w0, w1, w2, w3)
 	case 3:
+		w0 := c.nRead(c.RK, myPC+0)
+		w1 := c.nRead(c.RK, myPC+1)
+		w2 := c.nRead(c.RK, myPC+2)
 		numeric = fmt.Sprintf("%02x %02x %02x", w0, w1, w2)
+		arg = c.formatInstructionMode(mode, w0, w1, w2, 0)
 	case 2:
+		w0 := c.nRead(c.RK, myPC+0)
+		w1 := c.nRead(c.RK, myPC+1)
 		numeric = fmt.Sprintf("%02x %02x", w0, w1)
+		arg = c.formatInstructionMode(mode, w0, w1, 0, 0)
 	case 1:
+		w0 := c.nRead(c.RK, myPC+0)
 		numeric = fmt.Sprintf("%02x", w0)
+		arg = c.formatInstructionMode(mode, w0, 0, 0, 0)
 	default:
 		numeric = fmt.Sprintf("err: cmd len %d", bytes)
+		arg = c.formatInstructionMode(mode, 0, 0, 0, 0)
 	}
-
-	arg := c.formatInstructionMode(mode, w0, w1, w2, w3)
 
 	if c.Cycles == 0 {
 		output = fmt.Sprintf(output, "--:----│           │                 │")
