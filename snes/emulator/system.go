@@ -9,7 +9,7 @@ import (
 type System struct {
 	// emulated system:
 	Bus *bus.Bus
-	Cpu *cpu65c816.CPU
+	CPU *cpu65c816.CPU
 
 	ROM  [0x1000000]byte
 	WRAM [0x20000]byte
@@ -17,9 +17,8 @@ type System struct {
 }
 
 func (q *System) CreateEmulator() (err error) {
-	// create Bus and Cpu for emulator:
+	// create primary A bus for SNES:
 	q.Bus, _ = bus.New()
-	q.Cpu, _ = cpu65c816.New(q.Bus)
 
 	// map in ROM to Bus; parts of this mapping will be overwritten:
 	for b := uint32(0); b < 0x40; b++ {
@@ -111,6 +110,10 @@ func (q *System) CreateEmulator() (err error) {
 			}
 		}
 	}
+
+	// Create CPU and reset:
+	q.CPU, _ = cpu65c816.New(q.Bus)
+	q.CPU.Reset()
 
 	return
 }

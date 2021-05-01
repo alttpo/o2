@@ -1,6 +1,8 @@
 package emulator
 
 import (
+	"bytes"
+	"o2/snes/asm"
 	"testing"
 )
 
@@ -116,6 +118,41 @@ func TestSystem_CreateEmulator(t *testing.T) {
 				if actual, expected := q.Bus.EaRead(0x7F_FFFF), uint8(0xF4); actual != expected {
 					t.Errorf("mapping failed, actual = %v, expected = %v", actual, expected)
 				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := &System{}
+			if err := q.CreateEmulator(); err != nil {
+				t.Fatal(err)
+			}
+			tt.verify(t, q)
+		})
+	}
+}
+
+func TestSystem_Step(t *testing.T) {
+	// verify our ROM, SRAM, WRAM mappings in the bus:
+	tests := []struct {
+		name   string
+		verify func(t *testing.T, q *System)
+	}{
+		// ROM:
+		{
+			name: "Step",
+			verify: func(t *testing.T, q *System) {
+				a := asm.Emitter{
+					Code: &bytes.Buffer{},
+					Text: nil,
+				}
+				a.JSL(0x707ffa)
+				// TODO: would like Code to emit directly into q.ROM[] someplace
+				// bytes.Buffer relies on append() so it's no good for this
+				//if actual, expected := q.Bus.EaRead(0x80_8000), uint8(0xFE); actual != expected {
+				//	t.Errorf("mapping failed, actual = %v, expected = %v", actual, expected)
+				//}
 			},
 		},
 	}
