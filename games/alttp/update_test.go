@@ -11,19 +11,7 @@ import (
 
 func TestGame_generateUpdateAsm(t *testing.T) {
 	type fields struct {
-		ROMTitle         string
-		IsCreated        bool
-		GameName         string
-		PlayerColor      uint16
-		SyncItems        bool
-		SyncDungeonItems bool
-		SyncProgress     bool
-		SyncHearts       bool
-		SyncSmallKeys    bool
-		SyncUnderworld   bool
-		SyncOverworld    bool
-		SyncChests       bool
-		SyncTunicColor   bool
+		ROMTitle string
 	}
 
 	tests := []struct {
@@ -36,39 +24,15 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 		{
 			name: "No update",
 			fields: fields{
-				ROMTitle:         "ZELDANODENSETSU",
-				IsCreated:        true,
-				GameName:         "ALTTP",
-				PlayerColor:      0x12ef,
-				SyncItems:        true,
-				SyncDungeonItems: true,
-				SyncProgress:     true,
-				SyncHearts:       true,
-				SyncSmallKeys:    true,
-				SyncUnderworld:   true,
-				SyncOverworld:    true,
-				SyncChests:       true,
-				SyncTunicColor:   false,
+				ROMTitle: "ZELDANODENSETSU",
 			},
 			want: false,
 		},
 		{
-			name: "VT: mushroom",
+			name: "VT mushroom",
 			fields: fields{
 				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle:         "VT test",
-				IsCreated:        true,
-				GameName:         "ALTTP",
-				PlayerColor:      0x12ef,
-				SyncItems:        true,
-				SyncDungeonItems: true,
-				SyncProgress:     true,
-				SyncHearts:       true,
-				SyncSmallKeys:    true,
-				SyncUnderworld:   true,
-				SyncOverworld:    true,
-				SyncChests:       true,
-				SyncTunicColor:   false,
+				ROMTitle: "VT test",
 			},
 			setup: func(t *testing.T, g *Game) {
 				g.local.SRAM[0x38C] = 0
@@ -79,7 +43,35 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			want: true,
 			verify: func(t *testing.T, g *Game, system *emulator.System) {
 				offset := uint16(0x38C)
-				if actual, expected := system.WRAM[0xF000 + offset], uint8(0x20); actual != expected {
+				if actual, expected := system.WRAM[0xF000+offset], uint8(0x20); actual != expected {
+					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
+				}
+				offset = uint16(0x344)
+				if actual, expected := system.WRAM[0xF000+offset], uint8(0x01); actual != expected {
+					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
+				}
+			},
+		},
+		{
+			name: "VT powder",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			setup: func(t *testing.T, g *Game) {
+				g.local.SRAM[0x38C] = 0
+				g.players[1].Index = 1
+				g.players[1].TTL = 255
+				g.players[1].SRAM[0x38C] = 0x10
+			},
+			want: true,
+			verify: func(t *testing.T, g *Game, system *emulator.System) {
+				offset := uint16(0x38C)
+				if actual, expected := system.WRAM[0xF000+offset], uint8(0x10); actual != expected {
+					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
+				}
+				offset = uint16(0x344)
+				if actual, expected := system.WRAM[0xF000+offset], uint8(0x02); actual != expected {
 					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", offset, actual, expected)
 				}
 			},
@@ -94,18 +86,18 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 
 			g := &Game{
 				rom:              rom,
-				IsCreated:        tt.fields.IsCreated,
-				GameName:         tt.fields.GameName,
-				PlayerColor:      tt.fields.PlayerColor,
-				SyncItems:        tt.fields.SyncItems,
-				SyncDungeonItems: tt.fields.SyncDungeonItems,
-				SyncProgress:     tt.fields.SyncProgress,
-				SyncHearts:       tt.fields.SyncHearts,
-				SyncSmallKeys:    tt.fields.SyncSmallKeys,
-				SyncUnderworld:   tt.fields.SyncUnderworld,
-				SyncOverworld:    tt.fields.SyncOverworld,
-				SyncChests:       tt.fields.SyncChests,
-				SyncTunicColor:   tt.fields.SyncTunicColor,
+				IsCreated:        true,
+				GameName:         "ALTTP",
+				PlayerColor:      0x12ef,
+				SyncItems:        true,
+				SyncDungeonItems: true,
+				SyncProgress:     true,
+				SyncHearts:       true,
+				SyncSmallKeys:    true,
+				SyncUnderworld:   true,
+				SyncOverworld:    true,
+				SyncChests:       true,
+				SyncTunicColor:   false,
 			}
 			g.Reset()
 
