@@ -78,6 +78,258 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "VT flute activated",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x1,
+					expectedValue: 0x1,
+				},
+				{
+					offset:        0x34C,
+					expectedValue: 3,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT flute",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x2,
+					expectedValue: 0x2,
+				},
+				{
+					offset:        0x34C,
+					expectedValue: 2,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT shovel",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x4,
+					expectedValue: 0x4,
+				},
+				{
+					offset:        0x34C,
+					expectedValue: 1,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT red boomerang",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
+				},
+				{
+					offset:        0x341,
+					expectedValue: 2,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT blue boomerang",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
+				},
+				{
+					offset:        0x341,
+					expectedValue: 1,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT bow no arrows",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
+				},
+				{
+					// have arrows:
+					offset:        0x377,
+					localValue:    0,
+					expectedValue: 0,
+				},
+				{
+					// expect bow w/o arrows:
+					offset:        0x340,
+					expectedValue: 1,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT bow with arrows",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
+				},
+				{
+					// have arrows:
+					offset:        0x377,
+					localValue:    1,
+					expectedValue: 1,
+				},
+				{
+					// expect bow w/ arrows:
+					offset:        0x340,
+					expectedValue: 2,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT bow no change",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
+				},
+				{
+					// already have silvers selected, don't alter selection:
+					offset:        0x340,
+					localValue:    3,
+					expectedValue: 3,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT silver bow no arrows",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
+				},
+				{
+					// have no arrows:
+					offset:        0x377,
+					localValue:    0,
+					expectedValue: 0,
+				},
+				{
+					// expect silver bow w/o arrows:
+					offset:        0x340,
+					expectedValue: 3,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT silver bow with arrows",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
+				},
+				{
+					// have arrows:
+					offset:        0x377,
+					localValue:    1,
+					expectedValue: 1,
+				},
+				{
+					// expect silver bow w/ arrows:
+					offset:        0x340,
+					expectedValue: 4,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "VT silver bow no change",
+			fields: fields{
+				// ROM title must start with "VT " to indicate randomizer
+				ROMTitle: "VT test",
+			},
+			sram: []sramTest{
+				{
+					offset:        0x38E,
+					localValue:    0,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
+				},
+				{
+					// already have bow selected, don't alter selection:
+					offset:        0x340,
+					localValue:    2,
+					expectedValue: 2,
+				},
+			},
+			want: true,
+		},
 	}
 	for i := range tests {
 		tt := &tests[i]
@@ -104,18 +356,6 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			}
 			g.Reset()
 
-			// set up SRAM per each player:
-			g.players[1].Index = 1
-			g.players[1].TTL = 255
-			for _, sram := range tt.sram {
-				g.local.SRAM[sram.offset] = sram.localValue
-				g.players[1].SRAM[sram.offset] = sram.remoteValue
-			}
-
-			if tt.setup != nil {
-				tt.setup(t, g, tt)
-			}
-
 			system := emulator.System{}
 			if err := system.CreateEmulator(); err != nil {
 				t.Fatal(err)
@@ -126,6 +366,19 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			// setup patch code in SRAM:
 			if err := system.SetupPatch(); err != nil {
 				t.Fatal(err)
+			}
+
+			// set up SRAM per each player:
+			g.players[1].Index = 1
+			g.players[1].TTL = 255
+			for _, sram := range tt.sram {
+				system.WRAM[0xF000 + sram.offset] = sram.localValue
+				g.local.SRAM[sram.offset] = sram.localValue
+				g.players[1].SRAM[sram.offset] = sram.remoteValue
+			}
+
+			if tt.setup != nil {
+				tt.setup(t, g, tt)
 			}
 
 			a := &asm.Emitter{

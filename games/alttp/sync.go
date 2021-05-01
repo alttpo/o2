@@ -420,7 +420,34 @@ func (g *Game) initSync() {
 			"", // 2nd Progressive Box
 			"Bow",
 			"Silver Bow",
-		}, nil)
+		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+			// bow/silver:
+			if initial&0x40 == 0 && updated&0x40 != 0 {
+				// set powder in inventory:
+				a.Comment("set Bow in inventory:")
+				a.LDA_long(0x7EF340)
+				a.BNE(0xe)
+
+				a.LDA_long(0x7EF377) // load arrows
+				a.CMP_imm8_b(0x01)   // are arrows present?
+				a.LDA_imm8_b(1)      // bow level; 1 = wood, 3 = silver
+				a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
+
+				a.STA_long(0x7EF340)
+			} else if initial&0x80 == 0 && updated&0x80 != 0 {
+				// set mushroom in inventory:
+				a.Comment("set Silver Bow in inventory:")
+				a.LDA_long(0x7EF340)
+				a.BNE(0xe)
+
+				a.LDA_long(0x7EF377) // load arrows
+				a.CMP_imm8_b(0x01)   // are arrows present?
+				a.LDA_imm8_b(3)      // bow level; 1 = wood, 3 = silver
+				a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
+
+				a.STA_long(0x7EF340)
+			}
+		})
 	}
 
 	// world state:
