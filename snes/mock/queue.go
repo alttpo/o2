@@ -2,16 +2,18 @@ package mock
 
 import (
 	"fmt"
+	"log"
 	"o2/snes"
+	"o2/snes/emulator"
 	"time"
 )
 
 type Queue struct {
 	snes.BaseQueue
+	emulator.System
 
 	closed chan struct{}
 
-	wram    [0x20000]byte
 	nothing [0x100]byte
 
 	frameTicker *time.Ticker
@@ -33,13 +35,19 @@ func (q *Queue) Close() error {
 }
 
 func (q *Queue) Init() {
+	err := q.CreateEmulator()
+	if err != nil {
+		log.Printf("%v\n", err)
+		return
+	}
+
 	q.closed = make(chan struct{})
 	q.frameTicker = time.NewTicker(16_639_265 * time.Nanosecond)
 	go func() {
 		// 5,369,317.5/89,341.5 ~= 60.0988 frames / sec ~= 16,639,265.605 ns / frame
 		for range q.frameTicker.C {
 			// increment frame timer:
-			q.wram[0x1A]++
+			q.WRAM[0x1A]++
 		}
 	}()
 }
@@ -88,7 +96,7 @@ func (r *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) error 
 	if r.Request.Address >= 0xF50000 && r.Request.Address < 0xF70000 {
 		// read from wram:
 		o := r.Request.Address - 0xF50000
-		data = q.wram[o : o+uint32(r.Request.Size)]
+		data = q.WRAM[o : o+uint32(r.Request.Size)]
 	} else {
 		// read from nothing:
 		data = q.nothing[0:r.Request.Size]
