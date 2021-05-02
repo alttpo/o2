@@ -71,7 +71,7 @@ const App = () => {
             drivers: [], isConnected: false
         },
         rom: {
-            isLoaded: false, region: "", name: "", title: "", version: ""
+            isLoaded: false, folder: "", name: "", title: "", region: "", version: ""
         },
         server: {
             isConnected: false, hostName: "", groupName: "", playerName: "", team: 0

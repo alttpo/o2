@@ -2,12 +2,19 @@ import {JSXInternal} from "preact/src/jsx";
 
 import {TopLevelProps} from "./index";
 import TargetedEvent = JSXInternal.TargetedEvent;
-import {useState} from "preact/hooks";
+import {useEffect, useState} from "preact/hooks";
+import {setField} from "./util";
 
 export default ({ch, vm}: TopLevelProps) => {
     const rom = vm.rom;
 
     const [collapsed, set_collapsed] = useState(false);
+
+    const [folder, setFolder] = useState('');
+
+    useEffect(() => {
+        setFolder(rom?.folder);
+    }, [rom]);
 
     function fileChosen(e: TargetedEvent<HTMLInputElement, Event>) {
         // send ROM filename and contents:
@@ -18,6 +25,11 @@ export default ({ch, vm}: TopLevelProps) => {
         });
         e.currentTarget.form.reset();
     }
+
+    // NOTE: `ch` can be null during app init
+    const sendROMCommand = ch?.command?.bind(ch, "rom");
+
+    const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
 
     return (<div style="min-width: 22em; width: 100%; height: 100%">
         <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr 1fr">
@@ -45,6 +57,12 @@ patched for O2 support. O2 automatically patches your Input ROM for you."
 
             <label>Version:</label>
             <input style="grid-column-end: span 2" class="mono" readonly value={rom?.region + " " + rom?.version}/>
+
+            <label
+                title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command">Folder:</label>
+            <input style="grid-column-end: span 2" class="mono" value={folder}
+                   title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command"
+                   onInput={setField.bind(this, sendROMCommand, setFolder, "folder", getTargetValueString)}/>
 
             <label><span data-rh-at="left" data-rh="O2 can only communicate with patched ROMs running
 on SNES devices. Either click 'Boot' to send the ROM to your SNES device if supported or click 'Download' to download

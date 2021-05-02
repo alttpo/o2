@@ -40,6 +40,7 @@ export interface DeviceViewModel {
 export interface ROMViewModel {
     isLoaded: boolean;
 
+    folder: string;
     name: string;
     title: string;
     region: string;
