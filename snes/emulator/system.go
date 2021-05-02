@@ -127,9 +127,12 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 		Code: &bytes.Buffer{},
 		Text: nil,
 	}
+	// this is the RESET vector:
 	a.SetBase(0x00_8000)
+	a.Comment("switch to 8-bit mode and JSL to $70:7FFA")
 	a.SEP(0x30)
 	a.JSL(0x70_7FFA)
+	a.Comment("this is our stopping point at $00:8006:")
 	a.BRA(-5)
 
 	// copy asm into ROM:
