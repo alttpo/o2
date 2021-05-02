@@ -18,16 +18,20 @@ type ROMViewModel struct {
 
 	// public fields for JSON:
 	IsLoaded bool   `json:"isLoaded"`
-	Folder   string `json:"folder"` // input
-	Name     string `json:"name"`   // filename loaded from (no path)
+	Name     string `json:"name"` // original filename loaded from (no path)
 	Title    string `json:"title"`
 	Region   string `json:"region"`
 	Version  string `json:"version"`
+
+	// inputs:
+	Folder   string `json:"folder"`   // folder to store in on device
+	Filename string `json:"filename"` // filename to store on device as
 }
 
 type ROMConfiguration struct {
-	Name   string `json:"name"`   // filename loaded from (no path)
-	Folder string `json:"folder"` // folder to store in fxpakpro
+	Name     string `json:"name"`     // name of ROM; aka original filename - used to store/load locally at ~/.o2/roms/
+	Filename string `json:"filename"` // filename to store in fxpakpro
+	Folder   string `json:"folder"`   // folder to store in fxpakpro
 }
 
 func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
@@ -37,11 +41,8 @@ func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
 	}
 
 	// transfer in fields from config:
-	if config.Folder == "" {
-		// set a default:
-		config.Folder = "o2"
-	}
 	v.Folder = config.Folder
+	v.Filename = config.Filename
 	if config.Name == "" {
 		log.Printf("romviewmodel: loadConfiguration: no rom name to load\n")
 		return
@@ -81,6 +82,7 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 	}
 
 	config.Folder = v.Folder
+	config.Filename = v.Filename
 	if v.Name == "" {
 		config.Name = ""
 		return
@@ -112,10 +114,6 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 func (v *ROMViewModel) Update() {
 	rom := v.root.nextRom
 	v.IsLoaded = rom != nil
-	if v.Folder == "" {
-		// set a default:
-		v.Folder = "o2"
-	}
 
 	if v.IsLoaded {
 		v.Title = string(rom.Header.Title[:])
@@ -143,9 +141,9 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 	}
 
 	v.commands = map[string]interfaces.Command{
-		"name": &ROMNameCommand{v},
-		"data": &ROMDataCommand{v},
-		"boot": &ROMBootCommand{v},
+		"name":     &ROMNameCommand{v},
+		"data":     &ROMDataCommand{v},
+		"boot":     &ROMBootCommand{v},
 		"setField": &ROMsetFieldCmd{v},
 		// get contents of patched rom; used internally for /rom/patched.sfc download endpoint:
 		"patched": &ROMGetDataCommand{v},
@@ -158,7 +156,8 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 
 type ROMsetFieldCmd struct{ v *ROMViewModel }
 type ROMsetFieldArgs struct {
-	Folder *string `json:"folder"`
+	Folder   *string `json:"folder"`
+	Filename *string `json:"filename"`
 }
 
 func (c *ROMsetFieldCmd) CreateArgs() interfaces.CommandArgs { return &ROMsetFieldArgs{} }
@@ -174,6 +173,9 @@ func (c *ROMsetFieldCmd) Execute(args interfaces.CommandArgs) error {
 
 	if f.Folder != nil {
 		v.Folder = *f.Folder
+	}
+	if f.Filename != nil {
+		v.Filename = *f.Filename
 	}
 
 	vm.UpdateAndNotifyView()
@@ -224,7 +226,6 @@ func (v *ROMViewModel) DataProvided(romImage []byte) error {
 type ROMGetDataCommand struct{ v *ROMViewModel }
 
 func (ce *ROMGetDataCommand) CreateArgs() interfaces.CommandArgs { return nil }
-
 func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
 	if ce.v.root.rom == nil {
 		return nil
@@ -261,7 +262,11 @@ func (ce *ROMBootCommand) Execute(_ interfaces.CommandArgs) (err error) {
 	if folder == "" {
 		folder = "o2"
 	}
-	path, cmds := rc.MakeUploadROMCommands(folder, rom.Name, rom.Contents)
+	filename := ce.v.Filename
+	if filename == "" {
+		filename = ce.v.Name
+	}
+	path, cmds := rc.MakeUploadROMCommands(folder, filename, rom.Contents)
 	err = cmds.EnqueueTo(queue)
 	if err != nil {
 		return fmt.Errorf("could not upload ROM: %w", err)

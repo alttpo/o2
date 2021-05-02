@@ -11,8 +11,10 @@ export default ({ch, vm}: TopLevelProps) => {
     const [collapsed, set_collapsed] = useState(false);
 
     const [folder, setFolder] = useState('');
+    const [filename, setFilename] = useState('');
 
     useEffect(() => {
+        setFilename(rom?.filename);
         setFolder(rom?.folder);
     }, [rom]);
 
@@ -31,8 +33,8 @@ export default ({ch, vm}: TopLevelProps) => {
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
 
-    return (<div style="min-width: 22em; width: 100%; height: 100%">
-        <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr 1fr">
+    return (<div style="min-width: 32em; width: 100%; height: 100%">
+        <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 2fr 2fr">
             <h5 style="grid-column: 1 / span 3">
                 <span data-rh-at="left" data-rh="O2 needs to know which game you want to play. This
 is determined only by the ROM that you select. O2 requires that the ROM you play on your SNES to be
@@ -49,8 +51,9 @@ patched for O2 support. O2 automatically patches your Input ROM for you."
                 />
             </form>
 
-            <label>Name:</label>
-            <input style="grid-column-end: span 2" class="mono" readonly value={rom?.name}/>
+            <label title="Original filename ROM uploaded as">Name:</label>
+            <input style="grid-column-end: span 2" class="mono" readonly value={rom?.name}
+                   title="Original filename ROM uploaded as"/>
 
             <label>Title:</label>
             <input style="grid-column-end: span 2" class="mono" readonly value={rom?.title}/>
@@ -59,10 +62,21 @@ patched for O2 support. O2 automatically patches your Input ROM for you."
             <input style="grid-column-end: span 2" class="mono" readonly value={rom?.region + " " + rom?.version}/>
 
             <label
-                title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command">Folder:</label>
+                title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command. If blank, 'o2' will be used."
+            >Folder:</label>
             <input style="grid-column-end: span 2" class="mono" value={folder}
-                   title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command"
+                   placeholder={"o2"}
+                   title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command. If blank, 'o2' will be used."
                    onInput={setField.bind(this, sendROMCommand, setFolder, "folder", getTargetValueString)}/>
+
+            <label
+                title="Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, original filename will be used."
+            >Filename:
+            </label>
+            <input style="grid-column-end: span 2" class="mono" value={filename}
+                   placeholder={rom?.name}
+                   title="Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, original filename will be used."
+                   onInput={setField.bind(this, sendROMCommand, setFilename, "filename", getTargetValueString)}/>
 
             <label><span data-rh-at="left" data-rh="O2 can only communicate with patched ROMs running
 on SNES devices. Either click 'Boot' to send the ROM to your SNES device if supported or click 'Download' to download

@@ -67,6 +67,11 @@ input[type="file"] {
     white-space: nowrap;
 }
 
+input[readonly] {
+    background-color: #252525;
+    color: #999;
+}
+
 a {
     color: #ffef00;
 }
