@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"bytes"
+	"o2/interfaces"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/util"
@@ -22,12 +23,13 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 	}
 
 	type test struct {
-		name   string
-		fields fields
-		sram   []sramTest
-		want   bool
-		setup  func(t *testing.T, g *Game, tt *test)
-		verify func(t *testing.T, g *Game, system *emulator.System, tt *test)
+		name             string
+		fields           fields
+		sram             []sramTest
+		wantUpdated      bool
+		wantNotification string
+		setup            func(t *testing.T, g *Game, tt *test)
+		verify           func(t *testing.T, g *Game, system *emulator.System, tt *test)
 	}
 
 	tests := []test{
@@ -36,7 +38,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			fields: fields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
-			want: false,
+			wantUpdated: false,
 		},
 		{
 			name: "VT mushroom",
@@ -56,7 +58,8 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 1,
 				},
 			},
-			want: true,
+			wantUpdated:      true,
+			wantNotification: "got Mushroom from remote",
 		},
 		{
 			name: "VT powder",
@@ -76,7 +79,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 2,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT flute activated",
@@ -96,7 +99,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 3,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT flute",
@@ -116,7 +119,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 2,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT shovel",
@@ -136,7 +139,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 1,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT red boomerang",
@@ -156,7 +159,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 2,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT blue boomerang",
@@ -176,7 +179,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 1,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT bow no arrows",
@@ -203,7 +206,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 1,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT bow with arrows",
@@ -230,7 +233,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 2,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT bow no change",
@@ -252,7 +255,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 3,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT silver bow no arrows",
@@ -279,7 +282,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 3,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT silver bow with arrows",
@@ -306,7 +309,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 4,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 		{
 			name: "VT silver bow no change",
@@ -328,7 +331,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 					expectedValue: 2,
 				},
 			},
-			want: true,
+			wantUpdated: true,
 		},
 	}
 	for i := range tests {
@@ -355,6 +358,13 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				SyncTunicColor:   false,
 			}
 			g.Reset()
+
+			// subscribe to Notifications from the game:
+			lastNotification := ""
+			g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+				lastNotification = object.(string)
+				t.Logf("notify: '%s'", lastNotification)
+			}))
 
 			system := emulator.System{}
 			if err := system.CreateEmulator(); err != nil {
@@ -389,9 +399,9 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
 			updated := g.generateUpdateAsm(a)
-			if updated != tt.want {
+			if updated != tt.wantUpdated {
 				t.Logf("%s", a.Text.String())
-				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.want)
+				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
 				return
 			}
 			if updated {
@@ -420,6 +430,9 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				return
 			}
 
+			// copy SRAM shadow in WRAM into local player copy:
+			copy(g.local.SRAM[:], system.WRAM[0xF000:])
+
 			// verify SRAM values:
 			for _, sram := range tt.sram {
 				if actual, expected := system.WRAM[0xF000+sram.offset], sram.expectedValue; actual != expected {
@@ -430,6 +443,14 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			// call verify function for test:
 			if tt.verify != nil {
 				tt.verify(t, g, &system, tt)
+			}
+
+			// call generateUpdateAsm for next frame to receive notifications:
+			a.Code = &bytes.Buffer{}
+			_ = g.generateUpdateAsm(a)
+
+			if tt.wantNotification != "" && lastNotification != tt.wantNotification {
+				t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)
 			}
 		})
 	}
