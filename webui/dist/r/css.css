@@ -67,11 +67,6 @@ input[type="file"] {
     white-space: nowrap;
 }
 
-input[readonly] {
-    background-color: #252525;
-    color: #999;
-}
-
 a {
     color: #ffef00;
 }
@@ -108,6 +103,11 @@ select, input:not([type=submit]) {
     border-right: 2px solid rgba(0, 0, 0, 0.5);
     border-bottom: 2px solid rgba(0, 0, 0, 0.5);
     font-kerning: auto;
+}
+
+input[readonly=true] {
+    background-color: #252525;
+    color: #999;
 }
 
 select:disabled, input:disabled, button:disabled {
