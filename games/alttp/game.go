@@ -32,6 +32,9 @@ type Game struct {
 
 	deserTable []DeserializeFunc
 
+	// Notifications publishes notifications about game events intended for the player to see
+	Notifications interfaces.ObservableImpl
+
 	local   *Player
 	players [MaxPlayers]Player
 

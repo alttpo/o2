@@ -26,20 +26,24 @@ func (g *Game) NotifyView() {
 }
 
 func (g *Game) PushNotification(notification string) {
-	// record history of notifications:
-	historyVM, ok := g.viewModels.GetViewModel("game/notification/history")
-	if !ok {
-		historyVM = make([]string, 0, 200)
-	}
+	g.Notifications.Publish(notification)
 
-	history, ok := historyVM.([]string)
-	if !ok {
-		history = make([]string, 0, 200)
-	}
+	if viewModels := g.viewModels; viewModels != nil {
+		// record history of Notifications:
+		historyVM, ok := viewModels.GetViewModel("game/notification/history")
+		if !ok {
+			historyVM = make([]string, 0, 200)
+		}
 
-	// append the notification:
-	history = append(history, notification)
-	g.viewModels.NotifyView("game/notification/history", history)
+		history, ok := historyVM.([]string)
+		if !ok {
+			history = make([]string, 0, 200)
+		}
+
+		// append the notification:
+		history = append(history, notification)
+		viewModels.NotifyView("game/notification/history", history)
+	}
 }
 
 type PlayerViewModel struct {

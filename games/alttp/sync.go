@@ -417,7 +417,7 @@ func (g *Game) initSync() {
 			"",
 			"",
 			"",
-			"", // 2nd Progressive Box
+			"", // 2nd Progressive Bow
 			"Bow",
 			"Silver Bow",
 		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
