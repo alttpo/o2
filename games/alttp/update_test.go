@@ -80,6 +80,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Magic Powder from remote",
 		},
 		{
 			name: "VT flute activated",
@@ -100,6 +101,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Flute (activated) from remote",
 		},
 		{
 			name: "VT flute",
@@ -120,6 +122,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Flute from remote",
 		},
 		{
 			name: "VT shovel",
@@ -140,6 +143,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Shovel from remote",
 		},
 		{
 			name: "VT red boomerang",
@@ -160,6 +164,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Red Boomerang from remote",
 		},
 		{
 			name: "VT blue boomerang",
@@ -180,6 +185,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Blue Boomerang from remote",
 		},
 		{
 			name: "VT bow no arrows",
@@ -207,6 +213,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Bow from remote",
 		},
 		{
 			name: "VT bow with arrows",
@@ -234,6 +241,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Bow from remote",
 		},
 		{
 			name: "VT bow no change",
@@ -256,6 +264,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Bow from remote",
 		},
 		{
 			name: "VT silver bow no arrows",
@@ -283,6 +292,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Silver Bow from remote",
 		},
 		{
 			name: "VT silver bow with arrows",
@@ -310,6 +320,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Silver Bow from remote",
 		},
 		{
 			name: "VT silver bow no change",
@@ -332,6 +343,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 				},
 			},
 			wantUpdated: true,
+			wantNotification: "got Silver Bow from remote",
 		},
 	}
 	for i := range tests {
