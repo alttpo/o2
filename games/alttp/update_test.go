@@ -371,8 +371,9 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 			// set up SRAM per each player:
 			g.players[1].Index = 1
 			g.players[1].TTL = 255
+			g.players[1].Name = "remote"
 			for _, sram := range tt.sram {
-				system.WRAM[0xF000 + sram.offset] = sram.localValue
+				system.WRAM[0xF000+sram.offset] = sram.localValue
 				g.local.SRAM[sram.offset] = sram.localValue
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
 			}
@@ -406,7 +407,7 @@ func TestGame_generateUpdateAsm(t *testing.T) {
 
 			system.CPU.Reset()
 			for cycles := 0; cycles < 0x1000; {
-				//t.Logf("%s", system.CPU.DisassembleCurrentPC())
+				t.Logf("%s", system.CPU.DisassembleCurrentPC())
 				nCycles, _ := system.CPU.Step()
 				cycles += nCycles
 				if system.CPU.PC == 0x8006 {
