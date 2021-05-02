@@ -25,7 +25,7 @@ func test() {
 			quitSystray()
 			return
 		}
-		path, seq := rc.MakeUploadROMCommands("lttp.smc", rom)
+		path, seq := rc.MakeUploadROMCommands("o2", "lttp.smc", rom)
 		queue.EnqueueMulti(seq)
 		seq = rc.MakeBootROMCommands(path)
 		queue.EnqueueMulti(seq)

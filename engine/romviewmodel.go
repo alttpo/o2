@@ -14,18 +14,20 @@ import (
 type ROMViewModel struct {
 	commands map[string]interfaces.Command
 
-	c *ViewModel
+	root *ViewModel
 
 	// public fields for JSON:
 	IsLoaded bool   `json:"isLoaded"`
-	Name     string `json:"name"` // filename loaded from (no path)
+	Folder   string `json:"folder"` // input
+	Name     string `json:"name"`   // filename loaded from (no path)
 	Title    string `json:"title"`
 	Region   string `json:"region"`
 	Version  string `json:"version"`
 }
 
 type ROMConfiguration struct {
-	Name string `json:"name"` // filename loaded from (no path)
+	Name   string `json:"name"`   // filename loaded from (no path)
+	Folder string `json:"folder"` // folder to store in fxpakpro
 }
 
 func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
@@ -34,6 +36,12 @@ func (v *ROMViewModel) LoadConfiguration(config *ROMConfiguration) {
 		return
 	}
 
+	// transfer in fields from config:
+	if config.Folder == "" {
+		// set a default:
+		config.Folder = "o2"
+	}
+	v.Folder = config.Folder
 	if config.Name == "" {
 		log.Printf("romviewmodel: loadConfiguration: no rom name to load\n")
 		return
@@ -72,6 +80,7 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 		return
 	}
 
+	config.Folder = v.Folder
 	if v.Name == "" {
 		config.Name = ""
 		return
@@ -91,7 +100,7 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 	}
 
 	path := filepath.Join(dir, v.Name)
-	err = ioutil.WriteFile(path, v.c.unpatchedRomContents, 0644)
+	err = ioutil.WriteFile(path, v.root.unpatchedRomContents, 0644)
 	if err != nil {
 		log.Printf("romviewmodel: saveConfiguration: could not write unpatched rom to '%s': %v\n", path, err)
 		return
@@ -101,8 +110,12 @@ func (v *ROMViewModel) SaveConfiguration(config *ROMConfiguration) {
 }
 
 func (v *ROMViewModel) Update() {
-	rom := v.c.nextRom
+	rom := v.root.nextRom
 	v.IsLoaded = rom != nil
+	if v.Folder == "" {
+		// set a default:
+		v.Folder = "o2"
+	}
 
 	if v.IsLoaded {
 		v.Title = string(rom.Header.Title[:])
@@ -126,14 +139,15 @@ func (v *ROMViewModel) CommandFor(command string) (ce interfaces.Command, err er
 
 func NewROMViewModel(c *ViewModel) *ROMViewModel {
 	v := &ROMViewModel{
-		c: c,
+		root: c,
 	}
 
 	v.commands = map[string]interfaces.Command{
 		"name": &ROMNameCommand{v},
 		"data": &ROMDataCommand{v},
 		"boot": &ROMBootCommand{v},
-		// get contents of patched rom:
+		"setField": &ROMsetFieldCmd{v},
+		// get contents of patched rom; used internally for /rom/patched.sfc download endpoint:
 		"patched": &ROMGetDataCommand{v},
 	}
 
@@ -141,6 +155,32 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 }
 
 // Commands:
+
+type ROMsetFieldCmd struct{ v *ROMViewModel }
+type ROMsetFieldArgs struct {
+	Folder *string `json:"folder"`
+}
+
+func (c *ROMsetFieldCmd) CreateArgs() interfaces.CommandArgs { return &ROMsetFieldArgs{} }
+
+func (c *ROMsetFieldCmd) Execute(args interfaces.CommandArgs) error {
+	f, ok := args.(*ROMsetFieldArgs)
+	if !ok {
+		return fmt.Errorf("invalid args type for command")
+	}
+
+	v := c.v
+	vm := v.root
+
+	if f.Folder != nil {
+		v.Folder = *f.Folder
+	}
+
+	vm.UpdateAndNotifyView()
+	vm.SaveConfiguration()
+
+	return nil
+}
 
 type ROMNameCommand struct{ v *ROMViewModel }
 
@@ -172,11 +212,11 @@ func (v *ROMViewModel) DataProvided(romImage []byte) error {
 	if err != nil {
 		return err
 	}
-	err = v.c.ROMSelected(rom)
+	err = v.root.ROMSelected(rom)
 	if err != nil {
 		return err
 	}
-	v.c.SaveConfiguration()
+	v.root.SaveConfiguration()
 	return nil
 }
 
@@ -186,7 +226,7 @@ type ROMGetDataCommand struct{ v *ROMViewModel }
 func (ce *ROMGetDataCommand) CreateArgs() interfaces.CommandArgs { return nil }
 
 func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
-	if ce.v.c.rom == nil {
+	if ce.v.root.rom == nil {
 		return nil
 	}
 
@@ -195,7 +235,7 @@ func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
 		return nil
 	}
 
-	*p = ce.v.c.rom
+	*p = ce.v.root.rom
 	return nil
 }
 
@@ -203,11 +243,11 @@ type ROMBootCommand struct{ v *ROMViewModel }
 
 func (ce *ROMBootCommand) CreateArgs() interfaces.CommandArgs { return nil }
 func (ce *ROMBootCommand) Execute(_ interfaces.CommandArgs) (err error) {
-	rom := ce.v.c.rom
+	rom := ce.v.root.rom
 	if rom == nil {
 		return fmt.Errorf("rom not loaded")
 	}
-	queue := ce.v.c.dev
+	queue := ce.v.root.dev
 	if queue == nil {
 		return fmt.Errorf("SNES not connected")
 	}
@@ -217,7 +257,11 @@ func (ce *ROMBootCommand) Execute(_ interfaces.CommandArgs) (err error) {
 		return fmt.Errorf("SNES driver does not support booting ROMs")
 	}
 
-	path, cmds := rc.MakeUploadROMCommands(rom.Name, rom.Contents)
+	folder := ce.v.Folder
+	if folder == "" {
+		folder = "o2"
+	}
+	path, cmds := rc.MakeUploadROMCommands(folder, rom.Name, rom.Contents)
 	err = cmds.EnqueueTo(queue)
 	if err != nil {
 		return fmt.Errorf("could not upload ROM: %w", err)
