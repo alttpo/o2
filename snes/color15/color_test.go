@@ -1,4 +1,4 @@
-package snes
+package color15
 
 import "testing"
 
