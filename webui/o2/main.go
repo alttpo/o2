@@ -29,6 +29,14 @@ import (
 	_ "o2/games/alttp"
 )
 
+// build variables set via ldflags by goreleaser:
+var (
+	version string = "v0.0.0"
+	commit  string = "dirty"
+	date    string = "2021-05-03T00:17:00Z"
+	builtBy string = "go"
+)
+
 var (
 	listenHost  string // hostname/ip to listen on for webserver
 	listenPort  int    // port number to listen on for webserver
@@ -44,7 +52,6 @@ func orElse(a, b string) string {
 	return a
 }
 
-// init is called first before all other package inits so it is best to set up log here:
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
@@ -59,6 +66,8 @@ func init() {
 	} else {
 		log.Printf("could not open log file '%s' for writing\n", logPath)
 	}
+
+	log.Printf("o2 %s %s built on %s by %s", version, commit, date, builtBy)
 }
 
 func main() {
