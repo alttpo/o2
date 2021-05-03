@@ -112,7 +112,9 @@ func (g *Game) initSync() {
 			asm.STA_long(0x7EF000 + uint32(offset))
 
 			return true
-		})
+		}).isUpdateStillPending = func(s *syncableCustomU8) bool {
+			return g.LocalPlayer().SRAM[s.offset] != s.updatingTo && g.LocalPlayer().SRAM[s.offset] != s.updatingTo+1
+		}
 		g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
 		g.newSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"}, nil)
 		g.newSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"}, nil)

@@ -12,6 +12,7 @@ type (
 	longAddress     func(offs uint16) uint32
 
 	syncableCustomU8Update  func(s *syncableCustomU8, asm *asm.Emitter) bool
+	isUpdateStillPending    func(s *syncableCustomU8) bool
 	syncableBitU8OnUpdated  func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
 	syncableBitU16OnUpdated func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
 	syncableMaxU8OnUpdated  func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
@@ -36,9 +37,10 @@ type syncableCustomU8 struct {
 
 	generateUpdate syncableCustomU8Update
 
-	pendingUpdate bool
-	updatingTo    uint8
-	notification  string
+	pendingUpdate        bool
+	updatingTo           uint8
+	isUpdateStillPending isUpdateStillPending
+	notification         string
 }
 
 func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, generateUpdate syncableCustomU8Update) *syncableCustomU8 {
@@ -64,7 +66,11 @@ func (s *syncableCustomU8) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.g
-	if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
+	if s.isUpdateStillPending != nil {
+		if s.isUpdateStillPending(s) {
+			return false
+		}
+	} else if g.LocalPlayer().SRAM[s.offset] != s.updatingTo {
 		return false
 	}
 
