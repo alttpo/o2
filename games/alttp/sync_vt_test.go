@@ -284,7 +284,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 					expectedValue: 0x40,
 				},
 				{
-					// have arrows:
+					// have no arrows:
 					offset:        0x377,
 					localValue:    0,
 					expectedValue: 0,

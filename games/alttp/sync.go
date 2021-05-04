@@ -607,10 +607,16 @@ func (g *Game) initSync() {
 		// NPC flags:
 		g.newSyncableMaxU8(0x410, &g.SyncProgress, nil, nil)
 		g.newSyncableMaxU8(0x411, &g.SyncProgress, nil, nil)
-		// Progressive shield
-		g.newSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
 		// coat for festive
 		g.newSyncableMaxU8(0x41A, &g.SyncItems, nil, nil)
+
+		// Progressive item counters:
+		// shield
+		g.newSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
+		// sword and shield:
+		g.newSyncableBitU8(0x422, &g.SyncItems, nil, nil)
+		// bow:
+		g.newSyncableBitU8(0x42A, &g.SyncItems, nil, nil)
 	}
 
 	openDoor := func(asm *asm.Emitter, initial, updated uint16) bool {
