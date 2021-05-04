@@ -117,6 +117,34 @@ func (s *System) CreateEmulator() (err error) {
 		}
 	}
 
+	// Memory-mapped IO registers:
+	{
+		hwio := &memory.FakeHW{}
+		for b := uint32(0); b < 0x70; b++ {
+			bank := b << 16
+			err = s.Bus.Attach(
+				hwio,
+				"hwio",
+				bank|0x2000,
+				bank|0x7FFF,
+			)
+			if err != nil {
+				return
+			}
+
+			bank = (b + 0x80) << 16
+			err = s.Bus.Attach(
+				hwio,
+				"hwio",
+				bank|0x2000,
+				bank|0x7FFF,
+			)
+			if err != nil {
+				return
+			}
+		}
+	}
+
 	return
 }
 
@@ -196,4 +224,13 @@ func (s *System) SetupPatch() (err error) {
 	}
 
 	return
+}
+
+func (s *System) SetPC(pc uint32) {
+	s.CPU.RK = byte(pc >> 16)
+	s.CPU.PC = uint16(pc & 0xFFFF)
+}
+
+func (s *System) GetPC() uint32 {
+	return uint32(s.CPU.RK)<<16 | uint32(s.CPU.PC)
 }
