@@ -1019,11 +1019,12 @@ func (cpu *CPU) Step() (int, bool) {
 	// rel16          - p. 309 or 5.18 (BRL)
 	case m_PC_Relative_Long:
 		arg16 = cpu.nRead16_wrap(cpu.RK, cpu.PC+1)
-		if arg16 < 0x8000 {
-			addr = cpu.PC + 3 + arg16
-		} else {
-			addr = cpu.PC + 1 + arg16 - 0xffff // zamiast 0x10000 bo overflow na 16 bit
-		}
+		addr = cpu.PC + 3 + arg16
+		//if arg16 < 0x8000 {
+		//	addr = cpu.PC + 3 + arg16
+		//} else {
+		//	addr = cpu.PC + 2 + arg16 - 0xffff // zamiast 0x10000 bo overflow na 16 bit
+		//}
 
 	// $32, S         - p. 324 or 5.20
 	case m_Stack_Relative:

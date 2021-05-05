@@ -1,7 +1,5 @@
 package memory
 
-import "log"
-
 type FakeHW struct {
 	state [0x6000]byte
 }
@@ -13,14 +11,14 @@ func (f *FakeHW) Read(address uint32) (value byte) {
 		value = f.state[offs-0x2000]
 	}
 
-	log.Printf("hwio[$%06x] -> $%02x\n", address, value)
+	//log.Printf("hwio[$%06x] -> $%02x\n", address, value)
 	return
 }
 
 func (f *FakeHW) Write(address uint32, value byte) {
 	offs := address & 0xFFFF
 
-	log.Printf("hwio[$%06x] <- $%02x\n", address, value)
+	//log.Printf("hwio[$%06x] <- $%02x\n", address, value)
 	f.state[offs-0x2000] = value
 }
 

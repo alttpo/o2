@@ -86,7 +86,9 @@ func (c *CPU) formatInstructionMode(mode byte, w0 byte, w1 byte, w2 byte, w3 byt
 			arg = fmt.Sprintf("$%02x ($%04x -)", w216, dest)
 		}
 	case m_PC_Relative_Long: // rel16       - p. 309 or 5.18 (BRL)
-		arg = "TODO"
+		arg16 := uint16(w2) << 8 | uint16(w1)
+		addr := c.PC + 3 + arg16
+		arg = fmt.Sprintf("$%04x", addr)
 	case m_Stack_Relative: // $32, S      - p. 324 or 5.20
 		arg = fmt.Sprintf("$%02x, S", w1)
 	case m_Stack_Relative_Indirect_Y: // ($32, S), Y - p. 325 or 5.21 (STACK,S),Y
