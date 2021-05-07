@@ -11,11 +11,12 @@ type (
 	playerReadU16   func(p *Player, offs uint16) uint16
 	longAddress     func(offs uint16) uint32
 
-	syncableCustomU8Update  func(s *syncableCustomU8, asm *asm.Emitter) bool
-	isUpdateStillPending    func(s *syncableCustomU8) bool
-	syncableBitU8OnUpdated  func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
-	syncableBitU16OnUpdated func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
-	syncableMaxU8OnUpdated  func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
+	syncableCustomU8Update   func(s *syncableCustomU8, asm *asm.Emitter) bool
+	isUpdateStillPending     func(s *syncableCustomU8) bool
+	syncableBitU8GenerateAsm func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8)
+	syncableBitU8OnUpdated   func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
+	syncableBitU16OnUpdated  func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
+	syncableMaxU8OnUpdated   func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 )
 
 type GameSyncable interface {
@@ -93,7 +94,8 @@ type syncableBitU8 struct {
 	names     []string
 	mask      uint8
 
-	onUpdated syncableBitU8OnUpdated
+	generateAsm syncableBitU8GenerateAsm
+	onUpdated   syncableBitU8OnUpdated
 
 	pendingUpdate bool
 	updatingTo    uint8
@@ -199,9 +201,13 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 		asm.Comment(fmt.Sprintf("u8 [$%06x] |= %#08b", longAddr, newBits))
 	}
 
-	asm.LDA_imm8_b(newBits)
-	asm.ORA_long(longAddr)
-	asm.STA_long(longAddr)
+	if s.generateAsm != nil {
+		s.generateAsm(s, asm, initial, updated, newBits)
+	} else {
+		asm.LDA_imm8_b(newBits)
+		asm.ORA_long(longAddr)
+		asm.STA_long(longAddr)
+	}
 
 	if s.onUpdated != nil {
 		s.onUpdated(s, asm, initial, updated)

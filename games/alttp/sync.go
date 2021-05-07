@@ -344,7 +344,7 @@ func (g *Game) initSync() {
 
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
-		g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
+		item_swap := g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
 			"Flute (activated)",
 			"Flute",
 			"Shovel",
@@ -412,6 +412,16 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF341)
 			}
 		})
+		item_swap.generateAsm = func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
+			const longAddr = 0x7EF38C
+			// make flute (inactive) and flute (activated) mutually exclusive:
+			if newBits&0b00000011 != 0 {
+				asm.AND_imm8_b(0b11111100)
+			}
+			asm.LDA_imm8_b(newBits)
+			asm.ORA_long(longAddr)
+			asm.STA_long(longAddr)
+		}
 
 		g.newSyncableBitU8(0x38E, &g.SyncItems, []string{
 			"",
