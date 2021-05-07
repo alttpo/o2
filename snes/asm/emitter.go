@@ -280,6 +280,16 @@ func (a *Emitter) ORA_long(addr uint32) {
 	a.emit4("ora.l", "$%02[3]x%02[2]x%02[1]x", d)
 }
 
+func (a *Emitter) ORA_imm8_b(m uint8) {
+	if a.IsM16bit() {
+		panic(fmt.Errorf("asm: ORA_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
+	}
+	var d [2]byte
+	d[0] = 0x09
+	d[1] = m
+	a.emit2("ora.b", "#$%02x", d)
+}
+
 func (a *Emitter) CMP_imm8_b(m uint8) {
 	if a.IsM16bit() {
 		panic(fmt.Errorf("asm: CMP_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
