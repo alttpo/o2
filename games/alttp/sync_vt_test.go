@@ -109,7 +109,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 					offset:        0x38C,
 					localValue:    0x2,
 					remoteValue:   0x1,
-					expectedValue: 0x3,
+					expectedValue: 0x1,
 				},
 				{
 					offset:        0x34C,
@@ -150,9 +150,9 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0x1,
+					localValue:    0x4,
 					remoteValue:   0x2,
-					expectedValue: 0x3,
+					expectedValue: 0x6,
 				},
 				{
 					offset:        0x34C,
@@ -207,7 +207,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 			wantNotification: "got Shovel from remote",
 		},
 		{
-			name: "VT shovel from flute activated",
+			name: "VT shovel from flute (activated)",
 			fields: fields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
@@ -215,9 +215,9 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0x2,
+					localValue:    0x1,
 					remoteValue:   0x4,
-					expectedValue: 0x6,
+					expectedValue: 0x5,
 				},
 				{
 					offset:        0x34C,

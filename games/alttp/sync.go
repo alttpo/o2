@@ -415,11 +415,14 @@ func (g *Game) initSync() {
 		item_swap.generateAsm = func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
 			// make flute (inactive) and flute (activated) mutually exclusive:
+			asm.LDA_long(longAddr)
 			if newBits&0b00000011 != 0 {
 				asm.AND_imm8_b(0b11111100)
+				s.updatingTo = initial & 0b11111100 | newBits
+			} else {
+				s.updatingTo = initial | newBits
 			}
-			asm.LDA_imm8_b(newBits)
-			asm.ORA_long(longAddr)
+			asm.ORA_imm8_b(newBits)
 			asm.STA_long(longAddr)
 		}
 
