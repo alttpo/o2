@@ -390,3 +390,13 @@ func (a *Emitter) DEX() {
 func (a *Emitter) DEY() {
 	a.emit1("dey", [1]byte{0x88})
 }
+
+func (a *Emitter) AND_imm8_b(m uint8) {
+	if a.IsM16bit() {
+		panic(fmt.Errorf("asm: AND_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
+	}
+	var d [2]byte
+	d[0] = 0x29
+	d[1] = m
+	a.emit2("and.b", "#$%02x", d)
+}
