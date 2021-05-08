@@ -56,7 +56,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 			wantNotification: "got Magic Powder from remote",
 		},
 		{
-			name: "VT flute activated",
+			name: "VT flute active",
 			fields: fields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
@@ -74,10 +74,10 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				},
 			},
 			wantUpdated:      true,
-			wantNotification: "got Flute (activated) from remote",
+			wantNotification: "got Flute (active) from remote",
 		},
 		{
-			name: "VT flute (activated) from shovel",
+			name: "VT flute (active) from shovel",
 			fields: fields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
@@ -96,7 +96,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				},
 			},
 			wantUpdated:      true,
-			wantNotification: "got Flute (activated) from remote",
+			wantNotification: "got Flute (active) from remote",
 		},
 		{
 			name: "VT flute (activated) from flute",
@@ -118,7 +118,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				},
 			},
 			wantUpdated:      true,
-			wantNotification: "got Flute (activated) from remote",
+			wantNotification: "got Flute (active) from remote",
 		},
 		{
 			name: "VT flute",
@@ -139,7 +139,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				},
 			},
 			wantUpdated:      true,
-			wantNotification: "got Flute from remote",
+			wantNotification: "got Flute (inactive) from remote",
 		},
 		{
 			name: "VT flute from shovel",
@@ -161,7 +161,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				},
 			},
 			wantUpdated:      true,
-			wantNotification: "got Flute from remote",
+			wantNotification: "got Flute (inactive) from remote",
 		},
 		{
 			name: "VT shovel",
@@ -280,8 +280,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x40,
-					expectedValue: 0x40,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
 				},
 				{
 					// have no arrows:
@@ -308,8 +308,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x40,
-					expectedValue: 0x40,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
 				},
 				{
 					// have arrows:
@@ -336,8 +336,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x40,
-					expectedValue: 0x40,
+					remoteValue:   0x80,
+					expectedValue: 0x80,
 				},
 				{
 					// already have silvers selected, don't alter selection:
@@ -359,8 +359,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x80,
-					expectedValue: 0x80,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
 				},
 				{
 					// have no arrows:
@@ -387,8 +387,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x80,
-					expectedValue: 0x80,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
 				},
 				{
 					// have arrows:
@@ -415,8 +415,8 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 				{
 					offset:        0x38E,
 					localValue:    0,
-					remoteValue:   0x80,
-					expectedValue: 0x80,
+					remoteValue:   0x40,
+					expectedValue: 0x40,
 				},
 				{
 					// already have bow selected, don't alter selection:

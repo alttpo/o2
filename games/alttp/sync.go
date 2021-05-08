@@ -25,6 +25,31 @@ var dungeonNames = []string{
 	"Extra Dungeon 2",   // $38B unused
 }
 
+// for VT randomizers:
+// InventorySwap1 $38C
+const (
+	IS1FluteActive uint8 = 1 << iota
+	IS1FluteInactive
+	IS1Shovel
+	_
+	IS1MagicPowder
+	IS1Mushroom
+	IS1RedBoomerang
+	IS1BlueBoomerang
+)
+
+// InventorySwap2 $38E
+const (
+	_ uint8 = 1 << iota
+	_
+	_
+	_
+	_
+	_
+	IS2SilverBow // 0x40
+	IS2WoodBow   // 0x80
+)
+
 type SyncableItem interface {
 	// Offset offset from $7EF000
 	Offset() uint16
@@ -344,9 +369,9 @@ func (g *Game) initSync() {
 
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
-		item_swap := g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
-			"Flute (activated)",
-			"Flute",
+		invSwap1 := g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
+			"Flute (active)",
+			"Flute (inactive)",
 			"Shovel",
 			"",
 			"Magic Powder",
@@ -355,14 +380,14 @@ func (g *Game) initSync() {
 			"Blue Boomerang",
 		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// mushroom/powder:
-			if initial&0x10 == 0 && updated&0x10 != 0 {
+			if initial&IS1MagicPowder == 0 && updated&IS1MagicPowder != 0 {
 				// set powder in inventory:
 				a.Comment("set Magic Powder in inventory:")
 				a.LDA_long(0x7EF344)
 				a.BNE(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF344)
-			} else if initial&0x20 == 0 && updated&0x20 != 0 {
+			} else if initial&IS1Mushroom == 0 && updated&IS1Mushroom != 0 {
 				// set mushroom in inventory:
 				a.Comment("set Mushroom in inventory:")
 				a.LDA_long(0x7EF344)
@@ -372,21 +397,21 @@ func (g *Game) initSync() {
 			}
 
 			// shovel/flute:
-			if initial&0x01 == 0 && updated&0x01 != 0 {
+			if initial&IS1FluteActive == 0 && updated&IS1FluteActive != 0 {
 				// flute (activated):
-				a.Comment("set Flute (activated) in inventory:")
+				a.Comment("set Flute (active) in inventory:")
 				a.LDA_long(0x7EF34C)
 				a.BNE(6)
 				a.LDA_imm8_b(3)
 				a.STA_long(0x7EF34C)
-			} else if initial&0x02 == 0 && updated&0x02 != 0 {
+			} else if initial&IS1FluteInactive == 0 && updated&IS1FluteInactive != 0 {
 				// flute (activated):
-				a.Comment("set Flute in inventory:")
+				a.Comment("set Flute (inactive) in inventory:")
 				a.LDA_long(0x7EF34C)
 				a.BNE(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF34C)
-			} else if initial&0x04 == 0 && updated&0x04 != 0 {
+			} else if initial&IS1Shovel == 0 && updated&IS1Shovel != 0 {
 				// flute (activated):
 				a.Comment("set Shovel in inventory:")
 				a.LDA_long(0x7EF34C)
@@ -396,14 +421,14 @@ func (g *Game) initSync() {
 			}
 
 			// red/blue boomerang:
-			if initial&0x40 == 0 && updated&0x40 != 0 {
+			if initial&IS1RedBoomerang == 0 && updated&IS1RedBoomerang != 0 {
 				// set powder in inventory:
 				a.Comment("set Red Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
 				a.BNE(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF341)
-			} else if initial&0x80 == 0 && updated&0x80 != 0 {
+			} else if initial&IS1BlueBoomerang == 0 && updated&IS1BlueBoomerang != 0 {
 				// set mushroom in inventory:
 				a.Comment("set Blue Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
@@ -412,13 +437,13 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF341)
 			}
 		})
-		item_swap.generateAsm = func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
+		invSwap1.generateAsm = func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
 			// make flute (inactive) and flute (activated) mutually exclusive:
 			asm.LDA_long(longAddr)
 			if newBits&0b00000011 != 0 {
 				asm.AND_imm8_b(0b11111100)
-				s.updatingTo = initial & 0b11111100 | newBits
+				s.updatingTo = initial&0b11111100 | newBits
 			} else {
 				s.updatingTo = initial | newBits
 			}
@@ -433,24 +458,12 @@ func (g *Game) initSync() {
 			"",
 			"",
 			"", // 2nd Progressive Bow
-			"Bow",
 			"Silver Bow",
+			"Bow",
 		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// bow/silver:
-			if initial&0x40 == 0 && updated&0x40 != 0 {
-				// set powder in inventory:
-				a.Comment("set Bow in inventory:")
-				a.LDA_long(0x7EF340)
-				a.BNE(0xe)
-
-				a.LDA_long(0x7EF377) // load arrows
-				a.CMP_imm8_b(0x01)   // are arrows present?
-				a.LDA_imm8_b(1)      // bow level; 1 = wood, 3 = silver
-				a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
-
-				a.STA_long(0x7EF340)
-			} else if initial&0x80 == 0 && updated&0x80 != 0 {
-				// set mushroom in inventory:
+			if initial&IS2SilverBow == 0 && updated&IS2SilverBow != 0 {
+				// set silver bow in inventory:
 				a.Comment("set Silver Bow in inventory:")
 				a.LDA_long(0x7EF340)
 				a.BNE(0xe)
@@ -458,6 +471,18 @@ func (g *Game) initSync() {
 				a.LDA_long(0x7EF377) // load arrows
 				a.CMP_imm8_b(0x01)   // are arrows present?
 				a.LDA_imm8_b(3)      // bow level; 1 = wood, 3 = silver
+				a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
+
+				a.STA_long(0x7EF340)
+			} else if initial&IS2WoodBow == 0 && updated&IS2WoodBow != 0 {
+				// set bow in inventory:
+				a.Comment("set Bow in inventory:")
+				a.LDA_long(0x7EF340)
+				a.BNE(0xe)
+
+				a.LDA_long(0x7EF377) // load arrows
+				a.CMP_imm8_b(0x01)   // are arrows present?
+				a.LDA_imm8_b(1)      // bow level; 1 = wood, 3 = silver
 				a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
 
 				a.STA_long(0x7EF340)

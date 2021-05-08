@@ -41,6 +41,15 @@ type test struct {
 	verify           func(t *testing.T, g *Game, system *emulator.System, tt *test)
 }
 
+type testingLogger struct {
+	t *testing.T
+}
+
+func (l *testingLogger) WriteString(s string) (n int, err error) {
+	l.t.Log(s)
+	return len(s), nil
+}
+
 func runAsmEmulationTests(t *testing.T, tests []test) {
 	for i := range tests {
 		tt := &tests[i]
@@ -77,7 +86,12 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 			}))
 
 			// create the CPU-only SNES emulator:
-			system := emulator.System{}
+			system := emulator.System{
+				Logger: &testingLogger{t},
+				ShouldLogCPU: func(s *emulator.System) bool {
+					return true
+				},
+			}
 			if err := system.CreateEmulator(); err != nil {
 				t.Fatal(err)
 			}
@@ -130,16 +144,7 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 			// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
 			// see the emulator.MakeTestROM() function for details
 			system.CPU.Reset()
-			for cycles := 0; cycles < 0x1000; {
-				t.Logf("%s", system.CPU.DisassembleCurrentPC())
-				nCycles, _ := system.CPU.Step()
-				cycles += nCycles
-				if system.CPU.PC == 0x8006 {
-					break
-				}
-			}
-
-			if system.CPU.PC != 0x8006 {
+			if !system.RunUntil(0x00_8006, 0x1_000) {
 				t.Errorf("CPU ran too long and did not reach PC=0x008006; actual=%#06x", system.CPU.PC)
 				return
 			}
