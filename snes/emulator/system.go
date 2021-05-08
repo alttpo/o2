@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"bytes"
+	"io"
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/emulator/bus"
@@ -18,6 +19,9 @@ type System struct {
 	ROM  [0x1000000]byte
 	WRAM [0x20000]byte
 	SRAM [0x10000]byte
+
+	Logger       io.StringWriter
+	ShouldLogCPU func(s *System) bool
 }
 
 func (s *System) CreateEmulator() (err error) {
@@ -233,4 +237,20 @@ func (s *System) SetPC(pc uint32) {
 
 func (s *System) GetPC() uint32 {
 	return uint32(s.CPU.RK)<<16 | uint32(s.CPU.PC)
+}
+
+func (s *System) RunUntil(targetPC uint32, maxCycles uint64) bool {
+	shouldLog := s.ShouldLogCPU
+	for cycles := uint64(0); cycles < maxCycles; {
+		if shouldLog != nil && shouldLog(s) {
+			_, _ = s.Logger.WriteString(s.CPU.DisassembleCurrentPC())
+		}
+		if s.GetPC() == targetPC {
+			break
+		}
+		nCycles, _ := s.CPU.Step()
+		cycles += uint64(nCycles)
+	}
+
+	return s.GetPC() == targetPC
 }
