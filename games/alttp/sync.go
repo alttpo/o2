@@ -67,7 +67,7 @@ type SyncableItem interface {
 func (g *Game) initSync() {
 	// reset map:
 	g.syncableItems = make(map[uint16]SyncableItem)
-	g.syncableBitU16 = make(map[uint16]*syncableBitU16)
+	g.syncableBitU16 = make(map[uint16]*SyncableBitU16)
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
@@ -84,7 +84,7 @@ func (g *Game) initSync() {
 	// define syncable items:
 	if !g.isVTRandomizer() {
 		// these item slots are disabled for sync under VT randomizers since they can be swapped at will:
-		g.newSyncableCustomU8(0x340, &g.SyncItems, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+		g.NewSyncableCustomU8(0x340, &g.SyncItems, func(s *SyncableCustomU8, asm *asm.Emitter) bool {
 			g := s.g
 			local := g.LocalPlayer()
 			offset := s.offset
@@ -137,7 +137,7 @@ func (g *Game) initSync() {
 			asm.STA_long(0x7EF000 + uint32(offset))
 
 			return true
-		}).isUpdateStillPending = func(s *syncableCustomU8) bool {
+		}).isUpdateStillPending = func(s *SyncableCustomU8) bool {
 			return g.LocalPlayer().SRAM[s.offset] != s.updatingTo && g.LocalPlayer().SRAM[s.offset] != s.updatingTo+1
 		}
 		g.newSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
@@ -161,7 +161,7 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x352, &g.SyncItems, []string{"Magic Cape"}, nil)
 	g.newSyncableMaxU8(0x353, &g.SyncItems, []string{"Magic Scroll", "Magic Mirror"}, nil)
 	g.newSyncableMaxU8(0x354, &g.SyncItems, []string{"Power Gloves", "Titan's Mitts"},
-		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
@@ -171,7 +171,7 @@ func (g *Game) initSync() {
 	// skip 0x358 unused
 
 	swordSync := g.newSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"},
-		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress sword gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxSword])
 			asm.Comment("update sword palette:")
@@ -181,14 +181,14 @@ func (g *Game) initSync() {
 	swordSync.absMax = 4
 
 	g.newSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"},
-		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress shield gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxShield])
 			asm.Comment("update shield palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteShield])
 		})
 	g.newSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"},
-		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
@@ -200,7 +200,7 @@ func (g *Game) initSync() {
 	g.newSyncableBottle(0x35F, &g.SyncItems, bottleItemNames)
 
 	// dungeon items:
-	g.newSyncableBitU8(0x364, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x364, &g.SyncDungeonItems, []string{
 		"",
 		"",
 		"Ganon's Tower Compass",
@@ -210,7 +210,7 @@ func (g *Game) initSync() {
 		"Ice Palace Compass",
 		"Skull Woods Compass"},
 		nil)
-	g.newSyncableBitU8(0x365, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x365, &g.SyncDungeonItems, []string{
 		"Misery Mire Compass",
 		"Dark Palace Compass",
 		"Swamp Palace Compass",
@@ -220,7 +220,7 @@ func (g *Game) initSync() {
 		"Hyrule Castle Compass",
 		"Sewer Passage Compass"},
 		nil)
-	g.newSyncableBitU8(0x366, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x366, &g.SyncDungeonItems, []string{
 		"",
 		"",
 		"Ganon's Tower Big Key",
@@ -230,7 +230,7 @@ func (g *Game) initSync() {
 		"Ice Palace Big Key",
 		"Skull Woods Big Key"},
 		nil)
-	g.newSyncableBitU8(0x367, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x367, &g.SyncDungeonItems, []string{
 		"Misery Mire Big Key",
 		"Dark Palace Big Key",
 		"Swamp Palace Big Key",
@@ -240,7 +240,7 @@ func (g *Game) initSync() {
 		"Hyrule Castle Big Key",
 		"Sewer Passage Big Key"},
 		nil)
-	g.newSyncableBitU8(0x368, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x368, &g.SyncDungeonItems, []string{
 		"",
 		"",
 		"Ganon's Tower Map",
@@ -250,7 +250,7 @@ func (g *Game) initSync() {
 		"Ice Palace Map",
 		"Skull Woods Map"},
 		nil)
-	g.newSyncableBitU8(0x369, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x369, &g.SyncDungeonItems, []string{
 		"Misery Mire Map",
 		"Dark Palace Map",
 		"Swamp Palace Map",
@@ -262,7 +262,7 @@ func (g *Game) initSync() {
 		nil)
 
 	// heart containers:
-	g.newSyncableCustomU8(0x36C, &g.SyncHearts, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *SyncableCustomU8, asm *asm.Emitter) bool {
 		g := s.g
 		local := g.LocalPlayer()
 
@@ -329,7 +329,7 @@ func (g *Game) initSync() {
 	g.newSyncableMaxU8(0x371, &g.SyncItems, nil, nil)
 
 	// pendants:
-	g.newSyncableBitU8(0x374, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x374, &g.SyncDungeonItems, []string{
 		"Red Pendant",
 		"Blue Pendant",
 		"Green Pendant",
@@ -341,7 +341,7 @@ func (g *Game) initSync() {
 		nil)
 
 	// player ability flags:
-	g.newSyncableBitU8(0x379, &g.SyncItems, []string{
+	g.NewSyncableBitU8(0x379, &g.SyncItems, []string{
 		"",
 		"Swim Ability",
 		"Dash Ability",
@@ -353,7 +353,7 @@ func (g *Game) initSync() {
 		nil)
 
 	// crystals:
-	g.newSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
+	g.NewSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
 		"Crystal #6",
 		"Crystal #1",
 		"Crystal #5",
@@ -369,7 +369,7 @@ func (g *Game) initSync() {
 
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
-		invSwap1 := g.newSyncableBitU8(0x38C, &g.SyncItems, []string{
+		invSwap1 := g.NewSyncableBitU8(0x38C, &g.SyncItems, []string{
 			"Flute (active)",
 			"Flute (inactive)",
 			"Shovel",
@@ -378,7 +378,7 @@ func (g *Game) initSync() {
 			"Mushroom",
 			"Red Boomerang",
 			"Blue Boomerang",
-		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+		}, func(s *SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// mushroom/powder:
 			if initial&IS1MagicPowder == 0 && updated&IS1MagicPowder != 0 {
 				// set powder in inventory:
@@ -437,7 +437,7 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF341)
 			}
 		})
-		invSwap1.generateAsm = func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
+		invSwap1.generateAsm = func(s *SyncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
 			// make flute (inactive) and flute (activated) mutually exclusive:
 			asm.LDA_long(longAddr)
@@ -451,7 +451,7 @@ func (g *Game) initSync() {
 			asm.STA_long(longAddr)
 		}
 
-		g.newSyncableBitU8(0x38E, &g.SyncItems, []string{
+		g.NewSyncableBitU8(0x38E, &g.SyncItems, []string{
 			"",
 			"",
 			"",
@@ -460,7 +460,7 @@ func (g *Game) initSync() {
 			"", // 2nd Progressive Bow
 			"Silver Bow",
 			"Bow",
-		}, func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+		}, func(s *SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// bow/silver:
 			if initial&IS2SilverBow == 0 && updated&IS2SilverBow != 0 {
 				// set silver bow in inventory:
@@ -495,7 +495,7 @@ func (g *Game) initSync() {
 		"Hyrule Castle Dungeon started",
 		"Hyrule Castle Dungeon completed",
 		"Search for Crystals started"},
-		func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			if initial < 2 && updated >= 2 {
 				asm.Comment("load sprite gfx:")
 				asm.JSL(g.romFunctions[fnLoadSpriteGfx])
@@ -515,7 +515,7 @@ func (g *Game) initSync() {
 		})
 
 	// progress flags 1/2:
-	g.newSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *SyncableCustomU8, asm *asm.Emitter) bool {
 		offset := s.offset
 		local := s.g.LocalPlayer()
 		initial := local.SRAM[offset]
@@ -588,7 +588,7 @@ func (g *Game) initSync() {
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
-	g.newSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *syncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *SyncableCustomU8, asm *asm.Emitter) bool {
 		offset := s.offset
 		initial := s.g.LocalPlayer().SRAM[offset]
 
@@ -652,9 +652,9 @@ func (g *Game) initSync() {
 		// shield
 		g.newSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
 		// sword and shield:
-		g.newSyncableBitU8(0x422, &g.SyncItems, nil, nil)
+		g.NewSyncableBitU8(0x422, &g.SyncItems, nil, nil)
 		// bow:
-		g.newSyncableBitU8(0x42A, &g.SyncItems, nil, nil)
+		g.NewSyncableBitU8(0x42A, &g.SyncItems, nil, nil)
 	}
 
 	openDoor := func(asm *asm.Emitter, initial, updated uint16) bool {
@@ -722,7 +722,7 @@ func (g *Game) initSync() {
 	}
 
 	// sync wram[$0400] for current dungeon supertile door state:
-	g.syncableBitU16[0x0400] = &syncableBitU16{
+	g.syncableBitU16[0x0400] = &SyncableBitU16{
 		g:         g,
 		offset:    0x0400,
 		isEnabled: &g.SyncUnderworld,
@@ -747,7 +747,7 @@ func (g *Game) initSync() {
 			return true
 		},
 		// open the local door(s):
-		onUpdated: func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16) {
+		onUpdated: func(s *SyncableBitU16, asm *asm.Emitter, initial, updated uint16) {
 			asm.Comment("open door based on wram[$0400] bits")
 			openDoor(asm, initial, updated)
 		},
@@ -755,7 +755,7 @@ func (g *Game) initSync() {
 
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {
-		g.underworld[room] = syncableBitU16{
+		g.underworld[room] = SyncableBitU16{
 			g:               g,
 			offset:          room << 1,
 			isEnabled:       &g.SyncUnderworld,
@@ -764,7 +764,7 @@ func (g *Game) initSync() {
 			playerPredicate: playerPredicateIdentity,
 			readU16:         playerReadSRAM,
 			longAddress:     longAddressSRAM,
-			onUpdated: func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16) {
+			onUpdated: func(s *SyncableBitU16, asm *asm.Emitter, initial, updated uint16) {
 				// local player must only be in dungeon module:
 				if !g.local.IsDungeon() {
 					return
@@ -795,7 +795,7 @@ func (g *Game) initSync() {
 	// u16[$7ef040] |= 0b0000100000000000 Agahnim
 	g.underworld[0x20].names = make([]string, 16)
 	g.underworld[0x20].names[0xb] = "Agahnim defeated"
-	g.underworld[0x20].onUpdated = func(s *syncableBitU16, a *asm.Emitter, initial, updated uint16) {
+	g.underworld[0x20].onUpdated = func(s *SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
 		// asm runs in 16-bit mode (REP #$30) by default for underworld sync.
 		if initial&0b0000100000000000 != 0 || updated&0b0000100000000000 == 0 {
 			return
@@ -909,7 +909,7 @@ func (g *Game) initSync() {
 
 	// overworld areas:
 	for offs := uint16(0x280); offs < 0x340; offs++ {
-		g.overworld[offs-0x280] = syncableBitU8{
+		g.overworld[offs-0x280] = SyncableBitU8{
 			g:         g,
 			offset:    offs,
 			isEnabled: &g.SyncUnderworld,
@@ -920,7 +920,7 @@ func (g *Game) initSync() {
 	}
 
 	// Pyramid bat crash: ([$7EF2DB] | 0x20)
-	g.overworld[0x5B].onUpdated = func(s *syncableBitU8, a *asm.Emitter, initial, updated uint8) {
+	g.overworld[0x5B].onUpdated = func(s *SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
 		if initial&0x20 == 0 && updated&0x20 == 0x20 {
 			if g.local.OverworldArea == 0x5B {
 				notification := "create pyramid hole:"

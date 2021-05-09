@@ -45,7 +45,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 		wantNotification string
 	}{
 		{
-			name: "syncableBitU8 syncs from zero to most bits",
+			name: "SyncableBitU8 syncs from zero to most bits",
 			fields: fields{
 				offset:    0x379,
 				isEnabled: new(bool),
@@ -59,7 +59,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			wantNotification: "got 1 from p1, 2 from p1, 5 from p1, 6 from p1",
 		},
 		{
-			name: "syncableBitU8 syncs from non-zero to most bits",
+			name: "SyncableBitU8 syncs from non-zero to most bits",
 			fields: fields{
 				offset:    0x379,
 				isEnabled: new(bool),
@@ -73,7 +73,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			wantNotification: "got 1 from p1, 6 from p1",
 		},
 		{
-			name: "syncableBitU8 ignores empty names",
+			name: "SyncableBitU8 ignores empty names",
 			fields: fields{
 				offset:    0x379,
 				isEnabled: new(bool),
@@ -117,7 +117,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			}
 			g.players[0].SRAM[tt.fields.offset] = tt.fields.p0sram
 			g.players[1].SRAM[tt.fields.offset] = tt.fields.p1sram
-			s := &syncableBitU8{
+			s := &SyncableBitU8{
 				g:         g,
 				isEnabled: new(bool),
 				offset:    tt.fields.offset,

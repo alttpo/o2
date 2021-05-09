@@ -11,12 +11,12 @@ type (
 	playerReadU16   func(p *Player, offs uint16) uint16
 	longAddress     func(offs uint16) uint32
 
-	syncableCustomU8Update   func(s *syncableCustomU8, asm *asm.Emitter) bool
-	isUpdateStillPending     func(s *syncableCustomU8) bool
-	syncableBitU8GenerateAsm func(s *syncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8)
-	syncableBitU8OnUpdated   func(s *syncableBitU8, asm *asm.Emitter, initial, updated uint8)
-	syncableBitU16OnUpdated  func(s *syncableBitU16, asm *asm.Emitter, initial, updated uint16)
-	syncableMaxU8OnUpdated   func(s *syncableMaxU8, asm *asm.Emitter, initial, updated uint8)
+	SyncableCustomU8Update   func(s *SyncableCustomU8, asm *asm.Emitter) bool
+	IsUpdateStillPending     func(s *SyncableCustomU8) bool
+	SyncableBitU8GenerateAsm func(s *SyncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8)
+	SyncableBitU8OnUpdated   func(s *SyncableBitU8, asm *asm.Emitter, initial, updated uint8)
+	SyncableBitU16OnUpdated  func(s *SyncableBitU16, asm *asm.Emitter, initial, updated uint16)
+	SyncableMaxU8OnUpdated   func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 )
 
 type GameSyncable interface {
@@ -30,22 +30,22 @@ func playerReadSRAM(p *Player, offs uint16) uint16 { return p.sramU16(offs) }
 func longAddressSRAM(offs uint16) uint32           { return 0x7EF000 + uint32(offs) }
 func longAddressWRAM(offs uint16) uint32           { return 0x7E0000 + uint32(offs) }
 
-type syncableCustomU8 struct {
+type SyncableCustomU8 struct {
 	g GameSyncable
 
 	offset    uint16
 	isEnabled *bool
 
-	generateUpdate syncableCustomU8Update
+	generateUpdate SyncableCustomU8Update
 
 	pendingUpdate        bool
 	updatingTo           uint8
-	isUpdateStillPending isUpdateStillPending
+	isUpdateStillPending IsUpdateStillPending
 	notification         string
 }
 
-func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, generateUpdate syncableCustomU8Update) *syncableCustomU8 {
-	s := &syncableCustomU8{
+func (g *Game) NewSyncableCustomU8(offset uint16, enabled *bool, generateUpdate SyncableCustomU8Update) *SyncableCustomU8 {
+	s := &SyncableCustomU8{
 		g:              g,
 		offset:         offset,
 		isEnabled:      enabled,
@@ -55,12 +55,12 @@ func (g *Game) newSyncableCustomU8(offset uint16, enabled *bool, generateUpdate 
 	return s
 }
 
-func (s *syncableCustomU8) Offset() uint16                       { return s.offset }
-func (s *syncableCustomU8) Size() uint                           { return 1 }
-func (s *syncableCustomU8) IsEnabled() bool                      { return *s.isEnabled }
-func (s *syncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool { return s.generateUpdate(s, asm) }
+func (s *SyncableCustomU8) Offset() uint16                       { return s.offset }
+func (s *SyncableCustomU8) Size() uint                           { return 1 }
+func (s *SyncableCustomU8) IsEnabled() bool                      { return *s.isEnabled }
+func (s *SyncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool { return s.generateUpdate(s, asm) }
 
-func (s *syncableCustomU8) CanUpdate() bool {
+func (s *SyncableCustomU8) CanUpdate() bool {
 	if !s.pendingUpdate {
 		return true
 	}
@@ -86,7 +86,7 @@ func (s *syncableCustomU8) CanUpdate() bool {
 	return true
 }
 
-type syncableBitU8 struct {
+type SyncableBitU8 struct {
 	g GameSyncable
 
 	offset    uint16
@@ -94,16 +94,16 @@ type syncableBitU8 struct {
 	names     []string
 	mask      uint8
 
-	generateAsm syncableBitU8GenerateAsm
-	onUpdated   syncableBitU8OnUpdated
+	generateAsm SyncableBitU8GenerateAsm
+	onUpdated   SyncableBitU8OnUpdated
 
 	pendingUpdate bool
 	updatingTo    uint8
 	notification  string
 }
 
-func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated syncableBitU8OnUpdated) *syncableBitU8 {
-	s := &syncableBitU8{
+func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
+	s := &SyncableBitU8{
 		g:         g,
 		offset:    offset,
 		isEnabled: enabled,
@@ -115,11 +115,11 @@ func (g *Game) newSyncableBitU8(offset uint16, enabled *bool, names []string, on
 	return s
 }
 
-func (s *syncableBitU8) Offset() uint16  { return s.offset }
-func (s *syncableBitU8) Size() uint      { return 1 }
-func (s *syncableBitU8) IsEnabled() bool { return *s.isEnabled }
+func (s *SyncableBitU8) Offset() uint16  { return s.offset }
+func (s *SyncableBitU8) Size() uint      { return 1 }
+func (s *SyncableBitU8) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableBitU8) CanUpdate() bool {
+func (s *SyncableBitU8) CanUpdate() bool {
 	if !s.pendingUpdate {
 		return true
 	}
@@ -141,7 +141,7 @@ func (s *syncableBitU8) CanUpdate() bool {
 	return true
 }
 
-func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.LocalPlayer()
 	offs := s.offset
@@ -216,7 +216,7 @@ func (s *syncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	return true
 }
 
-type syncableBitU16 struct {
+type SyncableBitU16 struct {
 	g GameSyncable
 
 	offset    uint16
@@ -227,15 +227,15 @@ type syncableBitU16 struct {
 	readU16         playerReadU16
 	longAddress     longAddress
 	playerPredicate playerPredicate
-	onUpdated       syncableBitU16OnUpdated
+	onUpdated       SyncableBitU16OnUpdated
 
 	pendingUpdate bool
 	updatingTo    uint16
 	notification  string
 }
 
-func (g *Game) newSyncableBitU16(offset uint16, enabled *bool, names []string, onUpdated syncableBitU16OnUpdated) *syncableBitU16 {
-	s := &syncableBitU16{
+func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names []string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
+	s := &SyncableBitU16{
 		g:               g,
 		offset:          offset,
 		isEnabled:       enabled,
@@ -250,11 +250,11 @@ func (g *Game) newSyncableBitU16(offset uint16, enabled *bool, names []string, o
 	return s
 }
 
-func (s *syncableBitU16) Offset() uint16  { return s.offset }
-func (s *syncableBitU16) Size() uint      { return 2 }
-func (s *syncableBitU16) IsEnabled() bool { return *s.isEnabled }
+func (s *SyncableBitU16) Offset() uint16  { return s.offset }
+func (s *SyncableBitU16) Size() uint      { return 2 }
+func (s *SyncableBitU16) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableBitU16) CanUpdate() bool {
+func (s *SyncableBitU16) CanUpdate() bool {
 	if !s.pendingUpdate {
 		return true
 	}
@@ -276,7 +276,7 @@ func (s *syncableBitU16) CanUpdate() bool {
 	return true
 }
 
-func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.LocalPlayer()
 
@@ -363,7 +363,7 @@ func (s *syncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	return true
 }
 
-type syncableMaxU8 struct {
+type SyncableMaxU8 struct {
 	g GameSyncable
 
 	offset    uint16
@@ -372,15 +372,15 @@ type syncableMaxU8 struct {
 
 	absMax uint8
 
-	onUpdated syncableMaxU8OnUpdated
+	onUpdated SyncableMaxU8OnUpdated
 
 	pendingUpdate bool
 	updatingTo    uint8
 	notification  string
 }
 
-func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string, onUpdated syncableMaxU8OnUpdated) *syncableMaxU8 {
-	s := &syncableMaxU8{
+func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string, onUpdated SyncableMaxU8OnUpdated) *SyncableMaxU8 {
+	s := &SyncableMaxU8{
 		g:         g,
 		offset:    offset,
 		isEnabled: enabled,
@@ -392,11 +392,11 @@ func (g *Game) newSyncableMaxU8(offset uint16, enabled *bool, names []string, on
 	return s
 }
 
-func (s *syncableMaxU8) Offset() uint16  { return s.offset }
-func (s *syncableMaxU8) Size() uint      { return 1 }
-func (s *syncableMaxU8) IsEnabled() bool { return *s.isEnabled }
+func (s *SyncableMaxU8) Offset() uint16  { return s.offset }
+func (s *SyncableMaxU8) Size() uint      { return 1 }
+func (s *SyncableMaxU8) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableMaxU8) CanUpdate() bool {
+func (s *SyncableMaxU8) CanUpdate() bool {
 	if !s.pendingUpdate {
 		return true
 	}
@@ -418,7 +418,7 @@ func (s *syncableMaxU8) CanUpdate() bool {
 	return true
 }
 
-func (s *syncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.g
 	local := g.LocalPlayer()
 	offset := s.offset

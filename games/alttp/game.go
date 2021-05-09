@@ -72,9 +72,9 @@ type Game struct {
 	invalid bool
 
 	syncableItems  map[uint16]SyncableItem
-	underworld     [0x128]syncableBitU16
-	overworld      [0xC0]syncableBitU8
-	syncableBitU16 map[uint16]*syncableBitU16
+	underworld     [0x128]SyncableBitU16
+	overworld      [0xC0]SyncableBitU8
+	syncableBitU16 map[uint16]*SyncableBitU16
 
 	romFunctions map[romFunction]uint32
 
