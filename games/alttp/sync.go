@@ -310,7 +310,19 @@ func (g *Game) initSync() {
 		asm.STA_long(localSRAM.BusAddress(0x36B))
 
 		return true
-	})
+	}).IsUpdateStillPending = func(s *games.SyncableCustomU8) bool {
+		if !s.PendingUpdate {
+			return false
+		}
+
+		localSRAM := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM)
+		current := (localSRAM.ReadU8(0x36C) & ^uint8(7)) | (localSRAM.ReadU8(0x36B) & 3)
+		if current != s.UpdatingTo {
+			return true
+		}
+
+		return false
+	}
 
 	// bombs capacity:
 	g.NewSyncableMaxU8(0x370, &g.SyncItems, nil, nil)
