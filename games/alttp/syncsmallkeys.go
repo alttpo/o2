@@ -100,7 +100,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 		// find latest timestamp among players:
 		winner := local
-		for _, p := range g.ActivePlayers() {
+		for _, p := range g.RemotePlayers() {
 			rw, ok := p.WRAM[offs]
 			if !ok {
 				continue

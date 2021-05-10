@@ -106,7 +106,8 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	local := g.LocalSyncablePlayer()
 	offset := s.offset
 
-	initial := local.ReadableMemory(games.SRAM).ReadU8(offset)
+	localSRAM := local.ReadableMemory(games.SRAM)
+	initial := localSRAM.ReadU8(offset)
 	if initial >= 2 {
 		// don't change existing bottle contents:
 		return false
@@ -151,7 +152,7 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	asm.LDA_imm8_b(maxV)
-	asm.STA_long(local.ReadableMemory(games.SRAM).BusAddress(offset))
+	asm.STA_long(localSRAM.BusAddress(offset))
 
 	return true
 }

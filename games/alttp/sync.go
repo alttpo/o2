@@ -72,7 +72,7 @@ func (g *Game) initSync() {
 	if !g.isVTRandomizer() {
 		// these item slots are disabled for sync under VT randomizers since they can be swapped at will:
 		g.NewSyncableCustomU8(0x340, &g.SyncItems, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
-			local := g.LocalPlayer()
+			local := g.LocalSyncablePlayer()
 			offset := s.Offset
 
 			initial := local.ReadableMemory(games.SRAM).ReadU8(offset)
@@ -85,8 +85,8 @@ func (g *Game) initSync() {
 
 			maxP := local
 			maxV := initial
-			for _, p := range g.ActivePlayers() {
-				v := p.SRAM[offset]
+			for _, p := range g.RemoteSyncablePlayers() {
+				v := p.ReadableMemory(games.SRAM).ReadU8(offset)
 				// treat w/ and w/o arrows as the same:
 				if v == 2 {
 					v = 1
@@ -522,7 +522,7 @@ func (g *Game) initSync() {
 		}
 
 		newBits := initial
-		for _, p := range g.ActivePlayers() {
+		for _, p := range g.RemoteSyncablePlayers() {
 			v := p.ReadableMemory(games.SRAM).ReadU8(offset)
 			// if local player has not achieved uncle leaving house, leave it cleared otherwise link never wakes up:
 			if initial&0x10 == 0 {
@@ -583,7 +583,7 @@ func (g *Game) initSync() {
 		initial := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU8(offset)
 
 		newBits := initial
-		for _, p := range g.ActivePlayers() {
+		for _, p := range g.RemoteSyncablePlayers() {
 			v := p.ReadableMemory(games.SRAM).ReadU8(offset)
 			newBits |= v
 		}

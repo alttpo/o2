@@ -32,7 +32,8 @@ type (
 	SyncableBitU16GenerateAsm func(s *SyncableBitU16, asm *asm.Emitter, initial, updated, newBits uint16)
 	SyncableBitU16OnUpdated   func(s *SyncableBitU16, asm *asm.Emitter, initial, updated uint16)
 
-	SyncableMaxU8OnUpdated func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
+	SyncableMaxU8OnUpdated   func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
+	SyncableMaxU8GenerateAsm func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
 	SyncableCustomU8Update func(s *SyncableCustomU8, asm *asm.Emitter) bool
 	IsUpdateStillPending   func(s *SyncableCustomU8) bool
@@ -336,13 +337,17 @@ func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 type SyncableMaxU8 struct {
 	SyncableGame
 
-	Offset     uint32
-	isEnabled  *bool
+	Offset uint32
+	MemoryKind
+	IsEnabledPtr *bool
+	AbsMax       uint8
+
 	ValueNames []string
 
-	AbsMax uint8
+	PlayerPredicate
 
-	OnUpdated SyncableMaxU8OnUpdated
+	GenerateAsm SyncableMaxU8GenerateAsm
+	OnUpdated   SyncableMaxU8OnUpdated
 
 	PendingUpdate bool
 	UpdatingTo    uint8
@@ -353,7 +358,8 @@ func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 	s := &SyncableMaxU8{
 		SyncableGame: g,
 		Offset:       offset,
-		isEnabled:    enabled,
+		MemoryKind:   SRAM,
+		IsEnabledPtr: enabled,
 		ValueNames:   names,
 		AbsMax:       255,
 		OnUpdated:    onUpdated,
@@ -362,7 +368,7 @@ func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 }
 
 func (s *SyncableMaxU8) Size() uint      { return 1 }
-func (s *SyncableMaxU8) IsEnabled() bool { return *s.isEnabled }
+func (s *SyncableMaxU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *SyncableMaxU8) CanUpdate() bool {
 	if !s.PendingUpdate {
@@ -371,7 +377,7 @@ func (s *SyncableMaxU8) CanUpdate() bool {
 
 	// wait until we see the desired update:
 	g := s.SyncableGame
-	if g.LocalSyncablePlayer().ReadableMemory(SRAM).ReadU8(s.Offset) != s.UpdatingTo {
+	if g.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).ReadU8(s.Offset) != s.UpdatingTo {
 		return false
 	}
 
@@ -389,13 +395,22 @@ func (s *SyncableMaxU8) CanUpdate() bool {
 func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
+	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
+		return false
+	}
+
 	offset := s.Offset
 
 	maxP := local
-	maxV := local.ReadableMemory(SRAM).ReadU8(offset)
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	maxV := localMemory.ReadU8(offset)
 	initial := maxV
 	for _, p := range g.RemoteSyncablePlayers() {
-		v := p.ReadableMemory(SRAM).ReadU8(offset)
+		if s.PlayerPredicate != nil && !s.PlayerPredicate(p) {
+			continue
+		}
+
+		v := p.ReadableMemory(s.MemoryKind).ReadU8(offset)
 		// discard value if too high:
 		if v > s.AbsMax {
 			continue
@@ -429,8 +444,12 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 		asm.Comment(fmt.Sprintf("sram[$%04x] = $%02x", offset, maxV))
 	}
 
-	asm.LDA_imm8_b(maxV)
-	asm.STA_long(0x7EF000 + uint32(offset))
+	if s.GenerateAsm != nil {
+		s.GenerateAsm(s, asm, initial, maxV)
+	} else {
+		asm.LDA_imm8_b(maxV)
+		asm.STA_long(localMemory.BusAddress(offset))
+	}
 
 	if s.OnUpdated != nil {
 		s.OnUpdated(s, asm, initial, maxV)
@@ -442,8 +461,9 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 type SyncableCustomU8 struct {
 	SyncableGame
 
-	Offset    uint32
-	isEnabled *bool
+	Offset uint32
+	MemoryKind
+	IsEnabledPtr *bool
 
 	CustomGenerateUpdate SyncableCustomU8Update
 
@@ -457,14 +477,15 @@ func NewSyncableCustomU8(g SyncableGame, offset uint32, enabled *bool, generateU
 	s := &SyncableCustomU8{
 		SyncableGame:         g,
 		Offset:               offset,
-		isEnabled:            enabled,
+		MemoryKind:           SRAM,
+		IsEnabledPtr:         enabled,
 		CustomGenerateUpdate: generateUpdate,
 	}
 	return s
 }
 
 func (s *SyncableCustomU8) Size() uint      { return 1 }
-func (s *SyncableCustomU8) IsEnabled() bool { return *s.isEnabled }
+func (s *SyncableCustomU8) IsEnabled() bool { return *s.IsEnabledPtr }
 func (s *SyncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool {
 	return s.CustomGenerateUpdate(s, asm)
 }
@@ -480,7 +501,7 @@ func (s *SyncableCustomU8) CanUpdate() bool {
 		if s.IsUpdateStillPending(s) {
 			return false
 		}
-	} else if g.LocalSyncablePlayer().ReadableMemory(SRAM).ReadU8(s.Offset) != s.UpdatingTo {
+	} else if g.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).ReadU8(s.Offset) != s.UpdatingTo {
 		return false
 	}
 
