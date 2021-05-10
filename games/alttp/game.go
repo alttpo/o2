@@ -166,8 +166,17 @@ func (g *Game) ConfigurationModel() interface{} {
 	return g
 }
 
-func (g *Game) ProvideQueue(queue snes.Queue)       { g.queue = queue }
-func (g *Game) ProvideClient(client *client.Client) { g.client = client }
+func (g *Game) ProvideQueue(queue snes.Queue) {
+	g.queue = queue
+
+	// must reset any state waiting on connected device:
+	g.updateStage = 0
+	g.colorPendingUpdate = 0
+	g.lastUpdateTarget = 0xFFFFFF
+}
+func (g *Game) ProvideClient(client *client.Client) {
+	g.client = client
+}
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
 	g.viewModels = container
 }
