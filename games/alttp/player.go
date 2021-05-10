@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"o2/games"
 )
 
 type Module uint8
@@ -26,14 +27,43 @@ type SyncableWRAM struct {
 	ValueExpected uint16
 }
 
+type SRAMShadow [0x500]byte
 
+func (r SRAMShadow) BusAddress(offs uint32) uint32 {
+	return 0x7EF000 + offs
+}
+
+func (r SRAMShadow) ReadU8(offs uint32) uint8 {
+	return r[offs]
+}
+
+func (r SRAMShadow) ReadU16(offs uint32) uint16 {
+	if offs >= 0x500 {
+		return 0xFFFF
+	}
+	return binary.LittleEndian.Uint16(r[offs : offs+2])
+}
+
+type WRAMReadable map[uint16]*SyncableWRAM
+
+func (r WRAMReadable) BusAddress(offs uint32) uint32 {
+	return 0x7E0000 + offs
+}
+
+func (r WRAMReadable) ReadU8(offs uint32) uint8 {
+	return uint8(r[uint16(offs)].ValueUsed)
+}
+
+func (r WRAMReadable) ReadU16(offs uint32) uint16 {
+	return r[uint16(offs)].ValueUsed
+}
 
 type Player struct {
-	Index int
-	TTL   int
+	IndexF int
+	Ttl    int
 
-	Team uint8
-	Name string
+	Team  uint8
+	NameF string
 
 	Frame uint8
 
@@ -60,31 +90,53 @@ type Player struct {
 
 	PlayerColor uint16
 
-	SRAM [0x500]byte
+	SRAM SRAMShadow
+	WRAM WRAMReadable
 
-	WRAM            map[uint16]*SyncableWRAM
 	showJoinMessage bool
+}
+
+func (p *Player) Index() int {
+	return p.IndexF
+}
+
+func (p *Player) Name() string {
+	return p.NameF
+}
+
+func (p *Player) TTL() int {
+	return p.Ttl
+}
+
+func (p *Player) ReadableMemory(kind games.MemoryKind) games.ReadableMemory {
+	switch kind {
+	case games.SRAM:
+		return &p.SRAM
+	case games.WRAM:
+		return &p.WRAM
+	}
+	panic(fmt.Errorf("ReadableMemory kind %v not supported", kind))
 }
 
 func (g *Game) SetTTL(p *Player, ttl int) {
 	joined := false
-	if p.TTL <= 0 && ttl > 0 {
+	if p.Ttl <= 0 && ttl > 0 {
 		joined = true
 	}
 
-	p.TTL = ttl
+	p.Ttl = ttl
 	if joined {
 		g.PlayerJoined(p)
 	}
 }
 
 func (g *Game) DecTTL(p *Player, amount int) {
-	if p.TTL <= 0 {
+	if p.Ttl <= 0 {
 		return
 	}
 
-	p.TTL -= amount
-	if p.TTL <= 0 {
+	p.Ttl -= amount
+	if p.Ttl <= 0 {
 		g.PlayerLeft(p)
 	}
 }
@@ -98,24 +150,17 @@ func (g *Game) PlayerJoined(p *Player) {
 
 func (g *Game) PlayerLeft(p *Player) {
 	// Player left the game:
-	p.TTL = 0
+	p.Ttl = 0
 	p.showJoinMessage = false
 
-	log.Printf("alttp: player[%02x]: %s left\n", uint8(p.Index), p.Name)
-	g.PushNotification(fmt.Sprintf("%s left", p.Name))
+	log.Printf("alttp: player[%02x]: %s left\n", uint8(p.IndexF), p.NameF)
+	g.PushNotification(fmt.Sprintf("%s left", p.NameF))
 
 	// refresh the ActivePlayers():
 	g.activePlayersClean = false
 
 	// refresh the players list
 	g.shouldUpdatePlayersList = true
-}
-
-func (p *Player) sramU16(offset uint16) uint16 {
-	if offset >= 0x500 {
-		return 0xFFFF
-	}
-	return binary.LittleEndian.Uint16(p.SRAM[offset : offset+2])
 }
 
 func (p *Player) IsInDungeon() bool {

@@ -461,9 +461,9 @@ func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	if _, err = r.Read(name[:]); err != nil {
 		panic(fmt.Errorf("error deserializing name: %w", err))
 	}
-	lastName := p.Name
-	p.Name = strings.Trim(string(name[:]), " \t\n\r\000")
-	if lastName != p.Name {
+	lastName := p.NameF
+	p.NameF = strings.Trim(string(name[:]), " \t\n\r\000")
+	if lastName != p.NameF {
 		p.showJoinMessage = true
 		// refresh the players list
 		g.shouldUpdatePlayersList = true

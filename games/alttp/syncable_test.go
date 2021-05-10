@@ -3,28 +3,29 @@ package alttp
 import (
 	"bytes"
 	"log"
+	"o2/games"
 	"o2/snes/asm"
 	"strings"
 	"testing"
 )
 
-type testGameSyncable struct {
+type testSyncableGame struct {
 	players [2]Player
 }
 
-func (t *testGameSyncable) LocalPlayer() *Player {
+func (t *testSyncableGame) LocalSyncablePlayer() games.SyncablePlayer {
 	return &t.players[0]
 }
 
-func (t *testGameSyncable) ActivePlayers() []*Player {
-	activePlayers := make([]*Player, 0, len(t.players))
+func (t *testSyncableGame) RemoteSyncablePlayers() []games.SyncablePlayer {
+	activePlayers := make([]games.SyncablePlayer, 0, len(t.players))
 	for i := range t.players {
 		activePlayers = append(activePlayers, &t.players[i])
 	}
 	return activePlayers
 }
 
-func (t *testGameSyncable) PushNotification(notification string) {
+func (t *testSyncableGame) PushNotification(notification string) {
 	log.Printf("notification: '%s'\n", notification)
 }
 
@@ -90,12 +91,12 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// arrange:
-			g := &testGameSyncable{players: [2]Player{}}
+			g := &testSyncableGame{players: [2]Player{}}
 			g.players[0] = Player{
-				Index:        0,
-				TTL:          255,
+				IndexF:       0,
+				Ttl:          255,
 				Team:         0,
-				Name:         "p0",
+				NameF:        "p0",
 				Module:       7,
 				PriorModule:  9,
 				SubModule:    0,
@@ -104,10 +105,10 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 				WRAM:         make(map[uint16]*SyncableWRAM),
 			}
 			g.players[1] = Player{
-				Index:        1,
-				TTL:          255,
+				IndexF:       1,
+				Ttl:          255,
 				Team:         0,
-				Name:         "p1",
+				NameF:        "p1",
 				Module:       7,
 				PriorModule:  9,
 				SubModule:    0,
@@ -117,14 +118,14 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			}
 			g.players[0].SRAM[tt.fields.offset] = tt.fields.p0sram
 			g.players[1].SRAM[tt.fields.offset] = tt.fields.p1sram
-			s := &SyncableBitU8{
-				g:         g,
-				isEnabled: new(bool),
-				offset:    tt.fields.offset,
-				names:     tt.fields.names,
-				mask:      tt.fields.mask,
+			s := &games.SyncableBitU8{
+				SyncableGame: g,
+				IsEnabledPtr: new(bool),
+				Offset:       uint32(tt.fields.offset),
+				BitNames:     tt.fields.names,
+				SyncMask:     tt.fields.mask,
 			}
-			*s.isEnabled = true
+			*s.IsEnabledPtr = true
 
 			a := &asm.Emitter{
 				Code: &bytes.Buffer{},
@@ -142,7 +143,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			if actual, expected := a.Code.Bytes(), tt.wantAsm; !bytes.Equal(expected, actual) {
 				t.Errorf("asm.Code.Bytes() = %#v, want %#v\n%s\n", actual, expected, a.Text.String())
 			}
-			if actual, expected := s.notification, tt.wantNotification; actual != expected {
+			if actual, expected := s.Notification, tt.wantNotification; actual != expected {
 				t.Errorf("notification = '%s', want '%s'", actual, expected)
 			}
 		})

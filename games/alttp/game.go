@@ -71,10 +71,10 @@ type Game struct {
 
 	invalid bool
 
-	syncableItems  map[uint16]SyncableItem
-	underworld     [0x128]SyncableBitU16
-	overworld      [0xC0]SyncableBitU8
-	syncableBitU16 map[uint16]*SyncableBitU16
+	syncableItems  map[uint16]games.SyncStrategy
+	underworld     [0x128]games.SyncableBitU16
+	overworld      [0xC0]games.SyncableBitU8
+	syncableBitU16 map[uint16]*games.SyncableBitU16
 
 	romFunctions map[romFunction]uint32
 
@@ -184,7 +184,7 @@ func (g *Game) Notify(key string, value interface{}) {
 		g.updatePlayersList()
 		break
 	case "playerName":
-		g.local.Name = value.(string)
+		g.local.NameF = value.(string)
 		g.updatePlayersList()
 		break
 	}
@@ -202,11 +202,11 @@ func (g *Game) Reset() {
 
 	// clear out players array:
 	for i := range g.players {
-		g.players[i] = Player{Index: -1, PlayerColor: 0x12ef}
+		g.players[i] = Player{IndexF: -1, PlayerColor: 0x12ef}
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
-	g.local = &Player{Index: -1, PlayerColor: 0x12ef}
+	g.local = &Player{IndexF: -1, PlayerColor: 0x12ef}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
 
@@ -215,7 +215,7 @@ func (g *Game) Reset() {
 		serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
 		if ok && serverViewModelIntf != nil {
 			serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
-			local.Name = serverViewModel.PlayerName
+			local.NameF = serverViewModel.PlayerName
 			local.Team = serverViewModel.Team
 		}
 	}
@@ -266,10 +266,10 @@ func (g *Game) ActivePlayers() []*Player {
 		g.activePlayers = make([]*Player, 0, len(g.activePlayers))
 
 		for i, p := range g.players {
-			if p.Index < 0 {
+			if p.Index() < 0 {
 				continue
 			}
-			if p.TTL <= 0 {
+			if p.TTL() <= 0 {
 				continue
 			}
 
@@ -280,4 +280,32 @@ func (g *Game) ActivePlayers() []*Player {
 	}
 
 	return g.activePlayers
+}
+
+func (g *Game) RemotePlayers() []*Player {
+	activePlayers := g.ActivePlayers()
+	remotePlayers := make([]*Player, 0, len(activePlayers))
+	for _, p := range activePlayers {
+		if p == g.LocalPlayer() {
+			continue
+		}
+		remotePlayers = append(remotePlayers, p)
+	}
+	return remotePlayers
+}
+
+func (g *Game) LocalSyncablePlayer() games.SyncablePlayer {
+	return g.local
+}
+
+func (g *Game) RemoteSyncablePlayers() []games.SyncablePlayer {
+	activePlayers := g.ActivePlayers()
+	remotePlayers := make([]games.SyncablePlayer, 0, len(activePlayers))
+	for _, p := range activePlayers {
+		if p == g.LocalPlayer() {
+			continue
+		}
+		remotePlayers = append(remotePlayers, p)
+	}
+	return remotePlayers
 }

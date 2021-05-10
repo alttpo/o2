@@ -154,9 +154,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
 
 	// generate update ASM code for any 8-bit values:
-	for _, item := range g.syncableItems {
+	for offs, item := range g.syncableItems {
 		if item.Size() != 1 {
-			a.Comment(fmt.Sprintf("TODO: ignoring non-1 size syncableItem[%#04x]", item.Offset()))
+			a.Comment(fmt.Sprintf("TODO: ignoring non-1 size syncableItem[%#04x]", offs))
 			continue
 		}
 		if !item.IsEnabled() {

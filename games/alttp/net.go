@@ -30,14 +30,14 @@ func (g *Game) makeGamePacket(kind protocol02.Kind) (m *bytes.Buffer) {
 	m = protocol02.MakePacket(
 		c.Group(),
 		kind,
-		uint16(g.local.Index),
+		uint16(g.LocalPlayer().IndexF),
 	)
 
 	// script protocol:
 	m.WriteByte(SerializationVersion)
 
 	// protocol starts with team number:
-	m.WriteByte(g.local.Team)
+	m.WriteByte(g.LocalPlayer().Team)
 	// frame number to correlate separate packets together:
 	m.WriteByte(g.lastGameFrame)
 
@@ -81,26 +81,26 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			return
 		}
 
-		// reset player TTL:
+		// reset player Ttl:
 		p := &g.players[index]
-		p.Index = index
+		p.IndexF = index
 
 		// handle which kind of message it is:
 		switch header.Kind & 0x7F {
 		case protocol02.RequestIndex:
 			// track local player index:
-			if (g.local.Index < 0) || (g.local.Index != index) {
+			if (g.local.Index() < 0) || (g.local.Index() != index) {
 				if p != g.local {
 					// copy local player data into players array at the appropriate index:
 					g.players[index] = *g.local
 					// clear out old Player:
-					g.local.Index = -1
-					g.local.TTL = 0
+					g.local.IndexF = -1
+					g.local.Ttl = 0
 				}
 				// repoint local into the array:
 				g.local = p
 				g.activePlayersClean = false
-				p.Index = index
+				p.IndexF = index
 			}
 			break
 
@@ -122,9 +122,9 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		g.SetTTL(p, 255)
 
 		// wait until we see a name packet to announce:
-		if p.showJoinMessage && p.Name != "" {
-			log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index), p.Name)
-			g.PushNotification(fmt.Sprintf("%s joined", p.Name))
+		if p.showJoinMessage && p.Name() != "" {
+			log.Printf("alttp: player[%02x]: %s joined\n", uint8(p.Index()), p.Name())
+			g.PushNotification(fmt.Sprintf("%s joined", p.Name()))
 			p.showJoinMessage = false
 			g.activePlayersClean = false
 			g.shouldUpdatePlayersList = true

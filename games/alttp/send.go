@@ -7,7 +7,7 @@ import (
 
 func (g *Game) sendPackets() {
 	// don't send out any network updates until we're connected:
-	if g.local.Index < 0 {
+	if g.local.Index() < 0 {
 		return
 	}
 
@@ -28,7 +28,7 @@ func (g *Game) sendPackets() {
 			g.locHashTTL--
 		}
 		if locHash != g.locHash || g.locHashTTL <= 0 {
-			// only send if different or TTL of last packet expired:
+			// only send if different or Ttl of last packet expired:
 			g.send(m)
 			g.locHashTTL = 60
 			g.locHash = locHash

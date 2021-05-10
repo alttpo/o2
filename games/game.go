@@ -8,6 +8,7 @@ import (
 )
 
 type Game interface {
+	SyncableGame
 	interfaces.KeyValueNotifier
 
 	// Name returns the factory name that instantiated this Game instance

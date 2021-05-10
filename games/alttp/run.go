@@ -106,9 +106,9 @@ func (g *Game) run() {
 				// disconnected?
 				for i := range g.players {
 					p := &g.players[i]
-					// reset TTL for all players to make them inactive:
+					// reset Ttl for all players to make them inactive:
 					g.DecTTL(p, 255)
-					p.Index = -1
+					p.IndexF = -1
 				}
 				if g.shouldUpdatePlayersList {
 					g.updatePlayersList()
@@ -158,7 +158,7 @@ func (g *Game) run() {
 				}
 			}
 
-			if g.local.Index < 0 && g.client != nil {
+			if g.LocalPlayer().Index() < 0 && g.client != nil {
 				// request our player index:
 				m := protocol02.MakePacket(g.client.Group(), protocol02.RequestIndex, uint16(0))
 				if m == nil {
@@ -175,7 +175,7 @@ func (g *Game) run() {
 				return
 			}
 
-			if g.local.Index < 0 {
+			if g.LocalPlayer().Index() < 0 {
 				break
 			}
 
@@ -186,7 +186,7 @@ func (g *Game) run() {
 			}
 			m.WriteByte(0x0C)
 			var name [20]byte
-			n := copy(name[:], g.local.Name)
+			n := copy(name[:], g.LocalPlayer().Name())
 			for ; n < 20; n++ {
 				name[n] = ' '
 			}

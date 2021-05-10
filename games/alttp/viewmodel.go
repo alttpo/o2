@@ -68,11 +68,11 @@ func (g *Game) updatePlayersList() {
 	playerViewModels := make([]*PlayerViewModel, 0, len(activePlayers))
 	for _, p := range activePlayers {
 		// build player view model:
-		name := p.Name
+		name := p.Name()
 
 		// give the player a sensible name:
 		if name == "" {
-			name = fmt.Sprintf("player #%02x", p.Index)
+			name = fmt.Sprintf("player #%02x", p.Index())
 		}
 
 		dungeonName := "N/A"
@@ -92,7 +92,7 @@ func (g *Game) updatePlayersList() {
 		}
 
 		playerViewModels = append(playerViewModels, &PlayerViewModel{
-			Index: p.Index,
+			Index: p.Index(),
 			Team:  int(p.Team),
 			Name:  name,
 			Color: p.PlayerColor,

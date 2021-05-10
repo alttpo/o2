@@ -104,9 +104,9 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 			}
 
 			// set up SRAM per each player:
-			g.players[1].Index = 1
-			g.players[1].TTL = 255
-			g.players[1].Name = "remote"
+			g.players[1].IndexF = 1
+			g.players[1].Ttl = 255
+			g.players[1].NameF = "remote"
 			for _, sram := range tt.sram {
 				system.WRAM[0xF000+sram.offset] = sram.localValue
 				g.local.SRAM[sram.offset] = sram.localValue

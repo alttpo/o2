@@ -124,10 +124,10 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		lw.IsWriting = true
 		lw.Timestamp = ww.Timestamp
 		lw.ValueExpected = ww.Value
-		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name)
+		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name())
 
 		dungeonNumber := offs - smallKeyFirst
-		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name)
+		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name())
 		a.Comment(notification + ":")
 		g.PushNotification(notification)
 		a.LDA_imm8_b(uint8(ww.Value))
