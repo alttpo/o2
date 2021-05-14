@@ -1,16 +1,11 @@
 package retroarch
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"o2/snes"
-	"o2/snes/lorom"
 	"o2/udpclient"
-	"strings"
 	"sync"
-	"time"
 )
 
 type Queue struct {
@@ -156,78 +151,10 @@ func (cmd *writeCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (er
 	}
 	keepAlive <- struct{}{}
 
-	for _, req := range cmd.Batch {
-		var sb strings.Builder
-
-		if c.useRCR {
-			sb.WriteString("WRITE_CORE_RAM ")
-		} else {
-			sb.WriteString("WRITE_CORE_MEMORY ")
-		}
-		writeAddress := lorom.PakAddressToBus(req.Address)
-		sb.WriteString(fmt.Sprintf("%06x ", writeAddress))
-		// emit hex data:
-		lasti := len(req.Data) - 1
-		for i, v := range req.Data {
-			sb.WriteByte(hextable[(v>>4)&0xF])
-			sb.WriteByte(hextable[v&0xF])
-			if i < lasti {
-				sb.WriteByte(' ')
-			}
-		}
-		sb.WriteByte('\n')
-		reqStr := sb.String()
-
-		log.Printf("retroarch: > %s", reqStr)
-		err = q.c.WriteTimeout([]byte(reqStr), time.Second*5)
-		if err != nil {
-			_ = q.Close()
-			return
-		}
-		keepAlive <- struct{}{}
-
-		if !c.useRCR {
-			// expect a response from WRITE_CORE_MEMORY
-			var rsp []byte
-			rsp, err = q.c.ReadTimeout(time.Second*5)
-			if err != nil {
-				_ = q.Close()
-				return
-			}
-
-			var addr uint32
-			var wlen int
-			var n int
-			r := bytes.NewReader(rsp)
-			n, err = fmt.Fscanf(r, "WRITE_CORE_MEMORY %x %v\n", &addr, &wlen)
-			if n != 2 {
-				_ = q.Close()
-				return
-			}
-			if addr != writeAddress {
-				_ = q.Close()
-				err = fmt.Errorf("retroarch: write_core_memory returned unexpected address %06x; expected %06x", addr, writeAddress)
-				return
-			}
-			if wlen != len(req.Data) {
-				_ = q.Close()
-				err = fmt.Errorf("retroarch: write_core_memory returned unexpected length %d; expected %d", wlen, len(req.Data))
-				return
-			}
-		}
-
-		completed := req.Completion
-		if completed != nil {
-			completed(snes.Response{
-				IsWrite: true,
-				Address: req.Address,
-				Size:    req.Size,
-				Extra:   req.Extra,
-				Data:    req.Data,
-			})
-		}
+	err = c.WriteMemoryBatch(cmd.Batch, keepAlive)
+	if err != nil {
+		_ = q.Close()
 	}
 
-	err = nil
 	return
 }

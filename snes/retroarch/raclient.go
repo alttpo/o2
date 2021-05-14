@@ -3,6 +3,7 @@ package retroarch
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net"
 	"o2/snes"
 	"o2/snes/lorom"
@@ -220,4 +221,85 @@ func (c *RAClient) parseReadMemoryResponse(r *bytes.Reader, expectedAddr uint32,
 
 func (c *RAClient) HasVersion() bool {
 	return c.version != ""
+}
+
+func (c *RAClient) WriteMemoryBatch(batch []snes.Write, keepAlive snes.KeepAlive) (err error) {
+	for _, req := range batch {
+		var sb strings.Builder
+
+		if c.useRCR {
+			sb.WriteString("WRITE_CORE_RAM ")
+		} else {
+			sb.WriteString("WRITE_CORE_MEMORY ")
+		}
+		writeAddress := lorom.PakAddressToBus(req.Address)
+		sb.WriteString(fmt.Sprintf("%06x ", writeAddress))
+		// emit hex data:
+		lasti := len(req.Data) - 1
+		for i, v := range req.Data {
+			sb.WriteByte(hextable[(v>>4)&0xF])
+			sb.WriteByte(hextable[v&0xF])
+			if i < lasti {
+				sb.WriteByte(' ')
+			}
+		}
+		sb.WriteByte('\n')
+		reqStr := sb.String()
+
+		log.Printf("retroarch: > %s", reqStr)
+		err = c.WriteTimeout([]byte(reqStr), time.Second*5)
+		if err != nil {
+			return
+		}
+		if keepAlive != nil {
+			keepAlive <- struct{}{}
+		}
+	}
+
+	if !c.useRCR {
+		for _, req := range batch {
+			writeAddress := lorom.PakAddressToBus(req.Address)
+
+			// expect a response from WRITE_CORE_MEMORY
+			var rsp []byte
+			rsp, err = c.ReadTimeout(time.Second * 5)
+			if err != nil {
+				return
+			}
+			log.Printf("retroarch: < %s", rsp)
+			if keepAlive != nil {
+				keepAlive <- struct{}{}
+			}
+
+			var addr uint32
+			var wlen int
+			var n int
+			r := bytes.NewReader(rsp)
+			n, err = fmt.Fscanf(r, "WRITE_CORE_MEMORY %x %v\n", &addr, &wlen)
+			if n != 2 {
+				return
+			}
+			if addr != writeAddress {
+				err = fmt.Errorf("retroarch: write_core_memory returned unexpected address %06x; expected %06x", addr, writeAddress)
+				return
+			}
+			if wlen != len(req.Data) {
+				err = fmt.Errorf("retroarch: write_core_memory returned unexpected length %d; expected %d", wlen, len(req.Data))
+				return
+			}
+
+			completed := req.Completion
+			if completed != nil {
+				completed(snes.Response{
+					IsWrite: true,
+					Address: req.Address,
+					Size:    req.Size,
+					Extra:   req.Extra,
+					Data:    req.Data,
+				})
+			}
+		}
+	}
+
+	return
 }
