@@ -129,7 +129,7 @@ func (cmd *readCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (err
 
 	err = c.ReadMemoryBatch(cmd.Batch, keepAlive)
 	if err != nil {
-		c.Close()
+		_ = q.Close()
 	}
 
 	return
