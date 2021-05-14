@@ -175,8 +175,12 @@ func (c *UDPClient) Disconnect() {
 }
 
 func (c *UDPClient) Close() {
-	close(c.read)
-	close(c.write)
+	if c.read != nil {
+		close(c.read)
+	}
+	if c.write != nil {
+		close(c.write)
+	}
 	c.read = nil
 	c.write = nil
 }
