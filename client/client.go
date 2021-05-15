@@ -9,7 +9,8 @@ type Client struct {
 	udpclient.UDPClient
 
 	// model state:
-	group [20]byte
+	group    [20]byte
+	hostName string
 }
 
 func NewClient() *Client {
@@ -28,3 +29,6 @@ func (c *Client) SetGroup(group string) {
 	}
 	log.Printf("client: actual group name '%s'\n", c.group[:])
 }
+
+func (c *Client) SetHostName(hostName string) { c.hostName = hostName }
+func (c *Client) HostName() string            { return c.hostName }

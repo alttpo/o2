@@ -162,6 +162,8 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 	log.Printf("client: set group '%s'\n", v.GroupName)
 	vm.client.SetGroup(v.GroupName)
 
+	vm.client.SetHostName(v.HostName)
+
 	return nil
 }
 
