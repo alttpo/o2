@@ -35,8 +35,7 @@ func (g *Game) readWRAM() {
 		return
 	}
 
-	// TODO: replace this with server timestamp once that's implemented on the server
-	now := time.Now()
+	now := time.Now().Add(g.clockOffset)
 	nowTs := uint32(now.UnixNano() / 1e6)
 
 	// read in all WRAM syncables:
@@ -63,7 +62,7 @@ func (g *Game) readWRAM() {
 			}
 			w.Value = v
 			w.ValueUsed = v
-			log.Printf("alttp: wram[$%04x] -> %08x, %04x   ; %s\n", offs, w.Timestamp, w.Value, w.Name)
+			log.Printf("alttp: wram[$%04x] -> %08x (%v), %04x   ; %s\n", offs, w.Timestamp, now.Format(time.RFC3339Nano), w.Value, w.Name)
 		}
 	}
 
@@ -80,7 +79,7 @@ func (g *Game) readWRAM() {
 					w.Timestamp = nowTs
 				}
 				w.ValueUsed = currentKeyCount
-				log.Printf("alttp: wram[$%04x] -> %08x, %04x   ; current key counter\n", dungeonOffs, w.Timestamp, w.ValueUsed)
+				log.Printf("alttp: wram[$%04x] -> %08x (%v), %04x   ; current key counter\n", dungeonOffs, w.Timestamp, now.Format(time.RFC3339Nano), w.ValueUsed)
 			}
 		}
 	}

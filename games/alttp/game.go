@@ -41,6 +41,12 @@ type Game struct {
 	activePlayersClean bool
 	activePlayers      []*Player
 
+	// local clock offset from the alttp.online server:
+	clockOffset  time.Duration
+	clockServer  string
+	clockQueried time.Time
+	ntpC         chan int
+
 	running bool
 	stopped chan struct{}
 
@@ -118,6 +124,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		readComplete:     make(chan []snes.Response, 256),
 		romFunctions:     make(map[romFunction]uint32),
 		lastUpdateTarget: 0xFFFFFF,
+		ntpC:             make(chan int, 16),
 		// ViewModel:
 		IsCreated:        true,
 		GameName:         gameName,
@@ -131,6 +138,8 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		SyncChests:       true,
 		lastSyncChests:   false,
 	}
+
+	go g.ntpQueryLoop()
 
 	g.initSerde()
 	g.fillRomFunctions()
@@ -176,6 +185,9 @@ func (g *Game) ProvideQueue(queue snes.Queue) {
 }
 func (g *Game) ProvideClient(client *client.Client) {
 	g.client = client
+
+	// indicate we want a refresh of the NTP ClockOffset:
+	g.ntpC <- 0
 }
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
 	g.viewModels = container
@@ -205,6 +217,14 @@ func (g *Game) IsRunning() bool {
 
 func (g *Game) Reset() {
 	g.clean = false
+
+	// indicate we want a refresh of the NTP ClockOffset:
+	g.ntpC <- 0
+
+	// must reset any state waiting on connected device:
+	g.updateStage = 0
+	g.colorPendingUpdate = 0
+	g.lastUpdateTarget = 0xFFFFFF
 
 	// an impossible color in 15-bit BGR:
 	g.colorUpdatedTo = 0xffff
