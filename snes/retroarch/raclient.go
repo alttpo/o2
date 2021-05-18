@@ -36,6 +36,7 @@ func (c *RAClient) Version() (err error) {
 		return
 	}
 
+	log.Printf("retroarch: version %s")
 	c.version = string(rsp)
 
 	// parse the version string:
