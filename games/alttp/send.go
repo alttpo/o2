@@ -2,7 +2,6 @@ package alttp
 
 import (
 	"hash/fnv"
-	"o2/client/protocol02"
 )
 
 func (g *Game) sendPackets() {
@@ -15,7 +14,7 @@ func (g *Game) sendPackets() {
 
 	{
 		// send location packet every frame:
-		m := g.makeGamePacket(protocol02.Broadcast)
+		m := g.makeBroadcastMessage()
 
 		locStart := m.Len()
 		if err := g.SerializeLocation(local, m); err != nil {
@@ -36,7 +35,7 @@ func (g *Game) sendPackets() {
 	}
 
 	{
-		m := g.makeGamePacket(protocol02.Broadcast)
+		m := g.makeBroadcastMessage()
 		// small keys:
 		if err := g.SerializeWRAM(local, m, smallKeyFirst, 0x10); err != nil {
 			panic(err)
@@ -50,7 +49,7 @@ func (g *Game) sendPackets() {
 
 	if g.monotonicFrameTime&15 == 0 {
 		// Broadcast items and progress SRAM:
-		m := g.makeGamePacket(protocol02.Broadcast)
+		m := g.makeBroadcastMessage()
 		if m != nil {
 			if g.isVTRandomizer() {
 				// VT randomizer:
@@ -80,7 +79,7 @@ func (g *Game) sendPackets() {
 
 	if g.SyncUnderworld && g.monotonicFrameTime&31 == 0 {
 		// dungeon rooms
-		m := g.makeGamePacket(protocol02.Broadcast)
+		m := g.makeBroadcastMessage()
 		err := g.SerializeSRAM(g.local, m, 0x000, 0x250)
 		if err != nil {
 			panic(err)
@@ -90,7 +89,7 @@ func (g *Game) sendPackets() {
 
 	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
 		// overworld events; heart containers, overlays
-		m := g.makeGamePacket(protocol02.Broadcast)
+		m := g.makeBroadcastMessage()
 		err := g.SerializeSRAM(g.local, m, 0x280, 0x340)
 		if err != nil {
 			panic(err)

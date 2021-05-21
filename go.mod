@@ -14,5 +14,6 @@ require (
 	go.bug.st/serial v1.1.1
 	golang.org/x/net v0.0.0-20210510120150-4163338589ed // indirect
 	golang.org/x/sys v0.0.0-20210423082822-04245dca01da
+	google.golang.org/protobuf v1.26.0
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 )

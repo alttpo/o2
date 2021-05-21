@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+message JoinGroup {
+}
+
+message BroadcastAll {
+  bytes data = 1;
+}
+
+message BroadcastSector {
+  uint64 targetSector = 1;
+  bytes data = 2;
+}
+
+message GroupMessage {
+  string group = 1;
+  int64  playerTime = 2;
+  int64  serverTime = 3;
+  uint32 playerIndex = 4;
+  uint64 playerInSector = 5;
+
+  optional JoinGroup       joinGroup = 10;
+  optional BroadcastAll    broadcastAll = 11;
+  optional BroadcastSector broadcastSector = 12;
+}
