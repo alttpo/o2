@@ -111,12 +111,14 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		}
 
 		// not a valid device without a version detected:
-		err = detector.Version()
-		if err != nil {
-			if logDetector {
-				log.Printf("retroarch: detect: detector[%d]: version: %v\n", i, err)
+		if !detector.HasVersion() {
+			err = detector.Version()
+			if err != nil {
+				if logDetector {
+					log.Printf("retroarch: detect: detector[%d]: version: %v\n", i, err)
+				}
+				continue
 			}
-			continue
 		}
 		if !detector.HasVersion() {
 			continue
