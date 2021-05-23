@@ -122,13 +122,15 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 	}
 
 	g := &Game{
-		rom:              rom,
-		running:          false,
-		stopped:          make(chan struct{}),
-		readComplete:     make(chan []snes.Response, 256),
-		romFunctions:     make(map[romFunction]uint32),
-		lastUpdateTarget: 0xFFFFFF,
-		ntpC:             make(chan int, 16),
+		rom:                rom,
+		running:            false,
+		stopped:            make(chan struct{}),
+		readComplete:       make(chan []snes.Response, 256),
+		romFunctions:       make(map[romFunction]uint32),
+		lastUpdateTarget:   0xFFFFFF,
+		ntpC:               make(chan int, 16),
+		lastServerSentTime: time.Now(),
+		lastServerRecvTime: time.Now(),
 		// ViewModel:
 		IsCreated:        true,
 		GameName:         gameName,
