@@ -12,6 +12,11 @@ message BroadcastSector {
   bytes data = 2;
 }
 
+// echoes the same data back to the sender:
+message Echo {
+  bytes data = 1;
+}
+
 message GroupMessage {
   string group = 1;
   int64  playerTime = 2;
@@ -22,4 +27,5 @@ message GroupMessage {
   optional JoinGroup       joinGroup = 10;
   optional BroadcastAll    broadcastAll = 11;
   optional BroadcastSector broadcastSector = 12;
+  optional Echo            echo = 13;
 }
