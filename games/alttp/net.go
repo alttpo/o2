@@ -273,6 +273,12 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			return
 		}
 
+		// record server time:
+		newServerTime := time.Unix((gm.GetServerTime())/1e9, int64(gm.GetServerTime()%1e9))
+		g.lastServerTime = newServerTime
+		g.lastServerRecvTime = time.Now()
+		//log.Printf("server now(): %v\n", newServerTime.Add(time.Now().Sub(g.lastServerRecvTime)))
+
 		index := int(gm.PlayerIndex)
 
 		// pre-emptively avoid panics in accessing players array out of bounds:
@@ -306,10 +312,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		} else if bs := gm.GetBroadcastSector(); bs != nil {
 			err = g.Deserialize(bytes.NewReader(bs.Data), p)
 		} else if ec := gm.GetEcho(); ec != nil {
-			// record server time:
-			newServerTime := time.Unix((gm.GetServerTime())/1e9, int64(gm.GetServerTime()%1e9))
-			log.Printf("server time delta: %v\n", newServerTime.Sub(g.lastServerTime))
-			g.lastServerTime = newServerTime
+			// nothing to do
 		}
 
 		if err != nil {

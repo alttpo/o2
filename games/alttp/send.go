@@ -2,7 +2,6 @@ package alttp
 
 import (
 	"hash/fnv"
-	"time"
 )
 
 func (g *Game) sendPackets() {
@@ -10,10 +9,6 @@ func (g *Game) sendPackets() {
 	if g.local.Index() < 0 {
 		return
 	}
-
-	// send an echo to the server to measure roundtrip time:
-	g.lastServerSentTime = time.Now()
-	g.send(&gameEchoMessage{g: g})
 
 	local := g.local
 

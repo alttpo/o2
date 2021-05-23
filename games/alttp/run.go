@@ -178,6 +178,10 @@ func (g *Game) run() {
 				break
 			}
 
+			// send an echo to the server to measure roundtrip time:
+			g.lastServerSentTime = time.Now()
+			g.send(&gameEchoMessage{g: g})
+
 			// broadcast player name:
 			m := g.makeBroadcastMessage()
 			if m == nil {
@@ -459,6 +463,8 @@ func (g *Game) wramU16(addr uint32) uint16 {
 
 // called when the local game frame advances:
 func (g *Game) frameAdvanced() {
+	//log.Printf("server now(): %v\n", g.ServerNow())
+
 	// tick down TTLs of remote players:
 	for _, p := range g.ActivePlayers() {
 		g.DecTTL(p, 1)

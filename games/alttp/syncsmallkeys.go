@@ -35,8 +35,8 @@ func (g *Game) readWRAM() {
 		return
 	}
 
-	now := time.Now().Add(g.clockOffset)
-	nowTs := uint32(now.UnixNano() / 1e6)
+	now := g.ServerSNESTimestamp()
+	nowTs := uint32(now.UnixNano() / 1e6) // convert to milliseconds
 
 	// read in all WRAM syncables:
 	for offs, w := range local.WRAM {
