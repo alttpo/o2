@@ -43,7 +43,7 @@ func (m *gameBroadcastMessage) SendToClient(c *client.Client) {
 		//	p3msg.BroadcastSector = &protocol03.BroadcastSector{TargetSector: uint64(g.LocalPlayer().Location), Data: m.Bytes()}
 
 		// construct packet:
-		pkt := client.MakePacket(0x02)
+		pkt := client.MakePacket(0x03)
 		b, err := proto.MarshalOptions{}.MarshalAppend(pkt.Bytes(), p3msg)
 		if err != nil {
 			log.Printf("alttp: send: proto.Marshal: %v\n", err)
@@ -82,7 +82,7 @@ func (m *gameJoinMessage) SendToClient(c *client.Client) {
 		p3msg.JoinGroup = &protocol03.JoinGroup{}
 
 		// construct packet:
-		pkt := client.MakePacket(0x02)
+		pkt := client.MakePacket(0x03)
 		b, err := proto.MarshalOptions{}.MarshalAppend(pkt.Bytes(), p3msg)
 		if err != nil {
 			log.Printf("alttp: send: proto.Marshal: %v\n", err)
@@ -122,6 +122,37 @@ func (g *Game) makeBroadcastMessage() (m *gameBroadcastMessage) {
 func (g *Game) makeJoinMessage() (m *gameJoinMessage) {
 	m = &gameJoinMessage{g: g}
 	return
+}
+
+type gameEchoMessage struct {
+	bytes.Buffer
+
+	g *Game
+}
+
+func (m *gameEchoMessage) SendToClient(c *client.Client) {
+	g := m.g
+
+	if protocol == 0x03 {
+		p3msg := &protocol03.GroupMessage{
+			Group:          string(c.Group()),
+			PlayerTime:     time.Now().UnixNano(),
+			ServerTime:     0,
+			PlayerIndex:    uint32(g.LocalPlayer().IndexF),
+			PlayerInSector: uint64(g.LocalPlayer().Location),
+		}
+		p3msg.Echo = &protocol03.Echo{Data: m.Bytes()}
+
+		// construct packet:
+		pkt := client.MakePacket(0x03)
+		b, err := proto.MarshalOptions{}.MarshalAppend(pkt.Bytes(), p3msg)
+		if err != nil {
+			log.Printf("alttp: send: proto.Marshal: %v\n", err)
+			return
+		}
+
+		c.Write() <- b
+	}
 }
 
 func (g *Game) send(m gameMessage) {
@@ -274,6 +305,11 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			err = g.Deserialize(bytes.NewReader(ba.Data), p)
 		} else if bs := gm.GetBroadcastSector(); bs != nil {
 			err = g.Deserialize(bytes.NewReader(bs.Data), p)
+		} else if ec := gm.GetEcho(); ec != nil {
+			// record server time:
+			newServerTime := time.Unix((gm.GetServerTime())/1e9, int64(gm.GetServerTime()%1e9))
+			log.Printf("server time delta: %v\n", newServerTime.Sub(g.lastServerTime))
+			g.lastServerTime = newServerTime
 		}
 
 		if err != nil {

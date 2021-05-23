@@ -47,6 +47,9 @@ type Game struct {
 	clockQueried time.Time
 	ntpC         chan int
 
+	lastServerTime     time.Time // when the echo message came back from server
+	lastServerSentTime time.Time // when we sent the echo message
+
 	running bool
 	stopped chan struct{}
 
