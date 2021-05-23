@@ -143,7 +143,7 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		lastSyncChests:   false,
 	}
 
-	go g.ntpQueryLoop()
+	//go g.ntpQueryLoop()
 
 	g.initSerde()
 	g.fillRomFunctions()
