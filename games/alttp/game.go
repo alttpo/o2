@@ -7,6 +7,7 @@ import (
 	"o2/engine"
 	"o2/games"
 	"o2/interfaces"
+	"o2/ob"
 	"o2/snes"
 	"strings"
 	"sync"
@@ -33,7 +34,7 @@ type Game struct {
 	deserTable []DeserializeFunc
 
 	// Notifications publishes notifications about game events intended for the player to see
-	Notifications interfaces.ObservableImpl
+	Notifications ob.ObservableImpl
 
 	local   *Player
 	players [MaxPlayers]Player

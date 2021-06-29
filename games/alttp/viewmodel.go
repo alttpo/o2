@@ -26,7 +26,7 @@ func (g *Game) NotifyView() {
 }
 
 func (g *Game) PushNotification(notification string) {
-	g.Notifications.Publish(notification)
+	g.Notifications.ListAppendOne(notification)
 
 	if viewModels := g.viewModels; viewModels != nil {
 		// record history of Notifications:

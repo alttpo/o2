@@ -2,7 +2,7 @@ package alttp
 
 import (
 	"bytes"
-	"o2/interfaces"
+	"o2/ob"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/util"
@@ -80,7 +80,7 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 
 			// subscribe to front-end Notifications from the game:
 			lastNotification := ""
-			g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+			g.Notifications.Subscribe(ob.ObserverImpl(func(object interface{}) {
 				lastNotification = object.(string)
 				t.Logf("notify: '%s'", lastNotification)
 			}))
