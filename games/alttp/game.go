@@ -46,7 +46,6 @@ type Game struct {
 	clockOffset  time.Duration
 	clockServer  string
 	clockQueried time.Time
-	ntpC         chan int
 
 	lastServerTime     time.Time // server's clock when the echo message arrived at server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
@@ -129,7 +128,6 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		readComplete:       make(chan []snes.Response, 256),
 		romFunctions:       make(map[romFunction]uint32),
 		lastUpdateTarget:   0xFFFFFF,
-		ntpC:               make(chan int, 16),
 		lastServerSentTime: time.Now(),
 		lastServerRecvTime: time.Now(),
 		// ViewModel:
@@ -145,8 +143,6 @@ func (f *Factory) NewGame(rom *snes.ROM) games.Game {
 		SyncChests:       true,
 		lastSyncChests:   false,
 	}
-
-	//go g.ntpQueryLoop()
 
 	g.initSerde()
 	g.fillRomFunctions()
@@ -192,9 +188,6 @@ func (g *Game) ProvideQueue(queue snes.Queue) {
 }
 func (g *Game) ProvideClient(client *client.Client) {
 	g.client = client
-
-	// indicate we want a refresh of the NTP ClockOffset:
-	g.ntpC <- 0
 }
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
 	g.viewModels = container
@@ -224,9 +217,6 @@ func (g *Game) IsRunning() bool {
 
 func (g *Game) Reset() {
 	g.clean = false
-
-	// indicate we want a refresh of the NTP ClockOffset:
-	g.ntpC <- 0
 
 	// must reset any state waiting on connected device:
 	g.updateStage = 0
