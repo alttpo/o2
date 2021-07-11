@@ -3,6 +3,7 @@ module o2
 go 1.16
 
 require (
+	github.com/alttpo/observable v0.0.0-20210711204527-d8b64a4529cc
 	github.com/beevik/ntp v0.3.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/getlantern/systray v1.1.0
@@ -17,3 +18,5 @@ require (
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 )
+
+//replace github.com/alttpo/observable v0.0.0-20210710001527-144d26d4d5b9 => ../observable

@@ -2,7 +2,7 @@ package alttp
 
 import (
 	"bytes"
-	"o2/ob"
+	"github.com/alttpo/observable"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/util"
@@ -80,9 +80,21 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 
 			// subscribe to front-end Notifications from the game:
 			lastNotification := ""
-			g.Notifications.Subscribe(ob.ObserverImpl(func(object interface{}) {
-				lastNotification = object.(string)
-				t.Logf("notify: '%s'", lastNotification)
+			g.Notifications.Subscribe(observable.NewObserver("logger", func(event observable.Event) {
+				switch event.Operation {
+				case observable.ListAppend:
+					lastNotification = event.Value.(string)
+					t.Logf("notify: '%s'", lastNotification)
+					break
+				case observable.ListSet:
+					fallthrough
+				case observable.ListConcat:
+					for _, el := range event.Value.([]interface{}) {
+						lastNotification = el.(string)
+						t.Logf("notify: '%s'", lastNotification)
+					}
+					break
+				}
 			}))
 
 			// create the CPU-only SNES emulator:

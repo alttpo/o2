@@ -2,12 +2,12 @@ package alttp
 
 import (
 	"encoding/json"
+	"github.com/alttpo/observable"
 	"log"
 	"o2/client"
 	"o2/engine"
 	"o2/games"
 	"o2/interfaces"
-	"o2/ob"
 	"o2/snes"
 	"strings"
 	"sync"
@@ -34,7 +34,7 @@ type Game struct {
 	deserTable []DeserializeFunc
 
 	// Notifications publishes notifications about game events intended for the player to see
-	Notifications ob.ObservableImpl
+	Notifications observable.List
 
 	local   *Player
 	players [MaxPlayers]Player

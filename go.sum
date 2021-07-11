@@ -1,3 +1,5 @@
+github.com/alttpo/observable v0.0.0-20210711204527-d8b64a4529cc h1:1qcfbo8eu9X5Ljf82MmvTpCUGJLxx3gHMjpzWbdaPU4=
+github.com/alttpo/observable v0.0.0-20210711204527-d8b64a4529cc/go.mod h1:S2lExZ67QD0EYw5ie4PlFLwVDEXZzAtDrUbgRWqArRo=
 github.com/beevik/ntp v0.3.0 h1:xzVrPrE4ziasFXgBVBZJDP0Wg/KpMwk2KHJ4Ba8GrDw=
 github.com/beevik/ntp v0.3.0/go.mod h1:hIHWr+l3+/clUnF44zdK+CWW7fO8dR5cIylAQ76NRpg=
 github.com/creack/goselect v0.1.1 h1:tiSSgKE1eJtxs1h/VgGQWuXUP0YS4CDIFMp6vaI1ls0=
