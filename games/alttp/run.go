@@ -258,14 +258,16 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	q := make([]snes.Read, 0, 8)
 
 	// assume module is invalid until we read it:
-	moduleStaging := uint8(0xFF)
+	moduleStaging := -1
+	now := time.Now()
 	for _, rsp := range rsps {
 		// check WRAM reads:
 		if start, end, ok := g.isReadWRAM(rsp); ok {
 			copy(g.wramStaging[start:end], rsp.Data)
 			// did we read the module number?
 			if start <= 0x10 && 0x10 <= end {
-				moduleStaging = g.wramStaging[0x10]
+				moduleStaging = int(g.wramStaging[0x10])
+				g.lastModuleRead = now
 			}
 		}
 		// ignore SRAM for staging.
@@ -298,18 +300,28 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		}
 	}
 
-	// validate new reads in staging area before copying to wram/sram:
-	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
-		if !g.invalid {
-			log.Println("alttp: game now in invalid state")
+	// make sure last Module [$0010] read isn't too stale:
+	if staleness := now.Sub(g.lastModuleRead); staleness >= time.Second {
+		if now.Sub(g.lastStaleLog) >= time.Second {
+			log.Printf("alttp: last module read is stale; duration = %v\n", staleness)
+			g.lastStaleLog = now
 		}
-		g.invalid = true
 		return q
 	}
 
-	if g.invalid {
-		log.Println("alttp: game now in valid state")
-		g.invalid = false
+	// validate new reads in staging area before copying to wram/sram:
+	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
+		if now.Sub(g.lastSyncLog) >= time.Second {
+			log.Printf("alttp: syncing disabled; cannot sync during game module $%02x", moduleStaging)
+			g.lastSyncLog = now
+		}
+		g.syncing = false
+		return q
+	}
+
+	if !g.syncing {
+		log.Println("alttp: syncing enabled")
+		g.syncing = true
 	}
 
 	// copy the read data into our view of memory:

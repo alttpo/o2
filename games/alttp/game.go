@@ -79,7 +79,10 @@ type Game struct {
 	wram [0x20000]byte
 	sram [0x10000]byte
 
-	invalid bool
+	syncing        bool
+	lastSyncLog    time.Time
+	lastStaleLog   time.Time
+	lastModuleRead time.Time
 
 	syncableItems  map[uint16]games.SyncStrategy
 	underworld     [0x128]games.SyncableBitU16
