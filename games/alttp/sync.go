@@ -904,6 +904,17 @@ func (g *Game) initSync() {
 	g.underworld[0x0D].BitNames = make([]string, 16)
 	g.underworld[0x0D].BitNames[0xb] = "Agahnim 2 defeated"
 
+	// Swamp Palace:
+	//                   fedcba98_76543210
+	// u16[$7ef06e] |= 0b00000000_10000000
+	g.underworld[0x37].BitNames = make([]string, 16)
+	g.underworld[0x37].BitNames[0x7] = "SP right floodgate flooded"
+
+	//                   fedcba98_76543210
+	// u16[$7ef06a] |= 0b00000000_10000000
+	g.underworld[0x35].BitNames = make([]string, 16)
+	g.underworld[0x35].BitNames[0x7] = "SP left floodgate flooded"
+
 	g.setUnderworldSyncMasks()
 
 	// overworld areas:
