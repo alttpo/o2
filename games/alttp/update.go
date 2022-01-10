@@ -50,6 +50,31 @@ func (g *Game) updateWRAM() {
 	a.BEQ(0x01)
 	a.RTS()
 
+	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
+	// NOTE: alternatively could branch backwards to the above RTS instruction but I'm too lazy
+	// to figure out the values for that.
+
+	//	LDA  $11  : BNE cont
+	//	LDA  $10  : CMP #$07  : BEQ bail
+	//	            CMP #$09  : BEQ bail
+	//	            CMP #$0B  : BNE cont
+	//bail:
+	//	RTS
+	//cont:
+
+	a.LDA_dp(0x11)
+	a.BNE(15) // _cont
+	a.LDA_dp(0x10)
+	a.CMP_imm8_b(0x07)
+	a.BEQ(8) // _bail
+	a.CMP_imm8_b(0x09)
+	a.BEQ(4) // _bail
+	a.CMP_imm8_b(0x0B)
+	a.BNE(1) // _cont
+	//_bail:
+	a.RTS()
+	//_cont:
+
 	// custom asm overrides update asm generation:
 	if !g.generateCustomAsm(&a) {
 		if !g.generateUpdateAsm(&a) {
