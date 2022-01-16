@@ -54,16 +54,18 @@ func (g *Game) updateWRAM() {
 	// NOTE: alternatively could branch backwards to the above RTS instruction but I'm too lazy
 	// to figure out the values for that.
 
-	//	LDA  $11  : BNE cont
-	//	LDA  $10  : CMP #$07  : BEQ bail
-	//	            CMP #$09  : BEQ bail
-	//	            CMP #$0B  : BNE cont
-	//bail:
-	//	RTS
-	//cont:
+	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
+	//                                      //    else u8[$11] is non-zero:
+	//    LDA  $10  : CMP #$07  : BEQ bail  //    if (u8[$10] == $07) goto bail;
+	//                CMP #$09  : BEQ bail  //    if (u8[$10] == $09) goto bail;
+	//                CMP #$0B  : BNE cont  //    if (u8[$10] != $0B) goto cont;
+	//
+	//bail:                                 // bail:
+	//    RTS                               //    return;
+	//cont:                                 // cont:
 
 	a.LDA_dp(0x11)
-	a.BNE(15) // _cont
+	a.BEQ(15) // _cont
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x07)
 	a.BEQ(8) // _bail
