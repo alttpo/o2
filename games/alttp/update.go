@@ -35,70 +35,15 @@ func (g *Game) updateWRAM() {
 		targetSNES = preMainUpdateBAddr
 	}
 
+	// generate SRAM routine:
 	// create an assembler:
-	a := asm.Emitter{
+	a := &asm.Emitter{
 		Code: &bytes.Buffer{},
 		Text: &strings.Builder{},
 	}
-	a.SetBase(targetSNES)
-
-	// assume 8-bit mode for accumulator and index registers:
-	a.AssumeSEP(0x30)
-
-	a.Comment("don't update if link is currently frozen:")
-	a.LDA_abs(0x02E4)
-	a.BEQ(0x01)
-	a.RTS()
-
-	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
-	// NOTE: alternatively could branch backwards to the above RTS instruction but I'm too lazy
-	// to figure out the values for that.
-
-	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
-	//                                      //    else u8[$11] is non-zero:
-	//    LDA  $10  : CMP #$07  : BEQ bail  //    if (u8[$10] == $07) goto bail;
-	//                CMP #$09  : BEQ bail  //    if (u8[$10] == $09) goto bail;
-	//                CMP #$0B  : BNE cont  //    if (u8[$10] != $0B) goto cont;
-	//
-	//bail:                                 // bail:
-	//    RTS                               //    return;
-	//cont:                                 // cont:
-
-	a.LDA_dp(0x11)
-	a.BEQ(15) // _cont
-	a.LDA_dp(0x10)
-	a.CMP_imm8_b(0x07)
-	a.BEQ(8) // _bail
-	a.CMP_imm8_b(0x09)
-	a.BEQ(4) // _bail
-	a.CMP_imm8_b(0x0B)
-	a.BNE(1) // _cont
-	//_bail:
-	a.RTS()
-	//_cont:
-
-	// custom asm overrides update asm generation:
-	if !g.generateCustomAsm(&a) {
-		if !g.generateUpdateAsm(&a) {
-			// nothing to emit:
-			return
-		}
-	}
-
-	// clear out our routine with an RTS instruction at the start:
-	a.Comment("disable update routine with RTS instruction:")
-	// MUST be in SEP(0x20) mode!
-	a.LDA_imm8_b(0x60) // RTS
-	a.STA_long(targetSNES)
-	// back to 8-bit mode for accumulator:
-	a.SEP(0x30)
-	a.RTS()
-
-	// dump asm:
-	log.Print(a.Text.String())
-
-	if a.Code.Len() > 255 {
-		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Code.Len()))
+	updated := g.generateSRAMRoutine(a, targetSNES)
+	if !updated {
+		return
 	}
 
 	// prevent more updates until the upcoming write completes:
@@ -150,6 +95,71 @@ func (g *Game) updateWRAM() {
 		log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
 		return
 	}
+}
+
+func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool) {
+	a.SetBase(targetSNES)
+
+	// assume 8-bit mode for accumulator and index registers:
+	a.AssumeSEP(0x30)
+
+	a.Comment("don't update if link is currently frozen:")
+	a.LDA_abs(0x02E4)
+	a.BEQ(0x01)
+	a.RTS()
+
+	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
+	// NOTE: alternatively could branch backwards to the above RTS instruction but I'm too lazy
+	// to figure out the values for that.
+
+	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
+	//                                      //    else u8[$11] is non-zero:
+	//    LDA  $10  : CMP #$07  : BEQ bail  //    if (u8[$10] == $07) goto bail;
+	//                CMP #$09  : BEQ bail  //    if (u8[$10] == $09) goto bail;
+	//                CMP #$0B  : BNE cont  //    if (u8[$10] != $0B) goto cont;
+	//
+	//bail:                                 // bail:
+	//    RTS                               //    return;
+	//cont:                                 // cont:
+
+	a.LDA_dp(0x11)
+	a.BEQ(15) // _cont
+	a.LDA_dp(0x10)
+	a.CMP_imm8_b(0x07)
+	a.BEQ(8) // _bail
+	a.CMP_imm8_b(0x09)
+	a.BEQ(4) // _bail
+	a.CMP_imm8_b(0x0B)
+	a.BNE(1) // _cont
+	//_bail:
+	a.RTS()
+	//_cont:
+
+	// custom asm overrides update asm generation:
+	if !g.generateCustomAsm(a) {
+		if !g.generateUpdateAsm(a) {
+			// nothing to emit:
+			return false
+		}
+	}
+
+	// clear out our routine with an RTS instruction at the start:
+	a.Comment("disable update routine with RTS instruction:")
+	// MUST be in SEP(0x20) mode!
+	a.LDA_imm8_b(0x60) // RTS
+	a.STA_long(targetSNES)
+	// back to 8-bit mode for accumulator:
+	a.SEP(0x30)
+	a.RTS()
+
+	// dump asm:
+	log.Print(a.Text.String())
+
+	if a.Code.Len() > 255 {
+		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Code.Len()))
+	}
+
+	return true
 }
 
 func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {

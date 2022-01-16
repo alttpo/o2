@@ -13,11 +13,11 @@ import (
 // sramTest represents a single byte of SRAM used for verifying sync logic
 type sramTest struct {
 	// offset from $7EF000 in WRAM, e.g. $340 for bow, $341 for boomerang, etc.
-	offset        uint16
+	offset uint16
 	// value to set for the local player
-	localValue    uint8
+	localValue uint8
 	// value to set for the remote player syncing in
-	remoteValue   uint8
+	remoteValue uint8
 	// expected value to see for the local player after ASM code runs
 	expectedValue uint8
 }
@@ -28,17 +28,17 @@ type fields struct {
 }
 
 type test struct {
-	name             string
-	fields           fields
+	name   string
+	fields fields
 	// individual bytes of SRAM to be set and tested
-	sram             []sramTest
-	wantUpdated      bool
+	sram        []sramTest
+	wantUpdated bool
 	// expected front-end notification to be sent or "" if none expected
 	wantNotification string
 	// any custom logic to run before generating update ASM:
-	setup            func(t *testing.T, g *Game, tt *test)
+	setup func(t *testing.T, g *Game, tt *test)
 	// any verification logic to run after verifying update:
-	verify           func(t *testing.T, g *Game, system *emulator.System, tt *test)
+	verify func(t *testing.T, g *Game, system *emulator.System, tt *test)
 }
 
 type testingLogger struct {
@@ -123,30 +123,32 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 			}
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
-			updated := g.generateUpdateAsm(a)
+			updated := g.generateSRAMRoutine(a, 0x707C00)
 			if updated != tt.wantUpdated {
 				t.Logf("%s", a.Text.String())
 				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
 				return
 			}
+
+			// only run the ASM if it is generated:
 			if updated {
 				a.Comment("restore 8-bit mode and return to RESET code:")
 				a.SEP(0x30)
 				a.RTS()
-			}
-			t.Logf("%s", a.Text.String())
+				t.Logf("%s", a.Text.String())
 
-			aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
-			if _, err := a.Code.WriteTo(&aw); err != nil {
-				t.Fatal(err)
-			}
+				aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
+				if _, err := a.Code.WriteTo(&aw); err != nil {
+					t.Fatal(err)
+				}
 
-			// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
-			// see the emulator.MakeTestROM() function for details
-			system.CPU.Reset()
-			if !system.RunUntil(0x00_8006, 0x1_000) {
-				t.Errorf("CPU ran too long and did not reach PC=0x008006; actual=%#06x", system.CPU.PC)
-				return
+				// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
+				// see the emulator.MakeTestROM() function for details
+				system.CPU.Reset()
+				if !system.RunUntil(0x00_8006, 0x1_000) {
+					t.Errorf("CPU ran too long and did not reach PC=0x008006; actual=%#06x", system.CPU.PC)
+					return
+				}
 			}
 
 			// copy SRAM shadow in WRAM into local player copy:
