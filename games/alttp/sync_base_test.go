@@ -35,8 +35,6 @@ type test struct {
 	wantUpdated bool
 	// expected front-end notification to be sent or "" if none expected
 	wantNotification string
-	// any custom logic to run before generating update ASM:
-	setup func(t *testing.T, g *Game, tt *test)
 	// any verification logic to run after verifying update:
 	verify func(t *testing.T, g *Game, system *emulator.System, tt *test)
 }
@@ -103,6 +101,10 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 				t.Fatal(err)
 			}
 
+			// default module/submodule:
+			system.WRAM[0x10] = 0x09 // overworld module
+			system.WRAM[0x11] = 0x00 // player in control
+
 			// set up SRAM per each player:
 			g.players[1].IndexF = 1
 			g.players[1].Ttl = 255
@@ -111,10 +113,6 @@ func runAsmEmulationTests(t *testing.T, tests []test) {
 				system.WRAM[0xF000+sram.offset] = sram.localValue
 				g.local.SRAM[sram.offset] = sram.localValue
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
-			}
-
-			if tt.setup != nil {
-				tt.setup(t, g, tt)
 			}
 
 			a := &asm.Emitter{
