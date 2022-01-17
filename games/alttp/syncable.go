@@ -53,6 +53,30 @@ func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names []string, o
 	return s
 }
 
+func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
+	s := games.NewSyncableBitU8(
+		g,
+		uint32(offset),
+		enabled,
+		vanillaItemBitNames[offset],
+		onUpdated,
+	)
+	g.syncableItems[offset] = s
+	return s
+}
+
+func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated games.SyncableMaxU8OnUpdated) *games.SyncableMaxU8 {
+	s := games.NewSyncableMaxU8(
+		g,
+		uint32(offset),
+		enabled,
+		vanillaItemNames[offset],
+		onUpdated,
+	)
+	g.syncableItems[offset] = s
+	return s
+}
+
 type syncableBottle struct {
 	g games.SyncableGame
 
@@ -65,12 +89,12 @@ type syncableBottle struct {
 	notification  string
 }
 
-func (g *Game) newSyncableBottle(offset uint16, enabled *bool, names []string) *syncableBottle {
+func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 	s := &syncableBottle{
 		g:         g,
 		offset:    uint32(offset),
 		isEnabled: enabled,
-		names:     names,
+		names:     vanillaBottleItemNames,
 	}
 	g.syncableItems[offset] = s
 	return s

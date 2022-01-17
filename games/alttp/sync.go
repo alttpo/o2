@@ -104,13 +104,7 @@ func (g *Game) initSync() {
 			}
 
 			// notify local player of new item received:
-			received := ""
-			if maxV == 1 {
-				received = "Bow"
-			} else if maxV == 3 {
-				received = "Silver Bow"
-				maxV = 3
-			}
+			received := vanillaItemNames[0x340][maxV]
 			s.PendingUpdate = true
 			s.UpdatingTo = maxV
 			s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
@@ -127,37 +121,37 @@ func (g *Game) initSync() {
 			return g.LocalPlayer().ReadableMemory(games.SRAM).ReadU8(s.Offset) != s.UpdatingTo &&
 				g.LocalPlayer().ReadableMemory(games.SRAM).ReadU8(s.Offset) != s.UpdatingTo+1
 		}
-		g.NewSyncableMaxU8(0x341, &g.SyncItems, []string{"Blue Boomerang", "Red Boomerang"}, nil)
-		g.NewSyncableMaxU8(0x344, &g.SyncItems, []string{"Mushroom", "Magic Powder"}, nil)
-		g.NewSyncableMaxU8(0x34C, &g.SyncItems, []string{"Shovel", "Flute", "Flute (activated)"}, nil)
+		g.NewSyncableVanillaItemU8(0x341, &g.SyncItems, nil)
+		g.NewSyncableVanillaItemU8(0x344, &g.SyncItems, nil)
+		g.NewSyncableVanillaItemU8(0x34C, &g.SyncItems, nil)
 	}
-	g.NewSyncableMaxU8(0x342, &g.SyncItems, []string{"Hookshot"}, nil)
+	g.NewSyncableVanillaItemU8(0x342, &g.SyncItems, nil)
 	// skip 0x343 bomb count
-	g.NewSyncableMaxU8(0x345, &g.SyncItems, []string{"Fire Rod"}, nil)
-	g.NewSyncableMaxU8(0x346, &g.SyncItems, []string{"Ice Rod"}, nil)
-	g.NewSyncableMaxU8(0x347, &g.SyncItems, []string{"Bombos Medallion"}, nil)
-	g.NewSyncableMaxU8(0x348, &g.SyncItems, []string{"Ether Medallion"}, nil)
-	g.NewSyncableMaxU8(0x349, &g.SyncItems, []string{"Quake Medallion"}, nil)
-	g.NewSyncableMaxU8(0x34A, &g.SyncItems, []string{"Lamp"}, nil)
-	g.NewSyncableMaxU8(0x34B, &g.SyncItems, []string{"Hammer"}, nil)
-	g.NewSyncableMaxU8(0x34D, &g.SyncItems, []string{"Bug Catching Net"}, nil)
-	g.NewSyncableMaxU8(0x34E, &g.SyncItems, []string{"Book of Mudora"}, nil)
+	g.NewSyncableVanillaItemU8(0x345, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x346, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x347, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x348, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x349, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x34A, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x34B, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x34D, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x34E, &g.SyncItems, nil)
 	// skip 0x34F current bottle selection
-	g.NewSyncableMaxU8(0x350, &g.SyncItems, []string{"Cane of Somaria"}, nil)
-	g.NewSyncableMaxU8(0x351, &g.SyncItems, []string{"Cane of Byrna"}, nil)
-	g.NewSyncableMaxU8(0x352, &g.SyncItems, []string{"Magic Cape"}, nil)
-	g.NewSyncableMaxU8(0x353, &g.SyncItems, []string{"Magic Scroll", "Magic Mirror"}, nil)
-	g.NewSyncableMaxU8(0x354, &g.SyncItems, []string{"Power Gloves", "Titan's Mitts"},
+	g.NewSyncableVanillaItemU8(0x350, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x351, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x352, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x353, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x354, &g.SyncItems,
 		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
-	g.NewSyncableMaxU8(0x355, &g.SyncItems, []string{"Pegasus Boots"}, nil)
-	g.NewSyncableMaxU8(0x356, &g.SyncItems, []string{"Flippers"}, nil)
-	g.NewSyncableMaxU8(0x357, &g.SyncItems, []string{"Moon Pearl"}, nil)
+	g.NewSyncableVanillaItemU8(0x355, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x356, &g.SyncItems, nil)
+	g.NewSyncableVanillaItemU8(0x357, &g.SyncItems, nil)
 	// skip 0x358 unused
 
-	swordSync := g.NewSyncableMaxU8(0x359, &g.SyncItems, []string{"Fighter Sword", "Master Sword", "Tempered Sword", "Golden Sword"},
+	swordSync := g.NewSyncableVanillaItemU8(0x359, &g.SyncItems,
 		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress sword gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxSword])
@@ -167,86 +161,31 @@ func (g *Game) initSync() {
 	// prevent sync in of $ff (i.e. anything above $04) when smithy takes your sword for tempering
 	swordSync.AbsMax = 4
 
-	g.NewSyncableMaxU8(0x35A, &g.SyncItems, []string{"Blue Shield", "Red Shield", "Mirror Shield"},
+	g.NewSyncableVanillaItemU8(0x35A, &g.SyncItems,
 		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("decompress shield gfx:")
 			asm.JSL(g.romFunctions[fnDecompGfxShield])
 			asm.Comment("update shield palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteShield])
 		})
-	g.NewSyncableMaxU8(0x35B, &g.SyncItems, []string{"Blue Mail", "Red Mail"},
+	g.NewSyncableVanillaItemU8(0x35B, &g.SyncItems,
 		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			asm.Comment("update armor/gloves palette:")
 			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
 
-	bottleItemNames := []string{"Shroom", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
-	g.newSyncableBottle(0x35C, &g.SyncItems, bottleItemNames)
-	g.newSyncableBottle(0x35D, &g.SyncItems, bottleItemNames)
-	g.newSyncableBottle(0x35E, &g.SyncItems, bottleItemNames)
-	g.newSyncableBottle(0x35F, &g.SyncItems, bottleItemNames)
+	g.newSyncableBottle(0x35C, &g.SyncItems)
+	g.newSyncableBottle(0x35D, &g.SyncItems)
+	g.newSyncableBottle(0x35E, &g.SyncItems)
+	g.newSyncableBottle(0x35F, &g.SyncItems)
 
 	// dungeon items:
-	g.NewSyncableBitU8(0x364, &g.SyncDungeonItems, []string{
-		"",
-		"",
-		"Ganon's Tower Compass",
-		"Turtle Rock Compass",
-		"Thieves Town Compass",
-		"Tower of Hera Compass",
-		"Ice Palace Compass",
-		"Skull Woods Compass"},
-		nil)
-	g.NewSyncableBitU8(0x365, &g.SyncDungeonItems, []string{
-		"Misery Mire Compass",
-		"Dark Palace Compass",
-		"Swamp Palace Compass",
-		"Hyrule Castle 2 Compass",
-		"Desert Palace Compass",
-		"Eastern Palace Compass",
-		"Hyrule Castle Compass",
-		"Sewer Passage Compass"},
-		nil)
-	g.NewSyncableBitU8(0x366, &g.SyncDungeonItems, []string{
-		"",
-		"",
-		"Ganon's Tower Big Key",
-		"Turtle Rock Big Key",
-		"Thieves Town Big Key",
-		"Tower of Hera Big Key",
-		"Ice Palace Big Key",
-		"Skull Woods Big Key"},
-		nil)
-	g.NewSyncableBitU8(0x367, &g.SyncDungeonItems, []string{
-		"Misery Mire Big Key",
-		"Dark Palace Big Key",
-		"Swamp Palace Big Key",
-		"Hyrule Castle 2 Big Key",
-		"Desert Palace Big Key",
-		"Eastern Palace Big Key",
-		"Hyrule Castle Big Key",
-		"Sewer Passage Big Key"},
-		nil)
-	g.NewSyncableBitU8(0x368, &g.SyncDungeonItems, []string{
-		"",
-		"",
-		"Ganon's Tower Map",
-		"Turtle Rock Map",
-		"Thieves Town Map",
-		"Tower of Hera Map",
-		"Ice Palace Map",
-		"Skull Woods Map"},
-		nil)
-	g.NewSyncableBitU8(0x369, &g.SyncDungeonItems, []string{
-		"Misery Mire Map",
-		"Dark Palace Map",
-		"Swamp Palace Map",
-		"Hyrule Castle 2 Map",
-		"Desert Palace Map",
-		"Eastern Palace Map",
-		"Hyrule Castle Map",
-		"Sewer Passage Map"},
-		nil)
+	g.NewSyncableVanillaItemBitsU8(0x364, &g.SyncDungeonItems, nil)
+	g.NewSyncableVanillaItemBitsU8(0x365, &g.SyncDungeonItems, nil)
+	g.NewSyncableVanillaItemBitsU8(0x366, &g.SyncDungeonItems, nil)
+	g.NewSyncableVanillaItemBitsU8(0x367, &g.SyncDungeonItems, nil)
+	g.NewSyncableVanillaItemBitsU8(0x368, &g.SyncDungeonItems, nil)
+	g.NewSyncableVanillaItemBitsU8(0x369, &g.SyncDungeonItems, nil)
 
 	// heart containers:
 	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
@@ -330,43 +269,16 @@ func (g *Game) initSync() {
 	g.NewSyncableMaxU8(0x371, &g.SyncItems, nil, nil)
 
 	// pendants:
-	g.NewSyncableBitU8(0x374, &g.SyncDungeonItems, []string{
-		"Red Pendant",
-		"Blue Pendant",
-		"Green Pendant",
-		"",
-		"",
-		"",
-		"",
-		""},
-		nil)
+	g.NewSyncableVanillaItemBitsU8(0x374, &g.SyncDungeonItems, nil)
 
 	// player ability flags:
-	g.NewSyncableBitU8(0x379, &g.SyncItems, []string{
-		"",
-		"Swim Ability",
-		"Dash Ability",
-		"Pull Ability",
-		"",
-		"Talk Ability",
-		"Read Ability",
-		""},
-		nil)
+	g.NewSyncableVanillaItemBitsU8(0x379, &g.SyncItems, nil)
 
 	// crystals:
-	g.NewSyncableBitU8(0x37A, &g.SyncDungeonItems, []string{
-		"Crystal #6",
-		"Crystal #1",
-		"Crystal #5",
-		"Crystal #7",
-		"Crystal #2",
-		"Crystal #4",
-		"Crystal #3",
-		""},
-		nil)
+	g.NewSyncableVanillaItemBitsU8(0x37A, &g.SyncDungeonItems, nil)
 
 	// magic reduction (1/1, 1/2, 1/4):
-	g.NewSyncableMaxU8(0x37B, &g.SyncItems, []string{"1/2 Magic", "1/4 Magic"}, nil)
+	g.NewSyncableVanillaItemU8(0x37B, &g.SyncItems, nil)
 
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
@@ -492,10 +404,7 @@ func (g *Game) initSync() {
 	}
 
 	// world state:
-	g.NewSyncableMaxU8(0x3C5, &g.SyncProgress, []string{
-		"Hyrule Castle Dungeon started",
-		"Hyrule Castle Dungeon completed",
-		"Search for Crystals started"},
+	g.NewSyncableVanillaItemU8(0x3C5, &g.SyncProgress,
 		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
 			if initial < 2 && updated >= 2 {
 				asm.Comment("load sprite gfx:")
@@ -575,17 +484,7 @@ func (g *Game) initSync() {
 	})
 
 	// map markers:
-	g.NewSyncableMaxU8(0x3C7, &g.SyncProgress, []string{
-		//"Map Marker at Castle",
-		"Map Marker at Kakariko",
-		"Map Marker at Sahasrahla",
-		"Map Marker at Pendants",
-		"Map Marker at Master Sword",
-		"Map Marker at Agahnim Tower",
-		"Map Marker at Darkness",
-		"Map Marker at Crystals",
-		"Map Marker at Ganon's Tower",
-	}, nil)
+	g.NewSyncableVanillaItemU8(0x3C7, &g.SyncProgress, nil)
 
 	// skip 0x3C8 start at location
 
