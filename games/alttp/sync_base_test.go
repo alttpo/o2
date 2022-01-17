@@ -162,7 +162,7 @@ func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 			a.Code = &bytes.Buffer{}
 			_ = g.generateUpdateAsm(a)
 
-			if tt.wantNotification != "" && lastNotification != tt.wantNotification {
+			if lastNotification != tt.wantNotification {
 				t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)
 			}
 
