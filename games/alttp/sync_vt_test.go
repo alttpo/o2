@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestGame_AsmEmulation_VT(t *testing.T) {
+func TestAsm_VT_Items(t *testing.T) {
 	tests := []sramTestCase{
 		{
 			name: "No update",

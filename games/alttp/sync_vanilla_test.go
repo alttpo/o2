@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAsm_VanillaItems(t *testing.T) {
+func TestAsm_Vanilla_Items(t *testing.T) {
 	tests := []sramTestCase{
 		{
 			name: "No update",
@@ -482,14 +482,34 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 					offset:     room << 1,
 					localValue: 0,
 					// quadrants visited:
-					remoteValue:   0b0000_0000_0000_1111,
-					expectedValue: 0b0000_0000_0000_1111,
+					remoteValue:   0b_0000_1111,
+					expectedValue: 0b_0000_1111,
 				},
 			},
 			wantUpdated:      true,
 			wantNotification: "",
 			verify:           nil,
 		})
+
+		// add a test specific for boss defeated notification:
+		if bossName, ok := underworldBossNames[room]; ok {
+			tests = append(tests, sramTestCase{
+				name: fmt.Sprintf("Underworld BOSS $%03x: %s", room, name),
+				fields: sramTestCaseFields{
+					ROMTitle: "ZELDANODENSETSU",
+				},
+				sram: []sramTest{{
+					offset:     room<<1 + 1, // high byte of u16
+					localValue: 0,
+					// boss defeated:
+					remoteValue:   0b0000_1000,
+					expectedValue: 0b0000_1000,
+				}},
+				wantUpdated:      true,
+				wantNotification: fmt.Sprintf("got %s defeated from remote", bossName),
+			})
+		}
+
 	}
 
 	runAsmEmulationTests(t, tests)
