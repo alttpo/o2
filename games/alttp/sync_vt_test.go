@@ -5,17 +5,17 @@ import (
 )
 
 func TestGame_AsmEmulation_VT(t *testing.T) {
-	tests := []test{
+	tests := []sramTestCase{
 		{
 			name: "No update",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			wantUpdated: false,
 		},
 		{
 			name: "VT mushroom",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -36,7 +36,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT powder",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -57,7 +57,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT flute active",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -78,7 +78,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT flute (active) from shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -100,7 +100,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT flute (activated) from flute",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -122,7 +122,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT flute",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -143,7 +143,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT flute from shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -165,7 +165,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -186,7 +186,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT shovel from flute",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -208,7 +208,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT shovel from flute (activated)",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -230,7 +230,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT red boomerang",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -251,7 +251,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT blue boomerang",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -272,7 +272,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -300,7 +300,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -328,7 +328,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -351,7 +351,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT silver bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -379,7 +379,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT silver bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},
@@ -407,7 +407,7 @@ func TestGame_AsmEmulation_VT(t *testing.T) {
 		},
 		{
 			name: "VT silver bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				// ROM title must start with "VT " to indicate randomizer
 				ROMTitle: "VT test",
 			},

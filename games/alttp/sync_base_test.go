@@ -22,21 +22,21 @@ type sramTest struct {
 	expectedValue uint8
 }
 
-type fields struct {
+type sramTestCaseFields struct {
 	// title that goes into the $FFC0 header of the ROM; used to vary the game type detected e.g. "VT " for randomizers
 	ROMTitle string
 }
 
-type test struct {
+type sramTestCase struct {
 	name   string
-	fields fields
+	fields sramTestCaseFields
 	// individual bytes of SRAM to be set and tested
 	sram        []sramTest
 	wantUpdated bool
 	// expected front-end notification to be sent or "" if none expected
 	wantNotification string
 	// any verification logic to run after verifying update:
-	verify func(t *testing.T, g *Game, system *emulator.System, tt *test)
+	verify func(t *testing.T, g *Game, system *emulator.System, tt *sramTestCase)
 }
 
 type testingLogger struct {
@@ -48,7 +48,7 @@ func (l *testingLogger) WriteString(s string) (n int, err error) {
 	return len(s), nil
 }
 
-func runAsmEmulationTests(t *testing.T, tests []test) {
+func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 	for i := range tests {
 		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {

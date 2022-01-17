@@ -5,17 +5,17 @@ import (
 )
 
 func TestGame_AsmEmulation_Vanilla(t *testing.T) {
-	tests := []test{
+	tests := []sramTestCase{
 		{
 			name: "No update",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			wantUpdated: false,
 		},
 		{
 			name: "Mushroom",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -31,7 +31,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Powder",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -47,7 +47,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Flute activated",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -63,7 +63,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Flute activated from flute",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -79,7 +79,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Flute activated from shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -95,7 +95,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Flute",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -111,7 +111,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Flute from shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -127,7 +127,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Shovel",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -143,7 +143,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Red boomerang",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -159,7 +159,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Red boomerang from blue boomerang",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -175,7 +175,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Blue boomerang",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -191,7 +191,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -214,7 +214,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -237,7 +237,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -260,7 +260,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -283,7 +283,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -300,7 +300,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -317,7 +317,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -340,7 +340,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow no arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -363,7 +363,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -386,7 +386,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow with arrows",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -409,7 +409,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -426,7 +426,7 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Silver bow no change",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
@@ -443,15 +443,15 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 		},
 		{
 			name: "Hearts",
-			fields: fields{
+			fields: sramTestCaseFields{
 				ROMTitle: "ZELDANODENSETSU",
 			},
 			sram: []sramTest{
 				{
 					offset:        0x36C,
-					localValue:    3<<3,
-					remoteValue:   4<<3,
-					expectedValue: 4<<3,
+					localValue:    3 << 3,
+					remoteValue:   4 << 3,
+					expectedValue: 4 << 3,
 				},
 			},
 			wantUpdated:      true,
