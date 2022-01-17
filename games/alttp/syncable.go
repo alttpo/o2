@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"o2/games"
 	"o2/snes/asm"
+	"strings"
 )
 
 func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
@@ -179,4 +180,162 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	asm.STA_long(localSRAM.BusAddress(offset))
 
 	return true
+}
+
+type syncableUnderworldOnUpdated func(s *syncableUnderworld, asm *asm.Emitter, initial, updated uint16)
+
+type syncableUnderworld struct {
+	games.SyncableGame
+
+	Room uint16
+
+	Offset   uint32
+	SyncMask uint16
+
+	IsEnabledPtr *bool
+	BitNames     []string
+
+	games.PlayerPredicate
+
+	OnUpdated syncableUnderworldOnUpdated
+
+	PendingUpdate bool
+	UpdatingTo    uint16
+	Notification  string
+}
+
+func (s *syncableUnderworld) Size() uint      { return 2 }
+func (s *syncableUnderworld) IsEnabled() bool { return *s.IsEnabledPtr }
+
+func (s *syncableUnderworld) CanUpdate() bool {
+	if !s.PendingUpdate {
+		return true
+	}
+
+	// wait until we see the desired update:
+	g := s.SyncableGame
+	if g.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU16(s.Offset) != s.UpdatingTo {
+		return false
+	}
+
+	// send the notification:
+	if s.Notification != "" {
+		g.PushNotification(s.Notification)
+		s.Notification = ""
+	}
+
+	s.PendingUpdate = false
+
+	return true
+}
+
+func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
+	g := s.SyncableGame
+	local := g.LocalSyncablePlayer()
+
+	// filter out local player:
+	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
+		return false
+	}
+
+	offs := s.Offset
+	mask := s.SyncMask
+
+	initial := local.ReadableMemory(games.SRAM).ReadU16(offs)
+	var receivedFrom [16]string
+
+	updated := initial
+	for _, p := range g.RemoteSyncablePlayers() {
+		// filter out player:
+		if s.PlayerPredicate != nil && !s.PlayerPredicate(p) {
+			continue
+		}
+
+		// read player data:
+		v := p.ReadableMemory(games.SRAM).ReadU16(offs)
+		v &= mask
+
+		newBits := v & ^updated
+
+		// attribute this bit to this player:
+		if newBits != 0 {
+			k := uint16(1)
+			for i := 0; i < 16; i++ {
+				if newBits&k == k {
+					receivedFrom[i] = p.Name()
+				}
+				k <<= 1
+			}
+		}
+
+		updated |= v
+	}
+
+	if updated == initial {
+		// no change:
+		return false
+	}
+
+	// notify local player of new item received:
+	s.PendingUpdate = true
+	s.UpdatingTo = updated
+	s.Notification = ""
+
+	longAddr := local.ReadableMemory(games.SRAM).BusAddress(offs)
+	newBits := updated & ^initial
+
+	asm.Comment(fmt.Sprintf("underworld room $%03x '%s' state changed; u16[$%06x] |= %#08b_%#08b", s.Room, underworldNames[s.Room], longAddr, newBits>>8, newBits&0xFF))
+
+	if s.BitNames != nil {
+		received := make([]string, 0, len(s.BitNames))
+		k := uint16(1)
+		for i := 0; i < len(s.BitNames); i++ {
+			if initial&k == 0 && updated&k == k {
+				if s.BitNames[i] != "" {
+					item := fmt.Sprintf("%s from %s", s.BitNames[i], receivedFrom[i])
+					received = append(received, item)
+				}
+			}
+			k <<= 1
+		}
+		if len(received) > 0 {
+			s.Notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
+			asm.Comment(s.Notification + ":")
+		}
+	}
+
+	asm.LDA_imm16_w(newBits)
+	asm.ORA_long(longAddr)
+	asm.STA_long(longAddr)
+
+	{
+		// this cast should not fail:
+		g := s.SyncableGame.(*Game)
+		localPlayer := g.LocalPlayer()
+
+		// local player must only be in dungeon module:
+		if localPlayer.IsDungeon() {
+			// only pay attention to supertile state changes when the local player is in that supertile:
+			if s.Room == localPlayer.DungeonRoom {
+				// open the door for the local player:
+				g.openDoor(asm, initial, updated)
+			}
+		}
+	}
+
+	if s.OnUpdated != nil {
+		s.OnUpdated(s, asm, initial, updated)
+	}
+
+	return true
+}
+
+func (s *syncableUnderworld) InitFrom(g *Game, room uint16) {
+	s.SyncableGame = g
+	s.Room = room
+	s.Offset = uint32(room << 1)
+	s.IsEnabledPtr = &g.SyncUnderworld
+	s.BitNames = nil
+	s.SyncMask = 0xFFFF
+	s.PlayerPredicate = games.PlayerPredicateIdentity
 }

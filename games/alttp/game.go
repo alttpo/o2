@@ -79,7 +79,7 @@ type Game struct {
 	lastModuleRead time.Time
 
 	syncableItems  map[uint16]games.SyncStrategy
-	underworld     [0x128]games.SyncableBitU16
+	underworld     [0x128]syncableUnderworld
 	overworld      [0xC0]games.SyncableBitU8
 	syncableBitU16 map[uint16]*games.SyncableBitU16
 

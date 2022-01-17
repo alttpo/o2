@@ -558,70 +558,6 @@ func (g *Game) initSync() {
 		g.NewSyncableBitU8(0x42A, &g.SyncItems, nil, nil)
 	}
 
-	openDoor := func(asm *asm.Emitter, initial, updated uint16) bool {
-		// must only be in dungeon module:
-		if !g.LocalPlayer().IsDungeon() {
-			return false
-		}
-		if g.LocalPlayer().SubModule != 0 {
-			return false
-		}
-
-		// only pay attention to the door bits changing:
-		initial &= 0xF000
-		updated &= 0xF000
-		if initial == updated {
-			return false
-		}
-
-		// determine which door opened (or the first door that opened if multiple?):
-		b := uint16(0x8000)
-		k := uint32(0)
-		for ; k < 4; k++ {
-			if updated&b != 0 {
-				break
-			}
-			b >>= 1
-		}
-
-		// emit some asm to open this door locally:
-		k2 := k << 1
-		doorTilemapAddr := g.wramU16(0x19A0+k2) >> 1
-		doorType := g.wramU16(0x19C0 + k2)
-		kind := ""
-		switch doorType & 3 {
-		case 0: // up
-			doorTilemapAddr += 0x81
-			kind = "UP"
-			break
-		case 1: // down
-			doorTilemapAddr += 0x42
-			kind = "DOWN"
-			break
-		case 2: // left
-			doorTilemapAddr += 0x42
-			kind = "LEFT"
-			break
-		case 3: // right
-			doorTilemapAddr += 0x42
-			kind = "RIGHT"
-			break
-		}
-
-		asm.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
-		asm.REP(0x30)
-		asm.LDA_imm16_w(doorTilemapAddr)
-		asm.STA_abs(0x068E)
-		asm.LDA_imm16_w(0x0008) // TODO: confirm this value?
-		asm.STA_abs(0x0690)
-		asm.SEP(0x30)
-		// set door open submodule:
-		asm.LDA_imm8_b(0x04)
-		asm.STA_dp(0x11)
-		asm.REP(0x30)
-		return true
-	}
-
 	// sync wram[$0400] for current dungeon supertile door state:
 	g.syncableBitU16[0x0400] = games.NewSyncableBitU16(
 		g,
@@ -631,7 +567,7 @@ func (g *Game) initSync() {
 		// open the local door(s):
 		func(s *games.SyncableBitU16, asm *asm.Emitter, initial, updated uint16) {
 			asm.Comment("open door based on wram[$0400] bits")
-			openDoor(asm, initial, updated)
+			g.openDoor(asm, initial, updated)
 		},
 	)
 	g.syncableBitU16[0x0400].MemoryKind = games.WRAM
@@ -654,48 +590,28 @@ func (g *Game) initSync() {
 
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {
-		g.underworld[room] = games.SyncableBitU16{
-			SyncableGame:    g,
-			Offset:          uint32(room << 1),
-			MemoryKind:      games.SRAM,
-			IsEnabledPtr:    &g.SyncUnderworld,
-			BitNames:        nil,
-			SyncMask:        0xFFFF,
-			PlayerPredicate: games.PlayerPredicateIdentity,
-			OnUpdated: func(s *games.SyncableBitU16, asm *asm.Emitter, initial, updated uint16) {
-				// local player must only be in dungeon module:
-				if !g.LocalPlayer().IsDungeon() {
-					return
-				}
-				// only pay attention to supertile state changes when the local player is in that supertile:
-				if uint16(s.Offset>>1) != g.LocalPlayer().DungeonRoom {
-					return
-				}
-
-				openDoor(asm, initial, updated)
-			},
-		}
+		g.underworld[room].InitFrom(g, room)
 	}
 
 	// notify about bosses defeated:
-	// u16[$7ef190] |= 0b0000100000000000 Armos
+	// u16[$7ef190] |= 0b00001000_00000000 Armos
 	g.underworld[0xC8].BitNames = make([]string, 16)
 	g.underworld[0xC8].BitNames[0xb] = "Armos defeated"
 
-	// u16[$7ef066] |= 0b0000100000000000 Lanmola
+	// u16[$7ef066] |= 0b00001000_00000000 Lanmola
 	g.underworld[0x33].BitNames = make([]string, 16)
 	g.underworld[0x33].BitNames[0xb] = "Lanmola defeated"
 
-	// u16[$7ef00e] |= 0b0000100000000000 Moldorm
+	// u16[$7ef00e] |= 0b00001000_00000000 Moldorm
 	g.underworld[0x07].BitNames = make([]string, 16)
 	g.underworld[0x07].BitNames[0xb] = "Moldorm defeated"
 
-	// u16[$7ef040] |= 0b0000100000000000 Agahnim
+	// u16[$7ef040] |= 0b00001000_00000000 Agahnim
 	g.underworld[0x20].BitNames = make([]string, 16)
 	g.underworld[0x20].BitNames[0xb] = "Agahnim defeated"
-	g.underworld[0x20].OnUpdated = func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
+	g.underworld[0x20].OnUpdated = func(s *syncableUnderworld, a *asm.Emitter, initial, updated uint16) {
 		// asm runs in 16-bit mode (REP #$30) by default for underworld sync.
-		if initial&0b0000100000000000 != 0 || updated&0b0000100000000000 == 0 {
+		if initial&0b00001000_00000000 != 0 || updated&0b00001000_00000000 == 0 {
 			return
 		}
 		a.Comment("check if in HC overworld:")
@@ -771,35 +687,35 @@ func (g *Game) initSync() {
 		g.PushNotification("HC portal opened")
 	}
 
-	// u16[$7ef0b4] |= 0b0000100000000000 Helmasaur
+	// u16[$7ef0b4] |= 0b00001000_00000000 Helmasaur
 	g.underworld[0x5A].BitNames = make([]string, 16)
 	g.underworld[0x5A].BitNames[0xb] = "Helmasaur defeated"
 
-	// u16[$7ef158] |= 0b0000100000000000 Blind
+	// u16[$7ef158] |= 0b00001000_00000000 Blind
 	g.underworld[0xAC].BitNames = make([]string, 16)
 	g.underworld[0xAC].BitNames[0xb] = "Blind defeated"
 
-	// u16[$7ef052] |= 0b0000100000000000 Mothula
+	// u16[$7ef052] |= 0b00001000_00000000 Mothula
 	g.underworld[0x29].BitNames = make([]string, 16)
 	g.underworld[0x29].BitNames[0xb] = "Mothula defeated"
 
-	// u16[$7ef1bc] |= 0b0000100000000000 Kholdstare
+	// u16[$7ef1bc] |= 0b00001000_00000000 Kholdstare
 	g.underworld[0xDE].BitNames = make([]string, 16)
 	g.underworld[0xDE].BitNames[0xb] = "Kholdstare defeated"
 
-	// u16[$7ef00c] |= 0b0000100000000000 Arrghus
+	// u16[$7ef00c] |= 0b00001000_00000000 Arrghus
 	g.underworld[0x06].BitNames = make([]string, 16)
 	g.underworld[0x06].BitNames[0xb] = "Arrghus defeated"
 
-	// u16[$7ef120] |= 0b0000100000000000 Vitreous
+	// u16[$7ef120] |= 0b00001000_00000000 Vitreous
 	g.underworld[0x90].BitNames = make([]string, 16)
 	g.underworld[0x90].BitNames[0xb] = "Vitreous defeated"
 
-	// u16[$7ef148] |= 0b0000100000000000 Trinexx
+	// u16[$7ef148] |= 0b00001000_00000000 Trinexx
 	g.underworld[0xA4].BitNames = make([]string, 16)
 	g.underworld[0xA4].BitNames[0xb] = "Trinexx defeated"
 
-	// u16[$7ef01a] |= 0b0000100000000000 Agahnim 2
+	// u16[$7ef01a] |= 0b00001000_00000000 Agahnim 2
 	g.underworld[0x0D].BitNames = make([]string, 16)
 	g.underworld[0x0D].BitNames[0xb] = "Agahnim 2 defeated"
 
@@ -861,4 +777,68 @@ func (g *Game) setUnderworldSyncMasks() {
 
 	// desync swamp inner watergate at $7EF06A (supertile $35):
 	g.underworld[0x035].SyncMask &= ^uint16(0x0080)
+}
+
+func (g *Game) openDoor(asm *asm.Emitter, initial, updated uint16) bool {
+	// must only be in dungeon module:
+	if !g.LocalPlayer().IsDungeon() {
+		return false
+	}
+	if g.LocalPlayer().SubModule != 0 {
+		return false
+	}
+
+	// only pay attention to the door bits changing:
+	initial &= 0xF000
+	updated &= 0xF000
+	if initial == updated {
+		return false
+	}
+
+	// determine which door opened (or the first door that opened if multiple?):
+	b := uint16(0x8000)
+	k := uint32(0)
+	for ; k < 4; k++ {
+		if updated&b != 0 {
+			break
+		}
+		b >>= 1
+	}
+
+	// emit some asm to open this door locally:
+	k2 := k << 1
+	doorTilemapAddr := g.wramU16(0x19A0+k2) >> 1
+	doorType := g.wramU16(0x19C0 + k2)
+	kind := ""
+	switch doorType & 3 {
+	case 0: // up
+		doorTilemapAddr += 0x81
+		kind = "UP"
+		break
+	case 1: // down
+		doorTilemapAddr += 0x42
+		kind = "DOWN"
+		break
+	case 2: // left
+		doorTilemapAddr += 0x42
+		kind = "LEFT"
+		break
+	case 3: // right
+		doorTilemapAddr += 0x42
+		kind = "RIGHT"
+		break
+	}
+
+	asm.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
+	asm.REP(0x30)
+	asm.LDA_imm16_w(doorTilemapAddr)
+	asm.STA_abs(0x068E)
+	asm.LDA_imm16_w(0x0008) // TODO: confirm this value?
+	asm.STA_abs(0x0690)
+	asm.SEP(0x30)
+	// set door open submodule:
+	asm.LDA_imm8_b(0x04)
+	asm.STA_dp(0x11)
+	asm.REP(0x30)
+	return true
 }
