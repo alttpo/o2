@@ -133,7 +133,6 @@ func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 				a.Comment("restore 8-bit mode and return to RESET code:")
 				a.SEP(0x30)
 				a.RTS()
-				t.Logf("%s", a.Text.String())
 
 				aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
 				if _, err := a.Code.WriteTo(&aw); err != nil {

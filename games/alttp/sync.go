@@ -593,22 +593,9 @@ func (g *Game) initSync() {
 		g.underworld[room].InitFrom(g, room)
 	}
 
-	// notify about bosses defeated:
-	// u16[$7ef190] |= 0b00001000_00000000 Armos
-	g.underworld[0xC8].BitNames = make([]string, 16)
-	g.underworld[0xC8].BitNames[0xb] = "Armos defeated"
-
-	// u16[$7ef066] |= 0b00001000_00000000 Lanmola
-	g.underworld[0x33].BitNames = make([]string, 16)
-	g.underworld[0x33].BitNames[0xb] = "Lanmola defeated"
-
-	// u16[$7ef00e] |= 0b00001000_00000000 Moldorm
-	g.underworld[0x07].BitNames = make([]string, 16)
-	g.underworld[0x07].BitNames[0xb] = "Moldorm defeated"
-
+	// when Agahnim is defeated, open HC portal for any remote players in that
+	// overworld area:
 	// u16[$7ef040] |= 0b00001000_00000000 Agahnim
-	g.underworld[0x20].BitNames = make([]string, 16)
-	g.underworld[0x20].BitNames[0xb] = "Agahnim defeated"
 	g.underworld[0x20].OnUpdated = func(s *syncableUnderworld, a *asm.Emitter, initial, updated uint16) {
 		// asm runs in 16-bit mode (REP #$30) by default for underworld sync.
 		if initial&0b00001000_00000000 != 0 || updated&0b00001000_00000000 == 0 {
@@ -686,38 +673,6 @@ func (g *Game) initSync() {
 		// let player know the portal is opened:
 		g.PushNotification("HC portal opened")
 	}
-
-	// u16[$7ef0b4] |= 0b00001000_00000000 Helmasaur
-	g.underworld[0x5A].BitNames = make([]string, 16)
-	g.underworld[0x5A].BitNames[0xb] = "Helmasaur defeated"
-
-	// u16[$7ef158] |= 0b00001000_00000000 Blind
-	g.underworld[0xAC].BitNames = make([]string, 16)
-	g.underworld[0xAC].BitNames[0xb] = "Blind defeated"
-
-	// u16[$7ef052] |= 0b00001000_00000000 Mothula
-	g.underworld[0x29].BitNames = make([]string, 16)
-	g.underworld[0x29].BitNames[0xb] = "Mothula defeated"
-
-	// u16[$7ef1bc] |= 0b00001000_00000000 Kholdstare
-	g.underworld[0xDE].BitNames = make([]string, 16)
-	g.underworld[0xDE].BitNames[0xb] = "Kholdstare defeated"
-
-	// u16[$7ef00c] |= 0b00001000_00000000 Arrghus
-	g.underworld[0x06].BitNames = make([]string, 16)
-	g.underworld[0x06].BitNames[0xb] = "Arrghus defeated"
-
-	// u16[$7ef120] |= 0b00001000_00000000 Vitreous
-	g.underworld[0x90].BitNames = make([]string, 16)
-	g.underworld[0x90].BitNames[0xb] = "Vitreous defeated"
-
-	// u16[$7ef148] |= 0b00001000_00000000 Trinexx
-	g.underworld[0xA4].BitNames = make([]string, 16)
-	g.underworld[0xA4].BitNames[0xb] = "Trinexx defeated"
-
-	// u16[$7ef01a] |= 0b00001000_00000000 Agahnim 2
-	g.underworld[0x0D].BitNames = make([]string, 16)
-	g.underworld[0x0D].BitNames[0xb] = "Agahnim 2 defeated"
 
 	// Swamp Palace:
 	//                   fedcba98_76543210

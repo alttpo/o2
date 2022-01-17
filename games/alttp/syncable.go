@@ -284,7 +284,9 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 	longAddr := local.ReadableMemory(games.SRAM).BusAddress(offs)
 	newBits := updated & ^initial
 
-	asm.Comment(fmt.Sprintf("underworld room $%03x '%s' state changed; u16[$%06x] |= %#08b_%#08b", s.Room, underworldNames[s.Room], longAddr, newBits>>8, newBits&0xFF))
+	asm.Comment(fmt.Sprintf("underworld room state changed: $%03x '%s'", s.Room, underworldNames[s.Room]))
+	asm.Comment("                  dddd_bkut_sehc_qqqq")
+	asm.Comment(fmt.Sprintf("u16[$%06x] |= 0b%04b_%04b_%04b_%04b", longAddr, newBits>>12&0xF, newBits>>8&0xF, newBits>>4&0xF, newBits&0xF))
 
 	if s.BitNames != nil {
 		received := make([]string, 0, len(s.BitNames))
@@ -335,7 +337,14 @@ func (s *syncableUnderworld) InitFrom(g *Game, room uint16) {
 	s.Room = room
 	s.Offset = uint32(room << 1)
 	s.IsEnabledPtr = &g.SyncUnderworld
-	s.BitNames = nil
 	s.SyncMask = 0xFFFF
 	s.PlayerPredicate = games.PlayerPredicateIdentity
+	s.BitNames = nil
+
+	// name the boss in this underworld room:
+	if bossName, ok := underworldBossNames[room]; ok {
+		// e.g. u16[$7ef190] |= 0b00001000_00000000 Boss Defeated
+		s.BitNames = make([]string, 16)
+		s.BitNames[0xb] = fmt.Sprintf("%s defeated", bossName)
+	}
 }

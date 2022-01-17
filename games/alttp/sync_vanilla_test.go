@@ -1,10 +1,11 @@
 package alttp
 
 import (
+	"fmt"
 	"testing"
 )
 
-func TestGame_AsmEmulation_Vanilla(t *testing.T) {
+func TestAsm_VanillaItems(t *testing.T) {
 	tests := []sramTestCase{
 		{
 			name: "No update",
@@ -457,6 +458,38 @@ func TestGame_AsmEmulation_Vanilla(t *testing.T) {
 			wantUpdated:      true,
 			wantNotification: "got 1 new heart from remote",
 		},
+	}
+
+	runAsmEmulationTests(t, tests)
+}
+
+func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
+	tests := make([]sramTestCase, 0, len(underworldNames))
+
+	for room := uint16(0); room < 0x130; room++ {
+		name, ok := underworldNames[room]
+		if !ok {
+			continue
+		}
+
+		tests = append(tests, sramTestCase{
+			name: fmt.Sprintf("Underworld $%03x: %s", room, name),
+			fields: sramTestCaseFields{
+				ROMTitle: "ZELDANODENSETSU",
+			},
+			sram: []sramTest{
+				{
+					offset:     room << 1,
+					localValue: 0,
+					// quadrants visited:
+					remoteValue:   0b0000_0000_0000_1111,
+					expectedValue: 0b0000_0000_0000_1111,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "",
+			verify:           nil,
+		})
 	}
 
 	runAsmEmulationTests(t, tests)
