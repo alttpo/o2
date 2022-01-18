@@ -140,7 +140,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("GenerateUpdate() = %v, want %v", got, tt.want)
 			}
-			if actual, expected := a.Code.Bytes(), tt.wantAsm; !bytes.Equal(expected, actual) {
+			if actual, expected := a.Bytes(), tt.wantAsm; !bytes.Equal(expected, actual) {
 				t.Errorf("asm.Code.Bytes() = %#v, want %#v\n%s\n", actual, expected, a.Text.String())
 			}
 			if actual, expected := s.Notification, tt.wantNotification; actual != expected {
