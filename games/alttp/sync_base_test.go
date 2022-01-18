@@ -49,6 +49,17 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 		t.Fatal(err)
 	}
 
+	// create the CPU-only SNES emulator:
+	system := emulator.System{
+		Logger: &testingLogger{t},
+		ShouldLogCPU: func(s *emulator.System) bool {
+			return true
+		},
+	}
+	if err = system.CreateEmulator(); err != nil {
+		t.Fatal(err)
+	}
+
 	for i := range tests {
 		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,16 +96,17 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				t.Logf("notify: '%s'", lastNotification)
 			}))
 
-			// create the CPU-only SNES emulator:
-			system := emulator.System{
-				Logger: &testingLogger{t},
-				ShouldLogCPU: func(s *emulator.System) bool {
-					return true
-				},
+			// set logger for system emulator to this specific test:
+			system.Logger = &testingLogger{t}
+
+			// reset memory:
+			for i := range system.WRAM {
+				system.WRAM[i] = 0x00
 			}
-			if err = system.CreateEmulator(); err != nil {
-				t.Fatal(err)
+			for i := range system.SRAM {
+				system.SRAM[i] = 0x00
 			}
+
 			// copy ROM contents into system emulator:
 			copy(system.ROM[:], g.rom.Contents)
 
