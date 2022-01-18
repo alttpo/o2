@@ -114,11 +114,15 @@ type Game struct {
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
+	return NewGame(rom)
+}
+
+func NewGame(rom *snes.ROM) (g *Game) {
 	if rom == nil {
 		panic("alttp: rom cannot be nil")
 	}
 
-	g := &Game{
+	g = &Game{
 		rom:                rom,
 		running:            false,
 		stopped:            make(chan struct{}),

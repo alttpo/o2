@@ -153,7 +153,8 @@ func (s *System) CreateEmulator() (err error) {
 }
 
 func MakeTestROM(title string) (rom *snes.ROM, err error) {
-	var b [0x1_0000]byte
+	// 1 MiB size matches ALTTP JP 1.0 ROM size
+	var b [0x10_0000]byte
 
 	a := asm.Emitter{
 		Code: &bytes.Buffer{},

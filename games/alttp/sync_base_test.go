@@ -59,21 +59,27 @@ func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 			}
 
 			// instantiate the Game instance for testing:
-			g := &Game{
-				rom:              rom,
-				IsCreated:        true,
-				GameName:         "ALTTP",
-				PlayerColor:      0x12ef,
-				SyncItems:        true,
-				SyncDungeonItems: true,
-				SyncProgress:     true,
-				SyncHearts:       true,
-				SyncSmallKeys:    true,
-				SyncUnderworld:   true,
-				SyncOverworld:    true,
-				SyncChests:       true,
-				SyncTunicColor:   false,
+			g := NewGame(rom)
+			g.IsCreated = true
+			g.GameName = "ALTTP"
+			g.PlayerColor = 0x12ef
+			g.SyncItems = true
+			g.SyncDungeonItems = true
+			g.SyncProgress = true
+			g.SyncHearts = true
+			g.SyncSmallKeys = true
+			g.SyncUnderworld = true
+			g.SyncOverworld = true
+			g.SyncChests = true
+			g.SyncTunicColor = false
+
+			// make all JSL destinations contain a single RTL instruction:
+			g.fillRomFunctions()
+			for _, addr := range g.romFunctions {
+				// 0x6B RTL
+				rom.Contents[rom.BusAddressToPC(addr)] = 0x6B
 			}
+
 			g.Reset()
 
 			// subscribe to front-end Notifications from the game:

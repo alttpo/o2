@@ -463,6 +463,84 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 	runAsmEmulationTests(t, tests)
 }
 
+func TestAsm_Vanilla_ItemNames(t *testing.T) {
+	tests := make([]sramTestCase, 0, len(vanillaItemNames))
+
+	for offs := uint16(0x341); offs <= 0x37B; offs++ {
+		if offs >= 0x35C && offs <= 0x35F {
+			// skip bottles since they have special logic:
+			continue
+		}
+
+		itemNames, ok := vanillaItemNames[offs]
+		if !ok {
+			continue
+		}
+
+		for i, itemName := range itemNames {
+			tests = append(tests, sramTestCase{
+				name: fmt.Sprintf("Slot $%03x Item %d", offs, i+1),
+				fields: sramTestCaseFields{
+					ROMTitle: "ZELDANODENSETSU",
+				},
+				sram: []sramTest{
+					{
+						offset:        offs,
+						localValue:    0,
+						remoteValue:   uint8(i + 1),
+						expectedValue: uint8(i + 1),
+					},
+				},
+				wantUpdated:      true,
+				wantNotification: fmt.Sprintf("got %s from remote", itemName),
+			})
+		}
+	}
+
+	runAsmEmulationTests(t, tests)
+}
+
+func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
+	tests := make([]sramTestCase, 0, len(vanillaItemBitNames))
+
+	for offs := uint16(0x341); offs <= 0x37B; offs++ {
+		if offs >= 0x35C && offs <= 0x35F {
+			// skip bottles since they have special logic:
+			continue
+		}
+
+		itemNames, ok := vanillaItemBitNames[offs]
+		if !ok {
+			continue
+		}
+
+		for i, itemName := range itemNames {
+			if itemName == "" {
+				continue
+			}
+
+			tests = append(tests, sramTestCase{
+				name: fmt.Sprintf("Slot $%03x Item Flag %d", offs, i),
+				fields: sramTestCaseFields{
+					ROMTitle: "ZELDANODENSETSU",
+				},
+				sram: []sramTest{
+					{
+						offset:        offs,
+						localValue:    0,
+						remoteValue:   uint8(1 << i),
+						expectedValue: uint8(1 << i),
+					},
+				},
+				wantUpdated:      true,
+				wantNotification: fmt.Sprintf("got %s from remote", itemName),
+			})
+		}
+	}
+
+	runAsmEmulationTests(t, tests)
+}
+
 func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 	tests := make([]sramTestCase, 0, len(underworldNames))
 
