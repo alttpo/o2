@@ -282,16 +282,7 @@ func (g *Game) initSync() {
 
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
-		invSwap1 := g.NewSyncableBitU8(0x38C, &g.SyncItems, []string{
-			"Flute (active)",
-			"Flute (inactive)",
-			"Shovel",
-			"",
-			"Magic Powder",
-			"Mushroom",
-			"Red Boomerang",
-			"Blue Boomerang",
-		}, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
+		invSwap1 := g.NewSyncableVTItemBitsU8(0x38C, &g.SyncItems, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// mushroom/powder:
 			if initial&IS1MagicPowder == 0 && updated&IS1MagicPowder != 0 {
 				// set powder in inventory:
@@ -364,16 +355,7 @@ func (g *Game) initSync() {
 			asm.STA_long(longAddr)
 		}
 
-		g.NewSyncableBitU8(0x38E, &g.SyncItems, []string{
-			"",
-			"",
-			"",
-			"",
-			"",
-			"", // 2nd Progressive Bow
-			"Silver Bow",
-			"Bow",
-		}, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
+		g.NewSyncableVTItemBitsU8(0x38E, &g.SyncItems, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
 			// bow/silver:
 			if initial&IS2SilverBow == 0 && updated&IS2SilverBow != 0 {
 				// set silver bow in inventory:

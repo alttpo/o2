@@ -78,6 +78,18 @@ func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated 
 	return s
 }
 
+func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
+	s := games.NewSyncableBitU8(
+		g,
+		uint32(offset),
+		enabled,
+		vtItemBitNames[offset],
+		onUpdated,
+	)
+	g.syncableItems[offset] = s
+	return s
+}
+
 type syncableBottle struct {
 	g games.SyncableGame
 

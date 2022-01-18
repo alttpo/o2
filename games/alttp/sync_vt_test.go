@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -353,6 +354,43 @@ func TestAsm_VT_Items(t *testing.T) {
 			wantUpdated:      true,
 			wantNotification: "got Silver Bow from remote",
 		},
+	}
+
+	// ROM title must start with "VT " to indicate randomizer
+	runAsmEmulationTests(t, "VT test", tests)
+}
+
+func TestAsm_VT_ItemBits(t *testing.T) {
+	tests := make([]sramTestCase, 0, len(vtItemBitNames)*8)
+
+	for offs := uint16(0x38C); offs <= 0x38E; offs++ {
+		bitNames, ok := vtItemBitNames[offs]
+		if !ok {
+			continue
+		}
+
+		for i := range bitNames {
+			bitName := bitNames[i]
+			expectedNotification := ""
+			if bitName != "" {
+				expectedNotification = fmt.Sprintf("got %s from remote", bitName)
+			}
+
+			tests = append(tests, sramTestCase{
+				name: fmt.Sprintf("$%03x bit %d", offs, i),
+				sram: []sramTest{
+					{
+						offset:        offs,
+						localValue:    0,
+						remoteValue:   1 << i,
+						expectedValue: 1 << i,
+					},
+				},
+				wantUpdated:      true,
+				wantNotification: expectedNotification,
+				verify:           nil,
+			})
+		}
 	}
 
 	// ROM title must start with "VT " to indicate randomizer
