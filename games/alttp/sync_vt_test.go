@@ -7,18 +7,11 @@ import (
 func TestAsm_VT_Items(t *testing.T) {
 	tests := []sramTestCase{
 		{
-			name: "No update",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
+			name:        "No update",
 			wantUpdated: false,
 		},
 		{
 			name: "VT mushroom",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -36,10 +29,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT powder",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -57,10 +46,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT flute active",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -78,10 +63,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT flute (active) from shovel",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -100,10 +81,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT flute (activated) from flute",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -122,10 +99,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT flute",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -143,10 +116,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT flute from shovel",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -165,10 +134,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT shovel",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -186,10 +151,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT shovel from flute",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -208,10 +169,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT shovel from flute (activated)",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -230,10 +187,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT red boomerang",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -251,10 +204,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT blue boomerang",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38C,
@@ -272,10 +221,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT bow no arrows",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -300,10 +245,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT bow with arrows",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -328,10 +269,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT bow no change",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -351,10 +288,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT silver bow no arrows",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -379,10 +312,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT silver bow with arrows",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -407,10 +336,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 		{
 			name: "VT silver bow no change",
-			fields: sramTestCaseFields{
-				// ROM title must start with "VT " to indicate randomizer
-				ROMTitle: "VT test",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x38E,
@@ -430,5 +355,6 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 	}
 
-	runAsmEmulationTests(t, tests)
+	// ROM title must start with "VT " to indicate randomizer
+	runAsmEmulationTests(t, "VT test", tests)
 }

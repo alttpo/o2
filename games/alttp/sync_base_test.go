@@ -22,14 +22,8 @@ type sramTest struct {
 	expectedValue uint8
 }
 
-type sramTestCaseFields struct {
-	// title that goes into the $FFC0 header of the ROM; used to vary the game type detected e.g. "VT " for randomizers
-	ROMTitle string
-}
-
 type sramTestCase struct {
-	name   string
-	fields sramTestCaseFields
+	name string
 	// individual bytes of SRAM to be set and tested
 	sram        []sramTest
 	wantUpdated bool
@@ -48,15 +42,17 @@ func (l *testingLogger) WriteString(s string) (n int, err error) {
 	return len(s), nil
 }
 
-func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
+func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
+	// create a ROM for testing our patch process and the generated ASM code:
+	rom, err := emulator.MakeTestROM(romTitle)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for i := range tests {
 		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			// create a ROM for testing our patch process and the generated ASM code:
-			rom, err := emulator.MakeTestROM(tt.fields.ROMTitle)
-			if err != nil {
-				t.Fatal(err)
-			}
+			var err error
 
 			// instantiate the Game instance for testing:
 			g := NewGame(rom)
@@ -96,14 +92,14 @@ func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 					return true
 				},
 			}
-			if err := system.CreateEmulator(); err != nil {
+			if err = system.CreateEmulator(); err != nil {
 				t.Fatal(err)
 			}
 			// copy ROM contents into system emulator:
 			copy(system.ROM[:], g.rom.Contents)
 
 			// setup patch code in emulator SRAM:
-			if err := system.SetupPatch(); err != nil {
+			if err = system.SetupPatch(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -141,7 +137,7 @@ func runAsmEmulationTests(t *testing.T, tests []sramTestCase) {
 				a.RTS()
 
 				aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
-				if _, err := a.Code.WriteTo(&aw); err != nil {
+				if _, err = a.Code.WriteTo(&aw); err != nil {
 					t.Fatal(err)
 				}
 

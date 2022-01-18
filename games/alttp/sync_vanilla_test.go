@@ -8,17 +8,11 @@ import (
 func TestAsm_Vanilla_Items(t *testing.T) {
 	tests := []sramTestCase{
 		{
-			name: "No update",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
+			name:        "No update",
 			wantUpdated: false,
 		},
 		{
 			name: "Mushroom",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x344,
@@ -32,9 +26,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Powder",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x344,
@@ -48,9 +39,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Flute activated",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -64,9 +52,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Flute activated from flute",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -80,9 +65,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Flute activated from shovel",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -96,9 +78,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Flute",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -112,9 +91,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Flute from shovel",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -128,9 +104,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Shovel",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x34C,
@@ -144,9 +117,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Red boomerang",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x341,
@@ -160,9 +130,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Red boomerang from blue boomerang",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x341,
@@ -176,9 +143,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Blue boomerang",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x341,
@@ -192,9 +156,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow no arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have no arrows:
@@ -215,9 +176,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow no arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have no arrows:
@@ -238,9 +196,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow with arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have arrows:
@@ -261,9 +216,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow with arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have arrows:
@@ -284,9 +236,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow no change",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// already have silvers selected, don't alter selection:
@@ -301,9 +250,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Bow no change",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// already have silvers selected, don't alter selection:
@@ -318,9 +264,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow no arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have no arrows:
@@ -341,9 +284,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow no arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have no arrows:
@@ -364,9 +304,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow with arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have arrows:
@@ -387,9 +324,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow with arrows",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// have arrows:
@@ -410,9 +344,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow no change",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// already have bow selected, don't alter selection:
@@ -427,9 +358,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Silver bow no change",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					// already have bow selected, don't alter selection:
@@ -444,9 +372,6 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 		{
 			name: "Hearts",
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:        0x36C,
@@ -460,7 +385,7 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 	}
 
-	runAsmEmulationTests(t, tests)
+	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
 }
 
 func TestAsm_Vanilla_ItemNames(t *testing.T) {
@@ -480,9 +405,6 @@ func TestAsm_Vanilla_ItemNames(t *testing.T) {
 		for i, itemName := range itemNames {
 			tests = append(tests, sramTestCase{
 				name: fmt.Sprintf("Slot $%03x Item %d", offs, i+1),
-				fields: sramTestCaseFields{
-					ROMTitle: "ZELDANODENSETSU",
-				},
 				sram: []sramTest{
 					{
 						offset:        offs,
@@ -497,7 +419,7 @@ func TestAsm_Vanilla_ItemNames(t *testing.T) {
 		}
 	}
 
-	runAsmEmulationTests(t, tests)
+	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
 }
 
 func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
@@ -521,9 +443,6 @@ func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
 
 			tests = append(tests, sramTestCase{
 				name: fmt.Sprintf("Slot $%03x Item Flag %d", offs, i),
-				fields: sramTestCaseFields{
-					ROMTitle: "ZELDANODENSETSU",
-				},
 				sram: []sramTest{
 					{
 						offset:        offs,
@@ -538,7 +457,7 @@ func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
 		}
 	}
 
-	runAsmEmulationTests(t, tests)
+	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
 }
 
 func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
@@ -552,9 +471,6 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 
 		tests = append(tests, sramTestCase{
 			name: fmt.Sprintf("Underworld $%03x: %s", room, name),
-			fields: sramTestCaseFields{
-				ROMTitle: "ZELDANODENSETSU",
-			},
 			sram: []sramTest{
 				{
 					offset:     room << 1,
@@ -573,9 +489,6 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 		if bossName, ok := underworldBossNames[room]; ok {
 			tests = append(tests, sramTestCase{
 				name: fmt.Sprintf("Underworld BOSS $%03x: %s", room, name),
-				fields: sramTestCaseFields{
-					ROMTitle: "ZELDANODENSETSU",
-				},
 				sram: []sramTest{{
 					offset:     room<<1 + 1, // high byte of u16
 					localValue: 0,
@@ -590,5 +503,5 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 
 	}
 
-	runAsmEmulationTests(t, tests)
+	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
 }
