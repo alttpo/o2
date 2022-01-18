@@ -464,28 +464,49 @@ func TestAsm_Vanilla_Bottles(t *testing.T) {
 	tests := make([]sramTestCase, 0, len(vanillaItemBitNames))
 
 	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
-		for i := range vanillaBottleItemNames {
-			// skip unused "Shroom" item:
-			if i == 0 {
-				continue
-			}
+		bottleItemNames := vanillaBottleItemNames[1:]
 
-			itemName := vanillaBottleItemNames[i]
+		// positive tests:
+		for i := range bottleItemNames {
+			bottleValue := uint8(i + 2)
+			itemName := bottleItemNames[i]
 			expectedNotification := fmt.Sprintf("got %s from remote", itemName)
 
 			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("Slot $%03x Bottle %d", offs, i+1),
+				name: fmt.Sprintf("Slot $%03x Bottle 0 to %d", offs, bottleValue),
 				sram: []sramTest{
 					{
 						offset:        offs,
 						localValue:    0,
-						remoteValue:   uint8(i + 1),
-						expectedValue: uint8(i + 1),
+						remoteValue:   bottleValue,
+						expectedValue: bottleValue,
 					},
 				},
 				wantUpdated:      true,
 				wantNotification: expectedNotification,
 			})
+		}
+
+		// negative tests:
+		for j := range bottleItemNames {
+			localBottle := uint8(j + 2)
+			for i := range bottleItemNames {
+				remoteBottle := uint8(i + 2)
+
+				tests = append(tests, sramTestCase{
+					name: fmt.Sprintf("Slot $%03x Bottle %d to %d", offs, localBottle, remoteBottle),
+					sram: []sramTest{
+						{
+							offset:        offs,
+							localValue:    localBottle,
+							remoteValue:   remoteBottle,
+							expectedValue: localBottle,
+						},
+					},
+					wantUpdated:      false,
+					wantNotification: "",
+				})
+			}
 		}
 	}
 
