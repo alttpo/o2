@@ -62,6 +62,10 @@ func New() (*Bus, error) {
 	return &Bus{entries: make([]busEntry, 0)}, nil
 }
 
+func NewWithSizeHint(cap int) (*Bus, error) {
+	return &Bus{entries: make([]busEntry, 0, cap)}, nil
+}
+
 // There are two variants possible:
 // handler, "name", start, size
 // handler, "name", start, end      <- currently selected

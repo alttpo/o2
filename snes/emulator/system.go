@@ -26,7 +26,7 @@ type System struct {
 
 func (s *System) CreateEmulator() (err error) {
 	// create primary A bus for SNES:
-	s.Bus, _ = bus.New()
+	s.Bus, _ = bus.NewWithSizeHint(0x40*2 + 0x10*2 + 1 + 0x70 + 0x80 + 0x70*2)
 	// Create CPU:
 	s.CPU, _ = cpu65c816.New(s.Bus)
 
