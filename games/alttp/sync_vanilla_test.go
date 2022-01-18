@@ -460,6 +460,38 @@ func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
 	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
 }
 
+func TestAsm_Vanilla_Bottles(t *testing.T) {
+	tests := make([]sramTestCase, 0, len(vanillaItemBitNames))
+
+	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
+		for i := range vanillaBottleItemNames {
+			// skip unused "Shroom" item:
+			if i == 0 {
+				continue
+			}
+
+			itemName := vanillaBottleItemNames[i]
+			expectedNotification := fmt.Sprintf("got %s from remote", itemName)
+
+			tests = append(tests, sramTestCase{
+				name: fmt.Sprintf("Slot $%03x Bottle %d", offs, i+1),
+				sram: []sramTest{
+					{
+						offset:        offs,
+						localValue:    0,
+						remoteValue:   uint8(i + 1),
+						expectedValue: uint8(i + 1),
+					},
+				},
+				wantUpdated:      true,
+				wantNotification: expectedNotification,
+			})
+		}
+	}
+
+	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
+}
+
 func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 	tests := make([]sramTestCase, 0, len(underworldNames))
 
