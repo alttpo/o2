@@ -61,8 +61,8 @@ func (g *Game) updateWRAM() {
 		[]snes.Write{
 			{
 				Address: target,
-				Size:    uint8(a.Code.Len()),
-				Data:    a.Code.Bytes(),
+				Size:    uint8(a.Len()),
+				Data:    a.Bytes(),
 			},
 			// finally, update the JSR instruction to point to the updated routine:
 			{
@@ -156,8 +156,8 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	// dump asm:
 	log.Print(a.Text.String())
 
-	if a.Code.Len() > 255 {
-		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Code.Len()))
+	if a.Len() > 255 {
+		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Len()))
 	}
 
 	return true
@@ -210,7 +210,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		u := item.GenerateUpdate(ta)
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+			if ta.Len()+a.Len()+10 <= 255 {
 				a.Append(ta)
 				updated = true
 			}
@@ -224,7 +224,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		u := g.doSyncSmallKeys(ta)
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+			if ta.Len()+a.Len()+10 <= 255 {
 				a.Append(ta)
 				updated = true
 			}
@@ -247,7 +247,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			u := s.GenerateUpdate(ta)
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Code.Len()+a.Code.Len()+10 <= 255 {
+				if ta.Len()+a.Len()+10 <= 255 {
 					a.Append(ta)
 					updated = true
 				}
@@ -352,7 +352,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				u := s.GenerateUpdate(ta)
 				if u {
 					// don't emit the routine if it pushes us over the code size limit:
-					if ta.Code.Len()+a16.Code.Len()+a.Code.Len()+10 <= 255 {
+					if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
 						a16.Append(ta)
 						updated16 = true
 					}
@@ -375,7 +375,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			u := s.GenerateUpdate(ta)
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Code.Len()+a16.Code.Len()+a.Code.Len()+10 <= 255 {
+				if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
 					a16.Append(ta)
 					updated16 = true
 				}
@@ -387,7 +387,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// switch back to 8-bit mode:
 			a16.Comment("switch back to 8-bit mode:")
 			a16.SEP(0x30)
-			if a.Code.Len()+a16.Code.Len()+10 <= 255 {
+			if a.Len()+a16.Len()+10 <= 255 {
 				// commit the changes to the parent assembler:
 				a.Append(a16)
 				updated = true

@@ -17,6 +17,15 @@ type Emitter struct {
 	baseSet bool
 }
 
+func (a *Emitter) Len() int {
+	return a.Code.Len()
+}
+
+func (a *Emitter) Bytes() []byte {
+	// TODO: resolve all labels
+	return a.Code.Bytes()
+}
+
 func (a *Emitter) Clone() *Emitter {
 	return &Emitter{
 		flagsTracker: a.flagsTracker,
