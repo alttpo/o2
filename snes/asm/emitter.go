@@ -54,6 +54,10 @@ func (a *Emitter) Clone() *Emitter {
 	}
 }
 
+func (a *Emitter) PC() uint32 {
+	return a.address
+}
+
 func (a *Emitter) Append(e *Emitter) {
 	a.address = e.address
 	a.baseSet = e.baseSet
