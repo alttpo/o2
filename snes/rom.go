@@ -299,3 +299,7 @@ func (r *ROM) BusWriter(busAddr uint32) io.Writer {
 	pcEnd := (bank << 15) | 0x7FFF
 	return &busWriter{r, busAddr, pcStart, pcEnd, 0}
 }
+
+func (r *ROM) Slice(offs uint32, len uint32) []byte {
+	return r.Contents[offs : offs+len]
+}

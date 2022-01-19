@@ -1,9 +1,7 @@
 package asm
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"strings"
 )
 
@@ -13,43 +11,40 @@ type Emitter struct {
 
 	Text *strings.Builder
 
-	code *bytes.Buffer
+	code []byte
+	n    int
 
 	base    uint32
 	baseSet bool
 	address uint32
 
-	labels map[string]int
+	// label name to address map:
+	labels map[string]uint32
+	// dangling references to labels; stored as absolute addresses:
+	danglingS8 map[string][]uint32
 }
 
-func NewEmitter(genText bool) *Emitter {
-	a := &Emitter{}
-	a.code = &bytes.Buffer{}
-	if genText {
-		a.Text = &strings.Builder{}
+func NewEmitter(target []byte, text *strings.Builder) *Emitter {
+	a := &Emitter{
+		flagsTracker: 0,
+		Text:         text,
+		code:         target,
+		n:            0,
+		base:         0,
+		baseSet:      false,
+		address:      0,
+		labels:       make(map[string]uint32),
+		danglingS8:   make(map[string][]uint32),
 	}
 	return a
-}
-
-func (a *Emitter) Len() int {
-	//return a.code.Len()
-	return int(a.address) - int(a.base)
-}
-
-func (a *Emitter) Bytes() []byte {
-	// TODO: resolve all labels
-	return a.code.Bytes()
-}
-
-func (a *Emitter) WriteTo(w io.Writer) (n int64, err error) {
-	return a.code.WriteTo(w)
 }
 
 func (a *Emitter) Clone() *Emitter {
 	return &Emitter{
 		flagsTracker: a.flagsTracker,
-		code:         &bytes.Buffer{},
 		Text:         &strings.Builder{},
+		code:         make([]byte, len(a.code)),
+		n:            0,
 		address:      a.address,
 		base:         a.base,
 		baseSet:      a.baseSet,
@@ -57,17 +52,82 @@ func (a *Emitter) Clone() *Emitter {
 	}
 }
 
+func (a *Emitter) Finalize() {
+	// resolves all dangling label references in prior code
+	for label, refs := range a.danglingS8 {
+		addr, ok := a.labels[label]
+		if !ok {
+			panic(fmt.Errorf("could not resolve label '%s'", label))
+		}
+
+		// fill in signed 8-bit (-128..+127) references to this label:
+		for _, s8addr := range refs {
+			// adding 1 here to accommodate the size of the S8 instruction parameter
+			diff := int(addr) - int(s8addr+1)
+			if diff > 127 || diff < -128 {
+				panic(fmt.Errorf("branch from %#06x to %#06x too far for signed 8-bit; diff=%d", s8addr+1, addr, diff))
+			}
+			a.code[s8addr-a.base] = uint8(int8(diff))
+		}
+
+		delete(a.danglingS8, label)
+	}
+}
+
+func (a *Emitter) Label(name string) uint32 {
+	if oldAddr, ok := a.labels[name]; ok {
+		panic(fmt.Errorf("label '%s' already defined at %#06x", name, oldAddr))
+	}
+
+	// define new label:
+	a.labels[name] = a.address
+
+	if a.Text != nil {
+		_, _ = fmt.Fprintf(a.Text, "%s:\n", name)
+	}
+
+	return a.address
+}
+
+func (a *Emitter) Len() int {
+	//return a.code.Len()
+	//return int(a.address) - int(a.base)
+	return a.n
+}
+
+func (a *Emitter) Bytes() []byte {
+	return a.code[0:a.Len()]
+}
+
 func (a *Emitter) PC() uint32 {
 	return a.address
 }
 
 func (a *Emitter) Append(e *Emitter) {
+	if a.n+e.n > len(a.code) {
+		panic(fmt.Errorf("not enough space"))
+	}
+
 	a.address = e.address
 	a.baseSet = e.baseSet
 	a.flagsTracker = e.flagsTracker
 
-	_, _ = e.code.WriteTo(a.code)
+	a.n += copy(a.code[a.n:], e.code[0:e.n])
 	_, _ = a.Text.WriteString(e.Text.String())
+}
+
+func (a *Emitter) write(d []byte) (int, error) {
+	if a.code == nil {
+		return 0, nil
+	}
+
+	if a.n+len(d) > len(a.code) {
+		panic(fmt.Errorf("not enough space"))
+	}
+
+	n := copy(a.code[a.n:], d)
+	a.n += n
+	return n, nil
 }
 
 func (a *Emitter) SetBase(addr uint32) {
@@ -93,9 +153,7 @@ func (a *Emitter) emitBase() {
 }
 
 func (a *Emitter) emit1(ins string, d [1]byte) {
-	if a.code != nil {
-		_, _ = a.code.Write(d[:])
-	}
+	_, _ = a.write(d[:])
 	if a.Text != nil {
 		a.emitBase()
 		// TODO: adjust these format widths
@@ -105,9 +163,7 @@ func (a *Emitter) emit1(ins string, d [1]byte) {
 }
 
 func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
-	if a.code != nil {
-		_, _ = a.code.Write(d[:])
-	}
+	_, _ = a.write(d[:])
 	if a.Text != nil {
 		a.emitBase()
 		args := fmt.Sprintf(argsFormat, d[1])
@@ -118,9 +174,7 @@ func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
 }
 
 func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
-	if a.code != nil {
-		_, _ = a.code.Write(d[:])
-	}
+	_, _ = a.write(d[:])
 	if a.Text != nil {
 		a.emitBase()
 		args := fmt.Sprintf(argsFormat, d[1], d[2])
@@ -131,9 +185,7 @@ func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
 }
 
 func (a *Emitter) emit4(ins, argsFormat string, d [4]byte) {
-	if a.code != nil {
-		_, _ = a.code.Write(d[:])
-	}
+	_, _ = a.write(d[:])
 	if a.Text != nil {
 		a.emitBase()
 		args := fmt.Sprintf(argsFormat, d[1], d[2], d[3])
@@ -173,9 +225,7 @@ func (a *Emitter) EmitBytes(b []byte) {
 		}
 		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
 	}
-	if a.code != nil {
-		_, _ = a.code.Write(b)
-	}
+	_, _ = a.write(b)
 	a.address += uint32(len(b))
 }
 
@@ -335,28 +385,44 @@ func (a *Emitter) CMP_imm8_b(m uint8) {
 	a.emit2("cmp.b", "#$%02x", d)
 }
 
-func (a *Emitter) BNE(m int8) {
+func (a *Emitter) BNE_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0xD0
 	d[1] = uint8(m)
 	a.emit2("bne", "$%02x", d)
 }
 
-func (a *Emitter) BEQ(m int8) {
+func (a *Emitter) BNE(label string) {
+	var d [2]byte
+	d[0] = 0xD0
+	d[1] = 0xFF
+	_, _ = a.write(d[:])
+	if a.Text != nil {
+		a.emitBase()
+		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x __\n", "bne", label, a.address, d[0]))
+	}
+	a.address += 2
+
+	refs := a.danglingS8[label]
+	refs = append(refs, a.address-1)
+	a.danglingS8[label] = refs
+}
+
+func (a *Emitter) BEQ_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0xF0
 	d[1] = uint8(m)
 	a.emit2("beq", "$%02x", d)
 }
 
-func (a *Emitter) BPL(m int8) {
+func (a *Emitter) BPL_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0x10
 	d[1] = uint8(m)
 	a.emit2("bpl", "$%02x", d)
 }
 
-func (a *Emitter) BRA(m int8) {
+func (a *Emitter) BRA_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0x80
 	d[1] = uint8(m)

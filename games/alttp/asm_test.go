@@ -3,11 +3,12 @@ package alttp
 import (
 	"log"
 	"o2/snes/asm"
+	"strings"
 	"testing"
 )
 
 func TestGame_initSync(t *testing.T) {
-	a := asm.NewEmitter(true)
+	a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
 
 	a.SetBase(0x707c00)
 
@@ -17,21 +18,21 @@ func TestGame_initSync(t *testing.T) {
 
 		// check if in dungeon:
 		a.LDA_dp(0x1B)
-		a.BNE(0x6F - 0x06) // exit
+		a.BNE_imm8(0x6F - 0x06) // exit
 		// check if in HC overworld:
 		a.LDA_dp(0x8A)
 		a.CMP_imm8_b(0x1B)
-		a.BNE(0x6F - 0x0C) // exit
+		a.BNE_imm8(0x6F - 0x0C) // exit
 
 		a.Comment("find free sprite slot:")
-		a.LDX_imm8_b(0x0f)  //   LDX   #$0F
-		_ = 0               // loop:
-		a.LDA_abs_x(0x0DD0) //   LDA.w $0DD0,X
-		a.BEQ(0x05)         //   BEQ   found
-		a.DEX()             //   DEX
-		a.BPL(-8)           //   BPL   loop
-		a.BRA(0x6F - 0x18)  //   BRA   exit
-		_ = 0               // found:
+		a.LDX_imm8_b(0x0f)      //   LDX   #$0F
+		_ = 0                   // loop:
+		a.LDA_abs_x(0x0DD0)     //   LDA.w $0DD0,X
+		a.BEQ_imm8(0x05)        //   BEQ   found
+		a.DEX()                 //   DEX
+		a.BPL_imm8(-8)          //   BPL   loop
+		a.BRA_imm8(0x6F - 0x18) //   BRA   exit
+		_ = 0                   // found:
 
 		a.Comment("open portal at HC:")
 		// Y:

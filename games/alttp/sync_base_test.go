@@ -5,7 +5,7 @@ import (
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/snes/lorom"
-	"o2/util"
+	"strings"
 	"testing"
 )
 
@@ -77,8 +77,6 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 	for i := range tests {
 		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			var err error
-
 			// instantiate the Game instance for testing:
 			g := NewGame(rom)
 			g.IsCreated = true
@@ -133,7 +131,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
 			}
 
-			a := asm.NewEmitter(true)
+			a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
 			updated := g.generateSRAMRoutine(a, 0x707C00)
@@ -148,14 +146,11 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				a.Comment("restore 8-bit mode and return to RESET code:")
 				a.SEP(0x30)
 				a.RTS()
+				a.Finalize()
 
-				aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
-				if _, err = a.WriteTo(&aw); err != nil {
-					t.Fatal(err)
-				}
+				copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
 
 				// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
-				// see the emulator.MakeTestROM() function for details
 				system.CPU.Reset()
 				system.SetPC(0x00_8056)
 				if !system.RunUntil(testROMBreakPoint, 0x1_000) {
@@ -175,7 +170,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			}
 
 			// call generateUpdateAsm() again for next frame to receive notifications:
-			a = asm.NewEmitter(true)
+			a = asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
 			a.SetBase(0x707E00)
 			a.AssumeSEP(0x30)
 			_ = g.generateUpdateAsm(a)

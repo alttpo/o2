@@ -288,14 +288,14 @@ func (g *Game) initSync() {
 				// set powder in inventory:
 				a.Comment("set Magic Powder in inventory:")
 				a.LDA_long(0x7EF344)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF344)
 			} else if initial&IS1Mushroom == 0 && updated&IS1Mushroom != 0 {
 				// set mushroom in inventory:
 				a.Comment("set Mushroom in inventory:")
 				a.LDA_long(0x7EF344)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(1)
 				a.STA_long(0x7EF344)
 			}
@@ -305,21 +305,21 @@ func (g *Game) initSync() {
 				// flute (activated):
 				a.Comment("set Flute (active) in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(3)
 				a.STA_long(0x7EF34C)
 			} else if initial&IS1FluteInactive == 0 && updated&IS1FluteInactive != 0 {
 				// flute (activated):
 				a.Comment("set Flute (inactive) in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF34C)
 			} else if initial&IS1Shovel == 0 && updated&IS1Shovel != 0 {
 				// flute (activated):
 				a.Comment("set Shovel in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(1)
 				a.STA_long(0x7EF34C)
 			}
@@ -329,14 +329,14 @@ func (g *Game) initSync() {
 				// set powder in inventory:
 				a.Comment("set Red Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF341)
 			} else if initial&IS1BlueBoomerang == 0 && updated&IS1BlueBoomerang != 0 {
 				// set mushroom in inventory:
 				a.Comment("set Blue Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
-				a.BNE(6)
+				a.BNE_imm8(6)
 				a.LDA_imm8_b(1)
 				a.STA_long(0x7EF341)
 			}
@@ -361,7 +361,7 @@ func (g *Game) initSync() {
 				// set silver bow in inventory:
 				a.Comment("set Silver Bow in inventory:")
 				a.LDA_long(0x7EF340)
-				a.BNE(0xe)
+				a.BNE_imm8(0xe)
 
 				a.LDA_long(0x7EF377) // load arrows
 				a.CMP_imm8_b(0x01)   // are arrows present?
@@ -373,7 +373,7 @@ func (g *Game) initSync() {
 				// set bow in inventory:
 				a.Comment("set Bow in inventory:")
 				a.LDA_long(0x7EF340)
-				a.BNE(0xe)
+				a.BNE_imm8(0xe)
 
 				a.LDA_long(0x7EF377) // load arrows
 				a.CMP_imm8_b(0x01)   // are arrows present?
@@ -418,7 +418,7 @@ func (g *Game) initSync() {
 			asm.Comment("already have uncle's gear; remove telepathic zelda follower:")
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x05)
-			asm.BNE(0x06)
+			asm.BNE_imm8(0x06)
 			asm.LDA_imm8_b(0x00)   // 2 bytes
 			asm.STA_long(0x7EF3CC) // 4 bytes
 			return true
@@ -457,7 +457,7 @@ func (g *Game) initSync() {
 			// this may run when link is still in bed so uncle adds the follower before link can get up:
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x05)
-			asm.BNE(0x06)
+			asm.BNE_imm8(0x06)
 			asm.LDA_imm8_b(0x00)   // 2 bytes
 			asm.STA_long(0x7EF3CC) // 4 bytes
 		}
@@ -503,7 +503,7 @@ func (g *Game) initSync() {
 			asm.Comment("lose purple chest follower:")
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x0C)
-			asm.BNE(0x06)
+			asm.BNE_imm8(0x06)
 			asm.LDA_imm8_b(0x00)   // 2 bytes
 			asm.STA_long(0x7EF3CC) // 4 bytes
 		}
@@ -512,11 +512,11 @@ func (g *Game) initSync() {
 			asm.Comment("lose smithy follower:")
 			asm.LDA_long(0x7EF3CC)
 			asm.CMP_imm8_b(0x07)
-			asm.BNE(0x06)
+			asm.BNE_imm8(0x06)
 			asm.LDA_imm8_b(0x00)   // 2 bytes
 			asm.STA_long(0x7EF3CC) // 4 bytes
 			asm.CMP_imm8_b(0x08)
-			asm.BNE(0x06)
+			asm.BNE_imm8(0x06)
 			asm.LDA_imm8_b(0x00)   // 2 bytes
 			asm.STA_long(0x7EF3CC) // 4 bytes
 		}
@@ -588,21 +588,21 @@ func (g *Game) initSync() {
 
 		// check if in dungeon:
 		a.LDA_dp(0x1B)
-		a.BNE(0x6F - 0x06) // exit
+		a.BNE_imm8(0x6F - 0x06) // exit
 		// check if in HC overworld:
 		a.LDA_dp(0x8A)
 		a.CMP_imm8_b(0x1B)
-		a.BNE(0x6F - 0x0C) // exit
+		a.BNE_imm8(0x6F - 0x0C) // exit
 
 		a.Comment("find free sprite slot:")
-		a.LDX_imm8_b(0x0f)  //   LDX   #$0F
-		_ = 0               // loop:
-		a.LDA_abs_x(0x0DD0) //   LDA.w $0DD0,X
-		a.BEQ(0x05)         //   BEQ   found
-		a.DEX()             //   DEX
-		a.BPL(-8)           //   BPL   loop
-		a.BRA(0x6F - 0x18)  //   BRA   exit
-		_ = 0               // found:
+		a.LDX_imm8_b(0x0f)      //   LDX   #$0F
+		_ = 0                   // loop:
+		a.LDA_abs_x(0x0DD0)     //   LDA.w $0DD0,X
+		a.BEQ_imm8(0x05)        //   BEQ   found
+		a.DEX()                 //   DEX
+		a.BPL_imm8(-8)          //   BPL   loop
+		a.BRA_imm8(0x6F - 0x18) //   BRA   exit
+		_ = 0                   // found:
 
 		a.Comment("open portal at HC:")
 		// Y:
