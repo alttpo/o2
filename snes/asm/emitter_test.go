@@ -1,14 +1,16 @@
 package asm
 
 import (
-	"strings"
+	"log"
 	"testing"
 )
 
-func TestEmitter_Label(t *testing.T) {
-	a := NewEmitter(make([]byte, 0x100), &strings.Builder{})
+func TestEmitter_LabelBackwards(t *testing.T) {
+	a := NewEmitter(make([]byte, 0x100), true)
 	a.Label("loop")
 	a.BNE("loop")
 	a.Finalize()
-	t.Log(a.Text.String())
+	if err := a.WriteTextTo(log.Writer()); err != nil {
+		t.Error(err)
+	}
 }

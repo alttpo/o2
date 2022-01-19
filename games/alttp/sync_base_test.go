@@ -5,7 +5,6 @@ import (
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/snes/lorom"
-	"strings"
 	"testing"
 )
 
@@ -131,22 +130,22 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
 			}
 
-			a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
+			a := asm.NewEmitter(make([]byte, 0x200), true)
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
 			updated := g.generateSRAMRoutine(a, 0x707C00)
 			if updated != tt.wantUpdated {
-				t.Logf("%s", a.Text.String())
 				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
 				return
 			}
 
 			// only run the ASM if it is generated:
 			if updated {
-				a.Comment("restore 8-bit mode and return to RESET code:")
-				a.SEP(0x30)
-				a.RTS()
-				a.Finalize()
+				// generateSRAMRoutine() takes care of this:
+				//a.Comment("restore 8-bit mode and return to RESET code:")
+				//a.SEP(0x30)
+				//a.RTS()
+				//a.WriteTextTo(log.Writer())
 
 				copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
 
@@ -170,7 +169,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			}
 
 			// call generateUpdateAsm() again for next frame to receive notifications:
-			a = asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
+			a = asm.NewEmitter(make([]byte, 0x200), false)
 			a.SetBase(0x707E00)
 			a.AssumeSEP(0x30)
 			_ = g.generateUpdateAsm(a)

@@ -3,12 +3,11 @@ package alttp
 import (
 	"log"
 	"o2/snes/asm"
-	"strings"
 	"testing"
 )
 
 func TestGame_initSync(t *testing.T) {
-	a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
+	a := asm.NewEmitter(make([]byte, 0x200), true)
 
 	a.SetBase(0x707c00)
 
@@ -83,5 +82,5 @@ func TestGame_initSync(t *testing.T) {
 		a.REP(0x30)
 	}
 
-	log.Println(a.Text.String())
+	a.WriteTextTo(log.Writer())
 }

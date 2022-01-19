@@ -5,7 +5,6 @@ import (
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
-	"strings"
 	"testing"
 )
 
@@ -31,30 +30,30 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	}
 
 	// write RESET vector:
-	a := asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8000), 0x2F), &strings.Builder{})
+	a := asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8000), 0x2F), true)
 	a.SetBase(0x00_8000)
 	a.SEP(0x30)
 	a.BRA_imm8(0x2F - 0x04)
 	a.Finalize()
-	log.Print(a.Text.String())
+	a.WriteTextTo(log.Writer())
 
 	// write the $802F code that will be patched over:
-	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_802F), 0x50), &strings.Builder{})
+	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_802F), 0x50), true)
 	a.SetBase(0x00_802F)
 	a.AssumeSEP(0x30)
 	a.LDA_imm8_b(0x81)
 	a.STA_abs(0x4200)
 	a.BRA_imm8(0x56 - 0x34 - 2)
 	a.Finalize()
-	log.Print(a.Text.String())
+	a.WriteTextTo(log.Writer())
 
 	// write the $8056 code that will be patched over:
-	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8056), 0x50), &strings.Builder{})
+	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8056), 0x50), true)
 	a.SetBase(0x00_8056)
 	a.AssumeSEP(0x30)
 	a.JSL(testROMBreakPoint)
 	a.Finalize()
-	log.Print(a.Text.String())
+	a.WriteTextTo(log.Writer())
 
 	return
 }

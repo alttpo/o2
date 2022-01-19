@@ -6,7 +6,6 @@ import (
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
-	"strings"
 )
 
 func (g *Game) updateWRAM() {
@@ -36,7 +35,7 @@ func (g *Game) updateWRAM() {
 
 	// generate SRAM routine:
 	// create an assembler:
-	a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
+	a := asm.NewEmitter(make([]byte, 0x200), true)
 	updated := g.generateSRAMRoutine(a, targetSNES)
 	if !updated {
 		return
@@ -149,8 +148,10 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.SEP(0x30)
 	a.RTS()
 
+	a.Finalize()
+
 	// dump asm:
-	log.Print(a.Text.String())
+	a.WriteTextTo(log.Writer())
 
 	if a.Len() > 255 {
 		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Len()))
