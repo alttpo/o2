@@ -80,22 +80,20 @@ func (p *Patcher) Patch() (err error) {
 	// overwrite $00:802F with `JSL $1BB1D7`
 	p.writeAt(0x00802F)
 	const initHook = 0x1BB1D7
-	b := &bytes.Buffer{}
 	textBuf := &strings.Builder{}
 	defer func() {
 		log.Print(textBuf.String())
 	}()
 
-	var a asm.Emitter
-	a.Code = b
+	a := asm.NewEmitter(true, false)
 	a.Text = textBuf
 	a.SetBase(0x00802F)
 	a.JSL(initHook)
 	a.NOP()
-	if b.Len() != len(expected802F) {
+	if a.Len() != len(expected802F) {
 		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
 	}
-	if _, err = b.WriteTo(p.w); err != nil {
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 
@@ -118,42 +116,47 @@ func (p *Patcher) Patch() (err error) {
 	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
 
 	// Build a temporary assembler to write the routine that gets written to SRAM:
-	var ta asm.Emitter
-	ta.Text = textBuf
+	taMain := asm.NewEmitter(true, false)
+	taMain.Text = textBuf
 
 	// assemble #`preMainLen` bytes of code:
-	preMainBuf := &bytes.Buffer{}
-	ta.Code = preMainBuf
-	ta.SetBase(preMainAddr)
-	ta.JSR_abs(0x7C00)
-	ta.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
-	ta.RTL()
-	if preMainBuf.Len() != preMainLen {
-		panic(fmt.Errorf("SRAM preMain assembled code length: %02x (actual) != %02x (expected)", preMainBuf.Len(), preMainLen))
+	taMain.SetBase(preMainAddr)
+	taMain.JSR_abs(0x7C00)
+	taMain.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+	taMain.RTL()
+	if taMain.Len() != preMainLen {
+		panic(fmt.Errorf("SRAM preMain assembled code length: %02x (actual) != %02x (expected)", taMain.Len(), preMainLen))
 	}
 
 	// assemble the RTS instructions at the two A/B update routine locations:
-	preMainUpdateABuf := &bytes.Buffer{}
-	ta.Code = preMainUpdateABuf
-	ta.SetBase(preMainUpdateAAddr)
-	ta.RTS()
-	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
-	bufUpdateB := &bytes.Buffer{}
-	ta.Code = bufUpdateB
-	ta.SetBase(preMainUpdateBAddr)
-	ta.RTS()
-	ta.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	taUpdateA := asm.NewEmitter(true, false)
+	taUpdateA.Text = textBuf
+	taUpdateA.SetBase(preMainUpdateAAddr)
+	taUpdateA.RTS()
+	taUpdateA.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	if taUpdateA.Len()%2 != 0 {
+		panic(fmt.Errorf("SRAM updateA assembled code length %#02x must be aligned to 16-bits", taUpdateA.Len()))
+	}
+
+	taUpdateB := asm.NewEmitter(true, false)
+	taUpdateB.Text = textBuf
+	taUpdateB.SetBase(preMainUpdateBAddr)
+	taUpdateB.RTS()
+	taUpdateB.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	if taUpdateB.Len()%2 != 0 {
+		panic(fmt.Errorf("SRAM updateB assembled code length %#02x must be aligned to 16-bits", taUpdateB.Len()))
+	}
 
 	// start writing at the end of the ROM after music data:
 	p.writeAt(initHook)
 	a.SetBase(initHook)
 	a.REP(0x20)
-	p.asmCopyRoutine(preMainUpdateABuf.Bytes(), &a, preMainUpdateAAddr)
-	p.asmCopyRoutine(bufUpdateB.Bytes(), &a, preMainUpdateBAddr)
-	p.asmCopyRoutine(preMainBuf.Bytes(), &a, preMainAddr)
+	p.asmCopyRoutine(taUpdateA.Bytes(), a, preMainUpdateAAddr)
+	p.asmCopyRoutine(taUpdateB.Bytes(), a, preMainUpdateBAddr)
+	p.asmCopyRoutine(taMain.Bytes(), a, preMainAddr)
 	a.SEP(0x20)
 	// emit asm code:
-	if _, err = b.WriteTo(p.w); err != nil {
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 	// append the original 802F code to our custom init hook:
@@ -162,7 +165,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 	// follow by `RTL`
 	a.RTL()
-	if _, err = b.WriteTo(p.w); err != nil {
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 
@@ -171,7 +174,7 @@ func (p *Patcher) Patch() (err error) {
 	a.SetBase(frameHook)
 	a.JSL(preMainAddr)
 	// emit asm code:
-	if _, err = b.WriteTo(p.w); err != nil {
+	if _, err = a.WriteTo(p.w); err != nil {
 		return
 	}
 

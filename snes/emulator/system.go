@@ -2,12 +2,9 @@ package emulator
 
 import (
 	"io"
-	"o2/snes"
-	"o2/snes/asm"
 	"o2/snes/emulator/bus"
 	"o2/snes/emulator/cpu65c816"
 	"o2/snes/emulator/memory"
-	"o2/util"
 )
 
 type System struct {
@@ -146,81 +143,6 @@ func (s *System) CreateEmulator() (err error) {
 				return
 			}
 		}
-	}
-
-	return
-}
-
-func MakeTestROM(title string) (rom *snes.ROM, err error) {
-	// 1 MiB size matches ALTTP JP 1.0 ROM size
-	var b [0x10_0000]byte
-
-	a := asm.NewEmitter(true, false)
-	// this is the RESET vector:
-	a.SetBase(0x00_8000)
-	a.Comment("switch to 8-bit mode and JSL to $70:7FFA")
-	a.SEP(0x30)
-	a.JSL(0x70_7FFA)
-	a.Comment("this is our stopping point at $00:8006:")
-	a.BRA(-5)
-
-	// copy asm into ROM:
-	aw := util.ArrayWriter{Buffer: b[0x0000:0x7FFF]}
-	_, err = a.WriteTo(&aw)
-	if err != nil {
-		return
-	}
-
-	rom, err = snes.NewROM("test.sfc", b[:])
-	if err != nil {
-		return
-	}
-
-	// build ROM header:
-	copy(rom.Header.Title[:], title)
-	rom.EmulatedVectors.RESET = 0x8000
-	rom.Header.RAMSize = 5 // 1024 << 5 = 32768 bytes
-
-	err = rom.WriteHeader()
-	if err != nil {
-		return
-	}
-
-	return
-}
-
-func (s *System) SetupPatch() (err error) {
-	a := asm.NewEmitter(true, false)
-	// entry point at 0x70_7FFA
-	a.SetBase(0x70_7FFA)
-	a.JSR_abs(0x7C00)
-	a.RTL()
-
-	aw := util.ArrayWriter{Buffer: s.SRAM[0x7FFA:0x7FFF]}
-	_, err = a.WriteTo(&aw)
-	if err != nil {
-		return
-	}
-
-	// assemble the RTS instructions at the two A/B update routine locations:
-	a = asm.NewEmitter(true, false)
-	a.SetBase(0x70_7C00)
-	a.RTS()
-
-	aw = util.ArrayWriter{Buffer: s.SRAM[0x7C00:0x7FFF]}
-	_, err = a.WriteTo(&aw)
-	if err != nil {
-		return
-	}
-
-	a = asm.NewEmitter(true, false)
-	a.SetBase(0x70_7E00)
-	a.RTS()
-
-	aw = util.ArrayWriter{Buffer: s.SRAM[0x7E00:0x7FFF]}
-	_, err = a.WriteTo(&aw)
-	if err != nil {
-		return
 	}
 
 	return

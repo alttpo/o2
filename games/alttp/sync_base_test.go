@@ -43,9 +43,14 @@ func (l *testingLogger) WriteString(s string) (n int, err error) {
 
 func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 	// create a ROM for testing our patch process and the generated ASM code:
-	rom, err := emulator.MakeTestROM(romTitle)
+	rom, err := MakeTestROM(romTitle)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	p := NewPatcher(rom)
+	if err = p.Patch(); err != nil {
+		t.Errorf("Patch() error = %v", err)
 	}
 
 	// create the CPU-only SNES emulator:
@@ -57,6 +62,16 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 	}
 	if err = system.CreateEmulator(); err != nil {
 		t.Fatal(err)
+	}
+
+	// copy ROM contents into system emulator:
+	copy(system.ROM[:], rom.Contents)
+
+	// run the initialization code to set up SRAM:
+	system.CPU.Reset()
+	if !system.RunUntil(0x00_8033, 0x1_000) {
+		t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", 0x00_8033, system.CPU.PC)
+		return
 	}
 
 	for i := range tests {
@@ -83,7 +98,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			g.fillRomFunctions()
 			for _, addr := range g.romFunctions {
 				// 0x6B RTL
-				rom.Contents[rom.BusAddressToPC(addr)] = 0x6B
+				system.ROM[rom.BusAddressToPC(addr)] = 0x6B
 			}
 
 			g.Reset()
@@ -102,17 +117,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			for i := range system.WRAM {
 				system.WRAM[i] = 0x00
 			}
-			for i := range system.SRAM {
-				system.SRAM[i] = 0x00
-			}
-
-			// copy ROM contents into system emulator:
-			copy(system.ROM[:], g.rom.Contents)
-
-			// setup patch code in emulator SRAM:
-			if err = system.SetupPatch(); err != nil {
-				t.Fatal(err)
-			}
+			// cannot reset SRAM here because of the setup code above this loop.
 
 			// default module/submodule:
 			system.WRAM[0x10] = 0x09 // overworld module
@@ -145,15 +150,16 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				a.RTS()
 
 				aw := util.ArrayWriter{Buffer: system.SRAM[0x7C00:]}
-				if _, err = a.Code.WriteTo(&aw); err != nil {
+				if _, err = a.WriteTo(&aw); err != nil {
 					t.Fatal(err)
 				}
 
 				// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
 				// see the emulator.MakeTestROM() function for details
 				system.CPU.Reset()
-				if !system.RunUntil(0x00_8006, 0x1_000) {
-					t.Errorf("CPU ran too long and did not reach PC=0x008006; actual=%#06x", system.CPU.PC)
+				system.SetPC(0x00_8056)
+				if !system.RunUntil(testROMBreakPoint, 0x1_000) {
+					t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, system.CPU.PC)
 					return
 				}
 			}
