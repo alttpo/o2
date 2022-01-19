@@ -6,7 +6,6 @@ import (
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/util"
-	"strings"
 	"testing"
 )
 
@@ -129,10 +128,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
 			}
 
-			a := &asm.Emitter{
-				Code: &bytes.Buffer{},
-				Text: &strings.Builder{},
-			}
+			a := asm.NewEmitter(true, true)
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
 			updated := g.generateSRAMRoutine(a, 0x707C00)
