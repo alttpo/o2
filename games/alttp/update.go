@@ -147,7 +147,10 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.SEP(0x30)
 	a.RTS()
 
-	a.Finalize()
+	if err := a.Finalize(); err != nil {
+		a.WriteTextTo(log.Writer())
+		panic(err)
+	}
 
 	// dump asm:
 	a.WriteTextTo(log.Writer())

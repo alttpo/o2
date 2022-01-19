@@ -34,7 +34,9 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	a.SetBase(0x00_8000)
 	a.SEP(0x30)
 	a.BRA_imm8(0x2F - 0x04)
-	a.Finalize()
+	if err = a.Finalize(); err != nil {
+		return
+	}
 	a.WriteTextTo(log.Writer())
 
 	// write the $802F code that will be patched over:
@@ -44,7 +46,9 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	a.LDA_imm8_b(0x81)
 	a.STA_abs(0x4200)
 	a.BRA_imm8(0x56 - 0x34 - 2)
-	a.Finalize()
+	if err = a.Finalize(); err != nil {
+		return
+	}
 	a.WriteTextTo(log.Writer())
 
 	// write the $8056 code that will be patched over:
@@ -52,7 +56,9 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	a.SetBase(0x00_8056)
 	a.AssumeSEP(0x30)
 	a.JSL(testROMBreakPoint)
-	a.Finalize()
+	if err = a.Finalize(); err != nil {
+		return
+	}
 	a.WriteTextTo(log.Writer())
 
 	return
