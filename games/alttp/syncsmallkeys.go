@@ -135,7 +135,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		a.Comment("update current dungeon small keys")
 		a.LDY_abs(0x040C)
 		a.CPY_imm8_b(uint8(dungeonNumber << 1))
-		a.BNE(0x04)
+		a.BNE_imm8(0x04)
 		a.STA_long(0x7EF36F)
 
 		updated = true

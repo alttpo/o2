@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/games"
 	"o2/snes/asm"
+	"strings"
 	"testing"
 )
 
@@ -126,7 +127,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			}
 			*s.IsEnabledPtr = true
 
-			a := asm.NewEmitter(true)
+			a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
 			a.AssumeSEP(0x30)
 
 			// act:

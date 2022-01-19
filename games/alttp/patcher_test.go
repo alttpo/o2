@@ -1,10 +1,11 @@
 package alttp
 
 import (
-	"fmt"
 	"log"
 	"o2/snes"
 	"o2/snes/asm"
+	"o2/snes/lorom"
+	"strings"
 	"testing"
 )
 
@@ -29,43 +30,31 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 		return
 	}
 
-	// fill RESET vector with NOPs:
-	a := asm.NewEmitter(true)
+	// write RESET vector:
+	a := asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8000), 0x2F), &strings.Builder{})
 	a.SetBase(0x00_8000)
 	a.SEP(0x30)
-	a.BRA(0x2F - 0x04)
-	_, err = a.WriteTo(rom.BusWriter(0x00_8000))
+	a.BRA_imm8(0x2F - 0x04)
+	a.Finalize()
 	log.Print(a.Text.String())
-	if err != nil {
-		err = fmt.Errorf("Emitter.WriteTo(0x00_8000) error = %w", err)
-		return
-	}
 
 	// write the $802F code that will be patched over:
-	a = asm.NewEmitter(true)
+	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_802F), 0x50), &strings.Builder{})
 	a.SetBase(0x00_802F)
 	a.AssumeSEP(0x30)
 	a.LDA_imm8_b(0x81)
 	a.STA_abs(0x4200)
-	a.BRA(0x56 - 0x34 - 2)
-	_, err = a.WriteTo(rom.BusWriter(0x00_802F))
+	a.BRA_imm8(0x56 - 0x34 - 2)
+	a.Finalize()
 	log.Print(a.Text.String())
-	if err != nil {
-		err = fmt.Errorf("Emitter.WriteTo(0x00_802F) error = %w", err)
-		return
-	}
 
 	// write the $8056 code that will be patched over:
-	a = asm.NewEmitter(true)
+	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8056), 0x50), &strings.Builder{})
 	a.SetBase(0x00_8056)
 	a.AssumeSEP(0x30)
 	a.JSL(testROMBreakPoint)
-	_, err = a.WriteTo(rom.BusWriter(0x00_8056))
+	a.Finalize()
 	log.Print(a.Text.String())
-	if err != nil {
-		err = fmt.Errorf("Emitter.WriteTo(0x00_8056) error = %w", err)
-		return
-	}
 
 	return
 }

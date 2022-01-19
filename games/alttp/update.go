@@ -6,6 +6,7 @@ import (
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
+	"strings"
 )
 
 func (g *Game) updateWRAM() {
@@ -35,7 +36,7 @@ func (g *Game) updateWRAM() {
 
 	// generate SRAM routine:
 	// create an assembler:
-	a := asm.NewEmitter(true)
+	a := asm.NewEmitter(make([]byte, 0x200), &strings.Builder{})
 	updated := g.generateSRAMRoutine(a, targetSNES)
 	if !updated {
 		return
@@ -100,7 +101,7 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 
 	a.Comment("don't update if link is currently frozen:")
 	a.LDA_abs(0x02E4)
-	a.BEQ(0x01)
+	a.BEQ_imm8(0x01)
 	a.RTS()
 
 	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
@@ -118,14 +119,14 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	//cont:                                 // cont:
 
 	a.LDA_dp(0x11)
-	a.BEQ(15) // _cont
+	a.BEQ_imm8(15) // _cont
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x07)
-	a.BEQ(8) // _bail
+	a.BEQ_imm8(8) // _bail
 	a.CMP_imm8_b(0x09)
-	a.BEQ(4) // _bail
+	a.BEQ_imm8(4) // _bail
 	a.CMP_imm8_b(0x0B)
-	a.BNE(1) // _cont
+	a.BNE_imm8(1) // _cont
 	//_bail:
 	a.RTS()
 	//_cont:
