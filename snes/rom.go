@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"o2/snes/lorom"
 	"reflect"
 )
 
@@ -241,30 +240,6 @@ func (r *ROM) ROMSize() uint32 {
 
 func (r *ROM) RAMSize() uint32 {
 	return 1024 << r.Header.RAMSize
-}
-
-// This is all for LoROM mapping:
-
-func (r *ROM) BusAddressToPC(busAddr uint32) uint32 {
-	// TODO: determine based on LoROM/HiROM mapping from header
-	return lorom.BusAddressToPC(busAddr)
-}
-
-func (r *ROM) U8(busAddr uint32) uint8 {
-	pcAddr := r.BusAddressToPC(busAddr)
-	if pcAddr >= 0x1000000 {
-		return 0xFF
-	}
-	return r.Contents[pcAddr]
-}
-
-func (r *ROM) U16(busAddr uint32) uint16 {
-	pcAddr := r.BusAddressToPC(busAddr)
-	if pcAddr >= 0x1000000-1 {
-		return 0xFFFF
-	}
-	// subtly wrong if crossing a page boundary
-	return binary.LittleEndian.Uint16(r.Contents[pcAddr : pcAddr+2])
 }
 
 type alwaysError struct{}
