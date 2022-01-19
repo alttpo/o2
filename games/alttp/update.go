@@ -1,13 +1,11 @@
 package alttp
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
-	"strings"
 )
 
 func (g *Game) updateWRAM() {
@@ -37,10 +35,7 @@ func (g *Game) updateWRAM() {
 
 	// generate SRAM routine:
 	// create an assembler:
-	a := &asm.Emitter{
-		Code: &bytes.Buffer{},
-		Text: &strings.Builder{},
-	}
+	a := asm.NewEmitter(true, true)
 	updated := g.generateSRAMRoutine(a, targetSNES)
 	if !updated {
 		return

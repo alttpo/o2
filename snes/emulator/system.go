@@ -1,7 +1,6 @@
 package emulator
 
 import (
-	"bytes"
 	"io"
 	"o2/snes"
 	"o2/snes/asm"
@@ -156,10 +155,7 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	// 1 MiB size matches ALTTP JP 1.0 ROM size
 	var b [0x10_0000]byte
 
-	a := asm.Emitter{
-		Code: &bytes.Buffer{},
-		Text: nil,
-	}
+	a := asm.NewEmitter(true, false)
 	// this is the RESET vector:
 	a.SetBase(0x00_8000)
 	a.Comment("switch to 8-bit mode and JSL to $70:7FFA")
@@ -170,7 +166,7 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 
 	// copy asm into ROM:
 	aw := util.ArrayWriter{Buffer: b[0x0000:0x7FFF]}
-	_, err = a.Code.WriteTo(&aw)
+	_, err = a.WriteTo(&aw)
 	if err != nil {
 		return
 	}
@@ -194,36 +190,35 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 }
 
 func (s *System) SetupPatch() (err error) {
-	a := asm.Emitter{}
+	a := asm.NewEmitter(true, false)
 	// entry point at 0x70_7FFA
-	a.Code = &bytes.Buffer{}
 	a.SetBase(0x70_7FFA)
 	a.JSR_abs(0x7C00)
 	a.RTL()
 
 	aw := util.ArrayWriter{Buffer: s.SRAM[0x7FFA:0x7FFF]}
-	_, err = a.Code.WriteTo(&aw)
+	_, err = a.WriteTo(&aw)
 	if err != nil {
 		return
 	}
 
 	// assemble the RTS instructions at the two A/B update routine locations:
-	a.Code = &bytes.Buffer{}
+	a = asm.NewEmitter(true, false)
 	a.SetBase(0x70_7C00)
 	a.RTS()
 
 	aw = util.ArrayWriter{Buffer: s.SRAM[0x7C00:0x7FFF]}
-	_, err = a.Code.WriteTo(&aw)
+	_, err = a.WriteTo(&aw)
 	if err != nil {
 		return
 	}
 
-	a.Code = &bytes.Buffer{}
+	a = asm.NewEmitter(true, false)
 	a.SetBase(0x70_7E00)
 	a.RTS()
 
 	aw = util.ArrayWriter{Buffer: s.SRAM[0x7E00:0x7FFF]}
-	_, err = a.Code.WriteTo(&aw)
+	_, err = a.WriteTo(&aw)
 	if err != nil {
 		return
 	}

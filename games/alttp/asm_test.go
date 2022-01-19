@@ -1,18 +1,13 @@
 package alttp
 
 import (
-	"bytes"
 	"log"
 	"o2/snes/asm"
-	"strings"
 	"testing"
 )
 
 func TestGame_initSync(t *testing.T) {
-	a := asm.Emitter{
-		Code: &bytes.Buffer{},
-		Text: &strings.Builder{},
-	}
+	a := asm.NewEmitter(true, true)
 
 	a.SetBase(0x707c00)
 

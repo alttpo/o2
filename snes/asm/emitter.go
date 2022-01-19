@@ -3,6 +3,7 @@ package asm
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -15,6 +16,19 @@ type Emitter struct {
 
 	address uint32
 	baseSet bool
+
+	labels map[string]int
+}
+
+func NewEmitter(genCode, genText bool) *Emitter {
+	a := &Emitter{}
+	if genCode {
+		a.Code = &bytes.Buffer{}
+	}
+	if genText {
+		a.Text = &strings.Builder{}
+	}
+	return a
 }
 
 func (a *Emitter) Len() int {
@@ -24,6 +38,10 @@ func (a *Emitter) Len() int {
 func (a *Emitter) Bytes() []byte {
 	// TODO: resolve all labels
 	return a.Code.Bytes()
+}
+
+func (a *Emitter) WriteTo(w io.Writer) (n int64, err error) {
+	return a.Code.WriteTo(w)
 }
 
 func (a *Emitter) Clone() *Emitter {
