@@ -11,20 +11,20 @@ import (
 type Emitter struct {
 	flagsTracker
 
-	Code *bytes.Buffer
 	Text *strings.Builder
 
-	address uint32
+	code *bytes.Buffer
+
+	base    uint32
 	baseSet bool
+	address uint32
 
 	labels map[string]int
 }
 
-func NewEmitter(genCode, genText bool) *Emitter {
+func NewEmitter(genText bool) *Emitter {
 	a := &Emitter{}
-	if genCode {
-		a.Code = &bytes.Buffer{}
-	}
+	a.code = &bytes.Buffer{}
 	if genText {
 		a.Text = &strings.Builder{}
 	}
@@ -32,25 +32,28 @@ func NewEmitter(genCode, genText bool) *Emitter {
 }
 
 func (a *Emitter) Len() int {
-	return a.Code.Len()
+	//return a.code.Len()
+	return int(a.address) - int(a.base)
 }
 
 func (a *Emitter) Bytes() []byte {
 	// TODO: resolve all labels
-	return a.Code.Bytes()
+	return a.code.Bytes()
 }
 
 func (a *Emitter) WriteTo(w io.Writer) (n int64, err error) {
-	return a.Code.WriteTo(w)
+	return a.code.WriteTo(w)
 }
 
 func (a *Emitter) Clone() *Emitter {
 	return &Emitter{
 		flagsTracker: a.flagsTracker,
-		Code:         &bytes.Buffer{},
+		code:         &bytes.Buffer{},
 		Text:         &strings.Builder{},
 		address:      a.address,
+		base:         a.base,
 		baseSet:      a.baseSet,
+		// TODO: copy labels
 	}
 }
 
@@ -63,11 +66,12 @@ func (a *Emitter) Append(e *Emitter) {
 	a.baseSet = e.baseSet
 	a.flagsTracker = e.flagsTracker
 
-	_, _ = e.Code.WriteTo(a.Code)
+	_, _ = e.code.WriteTo(a.code)
 	_, _ = a.Text.WriteString(e.Text.String())
 }
 
 func (a *Emitter) SetBase(addr uint32) {
+	a.base = addr
 	a.address = addr
 	a.baseSet = true
 }
@@ -89,8 +93,8 @@ func (a *Emitter) emitBase() {
 }
 
 func (a *Emitter) emit1(ins string, d [1]byte) {
-	if a.Code != nil {
-		_, _ = a.Code.Write(d[:])
+	if a.code != nil {
+		_, _ = a.code.Write(d[:])
 	}
 	if a.Text != nil {
 		a.emitBase()
@@ -101,8 +105,8 @@ func (a *Emitter) emit1(ins string, d [1]byte) {
 }
 
 func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
-	if a.Code != nil {
-		_, _ = a.Code.Write(d[:])
+	if a.code != nil {
+		_, _ = a.code.Write(d[:])
 	}
 	if a.Text != nil {
 		a.emitBase()
@@ -114,8 +118,8 @@ func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
 }
 
 func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
-	if a.Code != nil {
-		_, _ = a.Code.Write(d[:])
+	if a.code != nil {
+		_, _ = a.code.Write(d[:])
 	}
 	if a.Text != nil {
 		a.emitBase()
@@ -127,8 +131,8 @@ func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
 }
 
 func (a *Emitter) emit4(ins, argsFormat string, d [4]byte) {
-	if a.Code != nil {
-		_, _ = a.Code.Write(d[:])
+	if a.code != nil {
+		_, _ = a.code.Write(d[:])
 	}
 	if a.Text != nil {
 		a.emitBase()
@@ -169,8 +173,8 @@ func (a *Emitter) EmitBytes(b []byte) {
 		}
 		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
 	}
-	if a.Code != nil {
-		_, _ = a.Code.Write(b)
+	if a.code != nil {
+		_, _ = a.code.Write(b)
 	}
 	a.address += uint32(len(b))
 }

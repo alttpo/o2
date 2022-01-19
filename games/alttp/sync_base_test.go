@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"bytes"
 	"o2/interfaces"
 	"o2/snes/asm"
 	"o2/snes/emulator"
@@ -134,7 +133,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				g.players[1].SRAM[sram.offset] = sram.remoteValue
 			}
 
-			a := asm.NewEmitter(true, true)
+			a := asm.NewEmitter(true)
 			// default to 8-bit:
 			a.AssumeSEP(0x30)
 			updated := g.generateSRAMRoutine(a, 0x707C00)
@@ -176,7 +175,9 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			}
 
 			// call generateUpdateAsm() again for next frame to receive notifications:
-			a.Code = &bytes.Buffer{}
+			a = asm.NewEmitter(true)
+			a.SetBase(0x707E00)
+			a.AssumeSEP(0x30)
 			_ = g.generateUpdateAsm(a)
 
 			if lastNotification != tt.wantNotification {

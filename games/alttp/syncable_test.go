@@ -126,7 +126,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 			}
 			*s.IsEnabledPtr = true
 
-			a := asm.NewEmitter(true, true)
+			a := asm.NewEmitter(true)
 			a.AssumeSEP(0x30)
 
 			// act:
@@ -137,7 +137,7 @@ func Test_syncableBitU8_GenerateUpdate(t *testing.T) {
 				t.Errorf("GenerateUpdate() = %v, want %v", got, tt.want)
 			}
 			if actual, expected := a.Bytes(), tt.wantAsm; !bytes.Equal(expected, actual) {
-				t.Errorf("asm.Code.Bytes() = %#v, want %#v\n%s\n", actual, expected, a.Text.String())
+				t.Errorf("asm.Bytes() = %#v, want %#v\n%s\n", actual, expected, a.Text.String())
 			}
 			if actual, expected := s.Notification, tt.wantNotification; actual != expected {
 				t.Errorf("notification = '%s', want '%s'", actual, expected)

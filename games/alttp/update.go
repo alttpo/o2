@@ -35,7 +35,7 @@ func (g *Game) updateWRAM() {
 
 	// generate SRAM routine:
 	// create an assembler:
-	a := asm.NewEmitter(true, true)
+	a := asm.NewEmitter(true)
 	updated := g.generateSRAMRoutine(a, targetSNES)
 	if !updated {
 		return

@@ -30,7 +30,7 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	}
 
 	// fill RESET vector with NOPs:
-	a := asm.NewEmitter(true, true)
+	a := asm.NewEmitter(true)
 	a.SetBase(0x00_8000)
 	a.SEP(0x30)
 	a.BRA(0x2F - 0x04)
@@ -42,7 +42,7 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	}
 
 	// write the $802F code that will be patched over:
-	a = asm.NewEmitter(true, true)
+	a = asm.NewEmitter(true)
 	a.SetBase(0x00_802F)
 	a.AssumeSEP(0x30)
 	a.LDA_imm8_b(0x81)
@@ -56,7 +56,7 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 	}
 
 	// write the $8056 code that will be patched over:
-	a = asm.NewEmitter(true, true)
+	a = asm.NewEmitter(true)
 	a.SetBase(0x00_8056)
 	a.AssumeSEP(0x30)
 	a.JSL(testROMBreakPoint)

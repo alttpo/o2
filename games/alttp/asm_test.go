@@ -7,7 +7,7 @@ import (
 )
 
 func TestGame_initSync(t *testing.T) {
-	a := asm.NewEmitter(true, true)
+	a := asm.NewEmitter(true)
 
 	a.SetBase(0x707c00)
 

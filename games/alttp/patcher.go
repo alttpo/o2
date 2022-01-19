@@ -85,7 +85,7 @@ func (p *Patcher) Patch() (err error) {
 		log.Print(textBuf.String())
 	}()
 
-	a := asm.NewEmitter(true, false)
+	a := asm.NewEmitter(false)
 	a.Text = textBuf
 	a.SetBase(0x00802F)
 	a.JSL(initHook)
@@ -116,7 +116,7 @@ func (p *Patcher) Patch() (err error) {
 	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
 
 	// Build a temporary assembler to write the routine that gets written to SRAM:
-	taMain := asm.NewEmitter(true, false)
+	taMain := asm.NewEmitter(false)
 	taMain.Text = textBuf
 
 	// assemble #`preMainLen` bytes of code:
@@ -129,7 +129,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 
 	// assemble the RTS instructions at the two A/B update routine locations:
-	taUpdateA := asm.NewEmitter(true, false)
+	taUpdateA := asm.NewEmitter(false)
 	taUpdateA.Text = textBuf
 	taUpdateA.SetBase(preMainUpdateAAddr)
 	taUpdateA.RTS()
@@ -138,7 +138,7 @@ func (p *Patcher) Patch() (err error) {
 		panic(fmt.Errorf("SRAM updateA assembled code length %#02x must be aligned to 16-bits", taUpdateA.Len()))
 	}
 
-	taUpdateB := asm.NewEmitter(true, false)
+	taUpdateB := asm.NewEmitter(false)
 	taUpdateB.Text = textBuf
 	taUpdateB.SetBase(preMainUpdateBAddr)
 	taUpdateB.RTS()
