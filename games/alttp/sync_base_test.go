@@ -5,6 +5,7 @@ import (
 	"o2/interfaces"
 	"o2/snes/asm"
 	"o2/snes/emulator"
+	"o2/snes/lorom"
 	"o2/util"
 	"testing"
 )
@@ -98,7 +99,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			g.fillRomFunctions()
 			for _, addr := range g.romFunctions {
 				// 0x6B RTL
-				system.ROM[rom.BusAddressToPC(addr)] = 0x6B
+				system.ROM[lorom.BusAddressToPC(addr)] = 0x6B
 			}
 
 			g.Reset()
