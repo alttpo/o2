@@ -2,6 +2,7 @@ package asm
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -9,10 +10,12 @@ import (
 type Emitter struct {
 	flagsTracker
 
-	Text *strings.Builder
+	generateText bool
 
 	code []byte
 	n    int
+
+	lines []asmLine
 
 	base    uint32
 	baseSet bool
@@ -24,12 +27,36 @@ type Emitter struct {
 	danglingS8 map[string][]uint32
 }
 
-func NewEmitter(target []byte, text *strings.Builder) *Emitter {
+type asmLineType int
+
+const (
+	lineIns1 asmLineType = iota
+	lineIns2
+	lineIns3
+	lineIns4
+	lineBase
+	lineDB
+	lineComment
+	lineLabel
+	lineIns2Label
+)
+
+type asmLine struct {
+	asmLineType
+
+	// instruction and parameters:
+	address    uint32
+	ins        string
+	argsFormat string
+}
+
+func NewEmitter(target []byte, generateText bool) *Emitter {
 	a := &Emitter{
 		flagsTracker: 0,
-		Text:         text,
+		generateText: generateText,
 		code:         target,
 		n:            0,
+		lines:        make([]asmLine, 0, 0x100),
 		base:         0,
 		baseSet:      false,
 		address:      0,
@@ -42,14 +69,61 @@ func NewEmitter(target []byte, text *strings.Builder) *Emitter {
 func (a *Emitter) Clone() *Emitter {
 	return &Emitter{
 		flagsTracker: a.flagsTracker,
-		Text:         &strings.Builder{},
+		generateText: a.generateText,
 		code:         make([]byte, len(a.code)),
 		n:            0,
+		lines:        make([]asmLine, 0, 0x100),
 		address:      a.address,
 		base:         a.base,
 		baseSet:      a.baseSet,
 		// TODO: copy labels
+		labels:     make(map[string]uint32),
+		danglingS8: make(map[string][]uint32),
 	}
+}
+
+func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
+	if len(a.danglingS8) > 0 {
+		panic("dangling label references remain")
+	}
+
+	for _, line := range a.lines {
+		offs := line.address - a.base
+		switch line.asmLineType {
+		case lineBase:
+			_, err = fmt.Fprintf(w, "base $%06x\n", line.address)
+		case lineComment:
+			_, err = fmt.Fprintf(w, "    ; %s\n", line.ins)
+		case lineLabel:
+			_, err = fmt.Fprintf(w, "%s:\n", line.ins)
+		case lineDB:
+			_, err = fmt.Fprintf(w, "    ; $%06x\n    %s\n", line.address, line.ins)
+		case lineIns1:
+			d := a.code[offs : offs+1]
+			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x\n", line.ins, "", line.address, d[0])
+		case lineIns2:
+			d := a.code[offs : offs+2]
+			args := fmt.Sprintf(line.argsFormat, d[1])
+			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
+		case lineIns2Label:
+			d := a.code[offs : offs+2]
+			args := line.argsFormat
+			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
+		case lineIns3:
+			d := a.code[offs : offs+3]
+			args := fmt.Sprintf(line.argsFormat, d[1], d[2])
+			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2])
+		case lineIns4:
+			d := a.code[offs : offs+4]
+			args := fmt.Sprintf(line.argsFormat, d[1], d[2], d[3])
+			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2], d[3])
+		}
+
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (a *Emitter) Finalize() {
@@ -82,8 +156,14 @@ func (a *Emitter) Label(name string) uint32 {
 	// define new label:
 	a.labels[name] = a.address
 
-	if a.Text != nil {
-		_, _ = fmt.Fprintf(a.Text, "%s:\n", name)
+	if a.generateText {
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineLabel,
+			address:     a.address,
+			ins:         name,
+			argsFormat:  "",
+		})
+		//_, _ = fmt.Fprintf(a.Text, "%s:\n", name)
 	}
 
 	return a.address
@@ -113,7 +193,7 @@ func (a *Emitter) Append(e *Emitter) {
 	a.flagsTracker = e.flagsTracker
 
 	a.n += copy(a.code[a.n:], e.code[0:e.n])
-	_, _ = a.Text.WriteString(e.Text.String())
+	a.lines = append(a.lines, e.lines...)
 }
 
 func (a *Emitter) write(d []byte) (int, error) {
@@ -141,56 +221,86 @@ func (a *Emitter) GetBase() uint32 {
 }
 
 func (a *Emitter) emitBase() {
-	if a.Text == nil {
+	if !a.generateText {
 		return
 	}
 	if !a.baseSet {
 		return
 	}
 
-	_, _ = a.Text.WriteString(fmt.Sprintf("base $%06x\n", a.address))
+	a.lines = append(a.lines, asmLine{
+		asmLineType: lineBase,
+		address:     a.address,
+		ins:         "",
+		argsFormat:  "",
+	})
+	//_, _ = a.Text.WriteString(fmt.Sprintf("base $%06x\n", a.address))
 	a.baseSet = false
 }
 
 func (a *Emitter) emit1(ins string, d [1]byte) {
 	_, _ = a.write(d[:])
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		// TODO: adjust these format widths
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x\n", ins, "", a.address, d[0]))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns1,
+			address:     a.address,
+			ins:         ins,
+			argsFormat:  "",
+		})
+
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x\n", ins, "", a.address, d[0]))
 	}
 	a.address += 1
 }
 
 func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
 	_, _ = a.write(d[:])
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		args := fmt.Sprintf(argsFormat, d[1])
-		// TODO: adjust these format widths
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x\n", ins, args, a.address, d[0], d[1]))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns2,
+			address:     a.address,
+			ins:         ins,
+			argsFormat:  argsFormat,
+		})
+
+		//args := fmt.Sprintf(argsFormat, d[1])
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x\n", ins, args, a.address, d[0], d[1]))
 	}
 	a.address += 2
 }
 
 func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
 	_, _ = a.write(d[:])
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		args := fmt.Sprintf(argsFormat, d[1], d[2])
-		// TODO: adjust these format widths
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2]))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns3,
+			address:     a.address,
+			ins:         ins,
+			argsFormat:  argsFormat,
+		})
+
+		//args := fmt.Sprintf(argsFormat, d[1], d[2])
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2]))
 	}
 	a.address += 3
 }
 
 func (a *Emitter) emit4(ins, argsFormat string, d [4]byte) {
 	_, _ = a.write(d[:])
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		args := fmt.Sprintf(argsFormat, d[1], d[2], d[3])
-		// TODO: adjust these format widths
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2], d[3]))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns4,
+			address:     a.address,
+			ins:         ins,
+			argsFormat:  argsFormat,
+		})
+
+		//args := fmt.Sprintf(argsFormat, d[1], d[2], d[3])
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2], d[3]))
 	}
 	a.address += 4
 }
@@ -204,16 +314,23 @@ func imm16(v uint16) (byte, byte) {
 }
 
 func (a *Emitter) Comment(s string) {
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		_, _ = a.Text.WriteString(fmt.Sprintf("    ; %s\n", s))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineComment,
+			address:     a.address,
+			ins:         s,
+			argsFormat:  "",
+		})
+
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    ; %s\n", s))
 	}
 }
 
 const hextable = "0123456789abcdef"
 
 func (a *Emitter) EmitBytes(b []byte) {
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
 		s := strings.Builder{}
 		blen := len(b)
@@ -223,7 +340,13 @@ func (a *Emitter) EmitBytes(b []byte) {
 				s.Write([]byte{',', ' '})
 			}
 		}
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineDB,
+			address:     a.address,
+			ins:         s.String(),
+			argsFormat:  "",
+		})
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
 	}
 	_, _ = a.write(b)
 	a.address += uint32(len(b))
@@ -395,11 +518,18 @@ func (a *Emitter) BNE_imm8(m int8) {
 func (a *Emitter) BNE(label string) {
 	var d [2]byte
 	d[0] = 0xD0
-	d[1] = 0xFF
+	d[1] = 0xFF // will be overwritten by Finalize()
 	_, _ = a.write(d[:])
-	if a.Text != nil {
+	if a.generateText {
 		a.emitBase()
-		_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x __\n", "bne", label, a.address, d[0]))
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns2Label,
+			address:     a.address,
+			ins:         "bne",
+			argsFormat:  label,
+		})
+
+		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x __\n", "bne", label, a.address, d[0]))
 	}
 	a.address += 2
 
