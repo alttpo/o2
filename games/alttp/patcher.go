@@ -90,7 +90,9 @@ func (p *Patcher) Patch() (err error) {
 	a.SetBase(0x00802F)
 	a.JSL(initHook)
 	a.NOP()
-	a.Finalize()
+	if err := a.Finalize(); err != nil {
+		return err
+	}
 	a.WriteTextTo(textBuf)
 	if a.Len() != len(expected802F) {
 		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
@@ -120,6 +122,9 @@ func (p *Patcher) Patch() (err error) {
 	taMain.JSR_abs(0x7C00)
 	taMain.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 	taMain.RTL()
+	if err := taMain.Finalize(); err != nil {
+		return err
+	}
 	taMain.WriteTextTo(textBuf)
 	if taMain.Len() != preMainLen {
 		panic(fmt.Errorf("SRAM preMain assembled code length: %02x (actual) != %02x (expected)", taMain.Len(), preMainLen))
@@ -130,6 +135,9 @@ func (p *Patcher) Patch() (err error) {
 	taUpdateA.SetBase(preMainUpdateAAddr)
 	taUpdateA.RTS()
 	taUpdateA.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	if err := taUpdateA.Finalize(); err != nil {
+		return err
+	}
 	taUpdateA.WriteTextTo(textBuf)
 	if taUpdateA.Len()%2 != 0 {
 		panic(fmt.Errorf("SRAM updateA assembled code length %#02x must be aligned to 16-bits", taUpdateA.Len()))
@@ -139,6 +147,9 @@ func (p *Patcher) Patch() (err error) {
 	taUpdateB.SetBase(preMainUpdateBAddr)
 	taUpdateB.RTS()
 	taUpdateB.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
+	if err := taUpdateB.Finalize(); err != nil {
+		return err
+	}
 	taUpdateB.WriteTextTo(textBuf)
 	if taUpdateB.Len()%2 != 0 {
 		panic(fmt.Errorf("SRAM updateB assembled code length %#02x must be aligned to 16-bits", taUpdateB.Len()))
@@ -156,12 +167,18 @@ func (p *Patcher) Patch() (err error) {
 	a.EmitBytes(code802F)
 	// follow by `RTL`
 	a.RTL()
+	if err := a.Finalize(); err != nil {
+		return err
+	}
 	a.WriteTextTo(textBuf)
 
 	// overwrite the frame hook with a JSL to the end of SRAM:
 	a = asm.NewEmitter(p.rom.Slice(lorom.BusAddressToPC(frameHook), 4), true)
 	a.SetBase(frameHook)
 	a.JSL(preMainAddr)
+	if err := a.Finalize(); err != nil {
+		return err
+	}
 	a.WriteTextTo(textBuf)
 
 	return nil

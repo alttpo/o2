@@ -83,10 +83,6 @@ func (a *Emitter) Clone() *Emitter {
 }
 
 func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
-	if len(a.danglingS8) > 0 {
-		panic("dangling label references remain")
-	}
-
 	for _, line := range a.lines {
 		offs := line.address - a.base
 		switch line.asmLineType {
@@ -107,8 +103,13 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
 		case lineIns2Label:
 			d := a.code[offs : offs+2]
-			args := line.argsFormat
-			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
+			label := line.argsFormat
+			if _, ok := a.danglingS8[label]; ok {
+				// warn about dangling label references:
+				_, err = fmt.Fprintf(w, "!!  %-5s %-8s ; $%06x  %02x %02x  !! ERROR: undefined label '%s'\n", line.ins, label, line.address, d[0], d[1], label)
+			} else {
+				_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, label, line.address, d[0], d[1])
+			}
 		case lineIns3:
 			d := a.code[offs : offs+3]
 			args := fmt.Sprintf(line.argsFormat, d[1], d[2])
@@ -126,12 +127,12 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 	return
 }
 
-func (a *Emitter) Finalize() {
+func (a *Emitter) Finalize() (err error) {
 	// resolves all dangling label references in prior code
 	for label, refs := range a.danglingS8 {
 		addr, ok := a.labels[label]
 		if !ok {
-			panic(fmt.Errorf("could not resolve label '%s'", label))
+			return fmt.Errorf("could not resolve label '%s'", label)
 		}
 
 		// fill in signed 8-bit (-128..+127) references to this label:
@@ -139,13 +140,15 @@ func (a *Emitter) Finalize() {
 			// adding 1 here to accommodate the size of the S8 instruction parameter
 			diff := int(addr) - int(s8addr+1)
 			if diff > 127 || diff < -128 {
-				panic(fmt.Errorf("branch from %#06x to %#06x too far for signed 8-bit; diff=%d", s8addr+1, addr, diff))
+				return fmt.Errorf("branch from %#06x to %#06x too far for signed 8-bit; diff=%d", s8addr+1, addr, diff)
 			}
 			a.code[s8addr-a.base] = uint8(int8(diff))
 		}
 
 		delete(a.danglingS8, label)
 	}
+
+	return
 }
 
 func (a *Emitter) Label(name string) uint32 {
