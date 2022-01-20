@@ -67,7 +67,7 @@ func NewEmitter(target []byte, generateText bool) *Emitter {
 }
 
 func (a *Emitter) Clone() *Emitter {
-	return &Emitter{
+	e := &Emitter{
 		flagsTracker: a.flagsTracker,
 		generateText: a.generateText,
 		code:         make([]byte, len(a.code)),
@@ -76,9 +76,41 @@ func (a *Emitter) Clone() *Emitter {
 		address:      a.address,
 		base:         a.base,
 		baseSet:      a.baseSet,
-		// TODO: copy labels
-		labels:     make(map[string]uint32),
-		danglingS8: make(map[string][]uint32),
+		labels:       make(map[string]uint32),
+		danglingS8:   make(map[string][]uint32),
+	}
+	// copy labels and dangling references:
+	for k, v := range a.labels {
+		e.labels[k] = v
+	}
+	for k, v := range a.danglingS8 {
+		cv := make([]uint32, len(v), cap(v))
+		copy(cv, v)
+		e.danglingS8[k] = cv
+	}
+	return e
+}
+
+func (a *Emitter) Append(e *Emitter) {
+	if a.n+e.n > len(a.code) {
+		panic(fmt.Errorf("not enough space"))
+	}
+
+	a.address = e.address
+	a.baseSet = e.baseSet
+	a.flagsTracker = e.flagsTracker
+
+	a.n += copy(a.code[a.n:], e.code[0:e.n])
+	a.lines = append(a.lines, e.lines...)
+
+	// copy labels and dangling references:
+	for k, v := range e.labels {
+		a.labels[k] = v
+	}
+	for k, v := range e.danglingS8 {
+		cv := make([]uint32, len(v), cap(v))
+		copy(cv, v)
+		a.danglingS8[k] = cv
 	}
 }
 
@@ -96,28 +128,28 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 			_, err = fmt.Fprintf(w, "    ; $%06x\n    %s\n", line.address, line.ins)
 		case lineIns1:
 			d := a.code[offs : offs+1]
-			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x\n", line.ins, "", line.address, d[0])
+			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x\n", line.ins, "", line.address, d[0])
 		case lineIns2:
 			d := a.code[offs : offs+2]
 			args := fmt.Sprintf(line.argsFormat, d[1])
-			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
+			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
 		case lineIns2Label:
 			d := a.code[offs : offs+2]
 			label := line.argsFormat
 			if _, ok := a.danglingS8[label]; ok {
 				// warn about dangling label references:
-				_, err = fmt.Fprintf(w, "!!  %-5s %-8s ; $%06x  %02x %02x  !! ERROR: undefined label '%s'\n", line.ins, label, line.address, d[0], d[1], label)
+				_, err = fmt.Fprintf(w, "!!  %-5s %-12s ; $%06x  %02x %02x  !! ERROR: undefined label '%s'\n", line.ins, label, line.address, d[0], d[1], label)
 			} else {
-				_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x\n", line.ins, label, line.address, d[0], d[1])
+				_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x\n", line.ins, label, line.address, d[0], d[1])
 			}
 		case lineIns3:
 			d := a.code[offs : offs+3]
 			args := fmt.Sprintf(line.argsFormat, d[1], d[2])
-			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2])
+			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2])
 		case lineIns4:
 			d := a.code[offs : offs+4]
 			args := fmt.Sprintf(line.argsFormat, d[1], d[2], d[3])
-			_, err = fmt.Fprintf(w, "    %-5s %-8s ; $%06x  %02x %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2], d[3])
+			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2], d[3])
 		}
 
 		if err != nil {
@@ -172,6 +204,12 @@ func (a *Emitter) Label(name string) uint32 {
 	return a.address
 }
 
+func (a *Emitter) addDanglingS8(label string) {
+	refs := a.danglingS8[label]
+	refs = append(refs, a.address-1)
+	a.danglingS8[label] = refs
+}
+
 func (a *Emitter) Len() int {
 	//return a.code.Len()
 	//return int(a.address) - int(a.base)
@@ -184,19 +222,6 @@ func (a *Emitter) Bytes() []byte {
 
 func (a *Emitter) PC() uint32 {
 	return a.address
-}
-
-func (a *Emitter) Append(e *Emitter) {
-	if a.n+e.n > len(a.code) {
-		panic(fmt.Errorf("not enough space"))
-	}
-
-	a.address = e.address
-	a.baseSet = e.baseSet
-	a.flagsTracker = e.flagsTracker
-
-	a.n += copy(a.code[a.n:], e.code[0:e.n])
-	a.lines = append(a.lines, e.lines...)
 }
 
 func (a *Emitter) write(d []byte) (int, error) {
@@ -251,8 +276,6 @@ func (a *Emitter) emit1(ins string, d [1]byte) {
 			ins:         ins,
 			argsFormat:  "",
 		})
-
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x\n", ins, "", a.address, d[0]))
 	}
 	a.address += 1
 }
@@ -267,11 +290,23 @@ func (a *Emitter) emit2(ins, argsFormat string, d [2]byte) {
 			ins:         ins,
 			argsFormat:  argsFormat,
 		})
-
-		//args := fmt.Sprintf(argsFormat, d[1])
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x\n", ins, args, a.address, d[0], d[1]))
 	}
 	a.address += 2
+}
+
+func (a *Emitter) emit2Label(ins string, label string, d [2]byte) {
+	_, _ = a.write(d[:])
+	if a.generateText {
+		a.emitBase()
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns2Label,
+			address:     a.address,
+			ins:         ins,
+			argsFormat:  label,
+		})
+	}
+	a.address += 2
+	a.addDanglingS8(label)
 }
 
 func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
@@ -284,9 +319,6 @@ func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
 			ins:         ins,
 			argsFormat:  argsFormat,
 		})
-
-		//args := fmt.Sprintf(argsFormat, d[1], d[2])
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2]))
 	}
 	a.address += 3
 }
@@ -301,9 +333,6 @@ func (a *Emitter) emit4(ins, argsFormat string, d [4]byte) {
 			ins:         ins,
 			argsFormat:  argsFormat,
 		})
-
-		//args := fmt.Sprintf(argsFormat, d[1], d[2], d[3])
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x %02x %02x %02x\n", ins, args, a.address, d[0], d[1], d[2], d[3]))
 	}
 	a.address += 4
 }
@@ -325,8 +354,6 @@ func (a *Emitter) Comment(s string) {
 			ins:         s,
 			argsFormat:  "",
 		})
-
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    ; %s\n", s))
 	}
 }
 
@@ -349,7 +376,6 @@ func (a *Emitter) EmitBytes(b []byte) {
 			ins:         s.String(),
 			argsFormat:  "",
 		})
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %s\n", "db", s.String()))
 	}
 	_, _ = a.write(b)
 	a.address += uint32(len(b))
@@ -522,23 +548,7 @@ func (a *Emitter) BNE(label string) {
 	var d [2]byte
 	d[0] = 0xD0
 	d[1] = 0xFF // will be overwritten by Finalize()
-	_, _ = a.write(d[:])
-	if a.generateText {
-		a.emitBase()
-		a.lines = append(a.lines, asmLine{
-			asmLineType: lineIns2Label,
-			address:     a.address,
-			ins:         "bne",
-			argsFormat:  label,
-		})
-
-		//_, _ = a.Text.WriteString(fmt.Sprintf("    %-5s %-8s ; $%06x  %02x __\n", "bne", label, a.address, d[0]))
-	}
-	a.address += 2
-
-	refs := a.danglingS8[label]
-	refs = append(refs, a.address-1)
-	a.danglingS8[label] = refs
+	a.emit2Label("bne", label, d)
 }
 
 func (a *Emitter) BEQ_imm8(m int8) {
@@ -548,6 +558,13 @@ func (a *Emitter) BEQ_imm8(m int8) {
 	a.emit2("beq", "$%02x", d)
 }
 
+func (a *Emitter) BEQ(label string) {
+	var d [2]byte
+	d[0] = 0xF0
+	d[1] = 0xFF // will be overwritten by Finalize()
+	a.emit2Label("beq", label, d)
+}
+
 func (a *Emitter) BPL_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0x10
@@ -555,11 +572,25 @@ func (a *Emitter) BPL_imm8(m int8) {
 	a.emit2("bpl", "$%02x", d)
 }
 
+func (a *Emitter) BPL(label string) {
+	var d [2]byte
+	d[0] = 0x10
+	d[1] = 0xFF // will be overwritten by Finalize()
+	a.emit2Label("bpl", label, d)
+}
+
 func (a *Emitter) BRA_imm8(m int8) {
 	var d [2]byte
 	d[0] = 0x80
 	d[1] = uint8(m)
 	a.emit2("bra", "$%02x", d)
+}
+
+func (a *Emitter) BRA(label string) {
+	var d [2]byte
+	d[0] = 0x80
+	d[1] = 0xFF // will be overwritten by Finalize()
+	a.emit2Label("bra", label, d)
 }
 
 func (a *Emitter) ADC_imm8_b(m uint8) {
