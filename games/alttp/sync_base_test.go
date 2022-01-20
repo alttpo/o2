@@ -144,7 +144,9 @@ func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, m
 
 		// default module/submodule:
 		system.WRAM[0x10] = module    // overworld module
+		g.wram[0x10] = module         // overworld module
 		system.WRAM[0x11] = subModule // player in control
+		g.wram[0x11] = subModule      // player in control
 
 		// set up SRAM per each player:
 		g.players[1].IndexF = 1
@@ -152,12 +154,14 @@ func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, m
 		g.players[1].NameF = "remote"
 		for _, sram := range tt.sram {
 			system.WRAM[0xF000+sram.offset] = sram.localValue
+			g.wram[0xF000+sram.offset] = sram.localValue
+
 			g.local.SRAM[sram.offset] = sram.localValue
 			g.players[1].SRAM[sram.offset] = sram.remoteValue
 		}
 
-		copy(g.wram[:], system.WRAM[:])
-		copy(g.sram[:], system.SRAM[:])
+		//copy(g.wram[:], system.WRAM[:])
+		//copy(g.sram[:], system.SRAM[:])
 
 		a := asm.NewEmitter(make([]byte, 0x200), true)
 		updated := g.generateSRAMRoutine(a, 0x707C00)
@@ -234,6 +238,7 @@ func createTestableGame(t *testing.T, rom *snes.ROM, system *emulator.System) *G
 	// reset memory:
 	for i := range system.WRAM {
 		system.WRAM[i] = 0x00
+		g.wram[i] = 0x00
 	}
 	// cannot reset SRAM here because of the setup code above this loop.
 
