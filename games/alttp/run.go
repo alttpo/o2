@@ -236,7 +236,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	q = g.readEnqueue(q, 0xF50100, 0x36, 0) // [$0100..$0136]
+	q = g.readEnqueue(q, 0xF50100, 0x36, 0) // [$0100..$0135]
+	q = g.readEnqueue(q, 0xF502E0, 0x08, 0) // [$02E0..$02E7]
 	q = g.readEnqueue(q, 0xF50400, 0x20, 0) // [$0400..$041F]
 	// $1980..19E9 for reading underworld door state
 	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
