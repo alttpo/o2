@@ -188,8 +188,20 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 		asm.Comment(fmt.Sprintf("got bottle value %#02x from %s:", maxV, maxP.Name()))
 	}
 
+	longAddr := localSRAM.BusAddress(offset)
+
+	asm.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+
+	skipLabel := fmt.Sprintf("skip%06x", longAddr)
+
+	asm.LDA_long(longAddr)
+	asm.CMP_imm8_b(initial)
+	asm.BNE(skipLabel)
+
 	asm.LDA_imm8_b(maxV)
-	asm.STA_long(localSRAM.BusAddress(offset))
+	asm.STA_long(longAddr)
+
+	asm.Label(skipLabel)
 
 	return true
 }
@@ -297,8 +309,8 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 	newBits := updated & ^initial
 
 	asm.Comment(fmt.Sprintf("underworld room state changed: $%03x '%s'", s.Room, underworldNames[s.Room]))
-	asm.Comment("                  dddd_bkut_sehc_qqqq")
-	asm.Comment(fmt.Sprintf("u16[$%06x] |= 0b%04b_%04b_%04b_%04b", longAddr, newBits>>12&0xF, newBits>>8&0xF, newBits>>4&0xF, newBits&0xF))
+	//asm.Comment("                  dddd_bkut_sehc_qqqq")
+	//asm.Comment(fmt.Sprintf("u16[$%06x] |= 0b%04b_%04b_%04b_%04b", longAddr, newBits>>12&0xF, newBits>>8&0xF, newBits>>4&0xF, newBits&0xF))
 
 	if s.BitNames != nil {
 		received := make([]string, 0, len(s.BitNames))
@@ -318,8 +330,14 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 	}
 
-	asm.LDA_imm16_w(newBits)
-	asm.ORA_long(longAddr)
+	asm.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
+
+	skipLabel := fmt.Sprintf("skip%06x", longAddr)
+	asm.LDA_long(longAddr)
+	asm.CMP_imm16_w(initial)
+	asm.BNE(skipLabel)
+
+	asm.ORA_imm16_w(newBits)
 	asm.STA_long(longAddr)
 
 	{
@@ -336,6 +354,8 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 			}
 		}
 	}
+
+	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
 		s.OnUpdated(s, asm, initial, updated)

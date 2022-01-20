@@ -118,10 +118,11 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 
 	a.Comment("don't update if link is currently frozen:")
 	a.LDA_abs(0x02E4)
-	a.BEQ_imm8(0x01)
+	a.BEQ("moduleCheck")
 	a.Label("syncExit")
 	a.RTS()
 
+	a.Label("moduleCheck")
 	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
 
 	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
@@ -155,7 +156,9 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	}
 
 	// back to 8-bit mode for accumulator:
-	a.SEP(0x30)
+	if a.Flags()&0x30 != 0x30 {
+		a.SEP(0x30)
+	}
 	a.RTS()
 
 	if err := a.Finalize(); err != nil {

@@ -523,7 +523,7 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 		}
 
 		tests = append(tests, sramTestCase{
-			name: fmt.Sprintf("Underworld $%03x: %s", room, name),
+			name: fmt.Sprintf("Door %03x: %s", room, name),
 			sram: []sramTest{
 				{
 					offset:     room << 1,
@@ -540,7 +540,7 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 		// add a test specific for boss defeated notification:
 		if bossName, ok := underworldBossNames[room]; ok {
 			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("Underworld BOSS $%03x: %s", room, name),
+				name: fmt.Sprintf("Boss %03x: %s", room, name),
 				sram: []sramTest{{
 					offset:     room<<1 + 1, // high byte of u16
 					localValue: 0,
