@@ -98,14 +98,19 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	// assume 8-bit mode for accumulator and index registers:
 	a.AssumeSEP(0x30)
 
+	// clear out our routine with an RTS instruction at the start:
+	a.Comment("disable update routine with RTS instruction:")
+	// MUST be in SEP(0x20) mode!
+	a.LDA_imm8_b(0x60) // RTS
+	a.STA_long(targetSNES)
+
 	a.Comment("don't update if link is currently frozen:")
 	a.LDA_abs(0x02E4)
 	a.BEQ_imm8(0x01)
+	a.Label("syncExit")
 	a.RTS()
 
 	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
-	// NOTE: alternatively could branch backwards to the above RTS instruction but I'm too lazy
-	// to figure out the values for that.
 
 	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
 	//                                      //    else u8[$11] is non-zero:
@@ -118,17 +123,16 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	//cont:                                 // cont:
 
 	a.LDA_dp(0x11)
-	a.BEQ_imm8(15) // _cont
+	a.BEQ("syncStart")
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x07)
-	a.BEQ_imm8(8) // _bail
+	a.BEQ("syncExit")
 	a.CMP_imm8_b(0x09)
-	a.BEQ_imm8(4) // _bail
+	a.BEQ("syncExit")
 	a.CMP_imm8_b(0x0B)
-	a.BNE_imm8(1) // _cont
-	//_bail:
+	a.BNE("syncStart")
 	a.RTS()
-	//_cont:
+	a.Label("syncStart")
 
 	// custom asm overrides update asm generation:
 	if !g.generateCustomAsm(a) {
@@ -138,11 +142,6 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 		}
 	}
 
-	// clear out our routine with an RTS instruction at the start:
-	a.Comment("disable update routine with RTS instruction:")
-	// MUST be in SEP(0x20) mode!
-	a.LDA_imm8_b(0x60) // RTS
-	a.STA_long(targetSNES)
 	// back to 8-bit mode for accumulator:
 	a.SEP(0x30)
 	a.RTS()
