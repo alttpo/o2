@@ -388,7 +388,6 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 				},
 				wantUpdated:      true,
 				wantNotification: expectedNotification,
-				verify:           nil,
 			})
 		}
 	}

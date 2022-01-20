@@ -28,8 +28,6 @@ type sramTestCase struct {
 	wantUpdated bool
 	// expected front-end notification to be sent or "" if none expected
 	wantNotification string
-	// any verification logic to run after verifying update:
-	verify func(t *testing.T, g *Game, system *emulator.System, tt *sramTestCase)
 }
 
 type testingLogger struct {
@@ -76,75 +74,104 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 
 	for i := range tests {
 		tt := &tests[i]
-		t.Run(tt.name, func(t *testing.T) {
-			g := createTestableGame(t, rom, &system)
+		t.Run(tt.name, runSRAMTestCase(rom, &system, tt, 0x09, 0x00))
 
-			// subscribe to front-end Notifications from the game:
-			lastNotification := ""
-			g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
-				lastNotification = object.(string)
-				t.Logf("notify: '%s'", lastNotification)
-			}))
+		if tt.wantUpdated {
+			// change the submodule to prevent sync:
 
-			// default module/submodule:
-			system.WRAM[0x10] = 0x09 // overworld module
-			system.WRAM[0x11] = 0x00 // player in control
-
-			// set up SRAM per each player:
-			g.players[1].IndexF = 1
-			g.players[1].Ttl = 255
-			g.players[1].NameF = "remote"
-			for _, sram := range tt.sram {
-				system.WRAM[0xF000+sram.offset] = sram.localValue
-				g.local.SRAM[sram.offset] = sram.localValue
-				g.players[1].SRAM[sram.offset] = sram.remoteValue
+			sram0901 := make([]sramTest, len(tt.sram))
+			copy(sram0901, tt.sram)
+			for i := range sram0901 {
+				sram0901[i].expectedValue = sram0901[i].localValue
 			}
 
-			a := asm.NewEmitter(make([]byte, 0x200), true)
-			updated := g.generateSRAMRoutine(a, 0x707C00)
-			if updated != tt.wantUpdated {
-				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
-				return
+			tt0901 := &sramTestCase{
+				name:             "09,01: " + tt.name,
+				sram:             sram0901,
+				wantUpdated:      false,
+				wantNotification: "",
 			}
 
-			// only run the ASM if it is generated:
-			if updated {
-				copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
+			t.Run(tt0901.name, runSRAMTestCase(
+				rom,
+				&system,
+				tt0901,
+				0x09,
+				0x01,
+			))
+		}
+	}
+}
 
-				// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
-				system.CPU.Reset()
-				system.SetPC(0x00_8056)
-				if !system.RunUntil(testROMBreakPoint, 0x1_000) {
-					t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, system.CPU.PC)
-					return
-				}
+func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, module, subModule uint8) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := createTestableGame(t, rom, system)
+
+		// subscribe to front-end Notifications from the game:
+		lastNotification := ""
+		g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+			lastNotification = object.(string)
+			t.Logf("notify: '%s'", lastNotification)
+		}))
+
+		// default module/submodule:
+		system.WRAM[0x10] = module    // overworld module
+		system.WRAM[0x11] = subModule // player in control
+
+		// set up SRAM per each player:
+		g.players[1].IndexF = 1
+		g.players[1].Ttl = 255
+		g.players[1].NameF = "remote"
+		for _, sram := range tt.sram {
+			system.WRAM[0xF000+sram.offset] = sram.localValue
+			g.local.SRAM[sram.offset] = sram.localValue
+			g.players[1].SRAM[sram.offset] = sram.remoteValue
+		}
+
+		copy(g.wram[:], system.WRAM[:])
+		copy(g.sram[:], system.SRAM[:])
+
+		a := asm.NewEmitter(make([]byte, 0x200), true)
+		updated := g.generateSRAMRoutine(a, 0x707C00)
+		if updated != tt.wantUpdated {
+			t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
+			return
+		}
+
+		// only run the ASM if it is generated:
+		if !updated {
+			return
+		}
+
+		copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
+
+		// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
+		system.CPU.Reset()
+		system.SetPC(0x00_8056)
+		if !system.RunUntil(testROMBreakPoint, 0x1_000) {
+			t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, system.CPU.PC)
+			return
+		}
+
+		// copy SRAM shadow in WRAM into local player copy:
+		copy(g.local.SRAM[:], system.WRAM[0xF000:])
+
+		// verify SRAM values:
+		for _, sram := range tt.sram {
+			if actual, expected := system.WRAM[0xF000+sram.offset], sram.expectedValue; actual != expected {
+				t.Errorf("local.SRAM[%#04x] = $%02x, expected $%02x", sram.offset, actual, expected)
 			}
+		}
 
-			// copy SRAM shadow in WRAM into local player copy:
-			copy(g.local.SRAM[:], system.WRAM[0xF000:])
+		// call generateUpdateAsm() again for next frame to receive notifications:
+		a = asm.NewEmitter(make([]byte, 0x200), false)
+		a.SetBase(0x707E00)
+		a.AssumeSEP(0x30)
+		_ = g.generateUpdateAsm(a)
 
-			// verify SRAM values:
-			for _, sram := range tt.sram {
-				if actual, expected := system.WRAM[0xF000+sram.offset], sram.expectedValue; actual != expected {
-					t.Errorf("local.SRAM[%#04x] = $%02x, expected $%02x", sram.offset, actual, expected)
-				}
-			}
-
-			// call generateUpdateAsm() again for next frame to receive notifications:
-			a = asm.NewEmitter(make([]byte, 0x200), false)
-			a.SetBase(0x707E00)
-			a.AssumeSEP(0x30)
-			_ = g.generateUpdateAsm(a)
-
-			if lastNotification != tt.wantNotification {
-				t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)
-			}
-
-			// call custom verify function for test:
-			if tt.verify != nil {
-				tt.verify(t, g, &system, tt)
-			}
-		})
+		if lastNotification != tt.wantNotification {
+			t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)
+		}
 	}
 }
 

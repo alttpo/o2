@@ -94,6 +94,18 @@ func (g *Game) updateWRAM() {
 }
 
 func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool) {
+	// don't update if Link is currently frozen:
+	if g.wramU8(0x02e4) != 0 {
+		return false
+	}
+	// don't update during non-zero submodules in main gameplay modules:
+	if g.wramU8(0x11) != 0 {
+		module := g.wramU8(0x10)
+		if module == 0x07 || module == 0x09 || module == 0x0b {
+			return false
+		}
+	}
+
 	a.SetBase(targetSNES)
 
 	// assume 8-bit mode for accumulator and index registers:
