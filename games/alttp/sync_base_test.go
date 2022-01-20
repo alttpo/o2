@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"fmt"
 	"o2/interfaces"
 	"o2/snes"
 	"o2/snes/asm"
@@ -72,33 +73,60 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 		return
 	}
 
+	variants := []struct {
+		module    uint8
+		submodule uint8
+		allowed   bool
+	}{
+		{
+			module:    0x07,
+			submodule: 0x00,
+			allowed:   true,
+		},
+		{
+			module:    0x07,
+			submodule: 0x02,
+			allowed:   false,
+		},
+		{
+			module:    0x09,
+			submodule: 0x00,
+			allowed:   true,
+		},
+		{
+			module:    0x09,
+			submodule: 0x02,
+			allowed:   false,
+		},
+		{
+			module:    0x0B,
+			submodule: 0x00,
+			allowed:   true,
+		},
+		{
+			module:    0x0B,
+			submodule: 0x02,
+			allowed:   false,
+		},
+	}
+
 	for i := range tests {
 		tt := &tests[i]
-		t.Run(tt.name, runSRAMTestCase(rom, &system, tt, 0x09, 0x00))
-
-		if tt.wantUpdated {
-			// change the submodule to prevent sync:
-
-			sram0901 := make([]sramTest, len(tt.sram))
-			copy(sram0901, tt.sram)
-			for i := range sram0901 {
-				sram0901[i].expectedValue = sram0901[i].localValue
+		for _, variant := range variants {
+			module, submodule := variant.module, variant.submodule
+			ttv := &sramTestCase{
+				name:             fmt.Sprintf("%02x %02x  %s", module, submodule, tt.name),
+				sram:             tt.sram,
+				wantUpdated:      tt.wantUpdated,
+				wantNotification: tt.wantNotification,
 			}
 
-			tt0901 := &sramTestCase{
-				name:             "09,01: " + tt.name,
-				sram:             sram0901,
-				wantUpdated:      false,
-				wantNotification: "",
+			if !variant.allowed {
+				ttv.wantUpdated = false
+				ttv.wantNotification = ""
 			}
 
-			t.Run(tt0901.name, runSRAMTestCase(
-				rom,
-				&system,
-				tt0901,
-				0x09,
-				0x01,
-			))
+			t.Run(ttv.name, runSRAMTestCase(rom, &system, ttv, module, submodule))
 		}
 	}
 }
