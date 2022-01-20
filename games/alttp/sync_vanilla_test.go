@@ -535,7 +535,6 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 			},
 			wantUpdated:      true,
 			wantNotification: "",
-			verify:           nil,
 		})
 
 		// add a test specific for boss defeated notification:
