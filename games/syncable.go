@@ -165,17 +165,22 @@ func (s *SyncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 			asm.Comment(s.Notification + ":")
 		}
 	}
-	if s.Notification == "" {
-		asm.Comment(fmt.Sprintf("u8 [$%06x] |= %#08b", longAddr, newBits))
-	}
+
+	asm.Comment(fmt.Sprintf("u8 [$%06x] = %#08b | %#08b", longAddr, initial, newBits))
+
+	skipLabel := fmt.Sprintf("skip%06x", longAddr)
+	asm.LDA_long(longAddr)
+	asm.CMP_imm8_b(initial)
+	asm.BNE(skipLabel)
 
 	if s.GenerateAsm != nil {
 		s.GenerateAsm(s, asm, initial, updated, newBits)
 	} else {
-		asm.LDA_imm8_b(newBits)
-		asm.ORA_long(longAddr)
+		asm.ORA_imm8_b(newBits)
 		asm.STA_long(longAddr)
 	}
+
+	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
 		s.OnUpdated(s, asm, initial, updated)
@@ -315,17 +320,22 @@ func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 			asm.Comment(s.Notification + ":")
 		}
 	}
-	if s.Notification == "" {
-		asm.Comment(fmt.Sprintf("u16[$%06x] |= %#016b", longAddr, newBits))
-	}
+
+	asm.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
+
+	skipLabel := fmt.Sprintf("skip%06x", offs)
+	asm.LDA_long(longAddr)
+	asm.CMP_imm16_w(initial)
+	asm.BNE(skipLabel)
 
 	if s.GenerateAsm != nil {
 		s.GenerateAsm(s, asm, initial, updated, newBits)
 	} else {
-		asm.LDA_imm16_w(newBits)
-		asm.ORA_long(longAddr)
+		asm.ORA_imm16_w(newBits)
 		asm.STA_long(longAddr)
 	}
+
+	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
 		s.OnUpdated(s, asm, initial, updated)
@@ -440,9 +450,13 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 			}
 		}
 	}
-	if s.Notification == "" {
-		asm.Comment(fmt.Sprintf("sram[$%04x] = $%02x", offset, maxV))
-	}
+
+	asm.Comment(fmt.Sprintf("u8[$%03x] = $%02x ; was $%02x", offset, maxV, initial))
+
+	skipLabel := fmt.Sprintf("skip%03x", offset)
+	asm.LDA_long(localMemory.BusAddress(offset))
+	asm.CMP_imm8_b(initial)
+	asm.BNE(skipLabel)
 
 	if s.GenerateAsm != nil {
 		s.GenerateAsm(s, asm, initial, maxV)
@@ -450,6 +464,8 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 		asm.LDA_imm8_b(maxV)
 		asm.STA_long(localMemory.BusAddress(offset))
 	}
+
+	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
 		s.OnUpdated(s, asm, initial, maxV)
