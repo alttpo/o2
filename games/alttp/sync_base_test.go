@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"o2/interfaces"
+	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"o2/snes/lorom"
@@ -76,29 +77,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 	for i := range tests {
 		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			// instantiate the Game instance for testing:
-			g := NewGame(rom)
-			g.IsCreated = true
-			g.GameName = "ALTTP"
-			g.PlayerColor = 0x12ef
-			g.SyncItems = true
-			g.SyncDungeonItems = true
-			g.SyncProgress = true
-			g.SyncHearts = true
-			g.SyncSmallKeys = true
-			g.SyncUnderworld = true
-			g.SyncOverworld = true
-			g.SyncChests = true
-			g.SyncTunicColor = false
-
-			// make all JSL destinations contain a single RTL instruction:
-			g.fillRomFunctions()
-			for _, addr := range g.romFunctions {
-				// 0x6B RTL
-				system.ROM[lorom.BusAddressToPC(addr)] = 0x6B
-			}
-
-			g.Reset()
+			g := createTestableGame(t, rom, &system)
 
 			// subscribe to front-end Notifications from the game:
 			lastNotification := ""
@@ -106,15 +85,6 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				lastNotification = object.(string)
 				t.Logf("notify: '%s'", lastNotification)
 			}))
-
-			// set logger for system emulator to this specific test:
-			system.Logger = &testingLogger{t}
-
-			// reset memory:
-			for i := range system.WRAM {
-				system.WRAM[i] = 0x00
-			}
-			// cannot reset SRAM here because of the setup code above this loop.
 
 			// default module/submodule:
 			system.WRAM[0x10] = 0x09 // overworld module
@@ -131,8 +101,6 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			}
 
 			a := asm.NewEmitter(make([]byte, 0x200), true)
-			// default to 8-bit:
-			a.AssumeSEP(0x30)
 			updated := g.generateSRAMRoutine(a, 0x707C00)
 			if updated != tt.wantUpdated {
 				t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
@@ -141,12 +109,6 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 
 			// only run the ASM if it is generated:
 			if updated {
-				// generateSRAMRoutine() takes care of this:
-				//a.Comment("restore 8-bit mode and return to RESET code:")
-				//a.SEP(0x30)
-				//a.RTS()
-				//a.WriteTextTo(log.Writer())
-
 				copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
 
 				// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
@@ -164,7 +126,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			// verify SRAM values:
 			for _, sram := range tt.sram {
 				if actual, expected := system.WRAM[0xF000+sram.offset], sram.expectedValue; actual != expected {
-					t.Errorf("local.SRAM[%#04X] = %02X, expected %02X", sram.offset, actual, expected)
+					t.Errorf("local.SRAM[%#04x] = $%02x, expected $%02x", sram.offset, actual, expected)
 				}
 			}
 
@@ -184,4 +146,41 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 			}
 		})
 	}
+}
+
+func createTestableGame(t *testing.T, rom *snes.ROM, system *emulator.System) *Game {
+	// instantiate the Game instance for testing:
+	g := NewGame(rom)
+	g.IsCreated = true
+	g.GameName = "ALTTP"
+	g.PlayerColor = 0x12ef
+	g.SyncItems = true
+	g.SyncDungeonItems = true
+	g.SyncProgress = true
+	g.SyncHearts = true
+	g.SyncSmallKeys = true
+	g.SyncUnderworld = true
+	g.SyncOverworld = true
+	g.SyncChests = true
+	g.SyncTunicColor = false
+
+	// make all JSL destinations contain a single RTL instruction:
+	g.fillRomFunctions()
+	for _, addr := range g.romFunctions {
+		// 0x6B RTL
+		system.ROM[lorom.BusAddressToPC(addr)] = 0x6B
+	}
+
+	g.Reset()
+
+	// set logger for system emulator to this specific test:
+	system.Logger = &testingLogger{t}
+
+	// reset memory:
+	for i := range system.WRAM {
+		system.WRAM[i] = 0x00
+	}
+	// cannot reset SRAM here because of the setup code above this loop.
+
+	return g
 }
