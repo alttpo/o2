@@ -527,6 +527,16 @@ func (a *Emitter) ORA_imm8_b(m uint8) {
 	a.emit2("ora.b", "#$%02x", d)
 }
 
+func (a *Emitter) ORA_imm16_w(m uint16) {
+	if !a.IsM16bit() {
+		panic(fmt.Errorf("asm: ORA_imm16_w called but 'm' flag is 8-bit; call REP(0x20) or AssumeREP(0x20) first"))
+	}
+	var d [3]byte
+	d[0] = 0x09
+	d[1], d[2] = imm16(m)
+	a.emit3("ora.w", "#$%02[2]x%02[1]x", d)
+}
+
 func (a *Emitter) CMP_imm8_b(m uint8) {
 	if a.IsM16bit() {
 		panic(fmt.Errorf("asm: CMP_imm8_b called but 'm' flag is 16-bit; call SEP(0x20) or AssumeSEP(0x20) first"))
@@ -535,6 +545,16 @@ func (a *Emitter) CMP_imm8_b(m uint8) {
 	d[0] = 0xC9
 	d[1] = m
 	a.emit2("cmp.b", "#$%02x", d)
+}
+
+func (a *Emitter) CMP_imm16_w(m uint16) {
+	if !a.IsM16bit() {
+		panic(fmt.Errorf("asm: CMP_imm16_w called but 'm' flag is 8-bit; call REP(0x20) or AssumeREP(0x20) first"))
+	}
+	var d [3]byte
+	d[0] = 0xC9
+	d[1], d[2] = imm16(m)
+	a.emit3("cmp.w", "#$%02[2]x%02[1]x", d)
 }
 
 func (a *Emitter) BNE_imm8(m int8) {
