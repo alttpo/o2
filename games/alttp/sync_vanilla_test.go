@@ -523,7 +523,7 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 		}
 
 		tests = append(tests, sramTestCase{
-			name: fmt.Sprintf("Door %03x: %s", room, name),
+			name: fmt.Sprintf("Room %03x: %s", room, name),
 			sram: []sramTest{
 				{
 					offset:     room << 1,
