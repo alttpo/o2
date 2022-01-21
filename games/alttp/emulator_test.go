@@ -50,7 +50,7 @@ func CreateTestEmulator(t *testing.T, romTitle string) (system *emulator.System,
 	return
 }
 
-func CreateTestGame(t *testing.T, rom *snes.ROM, system *emulator.System) *Game {
+func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	// instantiate the Game instance for testing:
 	g := NewGame(rom)
 	g.IsCreated = true
@@ -74,16 +74,6 @@ func CreateTestGame(t *testing.T, rom *snes.ROM, system *emulator.System) *Game 
 	}
 
 	g.Reset()
-
-	// set logger for system emulator to this specific test:
-	system.Logger = &testingLogger{t}
-
-	// reset memory:
-	for i := range system.WRAM {
-		system.WRAM[i] = 0x00
-		g.wram[i] = 0x00
-	}
-	// cannot reset SRAM here because of the setup code executed in CreateTestEmulator
 
 	return g
 }

@@ -3,7 +3,6 @@ package alttp
 import (
 	"fmt"
 	"o2/interfaces"
-	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"testing"
@@ -30,16 +29,29 @@ type sramTestCase struct {
 	wantNotification string
 }
 
-func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, module, subModule uint8) func(t *testing.T) {
+func runSRAMTestCase(g *Game, system *emulator.System, tt *sramTestCase, module, subModule uint8) func(t *testing.T) {
 	return func(t *testing.T) {
-		g := CreateTestGame(t, rom, system)
+		// set logger for system emulator to this specific test:
+		system.Logger = &testingLogger{t}
 
-		// subscribe to front-end Notifications from the game:
 		lastNotification := ""
-		g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+		notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
 			lastNotification = object.(string)
 			t.Logf("notify: '%s'", lastNotification)
-		}))
+		})
+
+		// subscribe to front-end Notifications from the game:
+		observerHandle := g.Notifications.Subscribe(notificationsObserver)
+		defer func() {
+			g.Notifications.Unsubscribe(observerHandle)
+		}()
+
+		// reset memory:
+		for i := range system.WRAM {
+			system.WRAM[i] = 0x00
+			g.wram[i] = 0x00
+		}
+		// cannot reset system.SRAM here because of the setup code executed in CreateTestEmulator
 
 		// default module/submodule:
 		system.WRAM[0x10] = module    // overworld module
@@ -51,6 +63,9 @@ func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, m
 		g.players[1].IndexF = 1
 		g.players[1].Ttl = 255
 		g.players[1].NameF = "remote"
+		for j := range g.players[1].SRAM {
+			g.players[1].SRAM[j] = 0
+		}
 		for _, sram := range tt.sram {
 			system.WRAM[0xF000+sram.offset] = sram.localValue
 			g.wram[0xF000+sram.offset] = sram.localValue
@@ -59,10 +74,8 @@ func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, m
 			g.players[1].SRAM[sram.offset] = sram.remoteValue
 		}
 
-		//copy(g.wram[:], system.WRAM[:])
-		//copy(g.sram[:], system.SRAM[:])
-
-		a := asm.NewEmitter(make([]byte, 0x200), true)
+		var code [0x200]byte
+		a := asm.NewEmitter(code[:], true)
 		updated := g.generateSRAMRoutine(a, 0x707C00)
 		if updated != tt.wantUpdated {
 			t.Errorf("generateUpdateAsm() = %v, want %v", updated, tt.wantUpdated)
@@ -85,7 +98,7 @@ func runSRAMTestCase(rom *snes.ROM, system *emulator.System, tt *sramTestCase, m
 		}
 
 		// copy SRAM shadow in WRAM into local player copy:
-		copy(g.local.SRAM[:], system.WRAM[0xF000:])
+		copy(g.local.SRAM[:], system.WRAM[0xF000:0x1_0000])
 
 		// verify SRAM values:
 		for _, sram := range tt.sram {
@@ -112,6 +125,8 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 		t.Fatal(err)
 		return
 	}
+
+	g := CreateTestGame(rom, system)
 
 	variants := []struct {
 		module    uint8
@@ -166,7 +181,7 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 				ttv.wantNotification = ""
 			}
 
-			t.Run(ttv.name, runSRAMTestCase(rom, system, ttv, module, submodule))
+			t.Run(ttv.name, runSRAMTestCase(g, system, ttv, module, submodule))
 		}
 	}
 }
