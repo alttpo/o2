@@ -10,11 +10,8 @@ import (
 
 const testROMBreakPoint = 0x00_8100
 
-func MakeTestROM(title string) (rom *snes.ROM, err error) {
-	// 1 MiB size matches ALTTP JP 1.0 ROM size
-	var b [0x10_0000]byte
-
-	rom, err = snes.NewROM("test.sfc", b[:])
+func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
+	rom, err = snes.NewROM("test.sfc", b)
 	if err != nil {
 		return
 	}
@@ -65,7 +62,10 @@ func MakeTestROM(title string) (rom *snes.ROM, err error) {
 }
 
 func TestPatcher_Patch(t *testing.T) {
-	var rom, err = MakeTestROM("ZELDANODENSETSU")
+	// 1 MiB size matches ALTTP JP 1.0 ROM size
+	var b [0x10_0000]byte
+
+	var rom, err = MakeTestROM("ZELDANODENSETSU", b[:])
 	if err != nil {
 		t.Errorf("MakeTestROM() error = %v", err)
 	}

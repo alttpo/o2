@@ -41,16 +41,7 @@ func (l *testingLogger) WriteString(s string) (n int, err error) {
 }
 
 func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
-	// create a ROM for testing our patch process and the generated ASM code:
-	rom, err := MakeTestROM(romTitle)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := NewPatcher(rom)
-	if err = p.Patch(); err != nil {
-		t.Errorf("Patch() error = %v", err)
-	}
+	var err error
 
 	// create the CPU-only SNES emulator:
 	system := emulator.System{
@@ -63,8 +54,17 @@ func runAsmEmulationTests(t *testing.T, romTitle string, tests []sramTestCase) {
 		t.Fatal(err)
 	}
 
-	// copy ROM contents into system emulator:
-	copy(system.ROM[:], rom.Contents)
+	// create a ROM for testing our patch process and the generated ASM code:
+	var rom *snes.ROM
+	rom, err = MakeTestROM(romTitle, system.ROM[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPatcher(rom)
+	if err = p.Patch(); err != nil {
+		t.Errorf("Patch() error = %v", err)
+	}
 
 	// run the initialization code to set up SRAM:
 	system.CPU.Reset()
