@@ -15,23 +15,30 @@ type ObservableImpl struct {
 	observers ObserverList
 }
 
-func (o *ObservableImpl) Subscribe(observer Observer) {
+type ObserverHandle int
+
+func (o *ObservableImpl) Subscribe(observer Observer) ObserverHandle {
 	o.observers = append(o.observers, observer)
+	return ObserverHandle(len(o.observers) - 1)
 }
 
-func (o *ObservableImpl) Unsubscribe(observer Observer) {
+func (o *ObservableImpl) Unsubscribe(observer ObserverHandle) {
 	if o.observers == nil {
 		return
 	}
-	for i := len(o.observers); i > 0; i-- {
-		if o.observers[i] == observer {
-			o.observers = append(o.observers[0:i], o.observers[i+1:]...)
+	for i := len(o.observers) - 1; i >= 0; i-- {
+		if i == int(observer) {
+			o.observers[i] = nil
+			//o.observers = append(o.observers[0:i], o.observers[i+1:]...)
 		}
 	}
 }
 
 func (o *ObservableImpl) Publish(object interface{}) {
 	for _, observer := range o.observers {
+		if observer == nil {
+			continue
+		}
 		observer.Notify(object)
 	}
 }
