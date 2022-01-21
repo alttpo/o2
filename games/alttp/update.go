@@ -204,6 +204,7 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
+	tmp := make([]byte, 0x100)
 
 	// generate update ASM code for any 8-bit values:
 	for offs, item := range g.syncableItems {
@@ -219,7 +220,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// clone the assembler to a temporary:
-		ta := a.Clone()
+		ta := a.Clone(tmp)
 		// generate the update asm routine in the temporary assembler:
 		u := item.GenerateUpdate(ta)
 		if u {
@@ -233,7 +234,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 	if g.SyncSmallKeys {
 		// clone the assembler to a temporary:
-		ta := a.Clone()
+		ta := a.Clone(tmp)
 		// generate the update asm routine in the temporary assembler:
 		u := g.doSyncSmallKeys(ta)
 		if u {
@@ -256,7 +257,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 
 			// clone the assembler to a temporary:
-			ta := a.Clone()
+			ta := a.Clone(tmp)
 			// generate the update asm routine in the temporary assembler:
 			u := s.GenerateUpdate(ta)
 			if u {
@@ -272,7 +273,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	{
 		updated16 := false
 		// clone to a temporary assembler for 16-bit mode:
-		a16 := a.Clone()
+		a16 := a.Clone(tmp)
 		// switch to 16-bit mode:
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
@@ -349,6 +350,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
+		tmp2 := make([]byte, 0x200)
 		// sync all the underworld supertile state:
 		if g.SyncUnderworld {
 			for i := range g.underworld {
@@ -361,7 +363,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				}
 
 				// clone the assembler to a temporary:
-				ta := a16.Clone()
+				ta := a16.Clone(tmp2)
 				// generate the update asm routine in the temporary assembler:
 				u := s.GenerateUpdate(ta)
 				if u {
@@ -384,7 +386,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 
 			// clone the assembler to a temporary:
-			ta := a16.Clone()
+			ta := a16.Clone(tmp2)
 			// generate the update asm routine in the temporary assembler:
 			u := s.GenerateUpdate(ta)
 			if u {

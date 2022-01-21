@@ -56,7 +56,7 @@ func NewEmitter(target []byte, generateText bool) *Emitter {
 		generateText: generateText,
 		code:         target,
 		n:            0,
-		lines:        make([]asmLine, 0, 0x100),
+		lines:        nil,
 		base:         0,
 		baseSet:      false,
 		address:      0,
@@ -66,18 +66,18 @@ func NewEmitter(target []byte, generateText bool) *Emitter {
 	return a
 }
 
-func (a *Emitter) Clone() *Emitter {
+func (a *Emitter) Clone(target []byte) *Emitter {
 	e := &Emitter{
 		flagsTracker: a.flagsTracker,
 		generateText: a.generateText,
-		code:         make([]byte, len(a.code)),
+		code:         target,
 		n:            0,
-		lines:        make([]asmLine, 0, 0x100),
+		lines:        nil,
 		address:      a.address,
 		base:         a.base,
 		baseSet:      a.baseSet,
-		labels:       make(map[string]uint32),
-		danglingS8:   make(map[string][]uint32),
+		labels:       make(map[string]uint32, len(a.labels)),
+		danglingS8:   make(map[string][]uint32, len(a.danglingS8)),
 	}
 	// copy labels and dangling references:
 	for k, v := range a.labels {
