@@ -104,8 +104,10 @@ func (g *Game) updatePlayersList() {
 		})
 	}
 
-	// send the players list:
-	g.viewModels.NotifyView("game/players", playerViewModels)
+	if g.viewModels != nil {
+		// send the players list:
+		g.viewModels.NotifyView("game/players", playerViewModels)
+	}
 }
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {

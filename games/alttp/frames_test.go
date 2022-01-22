@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"o2/interfaces"
+	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/emulator"
 	"testing"
@@ -192,6 +193,21 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			}
 			g.players[1].SRAM[set.offset-0xF000] = set.value
 		}
+
+		// since Queue is nil, this method will not call generateSRAMRoutine:
+		g.readMainComplete([]snes.Response{
+			// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+			{Address: 0xF50010, Size: 0xF0, Data: system.WRAM[0x10 : 0x10+0xF0]},
+			{Address: 0xF50100, Size: 0x36, Data: system.WRAM[0x0100 : 0x0100+0x36]}, // [$0100..$0135]
+			{Address: 0xF502E0, Size: 0x08, Data: system.WRAM[0x02E0 : 0x02E0+0x08]}, // [$02E0..$02E7]
+			{Address: 0xF50400, Size: 0x20, Data: system.WRAM[0x0400 : 0x0400+0x20]}, // [$0400..$041F]
+			// $1980..19E9 for reading underworld door state
+			{Address: 0xF51980, Size: 0x6A, Data: system.WRAM[0x1980 : 0x1980+0x6A]}, // [$1980..$19E9]
+			// ALTTP's SRAM copy in WRAM:
+			{Address: 0xF5F340, Size: 0xFF, Data: system.WRAM[0xF340 : 0xF340+0xFF]}, // [$F340..$F43E]
+			// Link's palette:
+			{Address: 0xF5C6E0, Size: 0x20, Data: system.WRAM[0xC6E0 : 0xC6E0+0x20]},
+		})
 
 		// generate ASM code:
 		var code [0x200]byte
