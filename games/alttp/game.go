@@ -60,6 +60,7 @@ type Game struct {
 	updateLock       sync.Mutex
 	updateStage      int
 	lastUpdateTarget uint32
+	lastUpdateFrame  uint8
 
 	customAsmLock sync.Mutex
 	customAsm     []byte

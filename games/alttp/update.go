@@ -54,6 +54,7 @@ func (g *Game) updateWRAM() {
 	// SRAM starts at $E00000
 	target := lorom.BusAddressToPak(targetSNES)
 	g.lastUpdateTarget = target
+	g.lastUpdateFrame = g.lastGameFrame
 
 	// write generated asm routine to SRAM:
 	err := q.MakeWriteCommands(
@@ -167,7 +168,7 @@ func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {
 	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
 	addr := g.lastUpdateTarget
 	if addr != 0xFFFFFF {
-		q = g.readEnqueue(q, addr, 0x01, nil)
+		q = g.readEnqueue(q, addr, 0x02, nil)
 	}
 	return q
 }

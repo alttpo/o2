@@ -275,15 +275,18 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		// handle update routine check:
 		g.updateLock.Lock()
 		if rsp.Address == g.lastUpdateTarget {
-			log.Printf("alttp: update: check: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+			ins0 := rsp.Data[0]
+			updateFrameCounter := rsp.Data[1]
+			log.Printf("alttp: update: check: $%06x [$%02x,$%02x] ?= [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
 			// when executed, the routine replaces its first instruction with RTS ($60):
-			if rsp.Data[0] == 0x60 {
+			if ins0 == 0x60 && updateFrameCounter == g.lastUpdateFrame {
 				// allow next update:
-				log.Printf("alttp: update: complete: $%06x [$%02x] == $60\n", rsp.Address, rsp.Data[0])
+				log.Printf("alttp: update: complete: $%06x [$%02x,$%02x] == [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
 				if g.updateStage == 2 {
 					g.updateStage = 0
 					g.nextUpdateA = !g.nextUpdateA
 					g.lastUpdateTarget = 0xFFFFFF
+					g.lastUpdateFrame ^= 0xFF
 				}
 			} else {
 				// check again:
