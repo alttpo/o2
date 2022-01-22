@@ -118,7 +118,7 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.STA_long(targetSNES)
 	a.SEP(0x30)
 
-	a.Comment("don't update if link is currently frozen:")
+	a.Comment("don't update if Link is frozen:")
 	a.LDA_abs(0x02E4)
 	a.BEQ("moduleCheck")
 	a.Label("syncExit")
