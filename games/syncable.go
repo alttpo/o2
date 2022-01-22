@@ -323,7 +323,7 @@ func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 
 	asm.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
 
-	skipLabel := fmt.Sprintf("skip%06x", offs)
+	skipLabel := fmt.Sprintf("skip%06x", longAddr)
 	asm.LDA_long(longAddr)
 	asm.CMP_imm16_w(initial)
 	asm.BNE(skipLabel)
@@ -451,10 +451,12 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 	}
 
-	asm.Comment(fmt.Sprintf("u8[$%03x] = $%02x ; was $%02x", offset, maxV, initial))
+	longAddr := localMemory.BusAddress(offset)
 
-	skipLabel := fmt.Sprintf("skip%03x", offset)
-	asm.LDA_long(localMemory.BusAddress(offset))
+	asm.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+
+	skipLabel := fmt.Sprintf("skip%06x", longAddr)
+	asm.LDA_long(longAddr)
 	asm.CMP_imm8_b(initial)
 	asm.BNE(skipLabel)
 
@@ -462,7 +464,7 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 		s.GenerateAsm(s, asm, initial, maxV)
 	} else {
 		asm.LDA_imm8_b(maxV)
-		asm.STA_long(localMemory.BusAddress(offset))
+		asm.STA_long(longAddr)
 	}
 
 	asm.Label(skipLabel)
