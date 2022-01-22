@@ -112,10 +112,11 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.AssumeSEP(0x30)
 
 	// clear out our routine with an RTS instruction at the start:
-	a.Comment("disable update routine with RTS instruction:")
-	// MUST be in SEP(0x20) mode!
-	a.LDA_imm8_b(0x60) // RTS
+	a.Comment("disable update routine with RTS instruction and copy of $1A:")
+	a.REP(0x30)
+	a.LDA_imm16_lh(0x60, g.lastGameFrame) // RTS
 	a.STA_long(targetSNES)
+	a.SEP(0x30)
 
 	a.Comment("don't update if link is currently frozen:")
 	a.LDA_abs(0x02E4)

@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"fmt"
 	"log"
 	"o2/snes"
 	"o2/snes/asm"
@@ -8,6 +9,9 @@ import (
 	"testing"
 )
 
+const testROMMainGameLoop = 0x00_8034
+const testROMDoFrame = 0x00_8051
+const testROMJSLMainRouting = 0x00_8056
 const testROMBreakPoint = 0x00_8100
 
 func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
@@ -48,10 +52,22 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	}
 	a.WriteTextTo(log.Writer())
 
-	// write the $8056 code that will be patched over:
-	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8056), 0x50), true)
-	a.SetBase(0x00_8056)
+	// write the $8034 code as main game loop:
+	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(testROMMainGameLoop), 0x30), true)
+	a.SetBase(testROMMainGameLoop)
 	a.AssumeSEP(0x30)
+	a.BRA("do_frame")
+	for a.PC() < testROMDoFrame {
+		a.NOP()
+	}
+	if a.Label("do_frame") != testROMDoFrame {
+		panic(fmt.Errorf("do_frame label must be at %#06x", testROMDoFrame))
+	}
+	// increment frame counter:
+	a.INC_dp(0x1A)
+	for a.PC() < testROMJSLMainRouting {
+		a.NOP()
+	}
 	a.JSL(testROMBreakPoint)
 	if err = a.Finalize(); err != nil {
 		return

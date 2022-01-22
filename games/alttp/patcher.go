@@ -100,7 +100,7 @@ func (p *Patcher) Patch() (err error) {
 
 	// frame hook:
 	const frameHook = 0x008056
-	// 008056 is 22 B5 80 00   JSL GameModes
+	// 008056 is 22 B5 80 00   JSL Module_MainRouting
 	p.readAt(frameHook)
 	var frameJSL []byte
 	frameJSL, err = p.read(4)

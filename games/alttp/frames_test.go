@@ -54,43 +54,57 @@ func Test_Frames(t *testing.T) {
 				{
 					preGenLocal: []wramSetValue{
 						{0x02E4, 1}, // freeze Link
-						{0xF359, 0}, // no bottle
+						{0xF35C, 0}, // no bottle
 					},
 					preGenRemote: []wramSetValue{
-						{0xF359, 2}, // empty bottle
+						{0xF35C, 2}, // empty bottle
 					},
 					wantAsm: false,
 				},
 				{
 					preGenLocal: []wramSetValue{
 						{0x02E4, 1}, // freeze Link
-						{0xF359, 7}, // green bottle
+						{0xF35C, 4}, // green potion
 					},
 					preGenRemote: []wramSetValue{
-						{0xF359, 2}, // empty bottle
+						{0xF35C, 2}, // empty bottle
 					},
 					wantAsm: false,
-					//preAsmLocal: []wramSetValue{
-					//	{0xF359, 0}, // no bottle
-					//},
-					//postAsmLocal: []wramTestValue{
-					//	{0xF359, 0}, // no bottle
-					//},
 				},
 				{
 					preGenLocal: []wramSetValue{
 						{0x02E4, 0}, // unfreeze Link
 					},
 					preGenRemote: []wramSetValue{
-						{0xF359, 2}, // empty bottle
+						{0xF35C, 2}, // empty bottle
 					},
 					wantAsm: false,
-					//preAsmLocal: []wramSetValue{
-					//	{0xF359, 0}, // no bottle
-					//},
-					//postAsmLocal: []wramTestValue{
-					//	{0xF359, 0}, // no bottle
-					//},
+					postAsmLocal: []wramTestValue{
+						{0xF35C, 4}, // green potion
+					},
+				},
+			},
+		},
+		{
+			name:      "boots",
+			module:    0x09,
+			subModule: 0x00,
+			frames: []frame{
+				{
+					// 0xF355
+					preGenLocal: []wramSetValue{
+						{0xF355, 0},          // no boots
+						{0xF379, 0b11111000}, // no dash
+					},
+					preGenRemote: []wramSetValue{
+						{0xF355, 1},          // boots
+						{0xF379, 0b11111100}, // dash
+					},
+					wantAsm: true,
+					postAsmLocal: []wramTestValue{
+						{0xF355, 1},          // boots
+						{0xF379, 0b11111100}, // dash
+					},
 				},
 			},
 		},
@@ -154,6 +168,8 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 	// iterate through frames of test:
 	for f := range tt.frames {
+		t.Logf("frame %d", f)
+
 		frame := &tt.frames[f]
 
 		// set pre-generation local values:
@@ -186,11 +202,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			return
 		}
 
-		// only run the ASM if it is generated:
-		if !updated {
-			continue
-		}
-
 		// modify local WRAM before ASM execution:
 		for j := range frame.preAsmLocal {
 			set := &frame.preAsmLocal[j]
@@ -203,12 +214,15 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			}
 		}
 
-		// deploy the SRAM routine:
-		copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
+		if updated {
+			// deploy the SRAM routine if generated:
+			copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
+		}
 
+		// execute a frame of ASM:
 		// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
 		system.CPU.Reset()
-		system.SetPC(0x00_8056)
+		system.SetPC(testROMMainGameLoop)
 		if !system.RunUntil(testROMBreakPoint, 0x1_000) {
 			t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, system.CPU.PC)
 			return
@@ -216,8 +230,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		// copy SRAM shadow in WRAM into local player copy:
 		copy(g.local.SRAM[:], system.WRAM[0xF000:0x1_0000])
+		copy(g.wram[:], system.WRAM[:])
 
-		// verify SRAM values:
+		// verify values:
 		for _, check := range frame.postAsmLocal {
 			if actual, expected := system.WRAM[check.offset], check.value; actual != expected {
 				t.Errorf("system.WRAM[%#04x] = $%02x, expected $%02x", check.offset, actual, expected)
