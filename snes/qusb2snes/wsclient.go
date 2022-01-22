@@ -39,7 +39,7 @@ type qusbResult struct {
 	Results []string `json:"Results"`
 }
 
-var timeout = time.Second * 2
+var timeout = time.Second * 30
 
 func RandomName(prefix string) string {
 	var bytes [4]byte
