@@ -612,7 +612,7 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 	}
 }
 
-func TestAsmFrame_Vanilla_Bottles(t *testing.T) {
+func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
 	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
@@ -697,8 +697,8 @@ func TestAsmFrame_Vanilla_Bottles(t *testing.T) {
 	}
 }
 
-func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
-	tests := make([]sramTestCase, 0, len(underworldNames))
+func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
+	tests := make([]testCase, 0, len(underworldNames))
 
 	for room := uint16(0); room < 0x130; room++ {
 		name, ok := underworldNames[room]
@@ -706,37 +706,76 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 			continue
 		}
 
-		tests = append(tests, sramTestCase{
-			name: fmt.Sprintf("Room %03x: %s", room, name),
-			sram: []sramTest{
+		wramOffs := 0xF000 + room<<1
+
+		tests = append(tests, testCase{
+			name:      fmt.Sprintf("Room %03x: %s", room, name),
+			module:    0x07,
+			subModule: 0x00,
+			frames: []frame{
 				{
-					offset:     room << 1,
-					localValue: 0,
-					// quadrants visited:
-					remoteValue:   0b_0000_1111,
-					expectedValue: 0b_0000_1111,
+					preGenLocal: []wramSetValue{
+						{wramOffs, 0},
+					},
+					preGenRemote: []wramSetValue{
+						// quadrants visited:
+						{wramOffs, 0b0000_1111},
+					},
+					wantAsm: true,
+					postAsmLocal: []wramTestValue{
+						{wramOffs, 0b0000_1111},
+					},
 				},
 			},
-			wantUpdated:      true,
-			wantNotification: "",
 		})
 
 		// add a test specific for boss defeated notification:
 		if bossName, ok := underworldBossNames[room]; ok {
-			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("Boss %03x: %s", room, name),
-				sram: []sramTest{{
-					offset:     room<<1 + 1, // high byte of u16
-					localValue: 0,
-					// boss defeated:
-					remoteValue:   0b0000_1000,
-					expectedValue: 0b0000_1000,
-				}},
-				wantUpdated:      true,
-				wantNotification: fmt.Sprintf("got %s defeated from remote", bossName),
+			wantNotifications := []string{
+				fmt.Sprintf("got %s defeated from remote", bossName),
+			}
+			if room == 0x020 {
+				wantNotifications = append([]string{"HC portal opened"}, wantNotifications...)
+			}
+
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("Boss %03x: %s", room, name),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs + 1, 0},
+						},
+						preGenRemote: []wramSetValue{
+							// boss defeated:
+							{wramOffs + 1, 0b0000_1000},
+						},
+						wantAsm: true,
+						postAsmLocal: []wramTestValue{
+							{wramOffs + 1, 0b0000_1000},
+						},
+						wantNotifications: wantNotifications,
+					},
+				},
 			})
 		}
 	}
 
-	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
 }
