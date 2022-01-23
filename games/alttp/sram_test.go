@@ -107,11 +107,10 @@ func runSRAMTestCase(g *Game, system *emulator.System, tt *sramTestCase, module,
 			}
 		}
 
-		// call generateUpdateAsm() again for next frame to receive notifications:
-		a = asm.NewEmitter(make([]byte, 0x200), false)
-		a.SetBase(0x707E00)
-		a.AssumeSEP(0x30)
-		_ = g.generateUpdateAsm(a)
+		// invoke asm confirmations to get notifications:
+		for i, generator := range g.updateGenerators {
+			generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+i])
+		}
 
 		if lastNotification != tt.wantNotification {
 			t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)

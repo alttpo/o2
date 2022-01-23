@@ -97,9 +97,7 @@ type syncableBottle struct {
 	isEnabled *bool
 	names     []string
 
-	pendingUpdate bool
-	updatingTo    byte
-	notification  string
+	notification string
 }
 
 func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
@@ -116,29 +114,21 @@ func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 func (s *syncableBottle) Size() uint      { return 1 }
 func (s *syncableBottle) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableBottle) CanUpdate() bool {
-	if !s.pendingUpdate {
-		return true
-	}
+func (s *syncableBottle) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.g
-	if g.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU8(s.offset) != s.updatingTo {
-		return false
+func (s *syncableBottle) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.notification != "" {
-		g.PushNotification(s.notification)
+		s.g.PushNotification(s.notification)
 		s.notification = ""
 	}
-
-	s.pendingUpdate = false
-
-	return true
 }
 
-func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	g := s.g
 	local := g.LocalSyncablePlayer()
 	offset := s.offset
@@ -171,8 +161,6 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	// notify local player of new item received:
-	s.pendingUpdate = true
-	s.updatingTo = maxV
 	s.notification = ""
 	if s.names != nil {
 		i := int(maxV) - 1
@@ -180,28 +168,39 @@ func (s *syncableBottle) GenerateUpdate(asm *asm.Emitter) bool {
 			if s.names[i] != "" {
 				received := s.names[i]
 				s.notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-				asm.Comment(s.notification + ":")
+				a.Comment(s.notification + ":")
 			}
 		}
 	}
 	if s.notification == "" {
-		asm.Comment(fmt.Sprintf("got bottle value %#02x from %s:", maxV, maxP.Name()))
+		a.Comment(fmt.Sprintf("got bottle value %#02x from %s:", maxV, maxP.Name()))
 	}
 
 	longAddr := localSRAM.BusAddress(offset)
 
-	asm.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+	a.Comment(fmt.Sprintf("u8 [$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
 
-	skipLabel := fmt.Sprintf("skip%06x", longAddr)
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
 
-	asm.LDA_long(longAddr)
-	asm.CMP_imm8_b(initial)
-	asm.BNE(skipLabel)
+	a.LDA_long(longAddr)
+	a.CMP_imm8_b(initial)
+	a.BNE(failLabel)
 
-	asm.LDA_imm8_b(maxV)
-	asm.STA_long(longAddr)
+	a.LDA_imm8_b(maxV)
+	a.STA_long(longAddr)
 
-	asm.Label(skipLabel)
+	// write confirmation:
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.BRA(nextLabel)
+
+	a.Label(failLabel)
+	// write failure:
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+
+	a.Label(nextLabel)
 
 	return true
 }
@@ -223,37 +222,27 @@ type syncableUnderworld struct {
 
 	OnUpdated syncableUnderworldOnUpdated
 
-	PendingUpdate bool
-	UpdatingTo    uint16
-	Notification  string
+	Notification string
 }
 
 func (s *syncableUnderworld) Size() uint      { return 2 }
 func (s *syncableUnderworld) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *syncableUnderworld) CanUpdate() bool {
-	if !s.PendingUpdate {
-		return true
-	}
+func (s *syncableUnderworld) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.SyncableGame
-	if g.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU16(s.Offset) != s.UpdatingTo {
-		return false
+func (s *syncableUnderworld) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.Notification != "" {
-		g.PushNotification(s.Notification)
+		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
-
-	s.PendingUpdate = false
-
-	return true
 }
 
-func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
@@ -301,16 +290,14 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	// notify local player of new item received:
-	s.PendingUpdate = true
-	s.UpdatingTo = updated
 	s.Notification = ""
 
 	longAddr := local.ReadableMemory(games.SRAM).BusAddress(offs)
 	newBits := updated & ^initial
 
-	asm.Comment(fmt.Sprintf("underworld room state changed: $%03x '%s'", s.Room, underworldNames[s.Room]))
-	//asm.Comment("                  dddd_bkut_sehc_qqqq")
-	//asm.Comment(fmt.Sprintf("u16[$%06x] |= 0b%04b_%04b_%04b_%04b", longAddr, newBits>>12&0xF, newBits>>8&0xF, newBits>>4&0xF, newBits&0xF))
+	a.Comment(fmt.Sprintf("underworld room state changed: $%03x '%s'", s.Room, underworldNames[s.Room]))
+	//a.Comment("                  dddd_bkut_sehc_qqqq")
+	//a.Comment(fmt.Sprintf("u16[$%06x] |= 0b%04b_%04b_%04b_%04b", longAddr, newBits>>12&0xF, newBits>>8&0xF, newBits>>4&0xF, newBits&0xF))
 
 	if s.BitNames != nil {
 		received := make([]string, 0, len(s.BitNames))
@@ -326,19 +313,33 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 		if len(received) > 0 {
 			s.Notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
-			asm.Comment(s.Notification + ":")
+			a.Comment(s.Notification + ":")
 		}
 	}
 
-	asm.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
+	a.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
 
-	skipLabel := fmt.Sprintf("skip%06x", longAddr)
-	asm.LDA_long(longAddr)
-	asm.CMP_imm16_w(initial)
-	asm.BNE(skipLabel)
+	goodLabel := fmt.Sprintf("good%06x", longAddr)
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
+	a.LDA_long(longAddr)
+	a.CMP_imm16_w(initial)
+	a.BEQ(goodLabel)
+	a.JMP_abs(failLabel)
 
-	asm.ORA_imm16_w(newBits)
-	asm.STA_long(longAddr)
+	a.Label(goodLabel)
+	a.ORA_imm16_w(newBits)
+	a.STA_long(longAddr)
+
+	if s.OnUpdated != nil {
+		s.OnUpdated(s, a, initial, updated)
+	}
+
+	// write confirmation:
+	a.SEP(0x30)
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.REP(0x30)
 
 	{
 		// this cast should not fail:
@@ -350,16 +351,20 @@ func (s *syncableUnderworld) GenerateUpdate(asm *asm.Emitter) bool {
 			// only pay attention to supertile state changes when the local player is in that supertile:
 			if s.Room == localPlayer.DungeonRoom {
 				// open the door for the local player:
-				g.openDoor(asm, initial, updated)
+				g.openDoor(a, initial, updated)
 			}
 		}
 	}
+	a.BRA(nextLabel)
 
-	asm.Label(skipLabel)
+	a.Label(failLabel)
+	// write failure:
+	a.SEP(0x30)
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.REP(0x30)
 
-	if s.OnUpdated != nil {
-		s.OnUpdated(s, asm, initial, updated)
-	}
+	a.Label(nextLabel)
 
 	return true
 }

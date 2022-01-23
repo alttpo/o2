@@ -71,7 +71,7 @@ func (g *Game) initSync() {
 	// define syncable items:
 	if !g.isVTRandomizer() {
 		// these item slots are disabled for sync under VT randomizers since they can be swapped at will:
-		g.NewSyncableCustomU8(0x340, &g.SyncItems, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
+		g.NewSyncableCustomU8(0x340, &g.SyncItems, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
 			local := g.LocalSyncablePlayer()
 			offset := s.Offset
 
@@ -105,22 +105,21 @@ func (g *Game) initSync() {
 
 			// notify local player of new item received:
 			received := vanillaItemNames[0x340][maxV]
-			s.PendingUpdate = true
-			s.UpdatingTo = maxV
 			s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-			asm.Comment(s.Notification + ":")
+			a.Comment(s.Notification + ":")
 
-			asm.LDA_long(0x7EF377) // arrows
-			asm.CMP_imm8_b(0x01)   // are arrows present?
-			asm.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
-			asm.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
-			asm.STA_long(local.ReadableMemory(games.SRAM).BusAddress(offset))
+			a.LDA_long(0x7EF377) // arrows
+			a.CMP_imm8_b(0x01)   // are arrows present?
+			a.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
+			a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
+			a.STA_long(local.ReadableMemory(games.SRAM).BusAddress(offset))
+
+			// write confirmation:
+			a.LDA_imm8_b(0x01)
+			a.STA_long(a.GetBase() + 0x02 + index)
 
 			return true
-		}).IsUpdateStillPending = func(s *games.SyncableCustomU8) bool {
-			return g.LocalPlayer().ReadableMemory(games.SRAM).ReadU8(s.Offset) != s.UpdatingTo &&
-				g.LocalPlayer().ReadableMemory(games.SRAM).ReadU8(s.Offset) != s.UpdatingTo+1
-		}
+		})
 		g.NewSyncableVanillaItemU8(0x341, &g.SyncItems, nil)
 		g.NewSyncableVanillaItemU8(0x344, &g.SyncItems, nil)
 		g.NewSyncableVanillaItemU8(0x34C, &g.SyncItems, nil)
@@ -142,9 +141,9 @@ func (g *Game) initSync() {
 	g.NewSyncableVanillaItemU8(0x352, &g.SyncItems, nil)
 	g.NewSyncableVanillaItemU8(0x353, &g.SyncItems, nil)
 	g.NewSyncableVanillaItemU8(0x354, &g.SyncItems,
-		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
-			asm.Comment("update armor/gloves palette:")
-			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
+		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			a.Comment("update armor/gloves palette:")
+			a.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
 	g.NewSyncableVanillaItemU8(0x355, &g.SyncItems, nil)
 	g.NewSyncableVanillaItemU8(0x356, &g.SyncItems, nil)
@@ -152,26 +151,26 @@ func (g *Game) initSync() {
 	// skip 0x358 unused
 
 	swordSync := g.NewSyncableVanillaItemU8(0x359, &g.SyncItems,
-		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
-			asm.Comment("decompress sword gfx:")
-			asm.JSL(g.romFunctions[fnDecompGfxSword])
-			asm.Comment("update sword palette:")
-			asm.JSL(g.romFunctions[fnUpdatePaletteSword])
+		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			a.Comment("decompress sword gfx:")
+			a.JSL(g.romFunctions[fnDecompGfxSword])
+			a.Comment("update sword palette:")
+			a.JSL(g.romFunctions[fnUpdatePaletteSword])
 		})
 	// prevent sync in of $ff (i.e. anything above $04) when smithy takes your sword for tempering
 	swordSync.AbsMax = 4
 
 	g.NewSyncableVanillaItemU8(0x35A, &g.SyncItems,
-		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
-			asm.Comment("decompress shield gfx:")
-			asm.JSL(g.romFunctions[fnDecompGfxShield])
-			asm.Comment("update shield palette:")
-			asm.JSL(g.romFunctions[fnUpdatePaletteShield])
+		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			a.Comment("decompress shield gfx:")
+			a.JSL(g.romFunctions[fnDecompGfxShield])
+			a.Comment("update shield palette:")
+			a.JSL(g.romFunctions[fnUpdatePaletteShield])
 		})
 	g.NewSyncableVanillaItemU8(0x35B, &g.SyncItems,
-		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
-			asm.Comment("update armor/gloves palette:")
-			asm.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
+		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			a.Comment("update armor/gloves palette:")
+			a.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
 
 	g.newSyncableBottle(0x35C, &g.SyncItems)
@@ -188,7 +187,7 @@ func (g *Game) initSync() {
 	g.NewSyncableVanillaItemBitsU8(0x369, &g.SyncDungeonItems, nil)
 
 	// heart containers:
-	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
 		g := s.SyncableGame
 		local := g.LocalSyncablePlayer()
 
@@ -211,9 +210,6 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		s.PendingUpdate = true
-		s.UpdatingTo = updated
-
 		oldHearts := initial & ^uint8(7)
 		oldPieces := initial & uint8(3)
 		newHearts := updated & ^uint8(7)
@@ -241,27 +237,19 @@ func (g *Game) initSync() {
 
 		received := hc.String()
 		s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-		asm.Comment(s.Notification + ":")
+		a.Comment(s.Notification + ":")
 
-		asm.LDA_imm8_b(updated & ^uint8(7))
-		asm.STA_long(localSRAM.BusAddress(0x36C))
-		asm.LDA_imm8_b(updated & uint8(3))
-		asm.STA_long(localSRAM.BusAddress(0x36B))
+		a.LDA_imm8_b(updated & ^uint8(7))
+		a.STA_long(localSRAM.BusAddress(0x36C))
+		a.LDA_imm8_b(updated & uint8(3))
+		a.STA_long(localSRAM.BusAddress(0x36B))
+
+		// write confirmation:
+		a.LDA_imm8_b(0x01)
+		a.STA_long(a.GetBase() + 0x02 + index)
 
 		return true
-	}).IsUpdateStillPending = func(s *games.SyncableCustomU8) bool {
-		if !s.PendingUpdate {
-			return false
-		}
-
-		localSRAM := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM)
-		current := (localSRAM.ReadU8(0x36C) & ^uint8(7)) | (localSRAM.ReadU8(0x36B) & 3)
-		if current != s.UpdatingTo {
-			return true
-		}
-
-		return false
-	}
+	})
 
 	// bombs capacity:
 	g.NewSyncableMaxU8(0x370, &g.SyncItems, nil, nil)
@@ -341,18 +329,15 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF341)
 			}
 		})
-		invSwap1.GenerateAsm = func(s *games.SyncableBitU8, asm *asm.Emitter, initial, updated, newBits uint8) {
+		invSwap1.GenerateAsm = func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
 			// make flute (inactive) and flute (activated) mutually exclusive:
-			asm.LDA_long(longAddr)
+			a.LDA_long(longAddr)
 			if newBits&0b00000011 != 0 {
-				asm.AND_imm8_b(0b11111100)
-				s.UpdatingTo = initial&0b11111100 | newBits
-			} else {
-				s.UpdatingTo = initial | newBits
+				a.AND_imm8_b(0b11111100)
 			}
-			asm.ORA_imm8_b(newBits)
-			asm.STA_long(longAddr)
+			a.ORA_imm8_b(newBits)
+			a.STA_long(longAddr)
 		}
 
 		g.NewSyncableVTItemBitsU8(0x38E, &g.SyncItems, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
@@ -387,27 +372,27 @@ func (g *Game) initSync() {
 
 	// world state:
 	g.NewSyncableVanillaItemU8(0x3C5, &g.SyncProgress,
-		func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
 			if initial < 2 && updated >= 2 {
-				asm.Comment("load sprite gfx:")
-				asm.JSL(g.romFunctions[fnLoadSpriteGfx])
+				a.Comment("load sprite gfx:")
+				a.JSL(g.romFunctions[fnLoadSpriteGfx])
 
 				// overworld only:
 				if g.local.Module == 0x09 && g.local.SubModule == 0 {
-					asm.Comment("reset overworld:")
-					asm.LDA_imm8_b(0x00)
-					asm.STA_dp(0x1D)
-					asm.STA_dp(0x8C)
-					asm.JSL(g.romFunctions[fnOverworldFinishMirrorWarp])
+					a.Comment("reset overworld:")
+					a.LDA_imm8_b(0x00)
+					a.STA_dp(0x1D)
+					a.STA_dp(0x8C)
+					a.JSL(g.romFunctions[fnOverworldFinishMirrorWarp])
 					// clear sfx:
-					asm.LDA_imm8_b(0x05)
-					asm.STA_abs(0x012D)
+					a.LDA_imm8_b(0x05)
+					a.STA_abs(0x012D)
 				}
 			}
 		})
 
 	// progress flags 1/2:
-	g.NewSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
 		offset := s.Offset
 		local := s.SyncableGame.LocalSyncablePlayer()
 		localSRAM := local.ReadableMemory(games.SRAM)
@@ -415,12 +400,17 @@ func (g *Game) initSync() {
 
 		// check to make sure zelda telepathic follower removed if have uncle's gear:
 		if initial&0x01 == 0x01 && localSRAM.ReadU8(0x3CC) == 0x05 {
-			asm.Comment("already have uncle's gear; remove telepathic zelda follower:")
-			asm.LDA_long(0x7EF3CC)
-			asm.CMP_imm8_b(0x05)
-			asm.BNE_imm8(0x06)
-			asm.LDA_imm8_b(0x00)   // 2 bytes
-			asm.STA_long(0x7EF3CC) // 4 bytes
+			a.Comment("already have uncle's gear; remove telepathic zelda follower:")
+			a.LDA_long(0x7EF3CC)
+			a.CMP_imm8_b(0x05)
+			a.BNE_imm8(0x06)
+			a.LDA_imm8_b(0x00)   // 2 bytes
+			a.STA_long(0x7EF3CC) // 4 bytes
+
+			// write confirmation:
+			a.LDA_imm8_b(0x01)
+			a.STA_long(a.GetBase() + 0x02 + index)
+
 			return true
 		}
 
@@ -440,26 +430,27 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		s.PendingUpdate = true
-		s.UpdatingTo = newBits
-
 		orBits := newBits & ^initial
-		asm.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
+		a.Comment(fmt.Sprintf("progress1 |= %#08b", orBits))
 
 		addr := localSRAM.BusAddress(offset)
-		asm.LDA_imm8_b(orBits)
-		asm.ORA_long(addr)
-		asm.STA_long(addr)
+		a.LDA_imm8_b(orBits)
+		a.ORA_long(addr)
+		a.STA_long(addr)
+
+		// write confirmation:
+		a.LDA_imm8_b(0x01)
+		a.STA_long(a.GetBase() + 0x02 + index)
 
 		// if receiving uncle's gear, remove zelda telepathic follower:
 		if newBits&0x01 == 0x01 && initial&0x01 == 0 {
-			asm.Comment("received uncle's gear; remove telepathic zelda follower:")
+			a.Comment("received uncle's gear; remove telepathic zelda follower:")
 			// this may run when link is still in bed so uncle adds the follower before link can get up:
-			asm.LDA_long(0x7EF3CC)
-			asm.CMP_imm8_b(0x05)
-			asm.BNE_imm8(0x06)
-			asm.LDA_imm8_b(0x00)   // 2 bytes
-			asm.STA_long(0x7EF3CC) // 4 bytes
+			a.LDA_long(0x7EF3CC)
+			a.CMP_imm8_b(0x05)
+			a.BNE_imm8(0x06)
+			a.LDA_imm8_b(0x00)   // 2 bytes
+			a.STA_long(0x7EF3CC) // 4 bytes
 		}
 
 		return true
@@ -471,7 +462,7 @@ func (g *Game) initSync() {
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
-	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *games.SyncableCustomU8, asm *asm.Emitter) bool {
+	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
 		offset := s.Offset
 		initial := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU8(offset)
 
@@ -487,38 +478,39 @@ func (g *Game) initSync() {
 		}
 
 		// notify local player of new item received:
-		s.PendingUpdate = true
-		s.UpdatingTo = newBits
-
 		orBits := newBits & ^initial
-		asm.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
+		a.Comment(fmt.Sprintf("progress2 |= %#08b", orBits))
 
 		addr := 0x7EF000 + uint32(offset)
-		asm.LDA_imm8_b(orBits)
-		asm.ORA_long(addr)
-		asm.STA_long(addr)
+		a.LDA_imm8_b(orBits)
+		a.ORA_long(addr)
+		a.STA_long(addr)
+
+		// write confirmation:
+		a.LDA_imm8_b(0x01)
+		a.STA_long(a.GetBase() + 0x02 + index)
 
 		// remove purple chest follower if purple chest opened:
 		if newBits&0x10 == 0x10 {
-			asm.Comment("lose purple chest follower:")
-			asm.LDA_long(0x7EF3CC)
-			asm.CMP_imm8_b(0x0C)
-			asm.BNE_imm8(0x06)
-			asm.LDA_imm8_b(0x00)   // 2 bytes
-			asm.STA_long(0x7EF3CC) // 4 bytes
+			a.Comment("lose purple chest follower:")
+			a.LDA_long(0x7EF3CC)
+			a.CMP_imm8_b(0x0C)
+			a.BNE_imm8(0x06)
+			a.LDA_imm8_b(0x00)   // 2 bytes
+			a.STA_long(0x7EF3CC) // 4 bytes
 		}
 		// lose smithy follower if already rescued:
 		if newBits&0x20 == 0x20 {
-			asm.Comment("lose smithy follower:")
-			asm.LDA_long(0x7EF3CC)
-			asm.CMP_imm8_b(0x07)
-			asm.BNE_imm8(0x06)
-			asm.LDA_imm8_b(0x00)   // 2 bytes
-			asm.STA_long(0x7EF3CC) // 4 bytes
-			asm.CMP_imm8_b(0x08)
-			asm.BNE_imm8(0x06)
-			asm.LDA_imm8_b(0x00)   // 2 bytes
-			asm.STA_long(0x7EF3CC) // 4 bytes
+			a.Comment("lose smithy follower:")
+			a.LDA_long(0x7EF3CC)
+			a.CMP_imm8_b(0x07)
+			a.BNE_imm8(0x06)
+			a.LDA_imm8_b(0x00)   // 2 bytes
+			a.STA_long(0x7EF3CC) // 4 bytes
+			a.CMP_imm8_b(0x08)
+			a.BNE_imm8(0x06)
+			a.LDA_imm8_b(0x00)   // 2 bytes
+			a.STA_long(0x7EF3CC) // 4 bytes
 		}
 
 		return true
@@ -547,9 +539,9 @@ func (g *Game) initSync() {
 		&g.SyncUnderworld,
 		nil,
 		// open the local door(s):
-		func(s *games.SyncableBitU16, asm *asm.Emitter, initial, updated uint16) {
-			asm.Comment("open door based on wram[$0400] bits")
-			g.openDoor(asm, initial, updated)
+		func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
+			a.Comment("open door based on wram[$0400] bits")
+			g.openDoor(a, initial, updated)
 		},
 	)
 	g.syncableBitU16[0x0400].MemoryKind = games.WRAM
@@ -716,7 +708,7 @@ func (g *Game) setUnderworldSyncMasks() {
 	g.underworld[0x035].SyncMask &= ^uint16(0x0080)
 }
 
-func (g *Game) openDoor(asm *asm.Emitter, initial, updated uint16) bool {
+func (g *Game) openDoor(a *asm.Emitter, initial, updated uint16) bool {
 	// must only be in dungeon module:
 	if !g.LocalPlayer().IsDungeon() {
 		return false
@@ -766,16 +758,16 @@ func (g *Game) openDoor(asm *asm.Emitter, initial, updated uint16) bool {
 		break
 	}
 
-	asm.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
-	asm.REP(0x30)
-	asm.LDA_imm16_w(doorTilemapAddr)
-	asm.STA_abs(0x068E)
-	asm.LDA_imm16_w(0x0008) // TODO: confirm this value?
-	asm.STA_abs(0x0690)
-	asm.SEP(0x30)
+	a.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
+	a.REP(0x30)
+	a.LDA_imm16_w(doorTilemapAddr)
+	a.STA_abs(0x068E)
+	a.LDA_imm16_w(0x0008) // TODO: confirm this value?
+	a.STA_abs(0x0690)
+	a.SEP(0x30)
 	// set door open submodule:
-	asm.LDA_imm8_b(0x04)
-	asm.STA_dp(0x11)
-	asm.REP(0x30)
+	a.LDA_imm8_b(0x04)
+	a.STA_dp(0x11)
+	a.REP(0x30)
 	return true
 }

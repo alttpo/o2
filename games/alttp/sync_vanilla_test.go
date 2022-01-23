@@ -552,7 +552,6 @@ func TestAsm_Vanilla_UnderworldRooms(t *testing.T) {
 				wantNotification: fmt.Sprintf("got %s defeated from remote", bossName),
 			})
 		}
-
 	}
 
 	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)

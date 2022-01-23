@@ -20,7 +20,10 @@ type SyncStrategy interface {
 	// CanUpdate determines if a previous update has completed
 	CanUpdate() bool
 	// GenerateUpdate returns true if asm instructions were emitted to the given asm.Emitter and returns false otherwise
-	GenerateUpdate(a *asm.Emitter) bool
+	GenerateUpdate(a *asm.Emitter, index uint32) bool
+
+	// ConfirmAsmExecuted is called when generated ASM code is confirmed to have executed:
+	ConfirmAsmExecuted(index uint32, value uint8)
 }
 
 type (
@@ -35,7 +38,7 @@ type (
 	SyncableMaxU8OnUpdated   func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 	SyncableMaxU8GenerateAsm func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
-	SyncableCustomU8Update func(s *SyncableCustomU8, asm *asm.Emitter) bool
+	SyncableCustomU8Update func(s *SyncableCustomU8, asm *asm.Emitter, index uint32) bool
 	IsUpdateStillPending   func(s *SyncableCustomU8) bool
 )
 
@@ -56,9 +59,7 @@ type SyncableBitU8 struct {
 	GenerateAsm SyncableBitU8GenerateAsm
 	OnUpdated   SyncableBitU8OnUpdated
 
-	PendingUpdate bool
-	UpdatingTo    uint8
-	Notification  string
+	Notification string
 }
 
 func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
@@ -77,29 +78,21 @@ func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 func (s *SyncableBitU8) Size() uint      { return 1 }
 func (s *SyncableBitU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *SyncableBitU8) CanUpdate() bool {
-	if !s.PendingUpdate {
-		return true
-	}
+func (s *SyncableBitU8) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.SyncableGame
-	if g.LocalSyncablePlayer().ReadableMemory(SRAM).ReadU8(s.Offset) != s.UpdatingTo {
-		return false
+func (s *SyncableBitU8) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.Notification != "" {
-		g.PushNotification(s.Notification)
+		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
-
-	s.PendingUpdate = false
-
-	return true
 }
 
-func (s *SyncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
@@ -141,8 +134,6 @@ func (s *SyncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	// notify local player of new item received:
-	s.PendingUpdate = true
-	s.UpdatingTo = updated
 	s.Notification = ""
 
 	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
@@ -162,29 +153,40 @@ func (s *SyncableBitU8) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 		if len(received) > 0 {
 			s.Notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
-			asm.Comment(s.Notification + ":")
+			a.Comment(s.Notification + ":")
 		}
 	}
 
-	asm.Comment(fmt.Sprintf("u8 [$%06x] = %#08b | %#08b", longAddr, initial, newBits))
+	a.Comment(fmt.Sprintf("u8 [$%06x] = %#08b | %#08b", longAddr, initial, newBits))
 
-	skipLabel := fmt.Sprintf("skip%06x", longAddr)
-	asm.LDA_long(longAddr)
-	asm.CMP_imm8_b(initial)
-	asm.BNE(skipLabel)
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
+	a.LDA_long(longAddr)
+	a.CMP_imm8_b(initial)
+	a.BNE(failLabel)
 
 	if s.GenerateAsm != nil {
-		s.GenerateAsm(s, asm, initial, updated, newBits)
+		s.GenerateAsm(s, a, initial, updated, newBits)
 	} else {
-		asm.ORA_imm8_b(newBits)
-		asm.STA_long(longAddr)
+		a.ORA_imm8_b(newBits)
+		a.STA_long(longAddr)
 	}
-
-	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
-		s.OnUpdated(s, asm, initial, updated)
+		s.OnUpdated(s, a, initial, updated)
 	}
+
+	// write confirmation:
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.BRA(nextLabel)
+
+	a.Label(failLabel)
+	// write failure:
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+
+	a.Label(nextLabel)
 
 	return true
 }
@@ -204,9 +206,7 @@ type SyncableBitU16 struct {
 	GenerateAsm SyncableBitU16GenerateAsm
 	OnUpdated   SyncableBitU16OnUpdated
 
-	PendingUpdate bool
-	UpdatingTo    uint16
-	Notification  string
+	Notification string
 }
 
 func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
@@ -226,29 +226,21 @@ func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names []str
 func (s *SyncableBitU16) Size() uint      { return 2 }
 func (s *SyncableBitU16) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *SyncableBitU16) CanUpdate() bool {
-	if !s.PendingUpdate {
-		return true
-	}
+func (s *SyncableBitU16) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.SyncableGame
-	if g.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).ReadU16(s.Offset) != s.UpdatingTo {
-		return false
+func (s *SyncableBitU16) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.Notification != "" {
-		g.PushNotification(s.Notification)
+		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
-
-	s.PendingUpdate = false
-
-	return true
 }
 
-func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
@@ -296,8 +288,6 @@ func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	// notify local player of new item received:
-	s.PendingUpdate = true
-	s.UpdatingTo = updated
 	s.Notification = ""
 
 	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
@@ -317,29 +307,40 @@ func (s *SyncableBitU16) GenerateUpdate(asm *asm.Emitter) bool {
 		}
 		if len(received) > 0 {
 			s.Notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
-			asm.Comment(s.Notification + ":")
+			a.Comment(s.Notification + ":")
 		}
 	}
 
-	asm.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
+	a.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
 
-	skipLabel := fmt.Sprintf("skip%06x", longAddr)
-	asm.LDA_long(longAddr)
-	asm.CMP_imm16_w(initial)
-	asm.BNE(skipLabel)
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
+	a.LDA_long(longAddr)
+	a.CMP_imm16_w(initial)
+	a.BNE(failLabel)
 
 	if s.GenerateAsm != nil {
-		s.GenerateAsm(s, asm, initial, updated, newBits)
+		s.GenerateAsm(s, a, initial, updated, newBits)
 	} else {
-		asm.ORA_imm16_w(newBits)
-		asm.STA_long(longAddr)
+		a.ORA_imm16_w(newBits)
+		a.STA_long(longAddr)
 	}
-
-	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
-		s.OnUpdated(s, asm, initial, updated)
+		s.OnUpdated(s, a, initial, updated)
 	}
+
+	// write confirmation:
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.BRA(nextLabel)
+
+	a.Label(failLabel)
+	// write failure:
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+
+	a.Label(nextLabel)
 
 	return true
 }
@@ -359,9 +360,7 @@ type SyncableMaxU8 struct {
 	GenerateAsm SyncableMaxU8GenerateAsm
 	OnUpdated   SyncableMaxU8OnUpdated
 
-	PendingUpdate bool
-	UpdatingTo    uint8
-	Notification  string
+	Notification string
 }
 
 func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableMaxU8OnUpdated) *SyncableMaxU8 {
@@ -380,29 +379,21 @@ func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 func (s *SyncableMaxU8) Size() uint      { return 1 }
 func (s *SyncableMaxU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *SyncableMaxU8) CanUpdate() bool {
-	if !s.PendingUpdate {
-		return true
-	}
+func (s *SyncableMaxU8) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.SyncableGame
-	if g.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).ReadU8(s.Offset) != s.UpdatingTo {
-		return false
+func (s *SyncableMaxU8) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.Notification != "" {
-		g.PushNotification(s.Notification)
+		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
-
-	s.PendingUpdate = false
-
-	return true
 }
 
-func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
+func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
@@ -437,8 +428,6 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 	}
 
 	// notify local player of new item received:
-	s.PendingUpdate = true
-	s.UpdatingTo = maxV
 	s.Notification = ""
 	if s.ValueNames != nil {
 		i := int(maxV) - 1
@@ -446,32 +435,43 @@ func (s *SyncableMaxU8) GenerateUpdate(asm *asm.Emitter) bool {
 			if s.ValueNames[i] != "" {
 				received := s.ValueNames[i]
 				s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-				asm.Comment(s.Notification + ":")
+				a.Comment(s.Notification + ":")
 			}
 		}
 	}
 
 	longAddr := localMemory.BusAddress(offset)
 
-	asm.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+	a.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
 
-	skipLabel := fmt.Sprintf("skip%06x", longAddr)
-	asm.LDA_long(longAddr)
-	asm.CMP_imm8_b(initial)
-	asm.BNE(skipLabel)
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
+	a.LDA_long(longAddr)
+	a.CMP_imm8_b(initial)
+	a.BNE(failLabel)
 
 	if s.GenerateAsm != nil {
-		s.GenerateAsm(s, asm, initial, maxV)
+		s.GenerateAsm(s, a, initial, maxV)
 	} else {
-		asm.LDA_imm8_b(maxV)
-		asm.STA_long(longAddr)
+		a.LDA_imm8_b(maxV)
+		a.STA_long(longAddr)
 	}
-
-	asm.Label(skipLabel)
 
 	if s.OnUpdated != nil {
-		s.OnUpdated(s, asm, initial, maxV)
+		s.OnUpdated(s, a, initial, maxV)
 	}
+
+	// write confirmation:
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.BRA(nextLabel)
+
+	a.Label(failLabel)
+	// write failure:
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+
+	a.Label(nextLabel)
 
 	return true
 }
@@ -485,9 +485,6 @@ type SyncableCustomU8 struct {
 
 	CustomGenerateUpdate SyncableCustomU8Update
 
-	PendingUpdate bool
-	UpdatingTo    uint8
-	IsUpdateStillPending
 	Notification string
 }
 
@@ -504,32 +501,20 @@ func NewSyncableCustomU8(g SyncableGame, offset uint32, enabled *bool, generateU
 
 func (s *SyncableCustomU8) Size() uint      { return 1 }
 func (s *SyncableCustomU8) IsEnabled() bool { return *s.IsEnabledPtr }
-func (s *SyncableCustomU8) GenerateUpdate(asm *asm.Emitter) bool {
-	return s.CustomGenerateUpdate(s, asm)
+func (s *SyncableCustomU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+	return s.CustomGenerateUpdate(s, a, index)
 }
 
-func (s *SyncableCustomU8) CanUpdate() bool {
-	if !s.PendingUpdate {
-		return true
-	}
+func (s *SyncableCustomU8) CanUpdate() bool { return true }
 
-	// wait until we see the desired update:
-	g := s.SyncableGame
-	if s.IsUpdateStillPending != nil {
-		if s.IsUpdateStillPending(s) {
-			return false
-		}
-	} else if g.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).ReadU8(s.Offset) != s.UpdatingTo {
-		return false
+func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
 	}
 
 	// send the notification:
 	if s.Notification != "" {
-		g.PushNotification(s.Notification)
+		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
-
-	s.PendingUpdate = false
-
-	return true
 }

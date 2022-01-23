@@ -284,6 +284,11 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 				// allow next update:
 				log.Printf("alttp: update: complete: $%06x [$%02x,$%02x] == [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
 				if g.updateStage == 2 {
+					// confirm ASM execution:
+					for i, generator := range g.updateGenerators {
+						generator.ConfirmAsmExecuted(uint32(i), rsp.Data[i+2])
+					}
+
 					g.updateStage = 0
 					g.nextUpdateA = !g.nextUpdateA
 					g.lastUpdateTarget = 0xFFFFFF

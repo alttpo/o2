@@ -3,6 +3,7 @@ package alttp
 import (
 	"fmt"
 	"log"
+	"o2/games"
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
@@ -183,7 +184,7 @@ func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {
 	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
 	addr := g.lastUpdateTarget
 	if addr != 0xFFFFFF {
-		q = g.readEnqueue(q, addr, 0x02, nil)
+		q = g.readEnqueue(q, addr, uint8(0x02+len(g.updateGenerators)), nil)
 	}
 	return q
 }
@@ -205,6 +206,12 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
+	if g.updateGenerators == nil {
+		g.updateGenerators = make([]games.SyncStrategy, 0, 20)
+	} else {
+		g.updateGenerators = g.updateGenerators[:0]
+	}
+
 	tmp := make([]byte, 0x100)
 
 	// generate update ASM code for any 8-bit values:
@@ -223,10 +230,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// clone the assembler to a temporary:
 		ta := a.Clone(tmp)
 		// generate the update asm routine in the temporary assembler:
-		u := item.GenerateUpdate(ta)
+		u := item.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
 			if ta.Len()+a.Len()+10 <= 255 {
+				g.updateGenerators = append(g.updateGenerators, item)
 				a.Append(ta)
 				updated = true
 			}
@@ -241,6 +249,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		if u {
 			// don't emit the routine if it pushes us over the code size limit:
 			if ta.Len()+a.Len()+10 <= 255 {
+				//g.updateGenerators = append(g.updateGenerators, item)
 				a.Append(ta)
 				updated = true
 			}
@@ -260,10 +269,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// clone the assembler to a temporary:
 			ta := a.Clone(tmp)
 			// generate the update asm routine in the temporary assembler:
-			u := s.GenerateUpdate(ta)
+			u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+10 <= 255 {
+					g.updateGenerators = append(g.updateGenerators, s)
 					a.Append(ta)
 					updated = true
 				}
@@ -366,10 +376,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// clone the assembler to a temporary:
 				ta := a16.Clone(tmp2)
 				// generate the update asm routine in the temporary assembler:
-				u := s.GenerateUpdate(ta)
+				u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
 				if u {
 					// don't emit the routine if it pushes us over the code size limit:
 					if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
+						g.updateGenerators = append(g.updateGenerators, s)
 						a16.Append(ta)
 						updated16 = true
 					}
@@ -389,10 +400,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// clone the assembler to a temporary:
 			ta := a16.Clone(tmp2)
 			// generate the update asm routine in the temporary assembler:
-			u := s.GenerateUpdate(ta)
+			u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
 			if u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
+					g.updateGenerators = append(g.updateGenerators, s)
 					a16.Append(ta)
 					updated16 = true
 				}
