@@ -734,9 +734,18 @@ func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 }
 
 func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
 	tests := make([]testCase, 0, len(underworldNames))
 
-	for room := uint16(0); room < 0x130; room++ {
+	for room := uint16(0); room < 0x128; room++ {
 		name, ok := underworldNames[room]
 		if !ok {
 			continue
@@ -765,47 +774,70 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 			},
 		})
 
-		// add a test specific for boss defeated notification:
-		if bossName, ok := underworldBossNames[room]; ok {
-			wantNotifications := []string{
-				fmt.Sprintf("got %s defeated from remote", bossName),
-			}
-			if room == 0x020 {
-				wantNotifications = append([]string{"HC portal opened"}, wantNotifications...)
+		for bit := 0; bit < 8; bit++ {
+			lowbit := bit
+			lowBitName := g.underworld[room].BitNames[lowbit]
+			if lowBitName != "" && g.underworld[room].SyncMask&(1<<lowbit) != 0 {
+				// low bits:
+				tests = append(tests, testCase{
+					name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, lowbit),
+					module:    0x07,
+					subModule: 0x00,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs, 1 << bit},
+							},
+							wantAsm: true,
+							postAsmLocal: []wramTestValue{
+								{wramOffs, 1 << bit},
+							},
+							wantNotifications: []string{
+								fmt.Sprintf("got %s from remote", lowBitName),
+							},
+						},
+					},
+				})
 			}
 
-			tests = append(tests, testCase{
-				name:      fmt.Sprintf("Boss %03x: %s", room, name),
-				module:    0x07,
-				subModule: 0x00,
-				frames: []frame{
-					{
-						preGenLocal: []wramSetValue{
-							{wramOffs + 1, 0},
+			highbit := bit + 8
+			highBitName := g.underworld[room].BitNames[highbit]
+			if highBitName != "" && g.underworld[room].SyncMask&(1<<highbit) != 0 {
+				// high bits:
+				wantNotifications := []string{
+					fmt.Sprintf("got %s from remote", highBitName),
+				}
+				// exception for Agahnim defeated to open HC portal as well:
+				if room == 0x020 && highbit == 11 {
+					wantNotifications = []string{"HC portal opened", "got Agahnim defeated from remote"}
+				}
+
+				tests = append(tests, testCase{
+					name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, highbit),
+					module:    0x07,
+					subModule: 0x00,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs + 1, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs + 1, 1 << bit},
+							},
+							wantAsm: true,
+							postAsmLocal: []wramTestValue{
+								{wramOffs + 1, 1 << bit},
+							},
+							wantNotifications: wantNotifications,
 						},
-						preGenRemote: []wramSetValue{
-							// boss defeated:
-							{wramOffs + 1, 0b0000_1000},
-						},
-						wantAsm: true,
-						postAsmLocal: []wramTestValue{
-							{wramOffs + 1, 0b0000_1000},
-						},
-						wantNotifications: wantNotifications,
 					},
-				},
-			})
+				})
+			}
 		}
 	}
-
-	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
-
-	g := CreateTestGame(rom, system)
 
 	// run each test:
 	for i := range tests {
