@@ -6,7 +6,7 @@ import (
 )
 
 func TestAsm_VT_Items(t *testing.T) {
-	tests := []sramTestCase{
+	sramTests := []sramTestCase{
 		{
 			name:        "No update",
 			wantUpdated: false,
@@ -356,12 +356,58 @@ func TestAsm_VT_Items(t *testing.T) {
 		},
 	}
 
+	// convert legacy tests to frame tests:
+	tests := make([]testCase, 0, len(sramTests))
+	for _, legacy := range sramTests {
+		fr := frame{
+			preGenLocal:       make([]wramSetValue, len(legacy.sram)),
+			preGenRemote:      make([]wramSetValue, len(legacy.sram)),
+			wantAsm:           legacy.wantUpdated,
+			preAsmLocal:       nil,
+			postAsmLocal:      make([]wramTestValue, len(legacy.sram)),
+			wantNotifications: nil,
+		}
+		for i, s := range legacy.sram {
+			fr.preGenLocal[i].offset = 0xF000 + s.offset
+			fr.preGenLocal[i].value = s.localValue
+			fr.preGenRemote[i].offset = 0xF000 + s.offset
+			fr.preGenRemote[i].value = s.remoteValue
+			fr.postAsmLocal[i].offset = 0xF000 + s.offset
+			fr.postAsmLocal[i].value = s.expectedValue
+		}
+		if legacy.wantNotification != "" {
+			fr.wantNotifications = []string{legacy.wantNotification}
+		}
+		test := testCase{
+			name:      legacy.name,
+			module:    0x07,
+			subModule: 0x00,
+			frames:    []frame{fr},
+		}
+		tests = append(tests, test)
+	}
+
+	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	runAsmEmulationTests(t, "VT test", tests)
+	system, rom, err := CreateTestEmulator(t, "VT test")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
 }
 
 func TestAsm_VT_ItemBits(t *testing.T) {
-	tests := make([]sramTestCase, 0, len(vtItemBitNames)*8)
+	tests := make([]testCase, 0, len(vtItemBitNames)*8)
 
 	for offs := uint16(0x38C); offs <= 0x38E; offs++ {
 		bitNames, ok := vtItemBitNames[offs]
@@ -371,27 +417,51 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 
 		for i := range bitNames {
 			bitName := bitNames[i]
-			expectedNotification := ""
+			var expectedNotifications []string
 			if bitName != "" {
-				expectedNotification = fmt.Sprintf("got %s from remote", bitName)
+				expectedNotifications = []string{fmt.Sprintf("got %s from remote", bitName)}
 			}
 
-			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("$%03x bit %d", offs, i),
-				sram: []sramTest{
+			wramOffs := 0xF000 + offs
+
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("$%03x bit %d", offs, i),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
 					{
-						offset:        offs,
-						localValue:    0,
-						remoteValue:   1 << i,
-						expectedValue: 1 << i,
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
+						},
+						preGenRemote: []wramSetValue{
+							{wramOffs, 1 << i},
+						},
+						wantAsm: true,
+						postAsmLocal: []wramTestValue{
+							{wramOffs, 1 << i},
+						},
+						wantNotifications: expectedNotifications,
 					},
 				},
-				wantUpdated:      true,
-				wantNotification: expectedNotification,
 			})
 		}
 	}
 
+	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	runAsmEmulationTests(t, "VT test", tests)
+	system, rom, err := CreateTestEmulator(t, "VT test")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
 }
