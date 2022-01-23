@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAsm_Vanilla_Items(t *testing.T) {
+func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 	sramTests := []sramTestCase{
 		{
 			name:        "No update",
@@ -774,10 +774,11 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 			},
 		})
 
+		u := &g.underworld[room]
 		for bit := 0; bit < 8; bit++ {
 			lowbit := bit
-			lowBitName := g.underworld[room].BitNames[lowbit]
-			if lowBitName != "" && g.underworld[room].SyncMask&(1<<lowbit) != 0 {
+			lowBitName := u.BitNames[lowbit]
+			if lowBitName != "" && u.SyncMask&(1<<lowbit) != 0 {
 				// low bits:
 				tests = append(tests, testCase{
 					name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, lowbit),
@@ -804,8 +805,8 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 			}
 
 			highbit := bit + 8
-			highBitName := g.underworld[room].BitNames[highbit]
-			if highBitName != "" && g.underworld[room].SyncMask&(1<<highbit) != 0 {
+			highBitName := u.BitNames[highbit]
+			if highBitName != "" && u.SyncMask&(1<<highbit) != 0 {
 				// high bits:
 				wantNotifications := []string{
 					fmt.Sprintf("got %s from remote", highBitName),
