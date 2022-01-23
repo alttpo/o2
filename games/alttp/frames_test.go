@@ -311,8 +311,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		if len(notifications) != len(frame.wantNotifications) {
 			t.Errorf("notifications = %#v, expected %#v", notifications, frame.wantNotifications)
-		}
-		if len(notifications) > 0 {
+		} else if len(notifications) > 0 {
 			for i := range notifications {
 				if notifications[i] != frame.wantNotifications[i] {
 					t.Errorf("notification[%d] = '%s', expected '%s'", i, notifications[i], frame.wantNotifications[i])
