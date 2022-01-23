@@ -114,8 +114,6 @@ func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 func (s *syncableBottle) Size() uint      { return 1 }
 func (s *syncableBottle) IsEnabled() bool { return *s.isEnabled }
 
-func (s *syncableBottle) CanUpdate() bool { return true }
-
 func (s *syncableBottle) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {
 		return
@@ -227,8 +225,6 @@ type syncableUnderworld struct {
 
 func (s *syncableUnderworld) Size() uint      { return 2 }
 func (s *syncableUnderworld) IsEnabled() bool { return *s.IsEnabledPtr }
-
-func (s *syncableUnderworld) CanUpdate() bool { return true }
 
 func (s *syncableUnderworld) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {

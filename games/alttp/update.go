@@ -223,9 +223,6 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		if !item.IsEnabled() {
 			continue
 		}
-		if !item.CanUpdate() {
-			continue
-		}
 
 		// clone the assembler to a temporary:
 		ta := a.Clone(tmp)
@@ -260,9 +257,6 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		for i := range g.overworld {
 			s := &g.overworld[i]
 			if !s.IsEnabled() {
-				continue
-			}
-			if !s.CanUpdate() {
 				continue
 			}
 
@@ -369,9 +363,6 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				if !s.IsEnabled() {
 					continue
 				}
-				if !s.CanUpdate() {
-					continue
-				}
 
 				// clone the assembler to a temporary:
 				ta := a16.Clone(tmp2)
@@ -391,9 +382,6 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// sync any other u16 data:
 		for _, s := range g.syncableBitU16 {
 			if !s.IsEnabled() {
-				continue
-			}
-			if !s.CanUpdate() {
 				continue
 			}
 

@@ -17,8 +17,6 @@ type SyncStrategy interface {
 	Size() uint
 	IsEnabled() bool
 
-	// CanUpdate determines if a previous update has completed
-	CanUpdate() bool
 	// GenerateUpdate returns true if asm instructions were emitted to the given asm.Emitter and returns false otherwise
 	GenerateUpdate(a *asm.Emitter, index uint32) bool
 
@@ -77,8 +75,6 @@ func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 
 func (s *SyncableBitU8) Size() uint      { return 1 }
 func (s *SyncableBitU8) IsEnabled() bool { return *s.IsEnabledPtr }
-
-func (s *SyncableBitU8) CanUpdate() bool { return true }
 
 func (s *SyncableBitU8) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {
@@ -225,8 +221,6 @@ func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names []str
 
 func (s *SyncableBitU16) Size() uint      { return 2 }
 func (s *SyncableBitU16) IsEnabled() bool { return *s.IsEnabledPtr }
-
-func (s *SyncableBitU16) CanUpdate() bool { return true }
 
 func (s *SyncableBitU16) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {
@@ -379,8 +373,6 @@ func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []stri
 func (s *SyncableMaxU8) Size() uint      { return 1 }
 func (s *SyncableMaxU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *SyncableMaxU8) CanUpdate() bool { return true }
-
 func (s *SyncableMaxU8) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {
 		return
@@ -504,8 +496,6 @@ func (s *SyncableCustomU8) IsEnabled() bool { return *s.IsEnabledPtr }
 func (s *SyncableCustomU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return s.CustomGenerateUpdate(s, a, index)
 }
-
-func (s *SyncableCustomU8) CanUpdate() bool { return true }
 
 func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == 0x00 {
