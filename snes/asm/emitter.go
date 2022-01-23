@@ -1,6 +1,7 @@
 package asm
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -24,7 +25,8 @@ type Emitter struct {
 	// label name to address map:
 	labels map[string]uint32
 	// dangling references to labels; stored as absolute addresses:
-	danglingS8 map[string][]uint32
+	danglingS8  map[string][]uint32
+	danglingU16 map[string][]uint32
 }
 
 type asmLineType int
@@ -32,13 +34,14 @@ type asmLineType int
 const (
 	lineIns1 asmLineType = iota
 	lineIns2
+	lineIns2Label
 	lineIns3
+	lineIns3Label
 	lineIns4
 	lineBase
 	lineDB
 	lineComment
 	lineLabel
-	lineIns2Label
 )
 
 type asmLine struct {
@@ -47,6 +50,7 @@ type asmLine struct {
 	// instruction and parameters:
 	address    uint32
 	ins        string
+	label      string
 	argsFormat string
 }
 
@@ -62,6 +66,7 @@ func NewEmitter(target []byte, generateText bool) *Emitter {
 		address:      0,
 		labels:       make(map[string]uint32),
 		danglingS8:   make(map[string][]uint32),
+		danglingU16:  make(map[string][]uint32),
 	}
 	return a
 }
@@ -78,6 +83,7 @@ func (a *Emitter) Clone(target []byte) *Emitter {
 		baseSet:      a.baseSet,
 		labels:       make(map[string]uint32, len(a.labels)),
 		danglingS8:   make(map[string][]uint32, len(a.danglingS8)),
+		danglingU16:  make(map[string][]uint32, len(a.danglingU16)),
 	}
 	// copy labels and dangling references:
 	for k, v := range a.labels {
@@ -87,6 +93,11 @@ func (a *Emitter) Clone(target []byte) *Emitter {
 		cv := make([]uint32, len(v), cap(v))
 		copy(cv, v)
 		e.danglingS8[k] = cv
+	}
+	for k, v := range a.danglingU16 {
+		cv := make([]uint32, len(v), cap(v))
+		copy(cv, v)
+		e.danglingU16[k] = cv
 	}
 	return e
 }
@@ -112,6 +123,11 @@ func (a *Emitter) Append(e *Emitter) {
 		copy(cv, v)
 		a.danglingS8[k] = cv
 	}
+	for k, v := range e.danglingU16 {
+		cv := make([]uint32, len(v), cap(v))
+		copy(cv, v)
+		a.danglingU16[k] = cv
+	}
 }
 
 func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
@@ -123,7 +139,8 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 		case lineComment:
 			_, err = fmt.Fprintf(w, "    ; %s\n", line.ins)
 		case lineLabel:
-			_, err = fmt.Fprintf(w, "%s:\n", line.ins)
+			label := line.label
+			_, err = fmt.Fprintf(w, "%s:\n", label)
 		case lineDB:
 			_, err = fmt.Fprintf(w, "    ; $%06x\n    %s\n", line.address, line.ins)
 		case lineIns1:
@@ -135,7 +152,7 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x\n", line.ins, args, line.address, d[0], d[1])
 		case lineIns2Label:
 			d := a.code[offs : offs+2]
-			label := line.argsFormat
+			label := line.label
 			if _, ok := a.danglingS8[label]; ok {
 				// warn about dangling label references:
 				_, err = fmt.Fprintf(w, "!!  %-5s %-12s ; $%06x  %02x %02x  !! ERROR: undefined label '%s'\n", line.ins, label, line.address, d[0], d[1], label)
@@ -146,6 +163,15 @@ func (a *Emitter) WriteTextTo(w io.Writer) (err error) {
 			d := a.code[offs : offs+3]
 			args := fmt.Sprintf(line.argsFormat, d[1], d[2])
 			_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2])
+		case lineIns3Label:
+			d := a.code[offs : offs+3]
+			label := line.label
+			args := fmt.Sprintf(line.argsFormat, label)
+			if _, ok := a.danglingU16[label]; ok {
+				_, err = fmt.Fprintf(w, "!!  %-5s %-12s ; $%06x  %02x %02x %02x  !! ERROR: undefined label '%s'\n", line.ins, args, line.address, d[0], d[1], d[2], label)
+			} else {
+				_, err = fmt.Fprintf(w, "    %-5s %-12s ; $%06x  %02x %02x %02x\n", line.ins, args, line.address, d[0], d[1], d[2])
+			}
 		case lineIns4:
 			d := a.code[offs : offs+4]
 			args := fmt.Sprintf(line.argsFormat, d[1], d[2], d[3])
@@ -180,6 +206,22 @@ func (a *Emitter) Finalize() (err error) {
 		delete(a.danglingS8, label)
 	}
 
+	for label, refs := range a.danglingU16 {
+		addr, ok := a.labels[label]
+		if !ok {
+			return fmt.Errorf("could not resolve label '%s'", label)
+		}
+
+		// fill in absolute unsigned 16-bit references to this label:
+		for _, u16addr := range refs {
+			binary.LittleEndian.PutUint16(
+				a.code[u16addr-a.base:u16addr-a.base+2],
+				uint16(addr&0xFFFF))
+		}
+
+		delete(a.danglingU16, label)
+	}
+
 	return
 }
 
@@ -195,7 +237,8 @@ func (a *Emitter) Label(name string) uint32 {
 		a.lines = append(a.lines, asmLine{
 			asmLineType: lineLabel,
 			address:     a.address,
-			ins:         name,
+			ins:         "",
+			label:       name,
 			argsFormat:  "",
 		})
 		//_, _ = fmt.Fprintf(a.Text, "%s:\n", name)
@@ -208,6 +251,12 @@ func (a *Emitter) addDanglingS8(label string) {
 	refs := a.danglingS8[label]
 	refs = append(refs, a.address-1)
 	a.danglingS8[label] = refs
+}
+
+func (a *Emitter) addDanglingU16(label string) {
+	refs := a.danglingU16[label]
+	refs = append(refs, a.address-2)
+	a.danglingU16[label] = refs
 }
 
 func (a *Emitter) Len() int {
@@ -245,7 +294,7 @@ func (a *Emitter) SetBase(addr uint32) {
 }
 
 func (a *Emitter) GetBase() uint32 {
-	return a.address
+	return a.base
 }
 
 func (a *Emitter) emitBase() {
@@ -302,7 +351,7 @@ func (a *Emitter) emit2Label(ins string, label string, d [2]byte) {
 			asmLineType: lineIns2Label,
 			address:     a.address,
 			ins:         ins,
-			argsFormat:  label,
+			label:       label,
 		})
 	}
 	a.address += 2
@@ -321,6 +370,22 @@ func (a *Emitter) emit3(ins, argsFormat string, d [3]byte) {
 		})
 	}
 	a.address += 3
+}
+
+func (a *Emitter) emit3Label(ins, label string, argsFormat string, d [3]byte) {
+	_, _ = a.write(d[:])
+	if a.generateText {
+		a.emitBase()
+		a.lines = append(a.lines, asmLine{
+			asmLineType: lineIns3Label,
+			address:     a.address,
+			ins:         ins,
+			label:       label,
+			argsFormat:  argsFormat,
+		})
+	}
+	a.address += 3
+	a.addDanglingU16(label)
 }
 
 func (a *Emitter) emit4(ins, argsFormat string, d [4]byte) {
@@ -611,6 +676,14 @@ func (a *Emitter) BRA(label string) {
 	d[0] = 0x80
 	d[1] = 0xFF // will be overwritten by Finalize()
 	a.emit2Label("bra", label, d)
+}
+
+func (a *Emitter) JMP_abs(label string) {
+	var d [3]byte
+	d[0] = 0x4C
+	d[1] = 0xFF // will be overwritten by Finalize()
+	d[2] = 0xFF // will be overwritten by Finalize()
+	a.emit3Label("jmp", label, "%s", d)
 }
 
 func (a *Emitter) ADC_imm8_b(m uint8) {
