@@ -8,6 +8,43 @@ import (
 	"testing"
 )
 
+var moduleVariants = []struct {
+	module    uint8
+	submodule uint8
+	allowed   bool
+}{
+	{
+		module:    0x07,
+		submodule: 0x00,
+		allowed:   true,
+	},
+	{
+		module:    0x07,
+		submodule: 0x02,
+		allowed:   false,
+	},
+	{
+		module:    0x09,
+		submodule: 0x00,
+		allowed:   true,
+	},
+	{
+		module:    0x09,
+		submodule: 0x02,
+		allowed:   false,
+	},
+	{
+		module:    0x0B,
+		submodule: 0x00,
+		allowed:   true,
+	},
+	{
+		module:    0x0B,
+		submodule: 0x02,
+		allowed:   false,
+	},
+}
+
 type testCase struct {
 	system *emulator.System
 	g      *Game

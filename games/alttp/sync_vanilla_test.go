@@ -388,32 +388,42 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 	// convert legacy tests to frame tests:
 	tests := make([]testCase, 0, len(sramTests))
 	for _, legacy := range sramTests {
-		fr := frame{
-			preGenLocal:       make([]wramSetValue, len(legacy.sram)),
-			preGenRemote:      make([]wramSetValue, len(legacy.sram)),
-			wantAsm:           legacy.wantUpdated,
-			preAsmLocal:       nil,
-			postAsmLocal:      make([]wramTestValue, len(legacy.sram)),
-			wantNotifications: nil,
+		for _, variant := range moduleVariants {
+			fr := frame{
+				preGenLocal:       make([]wramSetValue, len(legacy.sram)),
+				preGenRemote:      make([]wramSetValue, len(legacy.sram)),
+				wantAsm:           legacy.wantUpdated,
+				preAsmLocal:       nil,
+				postAsmLocal:      make([]wramTestValue, len(legacy.sram)),
+				wantNotifications: nil,
+			}
+			for i, s := range legacy.sram {
+				fr.preGenLocal[i].offset = 0xF000 + s.offset
+				fr.preGenLocal[i].value = s.localValue
+				fr.preGenRemote[i].offset = 0xF000 + s.offset
+				fr.preGenRemote[i].value = s.remoteValue
+				fr.postAsmLocal[i].offset = 0xF000 + s.offset
+				if variant.allowed {
+					fr.postAsmLocal[i].value = s.expectedValue
+				} else {
+					fr.postAsmLocal[i].value = s.localValue
+				}
+			}
+			if variant.allowed {
+				if legacy.wantNotification != "" {
+					fr.wantNotifications = []string{legacy.wantNotification}
+				}
+			} else {
+				fr.wantAsm = false
+			}
+			test := testCase{
+				name:      fmt.Sprintf("%02x,%02x %s", variant.module, variant.submodule, legacy.name),
+				module:    variant.module,
+				subModule: variant.submodule,
+				frames:    []frame{fr},
+			}
+			tests = append(tests, test)
 		}
-		for i, s := range legacy.sram {
-			fr.preGenLocal[i].offset = 0xF000 + s.offset
-			fr.preGenLocal[i].value = s.localValue
-			fr.preGenRemote[i].offset = 0xF000 + s.offset
-			fr.preGenRemote[i].value = s.remoteValue
-			fr.postAsmLocal[i].offset = 0xF000 + s.offset
-			fr.postAsmLocal[i].value = s.expectedValue
-		}
-		if legacy.wantNotification != "" {
-			fr.wantNotifications = []string{legacy.wantNotification}
-		}
-		test := testCase{
-			name:      legacy.name,
-			module:    0x07,
-			subModule: 0x00,
-			frames:    []frame{fr},
-		}
-		tests = append(tests, test)
 	}
 
 	// create system emulator and test ROM:
@@ -450,56 +460,69 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 
 		wramOffs := 0xF000 + offs
 		for i, itemName := range itemNames {
-			// basic sync in:
-			tests = append(tests, testCase{
-				name:      fmt.Sprintf("%04x %02x good", wramOffs, i+1),
-				module:    0x07,
-				subModule: 0x00,
-				frames: []frame{
-					{
-						preGenLocal: []wramSetValue{
-							{wramOffs, 0},
-						},
-						preGenRemote: []wramSetValue{
-							{wramOffs, uint8(i + 1)},
-						},
-						wantAsm:     true,
-						preAsmLocal: nil,
-						postAsmLocal: []wramTestValue{
-							{wramOffs, uint8(i + 1)},
-						},
-						wantNotifications: []string{
-							fmt.Sprintf("got %s from remote", itemName),
+			for _, variant := range moduleVariants {
+				// basic sync in:
+				test := testCase{
+					name:      fmt.Sprintf("%02x,%02x %04x %02x good", variant.module, variant.submodule, wramOffs, i+1),
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs, uint8(i + 1)},
+							},
+							wantAsm:     true,
+							preAsmLocal: nil,
+							postAsmLocal: []wramTestValue{
+								{wramOffs, uint8(i + 1)},
+							},
+							wantNotifications: []string{
+								fmt.Sprintf("got %s from remote", itemName),
+							},
 						},
 					},
-				},
-			})
+				}
+				if !variant.allowed {
+					test.frames[0].wantAsm = false
+					test.frames[0].wantNotifications = nil
+					test.frames[0].postAsmLocal[0].value = test.frames[0].preGenLocal[0].value
+				}
+				tests = append(tests, test)
 
-			// expected fail from ASM code:
-			tests = append(tests, testCase{
-				name:      fmt.Sprintf("%04x %02x xfail", wramOffs, i+1),
-				module:    0x07,
-				subModule: 0x00,
-				frames: []frame{
-					{
-						preGenLocal: []wramSetValue{
-							{wramOffs, 0},
+				// expected fail from ASM code:
+				test = testCase{
+					name:      fmt.Sprintf("%02x,%02x %04x %02x xfail", variant.module, variant.submodule, wramOffs, i+1),
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs, uint8(i + 1)},
+							},
+							wantAsm: true,
+							// just got it this frame:
+							preAsmLocal: []wramSetValue{
+								{wramOffs, uint8(i + 1)},
+							},
+							postAsmLocal: []wramTestValue{
+								{wramOffs, uint8(i + 1)},
+							},
+							wantNotifications: nil,
 						},
-						preGenRemote: []wramSetValue{
-							{wramOffs, uint8(i + 1)},
-						},
-						wantAsm: true,
-						// just got it this frame:
-						preAsmLocal: []wramSetValue{
-							{wramOffs, uint8(i + 1)},
-						},
-						postAsmLocal: []wramTestValue{
-							{wramOffs, uint8(i + 1)},
-						},
-						wantNotifications: []string{},
 					},
-				},
-			})
+				}
+				if !variant.allowed {
+					test.frames[0].wantAsm = false
+					test.frames[0].wantNotifications = nil
+				}
+				tests = append(tests, test)
+			}
 		}
 	}
 
@@ -542,55 +565,68 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 				continue
 			}
 
-			// good
-			tests = append(tests, testCase{
-				name:      fmt.Sprintf("%04x %d good", wramOffs, i),
-				module:    0x07,
-				subModule: 0x00,
-				frames: []frame{
-					{
-						preGenLocal: []wramSetValue{
-							{wramOffs, 0},
-						},
-						preGenRemote: []wramSetValue{
-							{wramOffs, uint8(1 << i)},
-						},
-						wantAsm: true,
-						postAsmLocal: []wramTestValue{
-							{wramOffs, uint8(1 << i)},
-						},
-						wantNotifications: []string{
-							fmt.Sprintf("got %s from remote", itemName),
+			for _, variant := range moduleVariants {
+				// good
+				test := testCase{
+					name:      fmt.Sprintf("%02x,%02x %04x %d good", variant.module, variant.submodule, wramOffs, i),
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs, uint8(1 << i)},
+							},
+							wantAsm: true,
+							postAsmLocal: []wramTestValue{
+								{wramOffs, uint8(1 << i)},
+							},
+							wantNotifications: []string{
+								fmt.Sprintf("got %s from remote", itemName),
+							},
 						},
 					},
-				},
-			})
+				}
+				if !variant.allowed {
+					test.frames[0].wantAsm = false
+					test.frames[0].wantNotifications = nil
+					test.frames[0].postAsmLocal[0].value = test.frames[0].preGenLocal[0].value
+				}
+				tests = append(tests, test)
 
-			// expected fail from ASM
-			tests = append(tests, testCase{
-				name:      fmt.Sprintf("%04x %d xfail", wramOffs, i),
-				module:    0x07,
-				subModule: 0x00,
-				frames: []frame{
-					{
-						preGenLocal: []wramSetValue{
-							{wramOffs, 0},
+				// expected fail from ASM
+				test = testCase{
+					name:      fmt.Sprintf("%02x,%02x %04x %d xfail", variant.module, variant.submodule, wramOffs, i),
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{wramOffs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{wramOffs, uint8(1 << i)},
+							},
+							wantAsm: true,
+							// just got it this frame:
+							preAsmLocal: []wramSetValue{
+								{wramOffs, uint8(1 << i)},
+							},
+							postAsmLocal: []wramTestValue{
+								{wramOffs, uint8(1 << i)},
+							},
+							wantNotifications: nil,
 						},
-						preGenRemote: []wramSetValue{
-							{wramOffs, uint8(1 << i)},
-						},
-						wantAsm: true,
-						// just got it this frame:
-						preAsmLocal: []wramSetValue{
-							{wramOffs, uint8(1 << i)},
-						},
-						postAsmLocal: []wramTestValue{
-							{wramOffs, uint8(1 << i)},
-						},
-						wantNotifications: nil,
 					},
-				},
-			})
+				}
+				if !variant.allowed {
+					test.frames[0].wantAsm = false
+					test.frames[0].wantNotifications = nil
+				}
+				tests = append(tests, test)
+			}
 		}
 	}
 
