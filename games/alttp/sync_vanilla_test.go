@@ -6,7 +6,7 @@ import (
 )
 
 func TestAsm_Vanilla_Items(t *testing.T) {
-	tests := []sramTestCase{
+	sramTests := []sramTestCase{
 		{
 			name:        "No update",
 			wantUpdated: false,
@@ -385,41 +385,53 @@ func TestAsm_Vanilla_Items(t *testing.T) {
 		},
 	}
 
-	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
-}
-
-func TestAsm_Vanilla_ItemNames(t *testing.T) {
-	tests := make([]sramTestCase, 0, len(vanillaItemNames))
-
-	for offs := uint16(0x341); offs <= 0x37B; offs++ {
-		if offs >= 0x35C && offs <= 0x35F {
-			// skip bottles since they have special logic:
-			continue
+	// convert legacy tests to frame tests:
+	tests := make([]testCase, 0, len(sramTests))
+	for _, legacy := range sramTests {
+		fr := frame{
+			preGenLocal:       make([]wramSetValue, len(legacy.sram)),
+			preGenRemote:      make([]wramSetValue, len(legacy.sram)),
+			wantAsm:           legacy.wantUpdated,
+			preAsmLocal:       nil,
+			postAsmLocal:      make([]wramTestValue, len(legacy.sram)),
+			wantNotifications: nil,
 		}
-
-		itemNames, ok := vanillaItemNames[offs]
-		if !ok {
-			continue
+		for i, s := range legacy.sram {
+			fr.preGenLocal[i].offset = 0xF000 + s.offset
+			fr.preGenLocal[i].value = s.localValue
+			fr.preGenRemote[i].offset = 0xF000 + s.offset
+			fr.preGenRemote[i].value = s.remoteValue
+			fr.postAsmLocal[i].offset = 0xF000 + s.offset
+			fr.postAsmLocal[i].value = s.expectedValue
 		}
-
-		for i, itemName := range itemNames {
-			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("Slot $%03x Item %d", offs, i+1),
-				sram: []sramTest{
-					{
-						offset:        offs,
-						localValue:    0,
-						remoteValue:   uint8(i + 1),
-						expectedValue: uint8(i + 1),
-					},
-				},
-				wantUpdated:      true,
-				wantNotification: fmt.Sprintf("got %s from remote", itemName),
-			})
+		if legacy.wantNotification != "" {
+			fr.wantNotifications = []string{legacy.wantNotification}
 		}
+		test := testCase{
+			name:      legacy.name,
+			module:    0x07,
+			subModule: 0x00,
+			frames:    []frame{fr},
+		}
+		tests = append(tests, test)
 	}
 
-	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
 }
 
 func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
@@ -463,6 +475,7 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 				},
 			})
 
+			// expected fail from ASM code:
 			tests = append(tests, testCase{
 				name:      fmt.Sprintf("%04x %02x fail", wramOffs, i+1),
 				module:    0x07,
