@@ -30,6 +30,8 @@ type frame struct {
 	preAsmLocal []wramSetValue
 	// values to test after ASM execution:
 	postAsmLocal []wramTestValue
+
+	wantNotifications []string
 }
 
 type wramSetValue struct {
@@ -106,6 +108,10 @@ func Test_Frames(t *testing.T) {
 						{0xF355, 1},          // boots
 						{0xF379, 0b11111100}, // dash
 					},
+					wantNotifications: []string{
+						"got Pegasus Boots from remote",
+						"got Dash Ability from remote",
+					},
 				},
 			},
 		},
@@ -134,10 +140,11 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 	system.Logger = &testingLogger{t: t}
 
-	lastNotification := ""
+	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
-		lastNotification = object.(string)
-		t.Logf("notify: '%s'", lastNotification)
+		notification := object.(string)
+		notifications = append(notifications, notification)
+		t.Logf("notification[%d]: '%s'", len(notifications)-1, notification)
 	})
 
 	// subscribe to front-end Notifications from the game:
@@ -172,6 +179,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		t.Logf("frame %d", f)
 
 		frame := &tt.frames[f]
+
+		// clear notifications slice:
+		notifications = notifications[:0]
 
 		// set pre-generation local values:
 		for j := range frame.preGenLocal {
@@ -255,8 +265,22 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			}
 		}
 
-		//if lastNotification != tt.wantNotification {
-		//	t.Errorf("notification = '%s', expected '%s'", lastNotification, tt.wantNotification)
-		//}
+		if updated {
+			// invoke asm confirmations to get notifications:
+			for i, generator := range g.updateGenerators {
+				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+i])
+			}
+		}
+
+		if len(notifications) != len(frame.wantNotifications) {
+			t.Errorf("notifications = %#v, expected %#v", notifications, frame.wantNotifications)
+		}
+		if len(notifications) > 0 {
+			for i := range notifications {
+				if notifications[i] != frame.wantNotifications[i] {
+					t.Errorf("notification[%d] = '%s', expected '%s'", i, notifications[i], frame.wantNotifications[i])
+				}
+			}
+		}
 	}
 }
