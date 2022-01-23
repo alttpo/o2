@@ -54,7 +54,12 @@ const (
 func (g *Game) initSync() {
 	// reset map:
 	g.syncableItems = make(map[uint16]games.SyncStrategy)
+	g.syncableItemsMin = 0xFFFF
+	g.syncableItemsMax = 0x0000
+
 	g.syncableBitU16 = make(map[uint16]*games.SyncableBitU16)
+	g.syncableBitU16Min = 0xFFFF
+	g.syncableBitU16Max = 0x0000
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
@@ -561,6 +566,8 @@ func (g *Game) initSync() {
 		}
 		return true
 	}
+	g.syncableBitU16Min = 0x0400
+	g.syncableBitU16Max = 0x0400
 
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {

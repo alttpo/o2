@@ -80,10 +80,16 @@ type Game struct {
 	lastStaleLog   time.Time
 	lastModuleRead time.Time
 
-	syncableItems  map[uint16]games.SyncStrategy
-	underworld     [0x128]syncableUnderworld
-	overworld      [0xC0]games.SyncableBitU8
-	syncableBitU16 map[uint16]*games.SyncableBitU16
+	syncableItems    map[uint16]games.SyncStrategy
+	syncableItemsMin uint16
+	syncableItemsMax uint16
+
+	syncableBitU16    map[uint16]*games.SyncableBitU16
+	syncableBitU16Min uint16
+	syncableBitU16Max uint16
+
+	underworld [0x128]syncableUnderworld
+	overworld  [0xC0]games.SyncableBitU8
 
 	romFunctions map[romFunction]uint32
 

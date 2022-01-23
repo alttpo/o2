@@ -215,7 +215,14 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	tmp := make([]byte, 0x100)
 
 	// generate update ASM code for any 8-bit values:
-	for offs, item := range g.syncableItems {
+	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
+		var item games.SyncStrategy
+		var ok bool
+		item, ok = g.syncableItems[offs]
+		if !ok {
+			continue
+		}
+
 		if item.Size() != 1 {
 			a.Comment(fmt.Sprintf("TODO: ignoring non-1 size syncableItem[%#04x]", offs))
 			continue
@@ -380,7 +387,13 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// sync any other u16 data:
-		for _, s := range g.syncableBitU16 {
+		for offs := g.syncableBitU16Min; offs <= g.syncableBitU16Max; offs++ {
+			var s *games.SyncableBitU16
+			var ok bool
+			s, ok = g.syncableBitU16[offs]
+			if !ok {
+				continue
+			}
 			if !s.IsEnabled() {
 				continue
 			}

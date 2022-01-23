@@ -16,6 +16,12 @@ func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, on
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -28,6 +34,12 @@ func (g *Game) NewSyncableMaxU8(offset uint16, enabled *bool, names []string, on
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -39,6 +51,12 @@ func (g *Game) NewSyncableCustomU8(offset uint16, enabled *bool, generateUpdate 
 		generateUpdate,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -51,6 +69,12 @@ func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names []string, o
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -63,6 +87,12 @@ func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpda
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -75,6 +105,12 @@ func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated 
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -87,6 +123,12 @@ func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated g
 		onUpdated,
 	)
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
@@ -108,6 +150,12 @@ func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 		names:     vanillaBottleItemNames,
 	}
 	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
 	return s
 }
 
