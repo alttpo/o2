@@ -173,14 +173,14 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	}
 
 	// write confirmation:
-	a.Label(fmt.Sprintf("write confirmation for #%d:", index))
+	a.Comment(fmt.Sprintf("write confirmation for #%d:", index))
 	a.LDA_imm8_b(0x01)
 	a.STA_long(a.GetBase() + 0x02 + index)
 	a.BRA(nextLabel)
 
 	a.Label(failLabel)
 	// write failure:
-	a.Label(fmt.Sprintf("write failure for #%d:", index))
+	a.Comment(fmt.Sprintf("write failure for #%d:", index))
 	a.LDA_imm8_b(0x00)
 	a.STA_long(a.GetBase() + 0x02 + index)
 
@@ -327,7 +327,7 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	}
 
 	// write confirmation:
-	a.Label(fmt.Sprintf("write confirmation for #%d:", index))
+	a.Comment(fmt.Sprintf("write confirmation for #%d:", index))
 	a.SEP(0x30)
 	a.LDA_imm8_b(0x01)
 	a.STA_long(a.GetBase() + 0x02 + index)
@@ -336,7 +336,7 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(failLabel)
 	// write failure:
-	a.Label(fmt.Sprintf("write failure for #%d:", index))
+	a.Comment(fmt.Sprintf("write failure for #%d:", index))
 	a.SEP(0x30)
 	a.LDA_imm8_b(0x00)
 	a.STA_long(a.GetBase() + 0x02 + index)
@@ -462,14 +462,14 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	}
 
 	// write confirmation:
-	a.Label(fmt.Sprintf("write confirmation for #%d:", index))
+	a.Comment(fmt.Sprintf("write confirmation for #%d:", index))
 	a.LDA_imm8_b(0x01)
 	a.STA_long(a.GetBase() + 0x02 + index)
 	a.BRA(nextLabel)
 
 	a.Label(failLabel)
 	// write failure:
-	a.Label(fmt.Sprintf("write failure for #%d:", index))
+	a.Comment(fmt.Sprintf("write failure for #%d:", index))
 	a.LDA_imm8_b(0x00)
 	a.STA_long(a.GetBase() + 0x02 + index)
 
