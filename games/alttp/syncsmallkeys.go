@@ -23,7 +23,6 @@ func (g *Game) initSmallKeysSync() {
 			ValueUsed: uint16(g.wram[offs]),
 		}
 	}
-
 }
 
 // readWRAM called when WRAM is read from SNES:

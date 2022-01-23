@@ -194,6 +194,10 @@ func (g *Game) ProvideQueue(queue snes.Queue) {
 	g.updateStage = 0
 	g.colorPendingUpdate = 0
 	g.lastUpdateTarget = 0xFFFFFF
+	g.updateGenerators = nil
+
+	// don't set WRAM timestamps on first read from SNES:
+	g.notFirstWRAMRead = false
 }
 func (g *Game) ProvideClient(client *client.Client) {
 	g.client = client
