@@ -477,7 +477,7 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 
 			// expected fail from ASM code:
 			tests = append(tests, testCase{
-				name:      fmt.Sprintf("%04x %02x fail", wramOffs, i+1),
+				name:      fmt.Sprintf("%04x %02x xfail", wramOffs, i+1),
 				module:    0x07,
 				subModule: 0x00,
 				frames: []frame{
@@ -521,8 +521,8 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 	}
 }
 
-func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
-	tests := make([]sramTestCase, 0, len(vanillaItemBitNames))
+func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
+	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
 	for offs := uint16(0x341); offs <= 0x37B; offs++ {
 		if offs >= 0x35C && offs <= 0x35F {
@@ -535,28 +535,81 @@ func TestAsm_Vanilla_ItemBitNames(t *testing.T) {
 			continue
 		}
 
+		wramOffs := 0xF000 + offs
+
 		for i, itemName := range itemNames {
 			if itemName == "" {
 				continue
 			}
 
-			tests = append(tests, sramTestCase{
-				name: fmt.Sprintf("Slot $%03x Item Flag %d", offs, i),
-				sram: []sramTest{
+			// good
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("%04x %d good", wramOffs, i),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
 					{
-						offset:        offs,
-						localValue:    0,
-						remoteValue:   uint8(1 << i),
-						expectedValue: uint8(1 << i),
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
+						},
+						preGenRemote: []wramSetValue{
+							{wramOffs, uint8(1 << i)},
+						},
+						wantAsm: true,
+						postAsmLocal: []wramTestValue{
+							{wramOffs, uint8(1 << i)},
+						},
+						wantNotifications: []string{
+							fmt.Sprintf("got %s from remote", itemName),
+						},
 					},
 				},
-				wantUpdated:      true,
-				wantNotification: fmt.Sprintf("got %s from remote", itemName),
+			})
+
+			// expected fail from ASM
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("%04x %d xfail", wramOffs, i),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
+						},
+						preGenRemote: []wramSetValue{
+							{wramOffs, uint8(1 << i)},
+						},
+						wantAsm: true,
+						// just got it this frame:
+						preAsmLocal: []wramSetValue{
+							{wramOffs, uint8(1 << i)},
+						},
+						postAsmLocal: []wramTestValue{
+							{wramOffs, uint8(1 << i)},
+						},
+						wantNotifications: nil,
+					},
+				},
 			})
 		}
 	}
 
-	runAsmEmulationTests(t, "ZELDANODENSETSU", tests)
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
 }
 
 func TestAsm_Vanilla_Bottles(t *testing.T) {
