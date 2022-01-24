@@ -110,6 +110,9 @@ func Test_Frames(t *testing.T) {
 						{0xF35C, 2}, // empty bottle
 					},
 					wantAsm: false,
+					wantNotifications: []string{
+						"picked up Green Potion",
+					},
 				},
 				{
 					preGenLocal: []wramSetValue{
@@ -190,11 +193,11 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		g.Notifications.Unsubscribe(observerHandle)
 	}()
 
+	g.FirstFrame()
+
 	// reset memory:
 	for i := range system.WRAM {
 		system.WRAM[i] = 0x00
-		g.wram[i] = 0x00
-		g.wramLastFrame[i] = 0x00
 	}
 	// cannot reset system.SRAM here because of the setup code executed in CreateTestEmulator
 
@@ -211,7 +214,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	for j := range g.players[1].SRAM {
 		g.players[1].SRAM[j] = 0
 	}
-	g.lastGameFrame = 0xFF
 
 	// iterate through frames of test:
 	for f := range tt.frames {
@@ -227,11 +229,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			set := &frame.preGenLocal[j]
 
 			system.WRAM[set.offset] = set.value
-			g.wram[set.offset] = set.value
-
-			if set.offset >= 0xF000 {
-				g.local.SRAM[set.offset-0xF000] = set.value
-			}
 		}
 
 		// set pre-generation remote values:
@@ -256,6 +253,12 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			{Address: 0xF5F340, Size: 0xFF, Data: system.WRAM[0xF340 : 0xF340+0xFF]}, // [$F340..$F43E]
 			// Link's palette:
 			{Address: 0xF5C6E0, Size: 0x20, Data: system.WRAM[0xC6E0 : 0xC6E0+0x20]},
+
+			// read the SRAM copy for underworld and overworld:
+			{Address: 0xF5F000, Size: 0xFE, Data: system.WRAM[0xF000 : 0xF000+0xFE]}, // [$F000..$F0FD]
+			{Address: 0xF5F0FE, Size: 0xFE, Data: system.WRAM[0xF0FE : 0xF0FE+0xFE]}, // [$F0FE..$F1FB]
+			{Address: 0xF5F1FC, Size: 0x54, Data: system.WRAM[0xF1FC : 0xF1FC+0x54]}, // [$F1FC..$F24F]
+			{Address: 0xF5F280, Size: 0xC0, Data: system.WRAM[0xF280 : 0xF280+0xC0]}, // [$F280..$F33F]
 		})
 
 		// generate ASM code:

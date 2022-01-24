@@ -505,4 +505,5 @@ func (g *Game) frameAdvanced() {
 
 	// backup the current WRAM:
 	copy(g.wramLastFrame[:], g.wram[:])
+	g.notFirstFrame = true
 }

@@ -1,11 +1,23 @@
 package alttp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"o2/games"
 	"o2/snes/asm"
 	"strings"
 )
+
+func (g *Game) NewSyncable(offset uint16, s games.SyncStrategy) games.SyncStrategy {
+	g.syncableItems[offset] = s
+	if offset < g.syncableItemsMin {
+		g.syncableItemsMin = offset
+	}
+	if offset > g.syncableItemsMax {
+		g.syncableItemsMax = offset
+	}
+	return s
+}
 
 func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
 	s := games.NewSyncableBitU8(
@@ -15,13 +27,7 @@ func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, on
 		names,
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -33,13 +39,7 @@ func (g *Game) NewSyncableMaxU8(offset uint16, enabled *bool, names []string, on
 		names,
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -50,13 +50,7 @@ func (g *Game) NewSyncableCustomU8(offset uint16, enabled *bool, generateUpdate 
 		enabled,
 		generateUpdate,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -68,13 +62,7 @@ func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names []string, o
 		names,
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -86,13 +74,7 @@ func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpda
 		vanillaItemBitNames[offset],
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -104,13 +86,7 @@ func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated 
 		vanillaItemNames[offset],
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -122,13 +98,7 @@ func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated g
 		vtItemBitNames[offset],
 		onUpdated,
 	)
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -142,20 +112,14 @@ type syncableBottle struct {
 	notification string
 }
 
-func (g *Game) newSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
+func (g *Game) NewSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 	s := &syncableBottle{
 		g:         g,
 		offset:    uint32(offset),
 		isEnabled: enabled,
 		names:     vanillaBottleItemNames,
 	}
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
-	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
-	}
+	g.NewSyncable(offset, s)
 	return s
 }
 
@@ -254,6 +218,27 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
+	base := uint32(0xF000)
+
+	curr := wramCurrent[base+s.offset]
+	prev := wramPrevious[base+s.offset]
+	if curr == prev {
+		return
+	}
+
+	if s.names == nil {
+		return
+	}
+
+	i := int(curr) - 1
+	if i >= 0 && i < len(s.names) {
+		if s.names[i] != "" {
+			notifications = []games.NotificationStatement{
+				{Items: s.names[i : i+1], Verb: "picked up"},
+			}
+		}
+	}
+
 	return
 }
 
@@ -437,5 +422,30 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
+	base := uint32(0xF000)
+
+	curr := binary.LittleEndian.Uint16(wramCurrent[base+s.Offset : base+s.Offset+2])
+	prev := binary.LittleEndian.Uint16(wramPrevious[base+s.Offset : base+s.Offset+2])
+	if curr == prev {
+		return
+	}
+
+	items := make([]string, 0, len(s.BitNames))
+	k := uint16(1)
+	for i := 0; i < len(s.BitNames); i++ {
+		if prev&k == 0 && curr&k == k {
+			if s.BitNames[i] != "" {
+				item := s.BitNames[i]
+				items = append(items, item)
+			}
+		}
+		k <<= 1
+	}
+	if len(items) > 0 {
+		notifications = []games.NotificationStatement{
+			{Items: items, Verb: "local"},
+		}
+	}
+
 	return
 }

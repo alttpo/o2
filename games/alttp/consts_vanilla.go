@@ -441,6 +441,16 @@ var (
 		0x35E: vanillaBottleItemNames,
 		0x35F: vanillaBottleItemNames,
 		0x37B: {"1/2 Magic", "1/4 Magic"},
+		0x3C7: {
+			//"Map Marker at Castle",
+			"Map Marker at Kakariko",
+			"Map Marker at Sahasrahla",
+			"Map Marker at Pendants",
+			"Map Marker at Master Sword",
+			"Map Marker at Agahnim Tower",
+			"Map Marker at Darkness",
+			"Map Marker at Crystals",
+			"Map Marker at Ganon's Tower"},
 	}
 
 	vanillaQuantityNames = map[uint16]string{
@@ -531,15 +541,5 @@ var (
 			"Crystal #4",
 			"Crystal #3",
 			""},
-		0x3C7: {
-			//"Map Marker at Castle",
-			"Map Marker at Kakariko",
-			"Map Marker at Sahasrahla",
-			"Map Marker at Pendants",
-			"Map Marker at Master Sword",
-			"Map Marker at Agahnim Tower",
-			"Map Marker at Darkness",
-			"Map Marker at Crystals",
-			"Map Marker at Ganon's Tower"},
 	}
 )

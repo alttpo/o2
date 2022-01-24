@@ -73,6 +73,7 @@ type Game struct {
 	wram          [0x20000]byte
 	wramLastFrame [0x20000]byte
 	sram          [0x10000]byte
+	notFirstFrame bool
 
 	syncing        bool
 	lastSyncLog    time.Time
@@ -186,17 +187,32 @@ func (g *Game) ConfigurationModel() interface{} {
 	return g
 }
 
-func (g *Game) ProvideQueue(queue snes.Queue) {
-	g.queue = queue
-
+func (g *Game) FirstFrame() {
 	// must reset any state waiting on connected device:
 	g.updateStage = 0
 	g.colorPendingUpdate = 0
 	g.lastUpdateTarget = 0xFFFFFF
 	g.updateGenerators = nil
+	g.notFirstFrame = false
+	g.lastGameFrame = 0xFF
+
+	// an impossible color in 15-bit BGR:
+	g.colorUpdatedTo = 0xffff
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
+
+	// initialize WRAM:
+	for i := range g.wram {
+		g.wram[i] = 0x00
+		g.wramLastFrame[i] = 0x00
+	}
+}
+
+func (g *Game) ProvideQueue(queue snes.Queue) {
+	g.queue = queue
+
+	g.FirstFrame()
 }
 func (g *Game) ProvideClient(client *client.Client) {
 	g.client = client
@@ -230,13 +246,7 @@ func (g *Game) IsRunning() bool {
 func (g *Game) Reset() {
 	g.clean = false
 
-	// must reset any state waiting on connected device:
-	g.updateStage = 0
-	g.colorPendingUpdate = 0
-	g.lastUpdateTarget = 0xFFFFFF
-
-	// an impossible color in 15-bit BGR:
-	g.colorUpdatedTo = 0xffff
+	g.FirstFrame()
 
 	// clear out players array:
 	for i := range g.players {
@@ -256,11 +266,6 @@ func (g *Game) Reset() {
 			local.NameF = serverViewModel.PlayerName
 			local.Team = serverViewModel.Team
 		}
-	}
-
-	// initialize WRAM to non-zero values:
-	for i := range g.wram {
-		g.wram[i] = 0xFF
 	}
 
 	g.initSync()

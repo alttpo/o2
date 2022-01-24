@@ -76,55 +76,7 @@ func (g *Game) initSync() {
 	// define syncable items:
 	if !g.isVTRandomizer() {
 		// these item slots are disabled for sync under VT randomizers since they can be swapped at will:
-		g.NewSyncableCustomU8(0x340, &g.SyncItems, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
-			local := g.LocalSyncablePlayer()
-			offset := s.Offset
-
-			initial := local.ReadableMemory(games.SRAM).ReadU8(offset)
-			// treat w/ and w/o arrows as the same:
-			if initial == 2 {
-				initial = 1
-			} else if initial >= 4 {
-				initial = 3
-			}
-
-			maxP := local
-			maxV := initial
-			for _, p := range g.RemoteSyncablePlayers() {
-				v := p.ReadableMemory(games.SRAM).ReadU8(offset)
-				// treat w/ and w/o arrows as the same:
-				if v == 2 {
-					v = 1
-				} else if v >= 4 {
-					v = 3
-				}
-				if v > maxV {
-					maxV, maxP = v, p
-				}
-			}
-
-			if maxV == initial {
-				// no change:
-				return false
-			}
-
-			// notify local player of new item received:
-			received := vanillaItemNames[0x340][maxV]
-			s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-			a.Comment(s.Notification + ":")
-
-			a.LDA_long(0x7EF377) // arrows
-			a.CMP_imm8_b(0x01)   // are arrows present?
-			a.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
-			a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
-			a.STA_long(local.ReadableMemory(games.SRAM).BusAddress(offset))
-
-			// write confirmation:
-			a.LDA_imm8_b(0x01)
-			a.STA_long(a.GetBase() + 0x02 + index)
-
-			return true
-		})
+		g.NewSyncableVanillaBow(0x340, &g.SyncItems)
 		g.NewSyncableVanillaItemU8(0x341, &g.SyncItems, nil)
 		g.NewSyncableVanillaItemU8(0x344, &g.SyncItems, nil)
 		g.NewSyncableVanillaItemU8(0x34C, &g.SyncItems, nil)
@@ -178,10 +130,10 @@ func (g *Game) initSync() {
 			a.JSL(g.romFunctions[fnUpdatePaletteArmorGloves])
 		})
 
-	g.newSyncableBottle(0x35C, &g.SyncItems)
-	g.newSyncableBottle(0x35D, &g.SyncItems)
-	g.newSyncableBottle(0x35E, &g.SyncItems)
-	g.newSyncableBottle(0x35F, &g.SyncItems)
+	g.NewSyncableBottle(0x35C, &g.SyncItems)
+	g.NewSyncableBottle(0x35D, &g.SyncItems)
+	g.NewSyncableBottle(0x35E, &g.SyncItems)
+	g.NewSyncableBottle(0x35F, &g.SyncItems)
 
 	// dungeon items:
 	g.NewSyncableVanillaItemBitsU8(0x364, &g.SyncDungeonItems, nil)

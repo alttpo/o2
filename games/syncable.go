@@ -1,6 +1,7 @@
 package games
 
 import (
+	"encoding/binary"
 	"fmt"
 	"o2/snes/asm"
 	"strings"
@@ -211,8 +212,13 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
-	curr := wramCurrent[s.Offset]
-	prev := wramPrevious[s.Offset]
+	base := uint32(0xF000)
+	if s.MemoryKind == WRAM {
+		base = 0
+	}
+
+	curr := wramCurrent[base+s.Offset]
+	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
@@ -400,8 +406,13 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
-	curr := wramCurrent[s.Offset]
-	prev := wramPrevious[s.Offset]
+	base := uint32(0xF000)
+	if s.MemoryKind == WRAM {
+		base = 0
+	}
+
+	curr := binary.LittleEndian.Uint16(wramCurrent[base+s.Offset : base+s.Offset+2])
+	prev := binary.LittleEndian.Uint16(wramPrevious[base+s.Offset : base+s.Offset+2])
 	if curr == prev {
 		return
 	}
@@ -411,7 +422,7 @@ func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 	}
 
 	items := make([]string, 0, len(s.BitNames))
-	k := uint8(1)
+	k := uint16(1)
 	for i := 0; i < len(s.BitNames); i++ {
 		if prev&k == 0 && curr&k == k {
 			if s.BitNames[i] != "" {
@@ -562,8 +573,13 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
-	curr := wramCurrent[s.Offset]
-	prev := wramPrevious[s.Offset]
+	base := uint32(0xF000)
+	if s.MemoryKind == WRAM {
+		base = 0
+	}
+
+	curr := wramCurrent[base+s.Offset]
+	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
