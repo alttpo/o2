@@ -1,9 +1,8 @@
 package alttp
 
 import (
-	"fmt"
+	"log"
 	"o2/games"
-	"strings"
 )
 
 func (g *Game) localChecks() {
@@ -16,10 +15,15 @@ func (g *Game) localChecks() {
 			continue
 		}
 
-		verb, items := s.LocalCheck(g.wram[:], g.wramLastFrame[:])
-		if verb != "" {
-			g.PushNotification(fmt.Sprintf("%s %s", verb, strings.Join(items, ", ")))
+		notifications := s.LocalCheck(g.wram[:], g.wramLastFrame[:])
+		if notifications == nil {
+			continue
+		}
+
+		for _, notification := range notifications {
+			n := notification.String()
+			log.Printf("alttp: %s\n", n)
+			g.PushNotification(n)
 		}
 	}
-
 }

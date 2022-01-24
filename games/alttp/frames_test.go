@@ -194,6 +194,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	for i := range system.WRAM {
 		system.WRAM[i] = 0x00
 		g.wram[i] = 0x00
+		g.wramLastFrame[i] = 0x00
 	}
 	// cannot reset system.SRAM here because of the setup code executed in CreateTestEmulator
 
@@ -210,6 +211,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	for j := range g.players[1].SRAM {
 		g.players[1].SRAM[j] = 0
 	}
+	g.lastGameFrame = 0xFF
 
 	// iterate through frames of test:
 	for f := range tt.frames {

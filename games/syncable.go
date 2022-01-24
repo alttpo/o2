@@ -400,6 +400,33 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	curr := wramCurrent[s.Offset]
+	prev := wramPrevious[s.Offset]
+	if curr == prev {
+		return
+	}
+
+	if s.BitNames == nil {
+		return
+	}
+
+	items := make([]string, 0, len(s.BitNames))
+	k := uint8(1)
+	for i := 0; i < len(s.BitNames); i++ {
+		if prev&k == 0 && curr&k == k {
+			if s.BitNames[i] != "" {
+				item := s.BitNames[i]
+				items = append(items, item)
+			}
+		}
+		k <<= 1
+	}
+	if len(items) > 0 {
+		notifications = []NotificationStatement{
+			{Items: items, Verb: "picked up"},
+		}
+	}
+
 	return
 }
 
@@ -535,6 +562,25 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 }
 
 func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	curr := wramCurrent[s.Offset]
+	prev := wramPrevious[s.Offset]
+	if curr == prev {
+		return
+	}
+
+	if s.ValueNames == nil {
+		return
+	}
+
+	i := int(curr) - 1
+	if i >= 0 && i < len(s.ValueNames) {
+		if s.ValueNames[i] != "" {
+			notifications = []NotificationStatement{
+				{Items: s.ValueNames[i : i+1], Verb: "picked up"},
+			}
+		}
+	}
+
 	return
 }
 
