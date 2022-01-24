@@ -1,10 +1,11 @@
 package emulator
 
 import (
-	"io"
 	"o2/snes/emulator/bus"
 	"o2/snes/emulator/cpu65c816"
 	"o2/snes/emulator/memory"
+	"strings"
+	"testing"
 )
 
 type System struct {
@@ -16,8 +17,22 @@ type System struct {
 	WRAM [0x20000]byte
 	SRAM [0x10000]byte
 
-	Logger       io.StringWriter
-	ShouldLogCPU func(s *System) bool
+	Logger *SystemLogger
+}
+
+type SystemLogger struct {
+	testing.TB
+	sb strings.Builder
+}
+
+func (l *SystemLogger) Log(s string) {
+	l.sb.WriteByte('\n')
+	l.sb.WriteString(s)
+}
+
+func (l *SystemLogger) Commit() {
+	l.TB.Log(l.sb.String())
+	l.sb.Reset()
 }
 
 func (s *System) CreateEmulator() (err error) {
@@ -158,10 +173,9 @@ func (s *System) GetPC() uint32 {
 }
 
 func (s *System) RunUntil(targetPC uint32, maxCycles uint64) bool {
-	shouldLog := s.ShouldLogCPU
 	for cycles := uint64(0); cycles < maxCycles; {
-		if shouldLog != nil && shouldLog(s) {
-			_, _ = s.Logger.WriteString(s.CPU.DisassembleCurrentPC())
+		if s.Logger != nil {
+			s.Logger.Log(s.CPU.DisassembleCurrentPC())
 		}
 		if s.GetPC() == targetPC {
 			break
@@ -170,5 +184,8 @@ func (s *System) RunUntil(targetPC uint32, maxCycles uint64) bool {
 		cycles += uint64(nCycles)
 	}
 
+	if s.Logger != nil {
+		s.Logger.Commit()
+	}
 	return s.GetPC() == targetPC
 }

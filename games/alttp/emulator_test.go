@@ -8,22 +8,10 @@ import (
 	"testing"
 )
 
-type testingLogger struct {
-	t *testing.T
-}
-
-func (l *testingLogger) WriteString(s string) (n int, err error) {
-	l.t.Log(s)
-	return len(s), nil
-}
-
 func CreateTestEmulator(t *testing.T, romTitle string) (system *emulator.System, rom *snes.ROM, err error) {
 	// create the CPU-only SNES emulator:
 	system = &emulator.System{
-		Logger: &testingLogger{t},
-		ShouldLogCPU: func(s *emulator.System) bool {
-			return true
-		},
+		Logger: &emulator.SystemLogger{TB: t},
 	}
 	if err = system.CreateEmulator(); err != nil {
 		return

@@ -175,7 +175,7 @@ func Test_Frames(t *testing.T) {
 func (tt *testCase) runFrameTest(t *testing.T) {
 	system, g := tt.system, tt.g
 
-	system.Logger = &testingLogger{t: t}
+	system.Logger.TB = t
 
 	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
