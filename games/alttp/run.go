@@ -264,10 +264,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	for _, rsp := range rsps {
 		// check WRAM reads:
 		if start, end, ok := g.isReadWRAM(rsp); ok {
-			copy(g.wramStaging[start:end], rsp.Data)
 			// did we read the module number?
 			if start <= 0x10 && 0x10 <= end {
-				moduleStaging = int(g.wramStaging[0x10])
+				moduleStaging = int(rsp.Data[0x10-start])
 				g.lastModuleRead = now
 			}
 		}
