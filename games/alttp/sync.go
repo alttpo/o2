@@ -610,11 +610,13 @@ func (g *Game) initSync() {
 	// Swamp Palace:
 	//                   fedcba98_76543210
 	// u16[$7ef06e] |= 0b00000000_10000000
-	g.underworld[0x37].BitNames[0x7] = "SP right floodgate flooded"
+	g.underworld[0x37].BitNames[0x7] = "SP right floodgate"
+	g.underworld[0x37].Verbs[0x7] = "flooded"
 
 	//                   fedcba98_76543210
 	// u16[$7ef06a] |= 0b00000000_10000000
-	g.underworld[0x35].BitNames[0x7] = "SP left floodgate flooded"
+	g.underworld[0x35].BitNames[0x7] = "SP left floodgate"
+	g.underworld[0x35].Verbs[0x7] = "flooded"
 
 	g.setUnderworldSyncMasks()
 

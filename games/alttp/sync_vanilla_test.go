@@ -797,7 +797,7 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 								{wramOffs, 1 << bit},
 							},
 							wantNotifications: []string{
-								fmt.Sprintf("got %s from remote", lowBitName),
+								fmt.Sprintf("got %s %s from remote", lowBitName, u.Verbs[lowbit]),
 							},
 						},
 					},
@@ -809,7 +809,7 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 			if highBitName != "" && u.SyncMask&(1<<highbit) != 0 {
 				// high bits:
 				wantNotifications := []string{
-					fmt.Sprintf("got %s from remote", highBitName),
+					fmt.Sprintf("got %s %s from remote", highBitName, u.Verbs[highbit]),
 				}
 				// exception for Agahnim defeated to open HC portal as well:
 				if room == 0x020 && highbit == 11 {

@@ -280,7 +280,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 							},
 							wantAsm: false,
 							wantNotifications: []string{
-								fmt.Sprintf("local %s", lowBitName),
+								fmt.Sprintf("%s %s", u.Verbs[lowbit], lowBitName),
 							},
 						},
 					},
@@ -292,7 +292,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 			if highBitName != "" {
 				// high bits:
 				wantNotifications := []string{
-					fmt.Sprintf("local %s", highBitName),
+					fmt.Sprintf("%s %s", u.Verbs[highbit], highBitName),
 				}
 
 				tests = append(tests, testCase{

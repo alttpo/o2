@@ -254,6 +254,7 @@ type syncableUnderworld struct {
 
 	IsEnabledPtr *bool
 	BitNames     [16]string
+	Verbs        [16]string
 
 	games.PlayerPredicate
 
@@ -273,7 +274,8 @@ func (s *syncableUnderworld) InitFrom(g *Game, room uint16) {
 	// name the boss in this underworld room:
 	if bossName, ok := underworldBossNames[room]; ok {
 		// e.g. u16[$7ef190] |= 0b00001000_00000000 Boss Defeated
-		s.BitNames[0xb] = fmt.Sprintf("%s defeated", bossName)
+		s.BitNames[0xb] = bossName
+		s.Verbs[0xb] = "defeated"
 	}
 }
 
@@ -355,7 +357,7 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 		for i := 0; i < len(s.BitNames); i++ {
 			if initial&k == 0 && updated&k == k {
 				if s.BitNames[i] != "" {
-					item := fmt.Sprintf("%s from %s", s.BitNames[i], receivedFrom[i])
+					item := fmt.Sprintf("%s %s from %s", s.BitNames[i], s.Verbs[i], receivedFrom[i])
 					received = append(received, item)
 				}
 			}
@@ -430,21 +432,16 @@ func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notif
 		return
 	}
 
-	items := make([]string, 0, len(s.BitNames))
 	k := uint16(1)
 	for i := 0; i < len(s.BitNames); i++ {
 		if prev&k == 0 && curr&k == k {
 			if s.BitNames[i] != "" {
-				item := s.BitNames[i]
-				items = append(items, item)
+				notifications = append(notifications, games.NotificationStatement{
+					Items: []string{s.BitNames[i]}, Verb: s.Verbs[i],
+				})
 			}
 		}
 		k <<= 1
-	}
-	if len(items) > 0 {
-		notifications = []games.NotificationStatement{
-			{Items: items, Verb: "local"},
-		}
 	}
 
 	return
