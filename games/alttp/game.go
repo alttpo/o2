@@ -70,8 +70,9 @@ type Game struct {
 	locHash    uint64
 
 	// game-valid memory:
-	wram [0x20000]byte
-	sram [0x10000]byte
+	wram          [0x20000]byte
+	wramLastFrame [0x20000]byte
+	sram          [0x10000]byte
 
 	syncing        bool
 	lastSyncLog    time.Time

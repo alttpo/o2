@@ -22,6 +22,27 @@ type SyncStrategy interface {
 
 	// ConfirmAsmExecuted is called when generated ASM code is confirmed to have executed:
 	ConfirmAsmExecuted(index uint32, value uint8)
+
+	// LocalCheck compares previous frame and current frame WRAM to identify local picked up items:
+	LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement)
+}
+
+type NotificationStatement struct {
+	Items  []string
+	Verb   string
+	Source string
+}
+
+func (n NotificationStatement) String() string {
+	if n.Verb == "" || len(n.Items) == 0 {
+		return ""
+	}
+
+	joined := strings.Join(n.Items, ", ")
+	if n.Source == "" {
+		return fmt.Sprintf("%s %s", n.Verb, joined)
+	}
+	return fmt.Sprintf("%s %s from %s", n.Verb, joined, n.Source)
 }
 
 type (
@@ -189,6 +210,37 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return true
 }
 
+func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	curr := wramCurrent[s.Offset]
+	prev := wramPrevious[s.Offset]
+	if curr == prev {
+		return
+	}
+
+	if s.BitNames == nil {
+		return
+	}
+
+	items := make([]string, 0, len(s.BitNames))
+	k := uint8(1)
+	for i := 0; i < len(s.BitNames); i++ {
+		if prev&k == 0 && curr&k == k {
+			if s.BitNames[i] != "" {
+				item := s.BitNames[i]
+				items = append(items, item)
+			}
+		}
+		k <<= 1
+	}
+	if len(items) > 0 {
+		notifications = []NotificationStatement{
+			{Items: items, Verb: "picked up"},
+		}
+	}
+
+	return
+}
+
 type SyncableBitU16 struct {
 	SyncableGame
 
@@ -347,6 +399,10 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return true
 }
 
+func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	return
+}
+
 type SyncableMaxU8 struct {
 	SyncableGame
 
@@ -478,6 +534,10 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return true
 }
 
+func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	return
+}
+
 type SyncableCustomU8 struct {
 	SyncableGame
 
@@ -517,4 +577,8 @@ func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {
 		s.SyncableGame.PushNotification(s.Notification)
 		s.Notification = ""
 	}
+}
+
+func (s *SyncableCustomU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	return
 }

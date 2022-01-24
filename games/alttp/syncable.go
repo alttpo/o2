@@ -253,6 +253,10 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return true
 }
 
+func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
+	return
+}
+
 type syncableUnderworldOnUpdated func(s *syncableUnderworld, asm *asm.Emitter, initial, updated uint16)
 
 type syncableUnderworld struct {
@@ -271,6 +275,21 @@ type syncableUnderworld struct {
 	OnUpdated syncableUnderworldOnUpdated
 
 	Notification string
+}
+
+func (s *syncableUnderworld) InitFrom(g *Game, room uint16) {
+	s.SyncableGame = g
+	s.Room = room
+	s.Offset = uint32(room << 1)
+	s.IsEnabledPtr = &g.SyncUnderworld
+	s.SyncMask = 0xFFFF
+	s.PlayerPredicate = games.PlayerPredicateIdentity
+
+	// name the boss in this underworld room:
+	if bossName, ok := underworldBossNames[room]; ok {
+		// e.g. u16[$7ef190] |= 0b00001000_00000000 Boss Defeated
+		s.BitNames[0xb] = fmt.Sprintf("%s defeated", bossName)
+	}
 }
 
 func (s *syncableUnderworld) Size() uint      { return 2 }
@@ -417,17 +436,6 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	return true
 }
 
-func (s *syncableUnderworld) InitFrom(g *Game, room uint16) {
-	s.SyncableGame = g
-	s.Room = room
-	s.Offset = uint32(room << 1)
-	s.IsEnabledPtr = &g.SyncUnderworld
-	s.SyncMask = 0xFFFF
-	s.PlayerPredicate = games.PlayerPredicateIdentity
-
-	// name the boss in this underworld room:
-	if bossName, ok := underworldBossNames[room]; ok {
-		// e.g. u16[$7ef190] |= 0b00001000_00000000 Boss Defeated
-		s.BitNames[0xb] = fmt.Sprintf("%s defeated", bossName)
-	}
+func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
+	return
 }

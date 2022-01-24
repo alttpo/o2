@@ -336,6 +336,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	for _, rsp := range rsps {
 		// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 		if start, end, ok := g.isReadWRAM(rsp); ok {
+			// copy in new data:
 			copy(g.wram[start:end], rsp.Data)
 		}
 		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
@@ -454,18 +455,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		return q
 	}
 
-	// increment frame timer:
-	lastFrame := uint64(g.lastGameFrame)
-	nextFrame := uint64(g.wram[0x1A])
-	if nextFrame < lastFrame {
-		nextFrame += 256
-	}
-	g.localFrame += nextFrame - lastFrame
-	g.lastGameFrame = g.wram[0x1A]
-
-	// should wrap around 255 to 0:
-	g.monotonicFrameTime++
-
 	g.frameAdvanced()
 
 	return q
@@ -483,19 +472,37 @@ func (g *Game) wramU16(addr uint32) uint16 {
 
 // called when the local game frame advances:
 func (g *Game) frameAdvanced() {
-	//log.Printf("server now(): %v\n", g.ServerNow())
-
-	// tick down TTLs of remote players:
-	for _, p := range g.ActivePlayers() {
-		g.DecTTL(p, 1)
+	// increment frame timer:
+	lastFrame := uint64(g.lastGameFrame)
+	nextFrame := uint64(g.wram[0x1A])
+	if nextFrame < lastFrame {
+		nextFrame += 256
 	}
+	g.localFrame += nextFrame - lastFrame
+	g.lastGameFrame = g.wram[0x1A]
+
+	// should wrap around 255 to 0:
+	g.monotonicFrameTime++
+
+	//log.Printf("server now(): %v\n", g.ServerNow())
 
 	// update underworld supertile state sync bit masks based on sync toggles from front-end:
 	g.setUnderworldSyncMasks()
+
+	// generate notifications about locally picked up items:
+	g.localChecks()
 
 	// generate any WRAM update code and send it to the SNES:
 	g.updateWRAM()
 
 	// send out any network updates:
 	g.sendPackets()
+
+	// tick down TTLs of remote players:
+	for _, p := range g.ActivePlayers() {
+		g.DecTTL(p, 1)
+	}
+
+	// backup the current WRAM:
+	copy(g.wramLastFrame[:], g.wram[:])
 }
