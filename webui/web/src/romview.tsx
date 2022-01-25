@@ -33,8 +33,8 @@ export default ({ch, vm}: TopLevelProps) => {
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
 
-    return (<div style="min-width: 32em; width: 100%; height: 100%">
-        <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 2fr 2fr">
+    return (<div style="min-width: 26em; width: 100%; height: 100%">
+        <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr 2fr">
             <h5 style="grid-column: 1 / span 3">
                 <span data-rh-at="left" data-rh="O2 needs to know which game you want to play. This
 is determined only by the ROM that you select. O2 requires that the ROM you play on your SNES to be

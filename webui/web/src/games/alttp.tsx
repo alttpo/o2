@@ -115,7 +115,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         sendGameCommand("setField", {"playerColor": bgr});
     };
 
-    return <div style="display: grid; min-width: 20em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em;">
+    return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: 5fr 2fr;">
         <h5 style="grid-column: 1">Game: {game.gameName}</h5>
         <div style="grid-column: 1">
             <div style="display: grid; grid-template-columns: 2fr 2fr 5fr;">
@@ -214,7 +214,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
         <div
-            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1em 2em 6em 9em; grid-column-gap: 0.5em">
+            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-row: 2 / span 2; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr; grid-column-gap: 0.5em">
             <div style="font-weight: bold">##</div>
             <div style="font-weight: bold">team</div>
             <div style="font-weight: bold">name</div>
@@ -232,7 +232,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                 </Fragment>))
             }
         </div>
-        <div style="grid-column: 1 / span 2">
+        <div style="grid-column: 1 / 1">
             <div style="display: grid; grid-template-columns: 3fr 1fr;">
                 <div style="grid-column: 1 / span 2">
                     <label for="showASM">
@@ -260,8 +260,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                 <div style="grid-column: 1 / span 2; margin-top: 0.5em">
                     <textarea ref={historyTextarea}
                               value={notifHistory.join("\n")}
-                              style="width: 100%; height: 5.8em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
-                              rows={5}
+                              style="width: 100%; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
+                              rows={7}
                               readonly={true}/>
                 </div>
             </div>

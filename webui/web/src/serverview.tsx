@@ -50,7 +50,7 @@ function ServerView({ch, server}: ServerProps) {
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
     const getTargetValueInt = (e: Event) => parseInt((e.target as HTMLInputElement).value, 10);
-    return <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr; min-width: 16em">
+    return <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr; min-width: 14em">
         <h5 style="grid-column: 1 / span 2">
             <span data-rh-at="left" data-rh="To play online with other players, connect to a server
 and enter a group name you wish to join. Groups are created on the fly by whoever enters the group name first."
