@@ -274,30 +274,32 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 		// handle update routine check:
 		g.updateLock.Lock()
-		if rsp.Address == g.lastUpdateTarget {
-			ins0 := rsp.Data[0]
-			updateFrameCounter := rsp.Data[1]
-			log.Printf("alttp: update: check: $%06x [$%02x,$%02x] ?= [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
-			// when executed, the routine replaces its first instruction with RTS ($60):
-			if ins0 == 0x60 && updateFrameCounter == g.lastUpdateFrame {
-				// allow next update:
-				log.Printf("alttp: update: complete: $%06x [$%02x,$%02x] == [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
-				if g.updateStage == 2 {
-					// confirm ASM execution:
-					for i, generator := range g.updateGenerators {
-						generator.ConfirmAsmExecuted(uint32(i), rsp.Data[i+2])
-					}
+		if g.updateStage > 0 {
+			if rsp.Address == g.lastUpdateTarget {
+				ins0 := rsp.Data[0]
+				updateFrameCounter := rsp.Data[1]
+				log.Printf("alttp: update: check: $%06x [$%02x,$%02x] ?= [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
+				// when executed, the routine replaces its first instruction with RTS ($60):
+				if ins0 == 0x60 && updateFrameCounter == g.lastUpdateFrame {
+					// allow next update:
+					log.Printf("alttp: update: complete: $%06x [$%02x,$%02x] == [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
+					if g.updateStage == 2 {
+						// confirm ASM execution:
+						for i, generator := range g.updateGenerators {
+							generator.ConfirmAsmExecuted(uint32(i), rsp.Data[i+2])
+						}
 
-					g.updateStage = 0
-					g.nextUpdateA = !g.nextUpdateA
-					g.lastUpdateTarget = 0xFFFFFF
-					g.lastUpdateFrame ^= 0xFF
+						g.updateStage = 0
+						g.nextUpdateA = !g.nextUpdateA
+						g.lastUpdateTarget = 0xFFFFFF
+						g.lastUpdateFrame ^= 0xFF
+					}
+				} else {
+					// check again:
+					q = g.enqueueUpdateCheckRead(q)
+					// TODO: this may or may not be redundant
+					q = g.enqueueMainRead(q, nil)
 				}
-			} else {
-				// check again:
-				q = g.enqueueUpdateCheckRead(q)
-				// TODO: this may or may not be redundant
-				q = g.enqueueMainRead(q, nil)
 			}
 		}
 		g.updateLock.Unlock()

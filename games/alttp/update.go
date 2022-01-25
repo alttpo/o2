@@ -7,6 +7,7 @@ import (
 	"o2/snes"
 	"o2/snes/asm"
 	"o2/snes/lorom"
+	"time"
 )
 
 func (g *Game) updateWRAM() {
@@ -23,6 +24,10 @@ func (g *Game) updateWRAM() {
 	g.updateLock.Lock()
 
 	if g.updateStage > 0 {
+		// escape mechanism for long-running updates:
+		if time.Now().Sub(g.lastUpdateTime) > time.Second {
+			g.updateStage = 0
+		}
 		return
 	}
 
@@ -51,6 +56,7 @@ func (g *Game) updateWRAM() {
 	target := lorom.BusAddressToPak(targetSNES)
 	g.lastUpdateTarget = target
 	g.lastUpdateFrame = g.lastGameFrame
+	g.lastUpdateTime = time.Now()
 
 	// write generated asm routine to SRAM:
 	err := q.MakeWriteCommands(
