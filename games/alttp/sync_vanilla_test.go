@@ -447,7 +447,7 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 	tests := make([]testCase, 0, len(vanillaItemNames))
 
-	for offs := uint16(0x341); offs <= 0x37B; offs++ {
+	for offs := uint16(0x341); offs <= 0x3C7; offs++ {
 		if offs >= 0x35C && offs <= 0x35F {
 			// skip bottles since they have special logic:
 			continue

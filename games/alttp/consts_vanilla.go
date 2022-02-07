@@ -467,6 +467,12 @@ var (
 		0x35E: vanillaBottleItemNames,
 		0x35F: vanillaBottleItemNames,
 		0x37B: {"1/2 Magic", "1/4 Magic"},
+		0x3C5: {
+			//"Game start",
+			"Uncle reached",
+			"Zelda rescued",
+			"Agahnim defeated",
+		},
 		0x3C7: {
 			//"Map Marker at Castle",
 			"Map Marker at Kakariko",
