@@ -665,6 +665,9 @@ func (g *Game) setUnderworldSyncMasks() {
 
 	// desync swamp inner watergate at $7EF06A (supertile $35):
 	g.underworld[0x035].SyncMask &= ^uint16(0x0080)
+
+	// make sure to sync TT East Attic bombable floor bit for lighting up the Blind boss room:
+	g.underworld[0x065].SyncMask |= uint16(0x0100)
 }
 
 func (g *Game) openDoor(a *asm.Emitter, initial, updated uint16) bool {
