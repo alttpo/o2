@@ -320,6 +320,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		return q
 	}
 
+	if moduleStaging == -1 {
+		return q
+	}
+
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
 		if now.Sub(g.lastSyncLog) >= time.Second {

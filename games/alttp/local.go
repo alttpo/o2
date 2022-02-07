@@ -31,7 +31,7 @@ func (g *Game) localChecks() {
 		}
 	}
 
-	for room := uint16(0); room < 0x128; room++ {
+	for room := uint16(0); room < 0xC0; room++ {
 		s := &g.underworld[room]
 
 		notifications := s.LocalCheck(g.wram[:], g.wramLastFrame[:])

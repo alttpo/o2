@@ -84,7 +84,7 @@ func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpda
 		onUpdated,
 	)
 	if verbs, ok := vanillaItemBitVerbs[offset]; ok {
-		s.Verbs = verbs
+		copyNonEmpties(s.Verbs[:], verbs[:])
 	}
 	g.NewSyncable(offset, s)
 	return s
@@ -98,6 +98,10 @@ func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated 
 		vanillaItemNames[offset],
 		onUpdated,
 	)
+	s.Verbs = make([]string, len(s.ValueNames))
+	if verbs, ok := vanillaItemVerbs[offset]; ok {
+		copyNonEmpties(s.Verbs[:], verbs[:])
+	}
 	g.NewSyncable(offset, s)
 	return s
 }
@@ -111,7 +115,7 @@ func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated g
 		onUpdated,
 	)
 	if verbs, ok := vtItemBitVerbs[offset]; ok {
-		s.Verbs = verbs
+		copyNonEmpties(s.Verbs[:], verbs[:])
 	}
 	g.NewSyncable(offset, s)
 	return s

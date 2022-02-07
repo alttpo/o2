@@ -471,6 +471,7 @@ type SyncableMaxU8 struct {
 	AbsMax       uint8
 
 	ValueNames []string
+	Verbs      []string
 
 	PlayerPredicate
 
@@ -615,8 +616,15 @@ func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 	i := int(curr) - 1
 	if i >= 0 && i < len(s.ValueNames) {
 		if s.ValueNames[i] != "" {
+			verb := "picked up"
+			if i < len(s.Verbs) && s.Verbs[i] != "" {
+				verb = s.Verbs[i]
+			}
 			notifications = []NotificationStatement{
-				{Items: s.ValueNames[i : i+1], Verb: "picked up"},
+				{
+					Items: s.ValueNames[i : i+1],
+					Verb:  verb,
+				},
 			}
 		}
 	}

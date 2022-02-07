@@ -469,9 +469,9 @@ var (
 		0x37B: {"1/2 Magic", "1/4 Magic"},
 		0x3C5: {
 			//"Game start",
-			"Uncle reached",
-			"Zelda rescued",
-			"Agahnim defeated",
+			"Uncle",
+			"Zelda",
+			"Agahnim",
 		},
 		0x3C7: {
 			//"Map Marker at Castle",
@@ -483,6 +483,15 @@ var (
 			"Map Marker at Darkness",
 			"Map Marker at Crystals",
 			"Map Marker at Ganon's Tower"},
+	}
+
+	vanillaItemVerbs = map[uint16][]string{
+		0x3C5: {
+			//"Game start",
+			"reached",
+			"rescued",
+			"defeated",
+		},
 	}
 
 	vanillaQuantityNames = map[uint16]string{
