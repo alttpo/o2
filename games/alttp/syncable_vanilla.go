@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"fmt"
+	"log"
 	"o2/games"
 	"o2/snes/asm"
 )
@@ -100,6 +101,9 @@ func (s *SyncableVanillaBow) LocalCheck(wramCurrent, wramPrevious []byte) (notif
 	if curr == prev {
 		return
 	}
+
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
+	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
 
 	valueNames := vanillaItemNames[uint16(s.Offset)]
 	if valueNames == nil {

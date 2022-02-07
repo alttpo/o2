@@ -3,6 +3,7 @@ package games
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"o2/snes/asm"
 	"strings"
 )
@@ -223,6 +224,9 @@ func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 		return
 	}
 
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	log.Printf("alttp: local: u8 [$%06x] = %#08b ; was %#08b\n", longAddr, curr, prev)
+
 	if s.BitNames == nil {
 		return
 	}
@@ -417,6 +421,9 @@ func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 		return
 	}
 
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	log.Printf("alttp: local: u16[$%06x] = %#016b ; was %#016b\n", longAddr, curr, prev)
+
 	if s.BitNames == nil {
 		return
 	}
@@ -584,6 +591,9 @@ func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 		return
 	}
 
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+
 	if s.ValueNames == nil {
 		return
 	}
@@ -642,5 +652,19 @@ func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {
 }
 
 func (s *SyncableCustomU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
+	base := uint32(0xF000)
+	if s.MemoryKind == WRAM {
+		base = 0
+	}
+
+	curr := wramCurrent[base+s.Offset]
+	prev := wramPrevious[base+s.Offset]
+	if curr == prev {
+		return
+	}
+
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+
 	return
 }

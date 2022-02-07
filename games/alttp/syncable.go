@@ -3,6 +3,7 @@ package alttp
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"o2/games"
 	"o2/snes/asm"
 	"strings"
@@ -226,6 +227,9 @@ func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 		return
 	}
 
+	longAddr := s.g.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.offset)
+	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+
 	if s.names == nil {
 		return
 	}
@@ -431,6 +435,9 @@ func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notif
 	if curr == prev {
 		return
 	}
+
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
+	log.Printf("alttp: local: u16[$%06x] = %#016b ; was %#016b ; %s\n", longAddr, curr, prev, underworldNames[s.Room])
 
 	k := uint16(1)
 	for i := 0; i < len(s.BitNames); i++ {

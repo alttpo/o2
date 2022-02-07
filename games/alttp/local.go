@@ -26,7 +26,7 @@ func (g *Game) localChecks() {
 
 		for _, notification := range notifications {
 			n := notification.String()
-			log.Printf("alttp: %s\n", n)
+			log.Printf("alttp: local: %s\n", n)
 			g.PushNotification(n)
 		}
 	}
@@ -41,7 +41,7 @@ func (g *Game) localChecks() {
 
 		for _, notification := range notifications {
 			n := notification.String()
-			log.Printf("alttp: %s\n", n)
+			log.Printf("alttp: local: %s\n", n)
 			g.PushNotification(n)
 		}
 	}
