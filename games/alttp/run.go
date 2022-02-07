@@ -381,7 +381,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 			overworldNames[overworldArea],
 		)
 	}
-	if local.OverworldArea != overworldArea || local.DungeonRoom != dungeonRoom {
+	if local.DungeonRoom != dungeonRoom {
 		log.Printf(
 			"alttp: local: underworld $%04x -> $%04x ; %s\n",
 			local.DungeonRoom,
@@ -399,11 +399,15 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 	dungeon := g.wramU16(0x040C)
 	if local.Dungeon != dungeon {
+		dungName := "<unknown>"
+		if int(dungeon) < len(dungeonNames) {
+			dungName = dungeonNames[dungeon]
+		}
 		log.Printf(
 			"alttp: local: dungeon $%#04x -> $%#04x ; %s\n",
 			local.Dungeon,
 			dungeon,
-			dungeonNames[dungeon],
+			dungName,
 		)
 		g.shouldUpdatePlayersList = true
 	}
