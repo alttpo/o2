@@ -103,7 +103,7 @@ func (s *SyncableVanillaBow) LocalCheck(wramCurrent, wramPrevious []byte) (notif
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
-	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	valueNames := vanillaItemNames[uint16(s.Offset)]
 	if valueNames == nil {

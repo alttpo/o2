@@ -484,9 +484,9 @@ func (g *Game) initSync() {
 		// shield
 		g.NewSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
 		// sword and shield:
-		g.NewSyncableBitU8(0x422, &g.SyncItems, nil, nil)
+		g.NewSyncableBitU8(0x422, &g.SyncItems, [8]string{}, nil)
 		// bow:
-		g.NewSyncableBitU8(0x42A, &g.SyncItems, nil, nil)
+		g.NewSyncableBitU8(0x42A, &g.SyncItems, [8]string{}, nil)
 	}
 
 	// sync wram[$0400] for current dungeon supertile door state:
@@ -494,7 +494,7 @@ func (g *Game) initSync() {
 		g,
 		0x0400,
 		&g.SyncUnderworld,
-		nil,
+		[16]string{},
 		// open the local door(s):
 		func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
 			a.Comment("open door based on wram[$0400] bits")
@@ -622,18 +622,11 @@ func (g *Game) initSync() {
 
 	// overworld areas:
 	for offs := uint16(0x280); offs < 0x340; offs++ {
-		g.overworld[offs-0x280] = games.SyncableBitU8{
-			SyncableGame: g,
-			Offset:       uint32(offs),
-			IsEnabledPtr: &g.SyncUnderworld,
-			BitNames:     nil,
-			OnUpdated:    nil,
-			SyncMask:     0xFF,
-		}
+		g.overworld[offs-0x280].InitFrom(g, offs-0x280)
 	}
 
 	// Pyramid bat crash: ([$7EF2DB] | 0x20)
-	g.overworld[0x5B].OnUpdated = func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
+	g.overworld[0x5B].OnUpdated = func(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
 		if initial&0x20 == 0 && updated&0x20 == 0x20 {
 			if g.local.OverworldArea == 0x5B {
 				notification := "create pyramid hole:"

@@ -114,12 +114,17 @@ func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
 		if !ok {
 			continue
 		}
+		verbs := vanillaItemBitVerbs[offs]
 
 		wramOffs := 0xF000 + offs
 
 		for i, itemName := range itemNames {
 			if itemName == "" {
 				continue
+			}
+			verb := verbs[i]
+			if verb == "" {
+				verb = "picked up"
 			}
 
 			module := uint8(0x07)
@@ -142,7 +147,7 @@ func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
 						},
 						wantAsm: false,
 						wantNotifications: []string{
-							fmt.Sprintf("picked up %s", itemName),
+							fmt.Sprintf("%s %s", verb, itemName),
 						},
 					},
 				},
@@ -262,58 +267,125 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 		for bit := 0; bit < 8; bit++ {
 			lowbit := bit
 			lowBitName := u.BitNames[lowbit]
+			var expectedNotifications []string = nil
 			if lowBitName != "" {
 				// low bits:
-				tests = append(tests, testCase{
-					name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, lowbit),
-					module:    0x07,
-					subModule: 0x00,
-					frames: []frame{
-						{
-							preGenLocal: []wramSetValue{
-								{wramOffs, 0},
-							},
-						},
-						{
-							preGenLocal: []wramSetValue{
-								{wramOffs, 1 << bit},
-							},
-							wantAsm: false,
-							wantNotifications: []string{
-								fmt.Sprintf("%s %s", u.Verbs[lowbit], lowBitName),
-							},
+				expectedNotifications = []string{
+					fmt.Sprintf("%s %s at %s", u.Verbs[lowbit], lowBitName, underworldNames[room]),
+				}
+			}
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, lowbit),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
 						},
 					},
-				})
-			}
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 1 << bit},
+						},
+						wantAsm:           false,
+						wantNotifications: expectedNotifications,
+					},
+				},
+			})
 
 			highbit := bit + 8
 			highBitName := u.BitNames[highbit]
+			expectedNotifications = nil
 			if highBitName != "" {
 				// high bits:
-				wantNotifications := []string{
-					fmt.Sprintf("%s %s", u.Verbs[highbit], highBitName),
+				expectedNotifications = []string{
+					fmt.Sprintf("%s %s at %s", u.Verbs[highbit], highBitName, underworldNames[room]),
 				}
-
-				tests = append(tests, testCase{
-					name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, highbit),
-					module:    0x07,
-					subModule: 0x00,
-					frames: []frame{
-						{
-							preGenLocal: []wramSetValue{
-								{wramOffs + 1, 0},
-							},
-						},
-						{
-							preGenLocal: []wramSetValue{
-								{wramOffs + 1, 1 << bit},
-							},
-							wantNotifications: wantNotifications,
+			}
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("Room %03x: %s bit %d", room, name, highbit),
+				module:    0x07,
+				subModule: 0x00,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs + 1, 0},
 						},
 					},
-				})
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs + 1, 1 << bit},
+						},
+						wantNotifications: expectedNotifications,
+					},
+				},
+			})
+
+		}
+	}
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
+}
+
+func TestLocal_Vanilla_OverworldRooms(t *testing.T) {
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	tests := make([]testCase, 0, len(overworldNames))
+
+	for area := uint16(0); area < 0xC0; area++ {
+		name, ok := overworldNames[area]
+		if !ok {
+			continue
+		}
+
+		wramOffs := 0xF280 + area
+
+		u := &g.overworld[area]
+		for bit := 0; bit < 8; bit++ {
+			lowbit := bit
+			lowBitName := u.BitNames[lowbit]
+
+			var expectedNotifications []string
+			if lowBitName != "" {
+				// low bits:
+				expectedNotifications = []string{
+					fmt.Sprintf("%s %s at %s", u.Verbs[lowbit], lowBitName, overworldNames[area]),
+				}
 			}
+
+			tests = append(tests, testCase{
+				name:      fmt.Sprintf("Area %03x: %s bit %d", area, name, lowbit),
+				module:    0x09,
+				subModule: 0x00,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
+						},
+					},
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 1 << bit},
+						},
+						wantAsm:           false,
+						wantNotifications: expectedNotifications,
+					},
+				},
+			})
 		}
 	}
 

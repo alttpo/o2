@@ -46,5 +46,18 @@ func (g *Game) localChecks() {
 		}
 	}
 
-	// TODO: overworld
+	for offs := uint16(0x280); offs < 0x340; offs++ {
+		s := &g.overworld[offs-0x280]
+
+		notifications := s.LocalCheck(g.wram[:], g.wramLastFrame[:])
+		if notifications == nil {
+			continue
+		}
+
+		for _, notification := range notifications {
+			n := notification.String()
+			log.Printf("alttp: local: %s\n", n)
+			g.PushNotification(n)
+		}
+	}
 }

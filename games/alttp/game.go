@@ -90,7 +90,7 @@ type Game struct {
 	syncableBitU16Max uint16
 
 	underworld [0x128]syncableUnderworld
-	overworld  [0xC0]games.SyncableBitU8
+	overworld  [0xC0]syncableOverworld
 
 	romFunctions map[romFunction]uint32
 

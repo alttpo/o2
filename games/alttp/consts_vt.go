@@ -1,7 +1,7 @@
 package alttp
 
 var (
-	vtItemBitNames = map[uint16][]string{
+	vtItemBitNames = map[uint16][8]string{
 		0x38C: {
 			"Flute (active)",
 			"Flute (inactive)",
@@ -23,4 +23,6 @@ var (
 			"Bow",
 		},
 	}
+
+	vtItemBitVerbs = map[uint16][8]string{}
 )

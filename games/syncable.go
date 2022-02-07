@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+func bin16_4(v uint16) string {
+	return fmt.Sprintf("0b%04b_%04b_%04b_%04b", v>>12&0xF, v>>8&0xF, v>>4&0xF, v&0xF)
+}
+
+func bin8_4(v uint8) string {
+	return fmt.Sprintf("0b%04b_%04b", v>>4&0xF, v&0xF)
+}
+
 type SyncableGame interface {
 	LocalSyncablePlayer() SyncablePlayer
 	RemoteSyncablePlayers() []SyncablePlayer
@@ -30,9 +38,10 @@ type SyncStrategy interface {
 }
 
 type NotificationStatement struct {
-	Items  []string
-	Verb   string
-	Source string
+	Items    []string
+	Verb     string
+	Location string
+	Source   string
 }
 
 func (n NotificationStatement) String() string {
@@ -41,10 +50,21 @@ func (n NotificationStatement) String() string {
 	}
 
 	joined := strings.Join(n.Items, ", ")
-	if n.Source == "" {
-		return fmt.Sprintf("%s %s", n.Verb, joined)
+
+	var sb strings.Builder
+	sb.Grow(len(n.Verb) + len(joined) + len(n.Source) + len(n.Location) + 1 + 4 + 6)
+	sb.WriteString(n.Verb)
+	sb.WriteByte(' ')
+	sb.WriteString(joined)
+	if n.Location != "" {
+		sb.WriteString(" at ")
+		sb.WriteString(n.Location)
 	}
-	return fmt.Sprintf("%s %s from %s", n.Verb, joined, n.Source)
+	if n.Source != "" {
+		sb.WriteString(" from ")
+		sb.WriteString(n.Source)
+	}
+	return sb.String()
 }
 
 type (
@@ -73,7 +93,8 @@ type SyncableBitU8 struct {
 	SyncMask uint8
 
 	IsEnabledPtr *bool
-	BitNames     []string
+	BitNames     [8]string
+	Verbs        [8]string
 
 	PlayerPredicate
 
@@ -83,7 +104,7 @@ type SyncableBitU8 struct {
 	Notification string
 }
 
-func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
+func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names [8]string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
 	s := &SyncableBitU8{
 		SyncableGame: g,
 		Offset:       offset,
@@ -158,7 +179,7 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
 	newBits := updated & ^initial
 
-	if s.BitNames != nil {
+	{
 		received := make([]string, 0, len(s.BitNames))
 		k := uint8(1)
 		for i := 0; i < len(s.BitNames); i++ {
@@ -225,27 +246,23 @@ func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
-	log.Printf("alttp: local: u8 [$%06x] = %#08b ; was %#08b\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u8 [$%06x]: %s -> %s\n", longAddr, bin8_4(prev), bin8_4(curr))
 
-	if s.BitNames == nil {
-		return
-	}
-
-	items := make([]string, 0, len(s.BitNames))
 	k := uint8(1)
 	for i := 0; i < len(s.BitNames); i++ {
 		if prev&k == 0 && curr&k == k {
 			if s.BitNames[i] != "" {
-				item := s.BitNames[i]
-				items = append(items, item)
+				verb := s.Verbs[i]
+				if verb == "" {
+					verb = "picked up"
+				}
+				notifications = append(notifications, NotificationStatement{
+					Items: []string{s.BitNames[i]},
+					Verb:  verb,
+				})
 			}
 		}
 		k <<= 1
-	}
-	if len(items) > 0 {
-		notifications = []NotificationStatement{
-			{Items: items, Verb: "picked up"},
-		}
 	}
 
 	return
@@ -259,7 +276,8 @@ type SyncableBitU16 struct {
 	SyncMask uint16
 
 	IsEnabledPtr *bool
-	BitNames     []string
+	BitNames     [16]string
+	Verbs        [16]string
 
 	PlayerPredicate
 
@@ -269,7 +287,7 @@ type SyncableBitU16 struct {
 	Notification string
 }
 
-func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
+func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names [16]string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
 	s := &SyncableBitU16{
 		SyncableGame:    g,
 		Offset:          offset,
@@ -351,7 +369,7 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
 	newBits := updated & ^initial
 
-	if s.BitNames != nil {
+	{
 		received := make([]string, 0, len(s.BitNames))
 		k := uint16(1)
 		for i := 0; i < len(s.BitNames); i++ {
@@ -422,27 +440,23 @@ func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
-	log.Printf("alttp: local: u16[$%06x] = %#016b ; was %#016b\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u16[$%06x]: %s -> %s\n", longAddr, bin16_4(prev), bin16_4(curr))
 
-	if s.BitNames == nil {
-		return
-	}
-
-	items := make([]string, 0, len(s.BitNames))
 	k := uint16(1)
 	for i := 0; i < len(s.BitNames); i++ {
 		if prev&k == 0 && curr&k == k {
 			if s.BitNames[i] != "" {
-				item := s.BitNames[i]
-				items = append(items, item)
+				verb := s.Verbs[i]
+				if verb == "" {
+					verb = "picked up"
+				}
+				notifications = append(notifications, NotificationStatement{
+					Items: []string{s.BitNames[i]},
+					Verb:  verb,
+				})
 			}
 		}
 		k <<= 1
-	}
-	if len(items) > 0 {
-		notifications = []NotificationStatement{
-			{Items: items, Verb: "picked up"},
-		}
 	}
 
 	return
@@ -543,7 +557,7 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	longAddr := localMemory.BusAddress(offset)
 
-	a.Comment(fmt.Sprintf("u8[$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+	a.Comment(fmt.Sprintf("u8[$%06x]: $%02x -> $%02x", longAddr, initial, maxV))
 
 	failLabel := fmt.Sprintf("fail%06x", longAddr)
 	nextLabel := fmt.Sprintf("next%06x", longAddr)
@@ -592,7 +606,7 @@ func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
-	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	if s.ValueNames == nil {
 		return
@@ -664,7 +678,7 @@ func (s *SyncableCustomU8) LocalCheck(wramCurrent, wramPrevious []byte) (notific
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
-	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	return
 }

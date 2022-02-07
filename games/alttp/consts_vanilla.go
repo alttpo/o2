@@ -408,6 +408,32 @@ var (
 		0x009f: "Unknown 11, Rain",
 	}
 
+	overworldBitNames = map[uint16][8]string{
+		0x005b: {
+			"",
+			"",
+			"",
+			"",
+			"",
+			"pyramid hole",
+			"",
+			"",
+		},
+	}
+
+	overworldBitVerbs = map[uint16][8]string{
+		0x005b: {
+			"",
+			"",
+			"",
+			"",
+			"",
+			"opened",
+			"",
+			"",
+		},
+	}
+
 	vanillaBottleItemNames = []string{"Shroom", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
 
 	vanillaItemNames = map[uint16][]string{
@@ -459,7 +485,7 @@ var (
 		0x371: "arrow capacity",
 	}
 
-	vanillaItemBitNames = map[uint16][]string{
+	vanillaItemBitNames = map[uint16][8]string{
 		0x364: {
 			"",
 			"",
@@ -541,5 +567,18 @@ var (
 			"Crystal #4",
 			"Crystal #3",
 			""},
+	}
+
+	vanillaItemBitVerbs = map[uint16][8]string{
+		0x379: {
+			"activated", //"",
+			"activated", //"Swim Ability",
+			"activated", //"Dash Ability",
+			"activated", //"Pull Ability",
+			"activated", //"",
+			"activated", //"Talk Ability",
+			"activated", //"Read Ability",
+			"activated", //""
+		},
 	}
 )

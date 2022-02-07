@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+func bin16_4(v uint16) string {
+	return fmt.Sprintf("0b%04b_%04b_%04b_%04b", v>>12&0xF, v>>8&0xF, v>>4&0xF, v&0xF)
+}
+
+func bin8_4(v uint8) string {
+	return fmt.Sprintf("0b%04b_%04b", v>>4&0xF, v&0xF)
+}
+
 func (g *Game) NewSyncable(offset uint16, s games.SyncStrategy) games.SyncStrategy {
 	g.syncableItems[offset] = s
 	if offset < g.syncableItemsMin {
@@ -20,7 +28,7 @@ func (g *Game) NewSyncable(offset uint16, s games.SyncStrategy) games.SyncStrate
 	return s
 }
 
-func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names []string, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
+func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names [8]string, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
 	s := games.NewSyncableBitU8(
 		g,
 		uint32(offset),
@@ -55,7 +63,7 @@ func (g *Game) NewSyncableCustomU8(offset uint16, enabled *bool, generateUpdate 
 	return s
 }
 
-func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names []string, onUpdated games.SyncableBitU16OnUpdated) *games.SyncableBitU16 {
+func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names [16]string, onUpdated games.SyncableBitU16OnUpdated) *games.SyncableBitU16 {
 	s := games.NewSyncableBitU16(
 		g,
 		uint32(offset),
@@ -75,6 +83,9 @@ func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpda
 		vanillaItemBitNames[offset],
 		onUpdated,
 	)
+	if verbs, ok := vanillaItemBitVerbs[offset]; ok {
+		s.Verbs = verbs
+	}
 	g.NewSyncable(offset, s)
 	return s
 }
@@ -99,6 +110,9 @@ func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated g
 		vtItemBitNames[offset],
 		onUpdated,
 	)
+	if verbs, ok := vtItemBitVerbs[offset]; ok {
+		s.Verbs = verbs
+	}
 	g.NewSyncable(offset, s)
 	return s
 }
@@ -189,7 +203,7 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	longAddr := localSRAM.BusAddress(offset)
 
-	a.Comment(fmt.Sprintf("u8 [$%06x] = $%02x ; was $%02x", longAddr, maxV, initial))
+	a.Comment(fmt.Sprintf("u8 [$%06x]: $%02x -> $%02x", longAddr, initial, maxV))
 
 	failLabel := fmt.Sprintf("fail%06x", longAddr)
 	nextLabel := fmt.Sprintf("next%06x", longAddr)
@@ -228,7 +242,7 @@ func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 	}
 
 	longAddr := s.g.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.offset)
-	log.Printf("alttp: local: u8 [$%06x] = $%02x ; was $%02x\n", longAddr, curr, prev)
+	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	if s.names == nil {
 		return
@@ -373,7 +387,7 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 		}
 	}
 
-	a.Comment(fmt.Sprintf("u16[$%06x] = %#016b | %#016b", longAddr, initial, newBits))
+	a.Comment(fmt.Sprintf("u16[$%06x] = %s | %s", longAddr, bin16_4(initial), bin16_4(newBits)))
 
 	goodLabel := fmt.Sprintf("good%06x", longAddr)
 	failLabel := fmt.Sprintf("fail%06x", longAddr)
@@ -437,14 +451,233 @@ func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notif
 	}
 
 	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
-	log.Printf("alttp: local: u16[$%06x] = %#016b ; was %#016b ; %s\n", longAddr, curr, prev, underworldNames[s.Room])
+	log.Printf("alttp: local: u16[$%06x]: %s -> %s ; %s\n", longAddr, bin16_4(prev), bin16_4(curr), underworldNames[s.Room])
 
 	k := uint16(1)
 	for i := 0; i < len(s.BitNames); i++ {
 		if prev&k == 0 && curr&k == k {
 			if s.BitNames[i] != "" {
+				verb := s.Verbs[i]
+				if verb == "" {
+					verb = "enabled"
+				}
 				notifications = append(notifications, games.NotificationStatement{
-					Items: []string{s.BitNames[i]}, Verb: s.Verbs[i],
+					Items:    []string{s.BitNames[i]},
+					Verb:     verb,
+					Location: underworldNames[s.Room],
+				})
+			}
+		}
+		k <<= 1
+	}
+
+	return
+}
+
+type (
+	syncableOverworldOnUpdated func(s *syncableOverworld, asm *asm.Emitter, initial, updated uint8)
+)
+
+type syncableOverworld struct {
+	games.SyncableGame
+
+	Offset uint32
+	Area   uint16
+	games.MemoryKind
+
+	SyncMask     uint8
+	IsEnabledPtr *bool
+
+	BitNames [8]string
+	Verbs    [8]string
+
+	games.PlayerPredicate
+
+	OnUpdated    syncableOverworldOnUpdated
+	Notification string
+}
+
+func (s *syncableOverworld) InitFrom(g *Game, area uint16) {
+	s.SyncableGame = g
+	s.Offset = uint32(0x280 + area)
+	s.Area = area
+	s.MemoryKind = games.SRAM
+	s.IsEnabledPtr = &g.SyncOverworld
+	s.SyncMask = 0xFF
+	s.BitNames = [8]string{
+		"",
+		"bomb wall",
+		"",
+		"",
+		"",
+		"overlay",
+		"item",
+		"",
+	}
+	s.Verbs = [8]string{
+		"",
+		"opened",
+		"",
+		"",
+		"",
+		"activated",
+		"collected",
+		"",
+	}
+
+	if names, ok := overworldBitNames[area]; ok {
+		copyNonEmpties(s.BitNames[:], names[:])
+	}
+	if verbs, ok := overworldBitVerbs[area]; ok {
+		copyNonEmpties(s.Verbs[:], verbs[:])
+	}
+}
+
+func copyNonEmpties(dst []string, src []string) {
+	for i := range dst {
+		if src[i] == "" {
+			continue
+		}
+		dst[i] = src[i]
+	}
+}
+
+func (s *syncableOverworld) Size() uint      { return 1 }
+func (s *syncableOverworld) IsEnabled() bool { return *s.IsEnabledPtr }
+
+func (s *syncableOverworld) ConfirmAsmExecuted(index uint32, value uint8) {
+	if value == 0x00 {
+		return
+	}
+
+	// send the notification:
+	if s.Notification != "" {
+		s.SyncableGame.PushNotification(s.Notification)
+		s.Notification = ""
+	}
+}
+
+func (s *syncableOverworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+	g := s.SyncableGame
+	local := g.LocalSyncablePlayer()
+
+	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
+		return false
+	}
+
+	offs := s.Offset
+
+	initial := local.ReadableMemory(s.MemoryKind).ReadU8(offs)
+	var receivedFrom [8]string
+
+	updated := initial
+	for _, p := range g.RemoteSyncablePlayers() {
+		if s.PlayerPredicate != nil && !s.PlayerPredicate(p) {
+			continue
+		}
+
+		v := p.ReadableMemory(s.MemoryKind).ReadU8(offs)
+		v &= s.SyncMask
+
+		newBits := v & ^updated
+		if newBits != 0 {
+			k := uint8(1)
+			for i := 0; i < 8; i++ {
+				if newBits&k == k {
+					receivedFrom[i] = p.Name()
+				}
+				k <<= 1
+			}
+		}
+
+		updated |= v
+	}
+
+	if updated == initial {
+		// no change:
+		return false
+	}
+
+	// notify local player of new item received:
+	s.Notification = ""
+
+	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
+	newBits := updated & ^initial
+
+	{
+		received := make([]string, 0, len(s.BitNames))
+		k := uint8(1)
+		for i := 0; i < len(s.BitNames); i++ {
+			if initial&k == 0 && updated&k == k {
+				if s.BitNames[i] != "" {
+					item := fmt.Sprintf("%s from %s", s.BitNames[i], receivedFrom[i])
+					received = append(received, item)
+				}
+			}
+			k <<= 1
+		}
+		if len(received) > 0 {
+			s.Notification = fmt.Sprintf("got %s", strings.Join(received, ", "))
+			a.Comment(s.Notification + ":")
+		}
+	}
+
+	a.Comment(fmt.Sprintf("u8 [$%06x] = %s | %s", longAddr, bin8_4(initial), bin8_4(newBits)))
+
+	failLabel := fmt.Sprintf("fail%06x", longAddr)
+	nextLabel := fmt.Sprintf("next%06x", longAddr)
+	a.LDA_long(longAddr)
+	a.CMP_imm8_b(initial)
+	a.BNE(failLabel)
+
+	a.ORA_imm8_b(newBits)
+	a.STA_long(longAddr)
+
+	if s.OnUpdated != nil {
+		s.OnUpdated(s, a, initial, updated)
+	}
+
+	// write confirmation:
+	a.Comment(fmt.Sprintf("write confirmation for #%d:", index))
+	a.LDA_imm8_b(0x01)
+	a.STA_long(a.GetBase() + 0x02 + index)
+	a.BRA(nextLabel)
+
+	a.Label(failLabel)
+	// write failure:
+	a.Comment(fmt.Sprintf("write failure for #%d:", index))
+	a.LDA_imm8_b(0x00)
+	a.STA_long(a.GetBase() + 0x02 + index)
+
+	a.Label(nextLabel)
+
+	return true
+}
+
+func (s *syncableOverworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
+	base := uint32(0xF000)
+
+	curr := wramCurrent[base+s.Offset]
+	prev := wramPrevious[base+s.Offset]
+	if curr == prev {
+		return
+	}
+
+	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	log.Printf("alttp: local: u8 [$%06x]: %s -> %s ; %s\n", longAddr, bin8_4(prev), bin8_4(curr), overworldNames[s.Area])
+
+	k := uint8(1)
+	for i := 0; i < len(s.BitNames); i++ {
+		if prev&k == 0 && curr&k == k {
+			if s.BitNames[i] != "" {
+				verb := s.Verbs[i]
+				if verb == "" {
+					verb = "enabled"
+				}
+				notifications = append(notifications, games.NotificationStatement{
+					Items:    []string{s.BitNames[i]},
+					Verb:     verb,
+					Location: overworldNames[s.Area],
 				})
 			}
 		}

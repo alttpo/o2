@@ -285,6 +285,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 					log.Printf("alttp: update: complete: $%06x [$%02x,$%02x] == [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
 					if g.updateStage == 2 {
 						// confirm ASM execution:
+						log.Printf("alttp: update: states = %v\n", rsp.Data[2:2+len(g.updateGenerators)])
 						for i, generator := range g.updateGenerators {
 							generator.ConfirmAsmExecuted(uint32(i), rsp.Data[i+2])
 						}
@@ -357,7 +358,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
 	if local.Module != newModule || local.SubModule != newSubModule {
 		log.Printf(
-			"alttp: module [%02x,%02x] -> [%02x,%02x]\n",
+			"alttp: local: module [$%02x,$%02x] -> [$%02x,$%02x]\n",
 			local.Module,
 			local.SubModule,
 			newModule,
@@ -372,13 +373,20 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	inDungeon := g.wram[0x1B]
 	overworldArea := g.wramU16(0x8A)
 	dungeonRoom := g.wramU16(0xA0)
+	if local.OverworldArea != overworldArea {
+		log.Printf(
+			"alttp: local: overworld $%04x -> $%04x ; %s\n",
+			local.OverworldArea,
+			overworldArea,
+			overworldNames[overworldArea],
+		)
+	}
 	if local.OverworldArea != overworldArea || local.DungeonRoom != dungeonRoom {
 		log.Printf(
-			"alttp: supertile[overworld,underworld]: [%04x,%04x] -> [%04x,%04x]\n",
-			local.OverworldArea,
+			"alttp: local: underworld $%04x -> $%04x ; %s\n",
 			local.DungeonRoom,
-			overworldArea,
 			dungeonRoom,
+			underworldNames[dungeonRoom],
 		)
 	}
 	local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
@@ -392,9 +400,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	dungeon := g.wramU16(0x040C)
 	if local.Dungeon != dungeon {
 		log.Printf(
-			"alttp: dungeon: %#04x -> %#04x\n",
+			"alttp: local: dungeon $%#04x -> $%#04x ; %s\n",
 			local.Dungeon,
 			dungeon,
+			dungeonNames[dungeon],
 		)
 		g.shouldUpdatePlayersList = true
 	}

@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"log"
 	"o2/interfaces"
 	"o2/snes"
 	"o2/snes/asm"
@@ -309,6 +310,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		if updated {
 			// invoke asm confirmations to get notifications:
+			log.Printf("alttp: update: states = %v\n", system.SRAM[0x7C00+0x02:0x7C00+0x02+len(g.updateGenerators)])
 			for i, generator := range g.updateGenerators {
 				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+i])
 			}
