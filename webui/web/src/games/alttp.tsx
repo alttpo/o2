@@ -115,10 +115,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         sendGameCommand("setField", {"playerColor": bgr});
     };
 
-    return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: 5fr 2fr;">
-        <h5 style="grid-column: 1">Game: {game.gameName}</h5>
+    return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: 5fr 3fr;">
+        <div style="grid-column: 1 / auto; display: grid; grid-template-columns: 6fr 1fr;">
+            <h5>Game: {game.gameName}</h5>
+            <button type="button"
+                    title="Forget all game state; does not reset the console/emulator"
+                    onClick={e => sendGameCommand("reset", {})}>Reset</button>
+        </div>
         <div style="grid-column: 1">
-            <div style="display: grid; grid-template-columns: 2fr 2fr 5fr;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 6fr;">
                 <label for="syncTunicColor" style="grid-column: 1 / span 2">
                     <input type="checkbox"
                            id="syncTunicColor"
