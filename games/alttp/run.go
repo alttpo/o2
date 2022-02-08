@@ -256,6 +256,9 @@ func (g *Game) enqueueMainRead(q []snes.Read, extra interface{}) []snes.Read {
 
 // called when all reads are completed:
 func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+
 	q := make([]snes.Read, 0, 8)
 
 	// assume module is invalid until we read it:

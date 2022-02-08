@@ -35,6 +35,8 @@ type Game struct {
 	// Notifications publishes notifications about game events intended for the player to see
 	Notifications interfaces.ObservableImpl
 
+	stateLock sync.Mutex
+
 	local   *Player
 	players [MaxPlayers]Player
 
@@ -245,6 +247,9 @@ func (g *Game) IsRunning() bool {
 }
 
 func (g *Game) Reset() {
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+
 	g.clean = false
 
 	g.FirstFrame()
@@ -270,6 +275,48 @@ func (g *Game) Reset() {
 			local.Team = serverViewModel.Team
 		}
 	}
+
+	g.initSync()
+}
+
+// SoftReset keeps local player settings but clears all state
+func (g *Game) SoftReset() {
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+
+	g.clean = false
+
+	g.FirstFrame()
+
+	g.ClearNotificationHistory()
+
+	var backupLocal Player
+	if g.local != nil {
+		backupLocal = *g.local
+	}
+	if g.viewModels != nil {
+		// preserve last-set info:
+		serverViewModelIntf, ok := g.viewModels.GetViewModel("server")
+		if ok && serverViewModelIntf != nil {
+			serverViewModel := serverViewModelIntf.(*engine.ServerViewModel)
+			backupLocal.NameF = serverViewModel.PlayerName
+			backupLocal.Team = serverViewModel.Team
+		}
+		backupLocal.PlayerColor = g.PlayerColor
+	}
+
+	// clear out players array:
+	for i := range g.players {
+		g.players[i] = Player{IndexF: -1, PlayerColor: 0x12ef}
+	}
+
+	// create a temporary Player instance until we get our Index assigned from the server:
+	g.local = &Player{IndexF: -1, PlayerColor: 0x12ef}
+	local := g.local
+	local.WRAM = make(map[uint16]*SyncableWRAM)
+	local.NameF = backupLocal.NameF
+	local.PlayerColor = backupLocal.PlayerColor
+	local.Team = backupLocal.Team
 
 	g.initSync()
 }

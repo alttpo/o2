@@ -146,7 +146,11 @@ func (r *resetCmd) CreateArgs() interfaces.CommandArgs {
 
 func (r *resetCmd) Execute(_ interfaces.CommandArgs) error {
 	log.Println("alttp: reset game")
-	r.g.Reset()
+	r.g.SoftReset()
+
+	// notify view of new values:
+	r.g.NotifyView()
+
 	r.g.PushNotification("reset game")
 	return nil
 }
