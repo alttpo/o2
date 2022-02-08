@@ -249,6 +249,8 @@ func (g *Game) Reset() {
 
 	g.FirstFrame()
 
+	g.ClearNotificationHistory()
+
 	// clear out players array:
 	for i := range g.players {
 		g.players[i] = Player{IndexF: -1, PlayerColor: 0x12ef}

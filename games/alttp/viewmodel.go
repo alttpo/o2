@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"fmt"
+	"log"
 	"o2/interfaces"
 	"o2/util"
 )
@@ -25,25 +26,37 @@ func (g *Game) NotifyView() {
 	g.viewModels.NotifyView("game", g)
 }
 
+func (g *Game) ClearNotificationHistory() {
+	viewModels := g.viewModels
+	if viewModels == nil {
+		return
+	}
+
+	viewModels.NotifyView("game/notification/history", make([]string, 0, 200))
+}
+
 func (g *Game) PushNotification(notification string) {
 	g.Notifications.Publish(notification)
 
-	if viewModels := g.viewModels; viewModels != nil {
-		// record history of Notifications:
-		historyVM, ok := viewModels.GetViewModel("game/notification/history")
-		if !ok {
-			historyVM = make([]string, 0, 200)
-		}
-
-		history, ok := historyVM.([]string)
-		if !ok {
-			history = make([]string, 0, 200)
-		}
-
-		// append the notification:
-		history = append(history, notification)
-		viewModels.NotifyView("game/notification/history", history)
+	viewModels := g.viewModels
+	if viewModels == nil {
+		return
 	}
+
+	// record history of Notifications:
+	historyVM, ok := viewModels.GetViewModel("game/notification/history")
+	if !ok {
+		historyVM = make([]string, 0, 200)
+	}
+
+	history, ok := historyVM.([]string)
+	if !ok {
+		history = make([]string, 0, 200)
+	}
+
+	// append the notification:
+	history = append(history, notification)
+	viewModels.NotifyView("game/notification/history", history)
 }
 
 type PlayerViewModel struct {
@@ -112,6 +125,8 @@ func (g *Game) updatePlayersList() {
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	switch command {
+	case "reset":
+		return &resetCmd{g}, nil
 	case "setField":
 		return &setFieldCmd{g}, nil
 	case "asm":
@@ -119,6 +134,21 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 	default:
 		return nil, fmt.Errorf("no handler for command=%s", command)
 	}
+}
+
+type resetCmd struct {
+	g *Game
+}
+
+func (r *resetCmd) CreateArgs() interfaces.CommandArgs {
+	return nil
+}
+
+func (r *resetCmd) Execute(_ interfaces.CommandArgs) error {
+	log.Println("alttp: reset game")
+	r.g.Reset()
+	r.g.PushNotification("reset game")
+	return nil
 }
 
 type setFieldCmd struct{ g *Game }
