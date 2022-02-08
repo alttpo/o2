@@ -27,11 +27,17 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 		if !ok {
 			continue
 		}
+		verbNames, ok := vanillaItemVerbs[offs]
 
 		wramOffs := 0xF000 + offs
 		for i, itemName := range itemNames {
 			module := uint8(0x07)
 			subModule := uint8(0x00)
+
+			verb := "picked up"
+			if i < len(verbNames) && verbNames[i] != "" {
+				verb = verbNames[i]
+			}
 
 			// picked up item:
 			test := testCase{
@@ -51,7 +57,7 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 						},
 						wantAsm: false,
 						wantNotifications: []string{
-							fmt.Sprintf("picked up %s", itemName),
+							fmt.Sprintf("%s %s", verb, itemName),
 						},
 					},
 				},
@@ -253,7 +259,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 
 	g := CreateTestGame(rom, system)
 
-	tests := make([]testCase, 0, len(underworldNames))
+	tests := make([]testCase, 0, len(underworldNames)*16)
 
 	for room := uint16(0); room < 0x128; room++ {
 		name, ok := underworldNames[room]
@@ -271,7 +277,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 			if lowBitName != "" {
 				// low bits:
 				expectedNotifications = []string{
-					fmt.Sprintf("%s %s at %s", u.Verbs[lowbit], lowBitName, underworldNames[room]),
+					fmt.Sprintf("%s %s at %s", u.Verbs[lowbit], lowBitName, name),
 				}
 			}
 			tests = append(tests, testCase{
@@ -300,7 +306,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 			if highBitName != "" {
 				// high bits:
 				expectedNotifications = []string{
-					fmt.Sprintf("%s %s at %s", u.Verbs[highbit], highBitName, underworldNames[room]),
+					fmt.Sprintf("%s %s at %s", u.Verbs[highbit], highBitName, name),
 				}
 			}
 			tests = append(tests, testCase{
@@ -321,7 +327,6 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 					},
 				},
 			})
-
 		}
 	}
 
