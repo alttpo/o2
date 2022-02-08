@@ -14,7 +14,7 @@
 
 html, select, option, button, input {
     font-family: Rokkitt, sans-serif;
-    font-size: 18px;
+    font-size: 12pt;
 }
 
 body {
@@ -73,7 +73,7 @@ a {
 
 button, input[type=submit] {
     font-weight: 500;
-    padding: 4px 16px 4px 16px; /* top right bottom left */
+    padding: 2px 4px; /* top right bottom left */
     border-radius: 4px;
     border-top: 1px solid rgba(0, 0, 0, 0.5);
     border-left: 1px solid rgba(0, 0, 0, 0.5);
@@ -83,12 +83,10 @@ button, input[type=submit] {
 }
 
 button:active, input[type=submit]:active {
+    border-top: 2px solid rgba(0, 0, 0, 0.5);
+    border-left: 2px solid rgba(0, 0, 0, 0.5);
     border-right: 1px solid rgba(0, 0, 0, 0.5);
     border-bottom: 1px solid rgba(0, 0, 0, 0.5);
-    padding-right: 16px;
-    margin-right: 2px;
-    padding-bottom: 4px;
-    margin-bottom: 2px;
 }
 
 select, input:not([type=submit]) {
@@ -96,7 +94,7 @@ select, input:not([type=submit]) {
     color: lightgray;
     font-family: Rokkitt, sans-serif;
     font-weight: 500;
-    padding: 0.25em 0.25em 0.25em 0.25em; /* top right bottom left */
+    padding: 2px 4px; /* top right bottom left */
     border-radius: 0.5em;
     border-top: 1px solid rgba(0, 0, 0, 0.5);
     border-left: 1px solid rgba(0, 0, 0, 0.5);
@@ -266,13 +264,12 @@ h5, h6 {
 
 .grid {
     display: grid;
-    grid-auto-rows: 1.8em;
-    grid-row-gap: 0.1em;
-    grid-column-gap: 0.2em;
+    /*grid-auto-rows: 1.8em;*/
+    grid-row-gap: 0.05em;
+    grid-column-gap: 0.1em;
 }
 
 .grid > label {
-    padding-top: 6px;
     white-space: nowrap;
 }
 

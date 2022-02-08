@@ -87,7 +87,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 export default ({ch, vm}: TopLevelProps) => {
     const [collapsed, set_collapsed] = useState(false);
 
-    return (<div class={"collapsible" + (collapsed ? " collapsed" : "")} style="display: table; min-width: 30em; width: 100%; height: 100%">
+    return (<div class={"collapsible" + (collapsed ? " collapsed" : "")} style="display: table; min-width: 50em; width: 100%; height: 100%">
         <h5>
                 <span data-rh-at="left" data-rh="Select one of the below SNES drivers to connect to your SNES device.
 Devices are auto-detected every 2 seconds for each driver."
