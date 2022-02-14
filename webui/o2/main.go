@@ -21,6 +21,7 @@ import (
 	_ "o2/snes/mock"
 	_ "o2/snes/qusb2snes"
 	_ "o2/snes/retroarch"
+	_ "o2/snes/sni"
 )
 
 // include these game providers:

@@ -10,10 +10,9 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.0.4
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
-	github.com/stretchr/testify v1.7.0 // indirect
 	go.bug.st/serial v1.3.3
 	golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	google.golang.org/grpc v1.44.0
 	google.golang.org/protobuf v1.26.0
 )
 
