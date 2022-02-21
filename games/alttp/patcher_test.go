@@ -2,10 +2,10 @@ package alttp
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/asm"
+	"github.com/alttpo/snes/mapping/lorom"
 	"log"
 	"o2/snes"
-	"o2/snes/asm"
-	"o2/snes/lorom"
 	"testing"
 )
 
@@ -31,7 +31,9 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	}
 
 	// write RESET vector:
-	a := asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_8000), 0x2F), true)
+	var pakAddr uint32
+	pakAddr, err = lorom.BusAddressToPak(0x00_8000)
+	a := asm.NewEmitter(rom.Slice(pakAddr, 0x2F), true)
 	a.SetBase(0x00_8000)
 	a.SEP(0x30)
 	a.BRA_imm8(0x2F - 0x04)
@@ -41,7 +43,8 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	a.WriteTextTo(log.Writer())
 
 	// write the $802F code that will be patched over:
-	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(0x00_802F), 0x50), true)
+	pakAddr, err = lorom.BusAddressToPak(0x00_802F)
+	a = asm.NewEmitter(rom.Slice(pakAddr, 0x50), true)
 	a.SetBase(0x00_802F)
 	a.AssumeSEP(0x30)
 	a.LDA_imm8_b(0x81)
@@ -53,7 +56,8 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	a.WriteTextTo(log.Writer())
 
 	// write the $8034 code as main game loop:
-	a = asm.NewEmitter(rom.Slice(lorom.BusAddressToPC(testROMMainGameLoop), 0x30), true)
+	pakAddr, err = lorom.BusAddressToPak(testROMMainGameLoop)
+	a = asm.NewEmitter(rom.Slice(pakAddr, 0x30), true)
 	a.SetBase(testROMMainGameLoop)
 	a.AssumeSEP(0x30)
 	a.BRA("do_frame")

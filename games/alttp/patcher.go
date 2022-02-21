@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/alttpo/snes/asm"
+	"github.com/alttpo/snes/mapping/lorom"
 	"io"
 	"log"
 	"o2/snes"
-	"o2/snes/asm"
-	"o2/snes/lorom"
 	"strings"
 )
 
@@ -86,7 +86,9 @@ func (p *Patcher) Patch() (err error) {
 	// overwrite $00:802F with `JSL $1BB1D7`
 	const initHook = 0x1BB1D7
 
-	a := asm.NewEmitter(p.rom.Slice(lorom.BusAddressToPC(0x00_802F), uint32(len(expected802F))), true)
+	var pcAddr uint32
+	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
+	a := asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(expected802F))), true)
 	a.SetBase(0x00802F)
 	a.JSL(initHook)
 	a.NOP()
@@ -156,7 +158,8 @@ func (p *Patcher) Patch() (err error) {
 	}
 
 	// start writing at the end of the ROM after music data:
-	a = asm.NewEmitter(p.rom.Slice(lorom.BusAddressToPC(initHook), 0x1C_0000-initHook), true)
+	pcAddr, err = lorom.BusAddressToPak(initHook)
+	a = asm.NewEmitter(p.rom.Slice(pcAddr, 0x1C_0000-initHook), true)
 	a.SetBase(initHook)
 	a.REP(0x20)
 	p.asmCopyRoutine(taUpdateA.Bytes(), a, preMainUpdateAAddr)
@@ -173,7 +176,8 @@ func (p *Patcher) Patch() (err error) {
 	a.WriteTextTo(textBuf)
 
 	// overwrite the frame hook with a JSL to the end of SRAM:
-	a = asm.NewEmitter(p.rom.Slice(lorom.BusAddressToPC(frameHook), 4), true)
+	pcAddr, err = lorom.BusAddressToPak(frameHook)
+	a = asm.NewEmitter(p.rom.Slice(pcAddr, 4), true)
 	a.SetBase(frameHook)
 	a.JSL(preMainAddr)
 	if err := a.Finalize(); err != nil {

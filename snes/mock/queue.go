@@ -2,9 +2,9 @@ package mock
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/emulator"
 	"log"
 	"o2/snes"
-	"o2/snes/emulator"
 	"time"
 )
 

@@ -1,11 +1,11 @@
 package alttp
 
 import (
+	"github.com/alttpo/snes/asm"
+	"github.com/alttpo/snes/emulator"
 	"log"
 	"o2/interfaces"
 	"o2/snes"
-	"o2/snes/asm"
-	"o2/snes/emulator"
 	"testing"
 )
 

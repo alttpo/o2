@@ -3,8 +3,8 @@ package games
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/alttpo/snes/asm"
 	"log"
-	"o2/snes/asm"
 	"strings"
 )
 

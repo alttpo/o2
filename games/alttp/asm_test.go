@@ -1,8 +1,8 @@
 package alttp
 
 import (
+	"github.com/alttpo/snes/asm"
 	"log"
-	"o2/snes/asm"
 	"testing"
 )
 

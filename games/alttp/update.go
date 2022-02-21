@@ -2,11 +2,11 @@ package alttp
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/asm"
+	"github.com/alttpo/snes/mapping/lorom"
 	"log"
 	"o2/games"
 	"o2/snes"
-	"o2/snes/asm"
-	"o2/snes/lorom"
 	"time"
 )
 
@@ -53,13 +53,17 @@ func (g *Game) updateWRAM() {
 
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
-	target := lorom.BusAddressToPak(targetSNES)
+	var err error
+	var target uint32
+	target, err = lorom.BusAddressToPak(targetSNES)
 	g.lastUpdateTarget = target
 	g.lastUpdateFrame = g.lastGameFrame
 	g.lastUpdateTime = time.Now()
 
 	// write generated asm routine to SRAM:
-	err := q.MakeWriteCommands(
+	var targetJSR uint32
+	targetJSR, err = lorom.BusAddressToPak(preMainAddr + 2)
+	err = q.MakeWriteCommands(
 		[]snes.Write{
 			{
 				Address: target,
@@ -70,7 +74,7 @@ func (g *Game) updateWRAM() {
 			{
 				// JSR $7C00 | JSR $7E00
 				// update the $7C or $7E byte in the JSR instruction:
-				Address: lorom.BusAddressToPak(preMainAddr + 2),
+				Address: targetJSR,
 				Size:    1,
 				Data:    []byte{uint8(targetSNES >> 8)},
 			},

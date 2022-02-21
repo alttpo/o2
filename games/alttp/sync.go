@@ -2,8 +2,8 @@ package alttp
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/asm"
 	"o2/games"
-	"o2/snes/asm"
 	"strings"
 )
 

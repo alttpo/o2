@@ -2,9 +2,9 @@ package alttp
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/emulator"
+	"github.com/alttpo/snes/mapping/lorom"
 	"o2/snes"
-	"o2/snes/emulator"
-	"o2/snes/lorom"
 	"testing"
 )
 
@@ -58,7 +58,8 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	g.fillRomFunctions()
 	for _, addr := range g.romFunctions {
 		// 0x6B RTL
-		system.ROM[lorom.BusAddressToPC(addr)] = 0x6B
+		pakAddr, _ := lorom.BusAddressToPak(addr)
+		system.ROM[pakAddr] = 0x6B
 	}
 
 	g.Reset()

@@ -3,10 +3,10 @@ package retroarch
 import (
 	"bytes"
 	"fmt"
+	"github.com/alttpo/snes/mapping/lorom"
 	"log"
 	"net"
 	"o2/snes"
-	"o2/snes/lorom"
 	"o2/udpclient"
 	"strings"
 	"time"
@@ -130,7 +130,9 @@ func (c *RAClient) ReadMemoryBatch(batch []snes.Read, keepAlive snes.KeepAlive) 
 		} else {
 			sb.WriteString("READ_CORE_MEMORY ")
 		}
-		expectedAddr := lorom.PakAddressToBus(req.Address)
+
+		var expectedAddr uint32
+		expectedAddr, err = lorom.PakAddressToBus(req.Address)
 		sb.WriteString(fmt.Sprintf("%06x %d\n", expectedAddr, req.Size))
 	}
 
@@ -167,7 +169,8 @@ func (c *RAClient) ReadMemoryBatch(batch []snes.Read, keepAlive snes.KeepAlive) 
 			keepAlive <- struct{}{}
 		}
 
-		expectedAddr := lorom.PakAddressToBus(req.Address)
+		var expectedAddr uint32
+		expectedAddr, err = lorom.PakAddressToBus(req.Address)
 
 		// parse ASCII response:
 		r := bytes.NewReader(rsp)
@@ -233,7 +236,9 @@ func (c *RAClient) WriteMemoryBatch(batch []snes.Write, keepAlive snes.KeepAlive
 		} else {
 			sb.WriteString("WRITE_CORE_MEMORY ")
 		}
-		writeAddress := lorom.PakAddressToBus(req.Address)
+
+		var writeAddress uint32
+		writeAddress, err = lorom.PakAddressToBus(req.Address)
 		sb.WriteString(fmt.Sprintf("%06x ", writeAddress))
 		// emit hex data:
 		lasti := len(req.Data) - 1
@@ -259,7 +264,8 @@ func (c *RAClient) WriteMemoryBatch(batch []snes.Write, keepAlive snes.KeepAlive
 
 	if !c.useRCR {
 		for _, req := range batch {
-			writeAddress := lorom.PakAddressToBus(req.Address)
+			var writeAddress uint32
+			writeAddress, err = lorom.PakAddressToBus(req.Address)
 
 			// expect a response from WRITE_CORE_MEMORY
 			var rsp []byte
