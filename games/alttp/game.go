@@ -40,8 +40,10 @@ type Game struct {
 	local   *Player
 	players [MaxPlayers]Player
 
-	activePlayersClean bool
-	activePlayers      []*Player
+	activePlayersClean    bool
+	activePlayers         []*Player
+	remotePlayers         []*Player
+	remoteSyncablePlayers []games.SyncablePlayer
 
 	lastServerTime     time.Time // server's clock when the echo message arrived at server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
@@ -357,6 +359,8 @@ func (g *Game) LocalPlayer() *Player {
 func (g *Game) ActivePlayers() []*Player {
 	if !g.activePlayersClean {
 		g.activePlayers = make([]*Player, 0, len(g.activePlayers))
+		g.remotePlayers = make([]*Player, 0, len(g.activePlayers))
+		g.remoteSyncablePlayers = make([]games.SyncablePlayer, 0, len(g.activePlayers))
 
 		for i, p := range g.players {
 			if p.Index() < 0 {
@@ -367,6 +371,11 @@ func (g *Game) ActivePlayers() []*Player {
 			}
 
 			g.activePlayers = append(g.activePlayers, &g.players[i])
+
+			if g.local != &g.players[i] {
+				g.remotePlayers = append(g.remotePlayers, &g.players[i])
+				g.remoteSyncablePlayers = append(g.remoteSyncablePlayers, &g.players[i])
+			}
 		}
 
 		g.activePlayersClean = true
@@ -376,15 +385,8 @@ func (g *Game) ActivePlayers() []*Player {
 }
 
 func (g *Game) RemotePlayers() []*Player {
-	activePlayers := g.ActivePlayers()
-	remotePlayers := make([]*Player, 0, len(activePlayers))
-	for _, p := range activePlayers {
-		if p == g.LocalPlayer() {
-			continue
-		}
-		remotePlayers = append(remotePlayers, p)
-	}
-	return remotePlayers
+	g.ActivePlayers()
+	return g.remotePlayers
 }
 
 func (g *Game) LocalSyncablePlayer() games.SyncablePlayer {
@@ -392,15 +394,8 @@ func (g *Game) LocalSyncablePlayer() games.SyncablePlayer {
 }
 
 func (g *Game) RemoteSyncablePlayers() []games.SyncablePlayer {
-	activePlayers := g.ActivePlayers()
-	remotePlayers := make([]games.SyncablePlayer, 0, len(activePlayers))
-	for _, p := range activePlayers {
-		if p == g.LocalPlayer() {
-			continue
-		}
-		remotePlayers = append(remotePlayers, p)
-	}
-	return remotePlayers
+	g.ActivePlayers()
+	return g.remoteSyncablePlayers
 }
 
 func (g *Game) ServerNow() time.Time {
