@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"github.com/alttpo/snes/emulator"
 	"github.com/alttpo/snes/mapping/lorom"
-	"github.com/alttpo/snes/testinglogger"
+	"log"
 	"o2/snes"
+	"o2/util"
 	"testing"
 )
 
 func CreateTestEmulator(t *testing.T, romTitle string) (system *emulator.System, rom *snes.ROM, err error) {
 	// create the CPU-only SNES emulator:
 	system = &emulator.System{
-		Logger: &testinglogger.TestingLogger{TB: t},
+		Logger: &util.CommitLogger{Committer: func(p []byte) {
+			p = append(p, '\n')
+			log.Writer().Write(p)
+		}},
 	}
 	if err = system.CreateEmulator(); err != nil {
 		return

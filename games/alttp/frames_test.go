@@ -3,7 +3,6 @@ package alttp
 import (
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/emulator"
-	"github.com/alttpo/snes/testinglogger"
 	"log"
 	"o2/interfaces"
 	"o2/snes"
@@ -180,13 +179,13 @@ func Test_Frames(t *testing.T) {
 func (tt *testCase) runFrameTest(t *testing.T) {
 	system, g := tt.system, tt.g
 
-	system.Logger.(*testinglogger.TestingLogger).TB = t
+	//system.Logger.(*testinglogger.TestingLogger).TB = t
 
 	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
 		notification := object.(string)
 		notifications = append(notifications, notification)
-		t.Logf("notification[%d]: '%s'", len(notifications)-1, notification)
+		log.Printf("notification[%d]: '%s'\n", len(notifications)-1, notification)
 	})
 
 	// subscribe to front-end Notifications from the game:
@@ -219,7 +218,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 	// iterate through frames of test:
 	for f := range tt.frames {
-		t.Logf("frame %d", f)
+		log.Printf("frame %d\n", f)
 
 		frame := &tt.frames[f]
 

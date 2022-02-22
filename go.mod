@@ -3,7 +3,7 @@ module o2
 go 1.16
 
 require (
-	github.com/alttpo/snes v0.0.0-20220222034937-2e623c96edd1
+	github.com/alttpo/snes v0.0.0-20220222045630-f74cd517d028
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/getlantern/systray v1.3.0
 	github.com/gobwas/httphead v0.1.0 // indirect
