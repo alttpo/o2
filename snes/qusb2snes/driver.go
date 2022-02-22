@@ -142,7 +142,8 @@ func (d *Driver) Empty() snes.DeviceDescriptor {
 }
 
 func init() {
-	if util.IsTruthy(env.GetOrDefault("O2_QUSB2SNES_DISABLE", "0")) {
+	// disable usb2snes protocol when SNI protocol in use:
+	if util.IsTruthy(env.GetOrDefault("O2_QUSB2SNES_DISABLE", "1")) {
 		log.Printf("disabling qusb2snes snes driver\n")
 		return
 	}
