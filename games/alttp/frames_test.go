@@ -3,6 +3,7 @@ package alttp
 import (
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/emulator"
+	"github.com/alttpo/snes/testinglogger"
 	"log"
 	"o2/interfaces"
 	"o2/snes"
@@ -179,7 +180,7 @@ func Test_Frames(t *testing.T) {
 func (tt *testCase) runFrameTest(t *testing.T) {
 	system, g := tt.system, tt.g
 
-	system.Logger.TB = t
+	system.Logger.(*testinglogger.TestingLogger).TB = t
 
 	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
