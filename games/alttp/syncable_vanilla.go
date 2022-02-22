@@ -29,7 +29,7 @@ func (g *Game) NewSyncableVanillaBow(offset uint16, enabled *bool) *SyncableVani
 func (s *SyncableVanillaBow) Size() uint      { return 1 }
 func (s *SyncableVanillaBow) IsEnabled() bool { return *s.IsEnabledPtr }
 
-func (s *SyncableVanillaBow) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *SyncableVanillaBow) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 
 	local := g.LocalSyncablePlayer()
@@ -60,8 +60,10 @@ func (s *SyncableVanillaBow) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if maxV == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	received := vanillaItemNames[0x340][maxV]
@@ -78,7 +80,7 @@ func (s *SyncableVanillaBow) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	a.LDA_imm8_b(0x01)
 	a.STA_long(a.GetBase() + 0x02 + index)
 
-	return true
+	return
 }
 
 func (s *SyncableVanillaBow) ConfirmAsmExecuted(index uint32, value uint8) {

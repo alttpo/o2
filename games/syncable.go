@@ -28,7 +28,7 @@ type SyncStrategy interface {
 	IsEnabled() bool
 
 	// GenerateUpdate returns true if asm instructions were emitted to the given asm.Emitter and returns false otherwise
-	GenerateUpdate(a *asm.Emitter, index uint32) bool
+	GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter)
 
 	// ConfirmAsmExecuted is called when generated ASM code is confirmed to have executed:
 	ConfirmAsmExecuted(index uint32, value uint8)
@@ -79,7 +79,7 @@ type (
 	SyncableMaxU8OnUpdated   func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 	SyncableMaxU8GenerateAsm func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
-	SyncableCustomU8Update func(s *SyncableCustomU8, asm *asm.Emitter, index uint32) bool
+	SyncableCustomU8Update func(s *SyncableCustomU8, asm func() *asm.Emitter, index uint32) (bool, *asm.Emitter)
 	IsUpdateStillPending   func(s *SyncableCustomU8) bool
 )
 
@@ -132,12 +132,12 @@ func (s *SyncableBitU8) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *SyncableBitU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false
+		return false, nil
 	}
 
 	offs := s.Offset
@@ -170,8 +170,10 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if updated == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	s.Notification = ""
@@ -230,7 +232,7 @@ func (s *SyncableBitU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return
 }
 
 func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
@@ -316,13 +318,13 @@ func (s *SyncableBitU16) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *SyncableBitU16) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
 	// filter out local player:
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false
+		return false, nil
 	}
 
 	offs := s.Offset
@@ -360,8 +362,10 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if updated == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	a = newEmitter()
 
 	// notify local player of new item received:
 	s.Notification = ""
@@ -424,7 +428,7 @@ func (s *SyncableBitU16) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return true, a
 }
 
 func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
@@ -509,11 +513,11 @@ func (s *SyncableMaxU8) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *SyncableMaxU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false
+		return false, nil
 	}
 
 	offset := s.Offset
@@ -540,8 +544,10 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if maxV == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	s.Notification = ""
@@ -591,7 +597,7 @@ func (s *SyncableMaxU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return
 }
 
 func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement) {
@@ -657,8 +663,8 @@ func NewSyncableCustomU8(g SyncableGame, offset uint32, enabled *bool, generateU
 
 func (s *SyncableCustomU8) Size() uint      { return 1 }
 func (s *SyncableCustomU8) IsEnabled() bool { return *s.IsEnabledPtr }
-func (s *SyncableCustomU8) GenerateUpdate(a *asm.Emitter, index uint32) bool {
-	return s.CustomGenerateUpdate(s, a, index)
+func (s *SyncableCustomU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (bool, *asm.Emitter) {
+	return s.CustomGenerateUpdate(s, newEmitter, index)
 }
 
 func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {

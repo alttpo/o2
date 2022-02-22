@@ -144,7 +144,7 @@ func (g *Game) initSync() {
 	g.NewSyncableVanillaItemBitsU8(0x369, &g.SyncDungeonItems, nil)
 
 	// heart containers:
-	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
+	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 		g := s.SyncableGame
 		local := g.LocalSyncablePlayer()
 
@@ -163,8 +163,10 @@ func (g *Game) initSync() {
 
 		if updated == initial {
 			// no change:
-			return false
+			return
 		}
+
+		isUpdated, a = true, newEmitter()
 
 		// notify local player of new item received:
 		oldHearts := initial & ^uint8(7)
@@ -205,7 +207,7 @@ func (g *Game) initSync() {
 		a.LDA_imm8_b(0x01)
 		a.STA_long(a.GetBase() + 0x02 + index)
 
-		return true
+		return
 	})
 
 	// bombs capacity:
@@ -349,7 +351,7 @@ func (g *Game) initSync() {
 		})
 
 	// progress flags 1/2:
-	g.NewSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
+	g.NewSyncableCustomU8(0x3C6, &g.SyncProgress, func(s *games.SyncableCustomU8, newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 		offset := s.Offset
 		local := s.SyncableGame.LocalSyncablePlayer()
 		localSRAM := local.ReadableMemory(games.SRAM)
@@ -357,6 +359,8 @@ func (g *Game) initSync() {
 
 		// check to make sure zelda telepathic follower removed if have uncle's gear:
 		if initial&0x01 == 0x01 && localSRAM.ReadU8(0x3CC) == 0x05 {
+			isUpdated, a = true, newEmitter()
+
 			a.Comment("already have uncle's gear; remove telepathic zelda follower:")
 			a.LDA_long(0x7EF3CC)
 			a.CMP_imm8_b(0x05)
@@ -368,7 +372,7 @@ func (g *Game) initSync() {
 			a.LDA_imm8_b(0x01)
 			a.STA_long(a.GetBase() + 0x02 + index)
 
-			return true
+			return
 		}
 
 		newBits := initial
@@ -383,8 +387,10 @@ func (g *Game) initSync() {
 
 		if newBits == initial {
 			// no change:
-			return false
+			return
 		}
+
+		isUpdated, a = true, newEmitter()
 
 		// notify local player of new item received:
 		orBits := newBits & ^initial
@@ -410,7 +416,7 @@ func (g *Game) initSync() {
 			a.STA_long(0x7EF3CC) // 4 bytes
 		}
 
-		return true
+		return
 	})
 
 	// map markers:
@@ -419,7 +425,7 @@ func (g *Game) initSync() {
 	// skip 0x3C8 start at location
 
 	// progress flags 2/2:
-	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *games.SyncableCustomU8, a *asm.Emitter, index uint32) bool {
+	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *games.SyncableCustomU8, newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 		offset := s.Offset
 		initial := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU8(offset)
 
@@ -431,8 +437,10 @@ func (g *Game) initSync() {
 
 		if newBits == initial {
 			// no change:
-			return false
+			return
 		}
+
+		isUpdated, a = true, newEmitter()
 
 		// notify local player of new item received:
 		orBits := newBits & ^initial
@@ -470,7 +478,7 @@ func (g *Game) initSync() {
 			a.STA_long(0x7EF3CC) // 4 bytes
 		}
 
-		return true
+		return
 	})
 
 	if g.isVTRandomizer() {

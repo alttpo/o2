@@ -157,7 +157,7 @@ func (s *syncableBottle) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *syncableBottle) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.g
 	local := g.LocalSyncablePlayer()
 	offset := s.offset
@@ -166,7 +166,7 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 	initial := localSRAM.ReadU8(offset)
 	if initial >= 2 {
 		// don't change existing bottle contents:
-		return false
+		return false, nil
 	}
 
 	// max() is an odd choice here but something has to reconcile any differences among
@@ -186,8 +186,10 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if maxV == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	s.notification = ""
@@ -233,7 +235,7 @@ func (s *syncableBottle) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return
 }
 
 func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
@@ -316,13 +318,13 @@ func (s *syncableUnderworld) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *syncableUnderworld) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
 	// filter out local player:
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false
+		return false, nil
 	}
 
 	offs := s.Offset
@@ -360,8 +362,10 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if updated == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	s.Notification = ""
@@ -442,7 +446,7 @@ func (s *syncableUnderworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return
 }
 
 func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
@@ -561,12 +565,12 @@ func (s *syncableOverworld) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 }
 
-func (s *syncableOverworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
+func (s *syncableOverworld) GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 	g := s.SyncableGame
 	local := g.LocalSyncablePlayer()
 
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false
+		return false, nil
 	}
 
 	offs := s.Offset
@@ -599,8 +603,10 @@ func (s *syncableOverworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	if updated == initial {
 		// no change:
-		return false
+		return false, nil
 	}
+
+	isUpdated, a = true, newEmitter()
 
 	// notify local player of new item received:
 	s.Notification = ""
@@ -655,7 +661,7 @@ func (s *syncableOverworld) GenerateUpdate(a *asm.Emitter, index uint32) bool {
 
 	a.Label(nextLabel)
 
-	return true
+	return
 }
 
 func (s *syncableOverworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {

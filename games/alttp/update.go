@@ -242,10 +242,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// clone the assembler to a temporary:
-		ta := a.Clone(tmp)
+		newEmitter := func() *asm.Emitter { return a.Clone(tmp) }
 		// generate the update asm routine in the temporary assembler:
-		u := item.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
-		if u {
+		if u, ta := item.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 			// don't emit the routine if it pushes us over the code size limit:
 			if ta.Len()+a.Len()+10 <= 255 {
 				g.updateGenerators = append(g.updateGenerators, item)
@@ -278,10 +277,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 
 			// clone the assembler to a temporary:
-			ta := a.Clone(tmp)
+			newEmitter := func() *asm.Emitter { return a.Clone(tmp) }
 			// generate the update asm routine in the temporary assembler:
-			u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
-			if u {
+			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+10 <= 255 {
 					g.updateGenerators = append(g.updateGenerators, s)
@@ -382,10 +380,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				}
 
 				// clone the assembler to a temporary:
-				ta := a16.Clone(tmp2)
+				newEmitter := func() *asm.Emitter { return a16.Clone(tmp2) }
 				// generate the update asm routine in the temporary assembler:
-				u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
-				if u {
+				if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 					// don't emit the routine if it pushes us over the code size limit:
 					if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
 						g.updateGenerators = append(g.updateGenerators, s)
@@ -409,10 +406,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 
 			// clone the assembler to a temporary:
-			ta := a16.Clone(tmp2)
+			newEmitter := func() *asm.Emitter { return a16.Clone(tmp2) }
 			// generate the update asm routine in the temporary assembler:
-			u := s.GenerateUpdate(ta, uint32(len(g.updateGenerators)))
-			if u {
+			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a16.Len()+a.Len()+10 <= 255 {
 					g.updateGenerators = append(g.updateGenerators, s)
