@@ -21,7 +21,7 @@ type Driver struct {
 }
 
 func (d *Driver) DisplayOrder() int {
-	return 0
+	return 2
 }
 
 func (d *Driver) DisplayName() string {
