@@ -43,6 +43,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 		d.cc, err = grpc.Dial("localhost:8191", grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			d.lock.Unlock()
+			err = nil
 			return
 		}
 	}
@@ -53,6 +54,7 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	var rsp *DevicesResponse
 	rsp, err = client.ListDevices(context.Background(), &DevicesRequest{})
 	if err != nil {
+		err = nil
 		return
 	}
 

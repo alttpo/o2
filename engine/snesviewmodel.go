@@ -129,7 +129,7 @@ func (v *SNESViewModel) Init() {
 	for i, dv := range dvs {
 		devices, err := dv.Driver.Detect()
 		if err != nil {
-			log.Println(err)
+			log.Printf("snesviewmodel: detect[%s]: %v\n", dv.Name, err)
 			devices = make([]snes.DeviceDescriptor, 0)
 		}
 
@@ -162,12 +162,17 @@ func (v *SNESViewModel) Init() {
 	// background goroutine to auto-detect new devices every 2 seconds:
 	go func() {
 		for range time.NewTicker(time.Second * 2).C {
+			// don't need to auto-detect while already connected:
+			if v.IsConnected {
+				continue
+			}
+
 			needUpdate := false
 
 			for _, dvm := range v.Drivers {
 				devices, err := dvm.namedDriver.Driver.Detect()
 				if err != nil {
-					log.Printf("snesviewmodel: detect: %v\n", err)
+					log.Printf("snesviewmodel: detect[%s]: %v\n", dvm.namedDriver.Name, err)
 					devices = make([]snes.DeviceDescriptor, 0)
 				}
 
