@@ -1,4 +1,5 @@
-// +build !linux
+//go:build !notray
+// +build !notray
 
 package main
 

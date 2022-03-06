@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/alttpo/snes v0.0.0-20220222045630-f74cd517d028
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/getlantern/systray v1.3.0
+	github.com/getlantern/systray v1.3.2
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.0.4
@@ -16,6 +16,6 @@ require (
 	google.golang.org/protobuf v1.26.0
 )
 
-replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.0
+replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.2
 
 //replace github.com/alttpo/snes => ../snes
