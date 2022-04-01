@@ -34,4 +34,4 @@ require (
 
 replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.2
 
-//replace github.com/alttpo/snes => ../snes
+replace github.com/alttpo/snes => ../snes
