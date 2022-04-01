@@ -14,6 +14,12 @@ import (
 func TestGenerateMap(t *testing.T) {
 	var err error
 
+	var f *os.File
+	f, err = os.Open("alttp-jp.smc")
+	if err != nil {
+		t.Skip(err)
+	}
+
 	var s *System
 	var rom *snes.ROM
 
@@ -26,11 +32,6 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var f *os.File
-	f, err = os.Open("alttp-jp.smc")
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, err = f.Read(s.ROM[:])
 	if err != nil {
 		t.Fatal(err)
