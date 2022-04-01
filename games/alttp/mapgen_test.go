@@ -2,9 +2,11 @@ package alttp
 
 import (
 	"fmt"
+	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/emulator/bus"
 	"github.com/alttpo/snes/emulator/cpu65c816"
 	"github.com/alttpo/snes/emulator/memory"
+	"github.com/alttpo/snes/mapping/lorom"
 	"io"
 	"io/ioutil"
 	"o2/snes"
@@ -12,6 +14,13 @@ import (
 	"testing"
 	"unsafe"
 )
+
+func newEmitterAt(s *System, addr uint32, generateText bool) *asm.Emitter {
+	lin, _ := lorom.BusAddressToPak(addr)
+	a := asm.NewEmitter(s.ROM[lin:], generateText)
+	a.SetBase(addr)
+	return a
+}
 
 func TestGenerateMap(t *testing.T) {
 	var err error
@@ -47,9 +56,36 @@ func TestGenerateMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	_ = rom
 
+	// patch in end of bank $02 a tiny routine to load a specific underworld room not by
+	// dungeon entrance (which overwrites $A0) but rather a direct supertile (from $A0)
+	a := newEmitterAt(s, 0x02_FFC7, true)
+	a.SEP(0x30)
+	a.LDA_imm8_b(0x00)
+	a.PHA()
+	a.PLB()
+	a.JSR_abs(0xD854)
+	a.JMP_abs_imm16_w(0x8157)
+	a.WriteTextTo(s.Logger)
+
+	// skip over music & sfx loading since we did not implement APU registers:
+	a = newEmitterAt(s, 0x02_8293, true)
+	//#_028293: JSR Underworld_LoadSongBankIfNeeded
+	a.JMP_abs_imm16_w(0x82BC)
+	//.exit
+	//#_0282BC: SEP #$20
+	//
+	//#_0282BE: RTL
+	a.WriteTextTo(s.Logger)
+
+	// patch $00:8056 to JSL to our new routine:
+	a = newEmitterAt(s, 0x00_8056, true)
+	//#_008056: JSL Module_MainRouting
+	a.JSL(0x02_FFC7)
+	a.WriteTextTo(s.Logger)
+
+	// initialize game:
 	s.CPU.Reset()
 	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
@@ -68,20 +104,21 @@ func TestGenerateMap(t *testing.T) {
 	s.WRAM[0xF3C6] = 0x10 // no bed cutscene
 
 	// prepare to call the underworld room load module:
-	s.WRAM[0x0010] = 0x06 // Module06_UnderworldLoad
+	s.WRAM[0x0010] = 0x07 //
+	s.WRAM[0x0011] = 0x00 //
+	s.WRAM[0x00B0] = 0x00 //
+
 	s.WRAM[0x040C] = 0x00 // dungeon ID ($FF = cave)
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
-	s.WRAM[0x00A0] = 0x00 // supertile (lo)
+
+	s.WRAM[0x00A0] = 0x9D // supertile (lo)
 	s.WRAM[0x00A1] = 0x00 // supertile (hi)
 
 	s.SetPC(0x00_8056)
-	//#_008056: JSL Module_MainRouting
 	if stopPC, expectedPC, cycles := s.RunUntil(0x00_805A, 0x1000_0000); stopPC != expectedPC {
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 		t.Fatal(err)
 	}
-	//#_028174: JSR Underworld_LoadAndDrawRoom
-	//#_028177: JSL Underworld_LoadCustomTileAttributes
 
 	// output is:
 	//  s.VRAM: tilemaps and tile 4bpp graphics
