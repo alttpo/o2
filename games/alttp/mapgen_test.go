@@ -80,10 +80,35 @@ func TestGenerateMap(t *testing.T) {
 	//#_0282BE: RTL
 	a.WriteTextTo(s.Logger)
 
+	a = newEmitterAt(s, 0x02_C300, true)
+	// NOP out the VRAM upload for tilemaps:
+	//.next_quadrant
+	//#_02C300: JSL TileMapPrep_NotWaterOnTag
+	a.BRA_imm8(0x15)
+	//#_02C304: JSL NMI_UploadTilemap_long
+
+	//#_02C308: JSL Underworld_PrepareNextRoomQuadrantUpload
+	//#_02C30C: JSL NMI_UploadTilemap_long
+
+	//#_02C310: LDA.w $045C
+	//#_02C313: CMP.b #$10
+	//#_02C315: BNE .next_quadrant
+	a.WriteTextTo(s.Logger)
+
 	// patch $00:8056 to JSL to our new routine:
 	a = newEmitterAt(s, 0x00_8056, true)
 	//#_008056: JSL Module_MainRouting
 	a.JSL(0x02_FFC7)
+	a.WriteTextTo(s.Logger)
+
+	// patch out LoadCommonSprites:
+	a = newEmitterAt(s, 0x00_E6F7, true)
+	a.RTS()
+	a.WriteTextTo(s.Logger)
+
+	// patch out LoadSpriteGraphics:
+	a = newEmitterAt(s, 0x00_E5C3, true)
+	a.RTS()
 	a.WriteTextTo(s.Logger)
 
 	// initialize game:
