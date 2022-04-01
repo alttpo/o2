@@ -128,8 +128,14 @@ func TestGenerateMap(t *testing.T) {
 		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $C300[0x0200] = CGRAM palette
 
-		ioutil.WriteFile(fmt.Sprintf("st%03x.vram", supertile), (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:], 0644)
-		ioutil.WriteFile(fmt.Sprintf("st%03x.wram", supertile), s.WRAM[:], 0644)
+		vram := make([]byte, 65536)
+		wram := make([]byte, 131072)
+		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
+		copy(wram, s.WRAM[:])
+		go func(st uint16, vram []byte, wram []byte) {
+			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
+		}(supertile, vram, wram)
 	}
 }
 
