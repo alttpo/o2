@@ -92,6 +92,8 @@ type System struct {
 	WRAM [0x20000]byte
 	SRAM [0x10000]byte
 
+	VRAM [0x10000]byte
+
 	Logger    io.Writer
 	LoggerCPU io.Writer
 }
@@ -250,44 +252,187 @@ func (s *System) RunUntil(targetPC uint32, maxCycles uint64) (stopPC uint32, exp
 	return
 }
 
+type DMARegs [7]byte
+
+func (c *DMARegs) ctrl() byte { return c[0] }
+func (c *DMARegs) dest() byte { return c[1] }
+func (c *DMARegs) srcL() byte { return c[2] }
+func (c *DMARegs) srcH() byte { return c[3] }
+func (c *DMARegs) srcB() byte { return c[4] }
+func (c *DMARegs) sizL() byte { return c[5] }
+func (c *DMARegs) sizH() byte { return c[6] }
+
+type DMAChannel struct {
+}
+
+func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
+	aSrc := uint32(regs.srcB())<<16 | uint32(regs.srcH())<<8 | uint32(regs.srcL())
+	siz := uint32(regs.sizH())<<8 | uint32(regs.sizL())
+	if siz == 0 {
+		siz = 0x10000
+	}
+
+	bDest := regs.dest()
+
+	incr := regs.ctrl()&0x10 == 0
+	fixed := regs.ctrl()&0x08 != 0
+	mode := regs.ctrl() & 7
+
+	if h.s.Logger != nil {
+		fmt.Fprintf(h.s.Logger, "DMA[%d] start\n", ch)
+	}
+
+	if regs.ctrl()&0x80 == 0 {
+		// CPU -> PPU
+	copyloop:
+		for siz > 0 {
+			switch mode {
+			case 0:
+				h.Write(uint32(bDest)|0x2100, h.s.Bus.EaRead(aSrc))
+				if !fixed {
+					if incr {
+						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
+					} else {
+						aSrc = ((aSrc&0xFFFF)-1)&0xFFFF + aSrc&0xFF0000
+					}
+				}
+				siz--
+				if siz == 0 {
+					break copyloop
+				}
+				break
+			case 1:
+				// p
+				h.Write(uint32(bDest)|0x2100, h.s.Bus.EaRead(aSrc))
+				if !fixed {
+					if incr {
+						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
+					} else {
+						aSrc = ((aSrc&0xFFFF)-1)&0xFFFF + aSrc&0xFF0000
+					}
+				}
+				siz--
+				if siz == 0 {
+					break copyloop
+				}
+				// p+1
+				h.Write(uint32(bDest+1)|0x2100, h.s.Bus.EaRead(aSrc))
+				if !fixed {
+					if incr {
+						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
+					} else {
+						aSrc = ((aSrc&0xFFFF)-1)&0xFFFF + aSrc&0xFF0000
+					}
+				}
+				siz--
+				if siz == 0 {
+					break copyloop
+				}
+				break
+			case 2:
+				panic("mode 2!!!")
+			case 3:
+				panic("mode 3!!!")
+			case 4:
+				panic("mode 4!!!")
+			case 5:
+				panic("mode 5!!!")
+			case 6:
+				panic("mode 6!!!")
+			case 7:
+				panic("mode 7!!!")
+			}
+		}
+	} else {
+		// PPU -> CPU
+	}
+
+	if h.s.Logger != nil {
+		fmt.Fprintf(h.s.Logger, "DMA[%d] stop\n", ch)
+	}
+}
+
 type HWIO struct {
 	s   *System
 	mem [0x10000]uint8
+
+	dmaregs [8]DMARegs
+	dma     [8]DMAChannel
 }
 
-func (v *HWIO) Read(address uint32) byte {
+func (h *HWIO) Read(address uint32) byte {
 	offs := address & 0xFFFF
-	value := v.mem[offs]
-	if v.s.Logger != nil {
-		fmt.Fprintf(v.s.Logger, "hwio[$%04x] -> $%02x\n", offs, value)
+	value := h.mem[offs]
+	if h.s.Logger != nil {
+		fmt.Fprintf(h.s.Logger, "hwio[$%04x] -> $%02x\n", offs, value)
 	}
 	return value
 }
 
-func (v *HWIO) Write(address uint32, value byte) {
+func (h *HWIO) Write(address uint32, value byte) {
 	offs := address & 0xFFFF
-	switch offs {
-	case 0x4200:
-	case 0x4200:
-		break
-	default:
-		if v.s.Logger != nil {
-			fmt.Fprintf(v.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
+
+	if offs&0xFF00 == 0x4300 {
+		// DMA registers:
+		ch := offs & 0x00F0 >> 8
+		if ch <= 7 {
+			reg := offs & 0x000F
+			if reg <= 6 {
+				h.dmaregs[ch][reg] = value
+			}
 		}
-		v.mem[offs] = value
+
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA register\n", offs, value)
+		}
+		return
+	} else if offs == 0x420b {
+		// MDMAEN:
+		hdmaen := value
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA start\n", offs, hdmaen)
+		}
+		// execute DMA transfers from channels 0..7 in order:
+		for c := range h.dma {
+			if hdmaen&(1<<c) == 0 {
+				continue
+			}
+
+			// channel enabled:
+			h.dma[c].Transfer(&h.dmaregs[c], c, h)
+		}
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA end\n", offs, hdmaen)
+		}
+		return
+	} else if offs == 0x420c {
+		// HDMAEN:
+		// no HDMA support
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x HDMA ignored\n", offs, value)
+		}
+		return
+	}
+
+	switch offs {
+	default:
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
+		}
+		h.mem[offs] = value
 	}
 }
 
-func (v *HWIO) Shutdown() {
+func (h *HWIO) Shutdown() {
 }
 
-func (v *HWIO) Size() uint32 {
+func (h *HWIO) Size() uint32 {
 	return 0x10000
 }
 
-func (v *HWIO) Clear() {
+func (h *HWIO) Clear() {
 }
 
-func (v *HWIO) Dump(address uint32) []byte {
+func (h *HWIO) Dump(address uint32) []byte {
 	return nil
 }
