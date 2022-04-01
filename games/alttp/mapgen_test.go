@@ -6,9 +6,11 @@ import (
 	"github.com/alttpo/snes/emulator/cpu65c816"
 	"github.com/alttpo/snes/emulator/memory"
 	"io"
+	"io/ioutil"
 	"o2/snes"
 	"os"
 	"testing"
+	"unsafe"
 )
 
 func TestGenerateMap(t *testing.T) {
@@ -54,7 +56,6 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
-
 	s.SetPC(0x00_802C)
 	//#_00802C: JSR Startup_InitializeMemory
 	if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
@@ -81,6 +82,14 @@ func TestGenerateMap(t *testing.T) {
 	}
 	//#_028174: JSR Underworld_LoadAndDrawRoom
 	//#_028177: JSL Underworld_LoadCustomTileAttributes
+
+	// output is:
+	//  s.VRAM: tilemaps and tile 4bpp graphics
+	//  s.WRAM: $2000 = 1024x1024 tile map, [64][64]uint16
+	//  s.WRAM: $C300 = CGRAM palette
+
+	ioutil.WriteFile("test.vram", (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:], 0644)
+	ioutil.WriteFile("test.wram", s.WRAM[:], 0644)
 }
 
 type System struct {
@@ -92,7 +101,7 @@ type System struct {
 	WRAM [0x20000]byte
 	SRAM [0x10000]byte
 
-	VRAM [0x10000]byte
+	VRAM [0x8000]uint16
 
 	Logger    io.Writer
 	LoggerCPU io.Writer
@@ -262,8 +271,7 @@ func (c *DMARegs) srcB() byte { return c[4] }
 func (c *DMARegs) sizL() byte { return c[5] }
 func (c *DMARegs) sizH() byte { return c[6] }
 
-type DMAChannel struct {
-}
+type DMAChannel struct{}
 
 func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	aSrc := uint32(regs.srcB())<<16 | uint32(regs.srcH())<<8 | uint32(regs.srcL())
@@ -278,9 +286,9 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	fixed := regs.ctrl()&0x08 != 0
 	mode := regs.ctrl() & 7
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "DMA[%d] start\n", ch)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "DMA[%d] start\n", ch)
+	//}
 
 	if regs.ctrl()&0x80 == 0 {
 		// CPU -> PPU
@@ -345,11 +353,12 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 		}
 	} else {
 		// PPU -> CPU
+		panic("PPU -> CPU DMA transfer not supported!")
 	}
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "DMA[%d] stop\n", ch)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "DMA[%d] stop\n", ch)
+	//}
 }
 
 type HWIO struct {
@@ -358,6 +367,14 @@ type HWIO struct {
 
 	dmaregs [8]DMARegs
 	dma     [8]DMAChannel
+
+	ppu struct {
+		incrMode      bool   // false = increment after $2118, true = increment after $2119
+		incrAmt       uint32 // 1, 32, or 128
+		addrRemapping byte
+		addr          uint32
+		data          uint16
+	}
 }
 
 func (h *HWIO) Read(address uint32) byte {
@@ -372,6 +389,39 @@ func (h *HWIO) Read(address uint32) byte {
 func (h *HWIO) Write(address uint32, value byte) {
 	offs := address & 0xFFFF
 
+	if offs == 0x4200 {
+		// NMITIMEN
+		return
+	}
+
+	if offs == 0x420b {
+		// MDMAEN:
+		hdmaen := value
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA start\n", offs, hdmaen)
+		//}
+		// execute DMA transfers from channels 0..7 in order:
+		for c := range h.dma {
+			if hdmaen&(1<<c) == 0 {
+				continue
+			}
+
+			// channel enabled:
+			h.dma[c].Transfer(&h.dmaregs[c], c, h)
+		}
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA end\n", offs, hdmaen)
+		//}
+		return
+	}
+	if offs == 0x420c {
+		// HDMAEN:
+		// no HDMA support
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x HDMA ignored\n", offs, value)
+		//}
+		return
+	}
 	if offs&0xFF00 == 0x4300 {
 		// DMA registers:
 		ch := offs & 0x00F0 >> 8
@@ -382,35 +432,74 @@ func (h *HWIO) Write(address uint32, value byte) {
 			}
 		}
 
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA register\n", offs, value)
-		}
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA register\n", offs, value)
+		//}
 		return
-	} else if offs == 0x420b {
-		// MDMAEN:
-		hdmaen := value
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA start\n", offs, hdmaen)
-		}
-		// execute DMA transfers from channels 0..7 in order:
-		for c := range h.dma {
-			if hdmaen&(1<<c) == 0 {
-				continue
-			}
+	}
 
-			// channel enabled:
-			h.dma[c].Transfer(&h.dmaregs[c], c, h)
+	if offs == 0x2100 {
+		// INIDISP
+		return
+	}
+	if offs == 0x212e || offs == 0x212f {
+		// TMW, TSW
+		return
+	}
+
+	// PPU:
+	if offs == 0x2115 {
+		// VMAIN = o---mmii
+		h.ppu.incrMode = value&0x80 != 0
+		switch value & 3 {
+		case 0:
+			h.ppu.incrAmt = 1
+			break
+		case 1:
+			h.ppu.incrAmt = 32
+			break
+		default:
+			h.ppu.incrAmt = 128
+			break
 		}
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA end\n", offs, hdmaen)
+		h.ppu.addrRemapping = (value & 0x0C) >> 2
+		if h.ppu.addrRemapping != 0 {
+			panic(fmt.Errorf("unsupported VRAM address remapping mode %d", h.ppu.addrRemapping))
 		}
 		return
-	} else if offs == 0x420c {
-		// HDMAEN:
-		// no HDMA support
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x HDMA ignored\n", offs, value)
+	}
+	if offs == 0x2116 {
+		// VMADDL
+		h.ppu.addr = uint32(value) | h.ppu.addr&0xFF00
+		return
+	}
+	if offs == 0x2117 {
+		// VMADDH
+		h.ppu.addr = uint32(value)<<8 | h.ppu.addr&0x00FF
+		return
+	}
+	if offs == 0x2118 {
+		// VMDATAL
+		h.ppu.data = uint16(value) | h.ppu.data&0xFF00
+		h.s.VRAM[h.ppu.addr] = h.ppu.data
+		if h.ppu.incrMode == false {
+			h.ppu.addr += h.ppu.incrAmt
 		}
+		return
+	}
+	if offs == 0x2119 {
+		// VMDATAH
+		h.ppu.data = uint16(value)<<8 | h.ppu.data&0x00FF
+		h.s.VRAM[h.ppu.addr] = h.ppu.data
+		if h.ppu.incrMode == true {
+			h.ppu.addr += h.ppu.incrAmt
+		}
+		return
+	}
+
+	// APU:
+	if offs >= 0x2140 && offs <= 0x2143 {
+		// APUIO0 .. APUIO3
 		return
 	}
 
