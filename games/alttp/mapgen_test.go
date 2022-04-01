@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/emulator/bus"
@@ -104,29 +105,32 @@ func TestGenerateMap(t *testing.T) {
 	s.WRAM[0xF3C6] = 0x10 // no bed cutscene
 
 	// prepare to call the underworld room load module:
-	s.WRAM[0x0010] = 0x07 //
-	s.WRAM[0x0011] = 0x00 //
-	s.WRAM[0x00B0] = 0x00 //
+	s.WRAM[0x10] = 0x07
+	s.WRAM[0x11] = 0x00
+	s.WRAM[0xB0] = 0x00
 
 	s.WRAM[0x040C] = 0x00 // dungeon ID ($FF = cave)
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
 
-	s.WRAM[0x00A0] = 0x9D // supertile (lo)
-	s.WRAM[0x00A1] = 0x00 // supertile (hi)
+	// supertile:
+	for supertile := uint16(0); supertile < 0x100; supertile++ {
+		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 
-	s.SetPC(0x00_8056)
-	if stopPC, expectedPC, cycles := s.RunUntil(0x00_805A, 0x1000_0000); stopPC != expectedPC {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
-		t.Fatal(err)
+		s.SetPC(0x00_8056)
+		if stopPC, expectedPC, cycles := s.RunUntil(0x00_805A, 0x1000_0000); stopPC != expectedPC {
+			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+			t.Fatal(err)
+		}
+
+		// output is:
+		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
+		//  s.WRAM: $2000[0x2000] = BG1 1024x1024 tile map, [64][64]uint16
+		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
+		//  s.WRAM: $C300[0x0200] = CGRAM palette
+
+		ioutil.WriteFile(fmt.Sprintf("st%03x.vram", supertile), (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:], 0644)
+		ioutil.WriteFile(fmt.Sprintf("st%03x.wram", supertile), s.WRAM[:], 0644)
 	}
-
-	// output is:
-	//  s.VRAM: tilemaps and tile 4bpp graphics
-	//  s.WRAM: $2000 = 1024x1024 tile map, [64][64]uint16
-	//  s.WRAM: $C300 = CGRAM palette
-
-	ioutil.WriteFile("test.vram", (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:], 0644)
-	ioutil.WriteFile("test.wram", s.WRAM[:], 0644)
 }
 
 type System struct {
