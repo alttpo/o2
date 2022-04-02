@@ -537,6 +537,7 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	}
 
 	bDest := regs.dest()
+	bDestAddr := uint32(bDest) | 0x2100
 
 	incr := regs.ctrl()&0x10 == 0
 	fixed := regs.ctrl()&0x08 != 0
@@ -546,13 +547,16 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	//	fmt.Fprintf(h.s.Logger, "DMA[%d] start\n", ch)
 	//}
 
-	if regs.ctrl()&0x80 == 0 {
+	if regs.ctrl()&0x80 != 0 {
+		// PPU -> CPU
+		panic("PPU -> CPU DMA transfer not supported!")
+	} else {
 		// CPU -> PPU
 	copyloop:
 		for siz > 0 {
 			switch mode {
 			case 0:
-				h.Write(uint32(bDest)|0x2100, h.s.Bus.EaRead(aSrc))
+				h.Write(bDestAddr, h.s.Bus.EaRead(aSrc))
 				if !fixed {
 					if incr {
 						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
@@ -567,7 +571,7 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 				break
 			case 1:
 				// p
-				h.Write(uint32(bDest)|0x2100, h.s.Bus.EaRead(aSrc))
+				h.Write(bDestAddr, h.s.Bus.EaRead(aSrc))
 				if !fixed {
 					if incr {
 						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
@@ -580,7 +584,7 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 					break copyloop
 				}
 				// p+1
-				h.Write(uint32(bDest+1)|0x2100, h.s.Bus.EaRead(aSrc))
+				h.Write(bDestAddr+1, h.s.Bus.EaRead(aSrc))
 				if !fixed {
 					if incr {
 						aSrc = ((aSrc&0xFFFF)+1)&0xFFFF + aSrc&0xFF0000
@@ -607,9 +611,6 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 				panic("mode 7!!!")
 			}
 		}
-	} else {
-		// PPU -> CPU
-		panic("PPU -> CPU DMA transfer not supported!")
 	}
 
 	//if h.s.Logger != nil {
@@ -629,7 +630,6 @@ type HWIO struct {
 		incrAmt       uint32 // 1, 32, or 128
 		addrRemapping byte
 		addr          uint32
-		data          uint16
 	}
 }
 
@@ -736,8 +736,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2118 {
 		// VMDATAL
-		h.ppu.data = uint16(value) | h.ppu.data&0xFF00
-		h.s.VRAM[h.ppu.addr] = h.ppu.data
+		h.s.VRAM[h.ppu.addr] = (h.s.VRAM[h.ppu.addr] & 0xFF00) | uint16(value)
 		if h.ppu.incrMode == false {
 			h.ppu.addr += h.ppu.incrAmt
 		}
@@ -745,8 +744,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2119 {
 		// VMDATAH
-		h.ppu.data = uint16(value)<<8 | h.ppu.data&0x00FF
-		h.s.VRAM[h.ppu.addr] = h.ppu.data
+		h.s.VRAM[h.ppu.addr] = (h.s.VRAM[h.ppu.addr] & 0x00FF) | uint16(value)<<8
 		if h.ppu.incrMode == true {
 			h.ppu.addr += h.ppu.incrAmt
 		}
