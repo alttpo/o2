@@ -249,7 +249,7 @@ func TestGenerateMap(t *testing.T) {
 		// render image:
 		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
 		pal := cgramToPalette(cgram)
-		g := image.NewPaletted(image.Rect(0, 0, 1024, 1024), pal)
+		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 		renderBG(
 			g,
 			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
@@ -306,14 +306,16 @@ func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
 			z := bg[a]
 
 			// TODO: h and v
-			p := byte((z & 7) >> 10)
+			p := byte((z>>10)&7) << 4
 			c := int(z & 0x03FF)
 			for y := 0; y < 8; y++ {
-				p01 := tiles[(c<<4)+(y<<1)]
-				p23 := tiles[(c<<4)+(y<<1)+16]
+				p01 := tiles[(c<<4)+y]
+				p23 := tiles[(c<<4)+y+8]
 				for x := 0; x < 8; x++ {
-					i := byte(p01&(1<<x)) | byte(p01&(1<<(x+8))>>7) |
-						byte(p23&(1<<x)<<2) | byte(p23&(1<<(x+8))>>6)
+					i := byte((p01&(1<<x))>>x) |
+						byte((p01&(1<<(x+8)))>>(x+7)) |
+						byte(((p23&(1<<x))>>x)<<2) |
+						byte((p23&(1<<(x+8)))>>(x+5))
 
 					// transparency:
 					if i == 0 {
