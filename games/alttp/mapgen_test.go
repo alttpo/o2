@@ -63,9 +63,45 @@ func TestGenerateMap(t *testing.T) {
 	}
 	_ = rom
 
+	var a *asm.Emitter
+
+	// initialize game:
+	s.CPU.Reset()
+	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
+	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
+		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		t.Fatal(err)
+	}
+
+	// this is useless zeroing of memory:
+	//s.SetPC(0x00_802C)
+	////#_00802C: JSR Startup_InitializeMemory
+	//if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
+	//	err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+	//	t.Fatal(err)
+	//}
+
+	// patch $00:8027 to be our module routing routine with NMI DMA/VRAM update after:
+	a = newEmitterAt(s, 0x00_8027, true)
+	a.SEP(0x30)
+	a.JSL(0x00_80B5) // MainRouting
+	a.REP(0x10)
+	a.LDA_imm8_b(0x01)
+	a.STA_abs(0x0710) // disable sprite updates
+	a.JSR_abs(0x89E0) // NMI_DoUpdates
+	////
+	a.SEP(0x30)
+	a.JSL(0x02_FFC7) // load underworld room
+	a.REP(0x10)
+	a.LDA_imm8_b(0x01)
+	a.STA_abs(0x0710) // disable sprite updates
+	a.JSR_abs(0x89E0) // NMI_DoUpdates
+	//
+	a.WriteTextTo(s.Logger)
+
 	// patch in end of bank $02 a tiny routine to load a specific underworld room not by
 	// dungeon entrance (which overwrites $A0) but rather a direct supertile (from $A0)
-	a := newEmitterAt(s, 0x02_FFC7, true)
+	a = newEmitterAt(s, 0x02_FFC7, true)
 	a.SEP(0x30)
 	a.LDA_imm8_b(0x00)
 	a.PHA()
@@ -80,7 +116,6 @@ func TestGenerateMap(t *testing.T) {
 	a.JMP_abs_imm16_w(0x82BC)
 	//.exit
 	//#_0282BC: SEP #$20
-	//
 	//#_0282BE: RTL
 	a.WriteTextTo(s.Logger)
 
@@ -111,12 +146,6 @@ func TestGenerateMap(t *testing.T) {
 		a.WriteTextTo(s.Logger)
 	}
 
-	// patch $00:8056 to JSL to our new routine:
-	a = newEmitterAt(s, 0x00_8056, true)
-	//#_008056: JSL Module_MainRouting
-	a.JSL(0x02_FFC7)
-	a.WriteTextTo(s.Logger)
-
 	if false {
 		// patch out LoadCommonSprites:
 		a = newEmitterAt(s, 0x00_E6F7, true)
@@ -142,32 +171,24 @@ func TestGenerateMap(t *testing.T) {
 
 	//s.LoggerCPU = os.Stdout
 
-	// initialize game:
-	s.CPU.Reset()
-	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
-		t.Fatal(err)
-	}
-	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
-
-	//s.SetPC(0x00_802C)
-	////#_00802C: JSR Startup_InitializeMemory
-	//if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
-	//	err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
-	//	t.Fatal(err)
-	//}
-
 	// general world state:
 	s.WRAM[0xF3C5] = 0x02 // not raining
 	s.WRAM[0xF3C6] = 0x10 // no bed cutscene
 
 	// prepare to call the underworld room load module:
-	s.WRAM[0x10] = 0x07
+	s.WRAM[0x10] = 0x06
 	s.WRAM[0x11] = 0x00
 	s.WRAM[0xB0] = 0x00
 
 	s.WRAM[0x040C] = 0xFF // dungeon ID ($FF = cave)
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
+
+	// run module 06 to load underworld and NMI_DoUpdates after it:
+	s.SetPC(0x00_8027)
+	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8037, 0x1000_0000); stopPC != expectedPC {
+		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		t.Fatal(err)
+	}
 
 	//patchedTileset := false
 	patchedTileset := true
@@ -176,10 +197,12 @@ func TestGenerateMap(t *testing.T) {
 	wg := sync.WaitGroup{}
 	// supertile:
 	for supertile := uint16(0); supertile < 0x128; supertile++ {
+		fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 
-		s.SetPC(0x00_8056)
-		if stopPC, expectedPC, cycles := s.RunUntil(0x00_805A, 0x1000_0000); stopPC != expectedPC {
+		// JSL 02_FFC7 ; JSR NMI_DoUpdates
+		s.SetPC(0x00_8037)
+		if stopPC, expectedPC, cycles := s.RunUntil(0x00_8047, 0x1000_0000); stopPC != expectedPC {
 			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 			t.Fatal(err)
 		}
@@ -243,7 +266,7 @@ func TestGenerateMap(t *testing.T) {
 			}
 		}
 
-		// dump WRAM for each supertile:
+		// dump VRAM+WRAM for each supertile:
 		vram := make([]byte, 65536)
 		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
 		wram := make([]byte, 131072)
@@ -252,38 +275,38 @@ func TestGenerateMap(t *testing.T) {
 		go func(st uint16, wram []byte, vram []byte) {
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
+
+			// render BG1 image:
+			cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
+			pal := cgramToPalette(cgram)
+			g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+			renderBG(
+				g,
+				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
+				(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
+			)
+			//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+			//s.VRAM[0x2000:0x4000],
+
+			{
+				// export to PNG:
+				var po *os.File
+				po, err = os.OpenFile(fmt.Sprintf("data/r%03X.png", supertile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+				if err != nil {
+					panic(err)
+				}
+				err = png.Encode(po, g)
+				if err != nil {
+					panic(err)
+				}
+				err = po.Close()
+				if err != nil {
+					panic(err)
+				}
+			}
+
 			wg.Done()
 		}(supertile, wram, vram)
-
-		// render image:
-		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
-		pal := cgramToPalette(cgram)
-		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
-		renderBG(
-			g,
-			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-			s.VRAM[0x2000:0x4000],
-		)
-		//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-		//s.VRAM[0x2000:0x4000],
-
-		{
-			// export to PNG:
-			var po *os.File
-			po, err = os.OpenFile(fmt.Sprintf("data/r%03X.png", supertile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-			if err != nil {
-				panic(err)
-			}
-			err = png.Encode(po, g)
-			if err != nil {
-				panic(err)
-			}
-			err = po.Close()
-			if err != nil {
-				panic(err)
-			}
-		}
-		//break
 	}
 
 	wg.Wait()
@@ -543,9 +566,10 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	fixed := regs.ctrl()&0x08 != 0
 	mode := regs.ctrl() & 7
 
-	//if h.s.Logger != nil {
-	//	fmt.Fprintf(h.s.Logger, "DMA[%d] start\n", ch)
-	//}
+	if h.s.Logger != nil {
+		fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+		fmt.Fprintf(h.s.Logger, "DMA[%d] start: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
+	}
 
 	if regs.ctrl()&0x80 != 0 {
 		// PPU -> CPU
@@ -613,9 +637,9 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 		}
 	}
 
-	//if h.s.Logger != nil {
-	//	fmt.Fprintf(h.s.Logger, "DMA[%d] stop\n", ch)
-	//}
+	if h.s.Logger != nil {
+		fmt.Fprintf(h.s.Logger, "DMA[%d]  stop: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
+	}
 }
 
 type HWIO struct {
@@ -680,7 +704,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs&0xFF00 == 0x4300 {
 		// DMA registers:
-		ch := offs & 0x00F0 >> 8
+		ch := (offs & 0x00F0) >> 4
 		if ch <= 7 {
 			reg := offs & 0x000F
 			if reg <= 6 {
@@ -727,11 +751,17 @@ func (h *HWIO) Write(address uint32, value byte) {
 	if offs == 0x2116 {
 		// VMADDL
 		h.ppu.addr = uint32(value) | h.ppu.addr&0xFF00
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "VMADD = $%04x\n", h.ppu.addr)
+		}
 		return
 	}
 	if offs == 0x2117 {
 		// VMADDH
 		h.ppu.addr = uint32(value)<<8 | h.ppu.addr&0x00FF
+		if h.s.Logger != nil {
+			fmt.Fprintf(h.s.Logger, "VMADD = $%04x\n", h.ppu.addr)
+		}
 		return
 	}
 	if offs == 0x2118 {
