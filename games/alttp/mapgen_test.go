@@ -380,7 +380,7 @@ type System struct {
 	WRAM [0x20000]byte
 	SRAM [0x10000]byte
 
-	VRAM [0x8000]uint16
+	VRAM [0x10000]byte
 
 	Logger    io.Writer
 	LoggerCPU io.Writer
@@ -768,7 +768,8 @@ func (h *HWIO) Write(address uint32, value byte) {
 		// VMADDL
 		h.ppu.addr = uint32(value) | h.ppu.addr&0xFF00
 		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "VMADD = $%04x\n", h.ppu.addr)
+			fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+			fmt.Fprintf(h.s.Logger, "VMADDL = $%04x\n", h.ppu.addr)
 		}
 		return
 	}
@@ -776,13 +777,14 @@ func (h *HWIO) Write(address uint32, value byte) {
 		// VMADDH
 		h.ppu.addr = uint32(value)<<8 | h.ppu.addr&0x00FF
 		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "VMADD = $%04x\n", h.ppu.addr)
+			fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+			fmt.Fprintf(h.s.Logger, "VMADDH = $%04x\n", h.ppu.addr)
 		}
 		return
 	}
 	if offs == 0x2118 {
 		// VMDATAL
-		h.s.VRAM[h.ppu.addr] = (h.s.VRAM[h.ppu.addr] & 0xFF00) | uint16(value)
+		h.s.VRAM[h.ppu.addr<<1] = value
 		if h.ppu.incrMode == false {
 			h.ppu.addr += h.ppu.incrAmt
 		}
@@ -790,7 +792,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2119 {
 		// VMDATAH
-		h.s.VRAM[h.ppu.addr] = (h.s.VRAM[h.ppu.addr] & 0x00FF) | uint16(value)<<8
+		h.s.VRAM[h.ppu.addr<<1+1] = value
 		if h.ppu.incrMode == true {
 			h.ppu.addr += h.ppu.incrAmt
 		}
