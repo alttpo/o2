@@ -722,6 +722,22 @@ func (h *HWIO) Write(address uint32, value byte) {
 		// INIDISP
 		return
 	}
+	if offs == 0x2102 || offs == 0x2103 {
+		// OAMADD
+		return
+	}
+	if offs == 0x2104 {
+		// OAMDATA
+		return
+	}
+	if offs == 0x2121 {
+		// CGADD
+		return
+	}
+	if offs == 0x2122 {
+		// CGDATA
+		return
+	}
 	if offs == 0x212e || offs == 0x212f {
 		// TMW, TSW
 		return
