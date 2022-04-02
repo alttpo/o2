@@ -137,6 +137,8 @@ func TestGenerateMap(t *testing.T) {
 	s.WRAM[0x040C] = 0x00 // dungeon ID ($FF = cave)
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
 
+	patchedTileset := false
+
 	// supertile:
 	for supertile := uint16(0); supertile < 0x100; supertile++ {
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
@@ -152,6 +154,16 @@ func TestGenerateMap(t *testing.T) {
 		//  s.WRAM: $2000[0x2000] = BG1 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $C300[0x0200] = CGRAM palette
+
+		// after first run, prevent further tileset updates to VRAM:
+		if !patchedTileset {
+			a = newEmitterAt(s, 0x00_E1DB, true)
+			a.RTL()
+			//InitializeTilesets:
+			//	#_00E1DB: PHB
+
+			patchedTileset = true
+		}
 
 		vram := make([]byte, 65536)
 		wram := make([]byte, 131072)
