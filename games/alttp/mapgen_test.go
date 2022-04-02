@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"o2/snes"
 	"os"
+	"sync"
 	"testing"
 	"unsafe"
 )
@@ -146,6 +147,7 @@ func TestGenerateMap(t *testing.T) {
 
 	patchedTileset := false
 
+	wg := sync.WaitGroup{}
 	// supertile:
 	for supertile := uint16(0); supertile < 0x100; supertile++ {
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
@@ -206,11 +208,15 @@ func TestGenerateMap(t *testing.T) {
 		wram := make([]byte, 131072)
 		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
 		copy(wram, s.WRAM[:])
+		wg.Add(1)
 		go func(st uint16, vram []byte, wram []byte) {
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
+			wg.Done()
 		}(supertile, vram, wram)
 	}
+
+	wg.Wait()
 }
 
 type System struct {
