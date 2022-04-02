@@ -111,6 +111,13 @@ func TestGenerateMap(t *testing.T) {
 	a.RTS()
 	a.WriteTextTo(s.Logger)
 
+	// patch out RebuildHUD:
+	a = newEmitterAt(s, 0x0D_FA88, true)
+	//RebuildHUD_Keys:
+	//	#_0DFA88: STA.l $7EF36F
+	a.RTL()
+	a.WriteTextTo(s.Logger)
+
 	// initialize game:
 	s.CPU.Reset()
 	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
@@ -158,9 +165,39 @@ func TestGenerateMap(t *testing.T) {
 		// after first run, prevent further tileset updates to VRAM:
 		if !patchedTileset {
 			a = newEmitterAt(s, 0x00_E1DB, true)
-			a.RTL()
 			//InitializeTilesets:
 			//	#_00E1DB: PHB
+			a.RTL()
+			a.WriteTextTo(s.Logger)
+
+			// patch out decompress tiles:
+			a = newEmitterAt(s, 0x02_8183, true)
+			//#_028183: JSL DecompressAnimatedUnderworldTiles
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.WriteTextTo(s.Logger)
+
+			a = newEmitterAt(s, 0x02_8199, true)
+			//#_028199: JSR Underworld_LoadPalettes
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.WriteTextTo(s.Logger)
+
+			a = newEmitterAt(s, 0x02_8252, true)
+			//#_028252: JSL Sprite_ResetAll
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			//#_028256: JSL Underworld_ResetSprites
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.WriteTextTo(s.Logger)
 
 			patchedTileset = true
 		}
