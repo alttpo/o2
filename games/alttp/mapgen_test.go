@@ -67,7 +67,7 @@ func TestGenerateMap(t *testing.T) {
 	a.LDA_imm8_b(0x00)
 	a.PHA()
 	a.PLB()
-	a.JSR_abs(0xD854)
+	a.JSR_abs(0xD854) // inside Underworld_LoadEntrance_DoPotsBlocksTorches
 	a.JMP_abs_imm16_w(0x8157)
 	a.WriteTextTo(s.Logger)
 
@@ -96,6 +96,14 @@ func TestGenerateMap(t *testing.T) {
 	//#_02C315: BNE .next_quadrant
 	a.WriteTextTo(s.Logger)
 
+	// patch out the pot-clearing loop:
+	a = newEmitterAt(s, 0x02_D894, true)
+	//#_02D894: LDX.b #$3E
+	a.SEP(0x30)
+	a.PLB()
+	a.RTS()
+	a.WriteTextTo(s.Logger)
+
 	// patch $00:8056 to JSL to our new routine:
 	a = newEmitterAt(s, 0x00_8056, true)
 	//#_008056: JSL Module_MainRouting
@@ -119,6 +127,8 @@ func TestGenerateMap(t *testing.T) {
 	a.RTL()
 	a.WriteTextTo(s.Logger)
 
+	//s.LoggerCPU = os.Stdout
+
 	// initialize game:
 	s.CPU.Reset()
 	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
@@ -126,12 +136,12 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
-	s.SetPC(0x00_802C)
-	//#_00802C: JSR Startup_InitializeMemory
-	if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
-		t.Fatal(err)
-	}
+	//s.SetPC(0x00_802C)
+	////#_00802C: JSR Startup_InitializeMemory
+	//if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
+	//	err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+	//	t.Fatal(err)
+	//}
 
 	// general world state:
 	s.WRAM[0xF3C5] = 0x02 // not raining
@@ -146,6 +156,7 @@ func TestGenerateMap(t *testing.T) {
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
 
 	patchedTileset := false
+	dumpedAsm := false
 
 	wg := sync.WaitGroup{}
 	// supertile:
@@ -163,6 +174,10 @@ func TestGenerateMap(t *testing.T) {
 		//  s.WRAM: $2000[0x2000] = BG1 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $C300[0x0200] = CGRAM palette
+
+		if dumpedAsm {
+			s.LoggerCPU = nil
+		}
 
 		// after first run, prevent further tileset updates to VRAM:
 		if !patchedTileset {
@@ -188,7 +203,12 @@ func TestGenerateMap(t *testing.T) {
 			a.NOP()
 			a.WriteTextTo(s.Logger)
 
-			a = newEmitterAt(s, 0x02_8252, true)
+			a = newEmitterAt(s, 0x02_824E, true)
+			//#_02824E: JSL Follower_Initialize
+			a.NOP()
+			a.NOP()
+			a.NOP()
+			a.NOP()
 			//#_028252: JSL Sprite_ResetAll
 			a.NOP()
 			a.NOP()
@@ -202,18 +222,25 @@ func TestGenerateMap(t *testing.T) {
 			a.WriteTextTo(s.Logger)
 
 			patchedTileset = true
+			if !dumpedAsm {
+				//s.LoggerCPU = os.Stdout
+				dumpedAsm = true
+			}
+
+			// dump VRAM only once:
+			vram := make([]byte, 65536)
+			copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
+			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", supertile), vram, 0644)
 		}
 
-		vram := make([]byte, 65536)
+		// dump WRAM for each supertile:
 		wram := make([]byte, 131072)
-		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
 		copy(wram, s.WRAM[:])
 		wg.Add(1)
-		go func(st uint16, vram []byte, wram []byte) {
-			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
+		go func(st uint16, wram []byte) {
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
 			wg.Done()
-		}(supertile, vram, wram)
+		}(supertile, wram)
 	}
 
 	wg.Wait()
