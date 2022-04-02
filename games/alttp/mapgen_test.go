@@ -31,7 +31,7 @@ func TestGenerateMap(t *testing.T) {
 	var err error
 
 	var f *os.File
-	f, err = os.Open("alttp-jp.smc")
+	f, err = os.Open("alttp-jp.sfc")
 	if err != nil {
 		t.Skip(err)
 	}
@@ -57,7 +57,7 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rom, err = snes.NewROM("alttp-jp.smc", s.ROM[:])
+	rom, err = snes.NewROM("alttp-jp.sfc", s.ROM[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,34 +273,45 @@ func TestGenerateMap(t *testing.T) {
 		copy(wram, s.WRAM[:])
 		wg.Add(1)
 		go func(st uint16, wram []byte, vram []byte) {
-			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
 
-			// render BG1 image:
 			cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
 			pal := cgramToPalette(cgram)
-			g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
-			renderBG(
-				g,
-				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-				(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
-			)
-			//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-			//s.VRAM[0x2000:0x4000],
+
+			// render BG1 image:
+			{
+				g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+				renderBG(
+					g,
+					(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
+					(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
+				)
+				//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+				//s.VRAM[0x2000:0x4000],
+
+				if err = exportPNG(fmt.Sprintf("data/%03X.bg1.png", st), g); err != nil {
+					panic(err)
+				}
+			}
 
 			{
-				// export to PNG:
-				var po *os.File
-				po, err = os.OpenFile(fmt.Sprintf("data/r%03X.png", supertile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-				if err != nil {
-					panic(err)
+				tiles := 0x4000 / 32
+				g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+				for t := 0; t < tiles; t++ {
+					// palette 2
+					z := uint16(t) | (2 << 10)
+					draw4bppTile(
+						g,
+						z,
+						(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
+						t%16,
+						t/16,
+					)
 				}
-				err = png.Encode(po, g)
-				if err != nil {
-					panic(err)
-				}
-				err = po.Close()
-				if err != nil {
+
+				if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
 					panic(err)
 				}
 			}
@@ -312,11 +323,33 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 }
 
+func exportPNG(name string, g *image.Paletted) (err error) {
+	// export to PNG:
+	var po *os.File
+
+	po, err = os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer func() {
+		err = po.Close()
+		if err != nil {
+			return
+		}
+	}()
+
+	err = png.Encode(po, g)
+	if err != nil {
+		return
+	}
+	return
+}
+
 func cgramToPalette(cgram []uint16) color.Palette {
 	pal := make(color.Palette, 256)
 	for i, bgr15 := range cgram {
 		// convert BGR15 color format (MSB unused) to RGB24:
-		b := (bgr15 & 0xF800) >> 10
+		b := (bgr15 & 0x7C00) >> 10
 		g := (bgr15 & 0x03E0) >> 5
 		r := bgr15 & 0x001F
 		pal[i] = color.NRGBA{
@@ -339,34 +372,38 @@ func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
 			z := bg[a]
 			a++
 
-			p := byte((z>>10)&7) << 4
-			c := int(z & 0x03FF)
-			for y := 0; y < 8; y++ {
-				fy := y
-				if z&0x8000 != 0 {
-					fy = 7 - y
-				}
-				p01 := tiles[(c<<4)+y]
-				p23 := tiles[(c<<4)+y+8]
-				for x := 0; x < 8; x++ {
-					fx := x
-					if z&0x4000 == 0 {
-						fx = 7 - x
-					}
+			draw4bppTile(g, z, tiles, tx, ty)
+		}
+	}
+}
 
-					i := byte((p01&(1<<x))>>x) |
-						byte((p01&(1<<(x+8)))>>(x+7)) |
-						byte(((p23&(1<<x))>>x)<<2) |
-						byte((p23&(1<<(x+8)))>>(x+5))
-
-					// transparency:
-					if i == 0 {
-						continue
-					}
-
-					g.SetColorIndex(tx<<3+fx, ty<<3+fy, p+i)
-				}
+func draw4bppTile(g *image.Paletted, z uint16, tiles []uint16, tx int, ty int) {
+	p := byte((z>>10)&7) << 4
+	c := int(z & 0x03FF)
+	for y := 0; y < 8; y++ {
+		fy := y
+		if z&0x8000 != 0 {
+			fy = 7 - y
+		}
+		p01 := tiles[(c<<4)+y]
+		p23 := tiles[(c<<4)+y+8]
+		for x := 0; x < 8; x++ {
+			fx := x
+			if z&0x4000 == 0 {
+				fx = 7 - x
 			}
+
+			i := byte((p01>>x)&1) |
+				byte(((p01>>(x+8))&1)<<1) |
+				byte(((p23>>x)&1)<<2) |
+				byte(((p23>>(x+8))&1)<<3)
+
+			// transparency:
+			if i == 0 {
+				continue
+			}
+
+			g.SetColorIndex(tx<<3+fx, ty<<3+fy, p+i)
 		}
 	}
 }
