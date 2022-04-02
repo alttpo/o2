@@ -84,28 +84,32 @@ func TestGenerateMap(t *testing.T) {
 	//#_0282BE: RTL
 	a.WriteTextTo(s.Logger)
 
-	a = newEmitterAt(s, 0x02_C300, true)
-	// NOP out the VRAM upload for tilemaps:
-	//.next_quadrant
-	//#_02C300: JSL TileMapPrep_NotWaterOnTag
-	a.BRA_imm8(0x15)
-	//#_02C304: JSL NMI_UploadTilemap_long
+	if false {
+		a = newEmitterAt(s, 0x02_C300, true)
+		// NOP out the VRAM upload for tilemaps:
+		//.next_quadrant
+		//#_02C300: JSL TileMapPrep_NotWaterOnTag
+		a.BRA_imm8(0x15)
+		//#_02C304: JSL NMI_UploadTilemap_long
 
-	//#_02C308: JSL Underworld_PrepareNextRoomQuadrantUpload
-	//#_02C30C: JSL NMI_UploadTilemap_long
+		//#_02C308: JSL Underworld_PrepareNextRoomQuadrantUpload
+		//#_02C30C: JSL NMI_UploadTilemap_long
 
-	//#_02C310: LDA.w $045C
-	//#_02C313: CMP.b #$10
-	//#_02C315: BNE .next_quadrant
-	a.WriteTextTo(s.Logger)
+		//#_02C310: LDA.w $045C
+		//#_02C313: CMP.b #$10
+		//#_02C315: BNE .next_quadrant
+		a.WriteTextTo(s.Logger)
+	}
 
-	// patch out the pot-clearing loop:
-	a = newEmitterAt(s, 0x02_D894, true)
-	//#_02D894: LDX.b #$3E
-	a.SEP(0x30)
-	a.PLB()
-	a.RTS()
-	a.WriteTextTo(s.Logger)
+	if false {
+		// patch out the pot-clearing loop:
+		a = newEmitterAt(s, 0x02_D894, true)
+		//#_02D894: LDX.b #$3E
+		a.SEP(0x30)
+		a.PLB()
+		a.RTS()
+		a.WriteTextTo(s.Logger)
+	}
 
 	// patch $00:8056 to JSL to our new routine:
 	a = newEmitterAt(s, 0x00_8056, true)
@@ -113,22 +117,28 @@ func TestGenerateMap(t *testing.T) {
 	a.JSL(0x02_FFC7)
 	a.WriteTextTo(s.Logger)
 
-	// patch out LoadCommonSprites:
-	a = newEmitterAt(s, 0x00_E6F7, true)
-	a.RTS()
-	a.WriteTextTo(s.Logger)
+	if false {
+		// patch out LoadCommonSprites:
+		a = newEmitterAt(s, 0x00_E6F7, true)
+		a.RTS()
+		a.WriteTextTo(s.Logger)
+	}
 
-	// patch out LoadSpriteGraphics:
-	a = newEmitterAt(s, 0x00_E5C3, true)
-	a.RTS()
-	a.WriteTextTo(s.Logger)
+	if false {
+		// patch out LoadSpriteGraphics:
+		a = newEmitterAt(s, 0x00_E5C3, true)
+		a.RTS()
+		a.WriteTextTo(s.Logger)
+	}
 
-	// patch out RebuildHUD:
-	a = newEmitterAt(s, 0x0D_FA88, true)
-	//RebuildHUD_Keys:
-	//	#_0DFA88: STA.l $7EF36F
-	a.RTL()
-	a.WriteTextTo(s.Logger)
+	if true {
+		// patch out RebuildHUD:
+		a = newEmitterAt(s, 0x0D_FA88, true)
+		//RebuildHUD_Keys:
+		//	#_0DFA88: STA.l $7EF36F
+		a.RTL()
+		a.WriteTextTo(s.Logger)
+	}
 
 	//s.LoggerCPU = os.Stdout
 
@@ -139,6 +149,7 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
+
 	//s.SetPC(0x00_802C)
 	////#_00802C: JSR Startup_InitializeMemory
 	//if stopPC, expectedPC, cycles := s.RunUntil(0x00_802F, 0x10_000); stopPC != expectedPC {
@@ -155,13 +166,12 @@ func TestGenerateMap(t *testing.T) {
 	s.WRAM[0x11] = 0x00
 	s.WRAM[0xB0] = 0x00
 
-	s.WRAM[0x040C] = 0x00 // dungeon ID ($FF = cave)
+	s.WRAM[0x040C] = 0xFF // dungeon ID ($FF = cave)
 	s.WRAM[0x010E] = 0x00 // dungeon entrance ID
 
-	patchedTileset := false
+	//patchedTileset := false
+	patchedTileset := true
 	dumpedAsm := false
-
-	vram := make([]byte, 65536)
 
 	wg := sync.WaitGroup{}
 	// supertile:
@@ -231,20 +241,19 @@ func TestGenerateMap(t *testing.T) {
 				//s.LoggerCPU = os.Stdout
 				dumpedAsm = true
 			}
-
-			// dump VRAM only once:
-			copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
-			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", supertile), vram, 0644)
 		}
 
 		// dump WRAM for each supertile:
+		vram := make([]byte, 65536)
+		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
 		wram := make([]byte, 131072)
 		copy(wram, s.WRAM[:])
 		wg.Add(1)
-		go func(st uint16, wram []byte) {
+		go func(st uint16, wram []byte, vram []byte) {
+			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", st), vram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
 			wg.Done()
-		}(supertile, wram)
+		}(supertile, wram, vram)
 
 		// render image:
 		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
@@ -257,6 +266,7 @@ func TestGenerateMap(t *testing.T) {
 		)
 		//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
 		//s.VRAM[0x2000:0x4000],
+
 		{
 			// export to PNG:
 			var po *os.File
@@ -273,7 +283,7 @@ func TestGenerateMap(t *testing.T) {
 				panic(err)
 			}
 		}
-		break
+		//break
 	}
 
 	wg.Wait()
@@ -304,14 +314,23 @@ func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
 			//vhopppcc cccccccc               h: horizontal flip  v: vertical flip
 			//                                p: palette number   o: priority bit
 			z := bg[a]
+			a++
 
-			// TODO: h and v
 			p := byte((z>>10)&7) << 4
 			c := int(z & 0x03FF)
 			for y := 0; y < 8; y++ {
+				fy := y
+				if z&0x8000 != 0 {
+					fy = 7 - y
+				}
 				p01 := tiles[(c<<4)+y]
 				p23 := tiles[(c<<4)+y+8]
 				for x := 0; x < 8; x++ {
+					fx := x
+					if z&0x4000 == 0 {
+						fx = 7 - x
+					}
+
 					i := byte((p01&(1<<x))>>x) |
 						byte((p01&(1<<(x+8)))>>(x+7)) |
 						byte(((p23&(1<<x))>>x)<<2) |
@@ -322,11 +341,9 @@ func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
 						continue
 					}
 
-					g.SetColorIndex(tx<<3+x, ty<<3+y, p+i)
+					g.SetColorIndex(tx<<3+fx, ty<<3+fy, p+i)
 				}
 			}
-
-			a++
 		}
 	}
 }
