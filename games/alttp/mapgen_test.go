@@ -8,6 +8,9 @@ import (
 	"github.com/alttpo/snes/emulator/cpu65c816"
 	"github.com/alttpo/snes/emulator/memory"
 	"github.com/alttpo/snes/mapping/lorom"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"io/ioutil"
 	"o2/snes"
@@ -158,9 +161,11 @@ func TestGenerateMap(t *testing.T) {
 	patchedTileset := false
 	dumpedAsm := false
 
+	vram := make([]byte, 65536)
+
 	wg := sync.WaitGroup{}
 	// supertile:
-	for supertile := uint16(0); supertile < 0x100; supertile++ {
+	for supertile := uint16(0); supertile < 0x128; supertile++ {
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 
 		s.SetPC(0x00_8056)
@@ -228,7 +233,6 @@ func TestGenerateMap(t *testing.T) {
 			}
 
 			// dump VRAM only once:
-			vram := make([]byte, 65536)
 			copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.vram", supertile), vram, 0644)
 		}
@@ -241,9 +245,88 @@ func TestGenerateMap(t *testing.T) {
 			ioutil.WriteFile(fmt.Sprintf("data/r%03X.wram", st), wram, 0644)
 			wg.Done()
 		}(supertile, wram)
+
+		// render image:
+		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
+		pal := cgramToPalette(cgram)
+		g := image.NewPaletted(image.Rect(0, 0, 1024, 1024), pal)
+		renderBG(
+			g,
+			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
+			s.VRAM[0x2000:0x4000],
+		)
+		//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+		//s.VRAM[0x2000:0x4000],
+		{
+			// export to PNG:
+			var po *os.File
+			po, err = os.OpenFile(fmt.Sprintf("data/r%03X.png", supertile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			if err != nil {
+				panic(err)
+			}
+			err = png.Encode(po, g)
+			if err != nil {
+				panic(err)
+			}
+			err = po.Close()
+			if err != nil {
+				panic(err)
+			}
+		}
+		break
 	}
 
 	wg.Wait()
+}
+
+func cgramToPalette(cgram []uint16) color.Palette {
+	pal := make(color.Palette, 256)
+	for i, bgr15 := range cgram {
+		// convert BGR15 color format (MSB unused) to RGB24:
+		b := (bgr15 & 0xF800) >> 10
+		g := (bgr15 & 0x03E0) >> 5
+		r := bgr15 & 0x001F
+		pal[i] = color.NRGBA{
+			R: uint8(r<<3 | r>>2),
+			G: uint8(g<<3 | g>>2),
+			B: uint8(b<<3 | b>>2),
+			A: 0xff,
+		}
+	}
+	return pal
+}
+
+func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
+	a := uint32(0)
+	for ty := 0; ty < 64; ty++ {
+		for tx := 0; tx < 64; tx++ {
+			//High     Low          Legend->  c: Starting character (tile) number
+			//vhopppcc cccccccc               h: horizontal flip  v: vertical flip
+			//                                p: palette number   o: priority bit
+			z := bg[a]
+
+			// TODO: h and v
+			p := byte((z & 7) >> 10)
+			c := int(z & 0x03FF)
+			for y := 0; y < 8; y++ {
+				p01 := tiles[(c<<4)+(y<<1)]
+				p23 := tiles[(c<<4)+(y<<1)+16]
+				for x := 0; x < 8; x++ {
+					i := byte(p01&(1<<x)) | byte(p01&(1<<(x+8))>>7) |
+						byte(p23&(1<<x)<<2) | byte(p23&(1<<(x+8))>>6)
+
+					// transparency:
+					if i == 0 {
+						continue
+					}
+
+					g.SetColorIndex(tx<<3+x, ty<<3+y, p+i)
+				}
+			}
+
+			a++
+		}
+	}
 }
 
 type System struct {
