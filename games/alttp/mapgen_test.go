@@ -8,11 +8,11 @@ import (
 	"github.com/alttpo/snes/emulator/cpu65c816"
 	"github.com/alttpo/snes/emulator/memory"
 	"github.com/alttpo/snes/mapping/lorom"
+	"golang.org/x/image/draw"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
-	"io/ioutil"
 	"o2/snes"
 	"os"
 	"sync"
@@ -87,16 +87,20 @@ func TestGenerateMap(t *testing.T) {
 	a.JSL(0x00_80B5) // MainRouting
 	a.REP(0x10)
 	a.LDA_imm8_b(0x01)
-	a.STA_abs(0x0710) // disable sprite updates
+	a.JSR_abs(0x00_85FC) // NMI_PrepareSprites
+	//a.STA_abs(0x0710) // disable sprite updates
 	a.JSR_abs(0x89E0) // NMI_DoUpdates
-	////
+	// 8037:
 	a.SEP(0x30)
 	a.JSL(0x02_FFC7) // load underworld room
 	a.REP(0x10)
 	a.LDA_imm8_b(0x01)
+	//a.JSR_abs(0x00_85FC) // NMI_PrepareSprites
 	a.STA_abs(0x0710) // disable sprite updates
 	a.JSR_abs(0x89E0) // NMI_DoUpdates
-	//
+	// 8047
+	a.JSR_abs(0x89E0) // NMI_DoUpdates
+	// 804A
 	a.WriteTextTo(s.Logger)
 
 	// patch in end of bank $02 a tiny routine to load a specific underworld room not by
@@ -194,15 +198,17 @@ func TestGenerateMap(t *testing.T) {
 	patchedTileset := true
 	dumpedAsm := false
 
+	maptiles := make([]image.Image, 0x128)
+
 	wg := sync.WaitGroup{}
 	// supertile:
 	for supertile := uint16(0); supertile < 0x128; supertile++ {
-		fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
+		//fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 
 		// JSL 02_FFC7 ; JSR NMI_DoUpdates
 		s.SetPC(0x00_8037)
-		if stopPC, expectedPC, cycles := s.RunUntil(0x00_8047, 0x1000_0000); stopPC != expectedPC {
+		if stopPC, expectedPC, cycles := s.RunUntil(0x00_804A, 0x1000_0000); stopPC != expectedPC {
 			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 			t.Fatal(err)
 		}
@@ -273,9 +279,9 @@ func TestGenerateMap(t *testing.T) {
 		copy(wram, s.WRAM[:])
 		wg.Add(1)
 		go func(st uint16, wram []byte, vram []byte) {
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
 
 			cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
 			pal := cgramToPalette(cgram)
@@ -283,47 +289,76 @@ func TestGenerateMap(t *testing.T) {
 			// render BG1 image:
 			{
 				g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+
+				// BG2 first:
+				renderBG(
+					g,
+					(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+					vram[0x4000:0x8000],
+				)
+
+				// BG1:
 				renderBG(
 					g,
 					(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-					(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
+					vram[0x4000:0x8000],
 				)
-				//(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-				//s.VRAM[0x2000:0x4000],
+
+				maptiles[st] = g
 
 				if err = exportPNG(fmt.Sprintf("data/%03X.bg1.png", st), g); err != nil {
 					panic(err)
 				}
 			}
 
-			{
-				tiles := 0x4000 / 32
-				g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
-				for t := 0; t < tiles; t++ {
-					// palette 2
-					z := uint16(t) | (2 << 10)
-					draw4bppTile(
-						g,
-						z,
-						(*(*[0x4000]uint16)(unsafe.Pointer(&vram[0x4000])))[:],
-						t%16,
-						t/16,
-					)
-				}
-
-				if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
-					panic(err)
-				}
-			}
+			//{
+			//	tiles := 0x4000 / 32
+			//	g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+			//	for t := 0; t < tiles; t++ {
+			//		// palette 2
+			//		z := uint16(t) | (2 << 10)
+			//		draw4bppTile(
+			//			g,
+			//			z,
+			//			vram[0x4000:0x8000],
+			//			t%16,
+			//			t/16,
+			//		)
+			//	}
+			//
+			//	if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
+			//		panic(err)
+			//	}
+			//}
 
 			wg.Done()
 		}(supertile, wram, vram)
 	}
 
 	wg.Wait()
+
+	// condense all maps into one image:
+	const divider = 8
+	const supertilepx = (512 / divider)
+	all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+	for st := 0; st < 0x128; st++ {
+		row := st / 0x10
+		col := st % 0x10
+		draw.NearestNeighbor.Scale(
+			all,
+			image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
+			maptiles[st],
+			maptiles[st].Bounds(),
+			draw.Src,
+			nil,
+		)
+	}
+	if err = exportPNG(fmt.Sprintf("data/all.png"), all); err != nil {
+		panic(err)
+	}
 }
 
-func exportPNG(name string, g *image.Paletted) (err error) {
+func exportPNG(name string, g image.Image) (err error) {
 	// export to PNG:
 	var po *os.File
 
@@ -362,13 +397,10 @@ func cgramToPalette(cgram []uint16) color.Palette {
 	return pal
 }
 
-func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
+func renderBG(g *image.Paletted, bg []uint16, tiles []uint8) {
 	a := uint32(0)
 	for ty := 0; ty < 64; ty++ {
 		for tx := 0; tx < 64; tx++ {
-			//High     Low          Legend->  c: Starting character (tile) number
-			//vhopppcc cccccccc               h: horizontal flip  v: vertical flip
-			//                                p: palette number   o: priority bit
 			z := bg[a]
 			a++
 
@@ -377,7 +409,11 @@ func renderBG(g *image.Paletted, bg []uint16, tiles []uint16) {
 	}
 }
 
-func draw4bppTile(g *image.Paletted, z uint16, tiles []uint16, tx int, ty int) {
+func draw4bppTile(g *image.Paletted, z uint16, tiles []uint8, tx int, ty int) {
+	//High     Low          Legend->  c: Starting character (tile) number
+	//vhopppcc cccccccc               h: horizontal flip  v: vertical flip
+	//                                p: palette number   o: priority bit
+
 	p := byte((z>>10)&7) << 4
 	c := int(z & 0x03FF)
 	for y := 0; y < 8; y++ {
@@ -385,18 +421,20 @@ func draw4bppTile(g *image.Paletted, z uint16, tiles []uint16, tx int, ty int) {
 		if z&0x8000 != 0 {
 			fy = 7 - y
 		}
-		p01 := tiles[(c<<4)+y]
-		p23 := tiles[(c<<4)+y+8]
+		p0 := tiles[(c<<5)+(y<<1)]
+		p1 := tiles[(c<<5)+(y<<1)+1]
+		p2 := tiles[(c<<5)+(y<<1)+16]
+		p3 := tiles[(c<<5)+(y<<1)+17]
 		for x := 0; x < 8; x++ {
 			fx := x
 			if z&0x4000 == 0 {
 				fx = 7 - x
 			}
 
-			i := byte((p01>>x)&1) |
-				byte(((p01>>(x+8))&1)<<1) |
-				byte(((p23>>x)&1)<<2) |
-				byte(((p23>>(x+8))&1)<<3)
+			i := byte((p0>>x)&1) |
+				byte(((p1>>x)&1)<<1) |
+				byte(((p2>>x)&1)<<2) |
+				byte(((p3>>x)&1)<<3)
 
 			// transparency:
 			if i == 0 {
@@ -591,10 +629,7 @@ type DMAChannel struct{}
 
 func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	aSrc := uint32(regs.srcB())<<16 | uint32(regs.srcH())<<8 | uint32(regs.srcL())
-	siz := uint32(regs.sizH())<<8 | uint32(regs.sizL())
-	if siz == 0 {
-		siz = 0x10000
-	}
+	siz := uint16(regs.sizH())<<8 | uint16(regs.sizL())
 
 	bDest := regs.dest()
 	bDestAddr := uint32(bDest) | 0x2100
@@ -603,10 +638,10 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	fixed := regs.ctrl()&0x08 != 0
 	mode := regs.ctrl() & 7
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
-		fmt.Fprintf(h.s.Logger, "DMA[%d] start: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+	//	fmt.Fprintf(h.s.Logger, "DMA[%d] start: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
+	//}
 
 	if regs.ctrl()&0x80 != 0 {
 		// PPU -> CPU
@@ -614,7 +649,7 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 	} else {
 		// CPU -> PPU
 	copyloop:
-		for siz > 0 {
+		for {
 			switch mode {
 			case 0:
 				h.Write(bDestAddr, h.s.Bus.EaRead(aSrc))
@@ -674,16 +709,16 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 		}
 	}
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "DMA[%d]  stop: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "DMA[%d]  stop: $%06x -> $%04x [$%05x]\n", ch, aSrc, bDestAddr, siz)
+	//}
 }
 
 type HWIO struct {
 	s   *System
 	mem [0x10000]uint8
 
-	dmaregs [8]DMARegs
+	dmaregs [16]DMARegs
 	dma     [8]DMAChannel
 
 	ppu struct {
@@ -744,9 +779,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 		ch := (offs & 0x00F0) >> 4
 		if ch <= 7 {
 			reg := offs & 0x000F
-			if reg <= 6 {
-				h.dmaregs[ch][reg] = value
-			}
+			h.dmaregs[ch][reg] = value
 		}
 
 		//if h.s.Logger != nil {
@@ -799,24 +832,28 @@ func (h *HWIO) Write(address uint32, value byte) {
 		if h.ppu.addrRemapping != 0 {
 			panic(fmt.Errorf("unsupported VRAM address remapping mode %d", h.ppu.addrRemapping))
 		}
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+		//	fmt.Fprintf(h.s.Logger, "VMAIN = $%02x\n", value)
+		//}
 		return
 	}
 	if offs == 0x2116 {
 		// VMADDL
 		h.ppu.addr = uint32(value) | h.ppu.addr&0xFF00
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
-			fmt.Fprintf(h.s.Logger, "VMADDL = $%04x\n", h.ppu.addr)
-		}
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+		//	fmt.Fprintf(h.s.Logger, "VMADDL = $%04x\n", h.ppu.addr)
+		//}
 		return
 	}
 	if offs == 0x2117 {
 		// VMADDH
 		h.ppu.addr = uint32(value)<<8 | h.ppu.addr&0x00FF
-		if h.s.Logger != nil {
-			fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
-			fmt.Fprintf(h.s.Logger, "VMADDH = $%04x\n", h.ppu.addr)
-		}
+		//if h.s.Logger != nil {
+		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
+		//	fmt.Fprintf(h.s.Logger, "VMADDH = $%04x\n", h.ppu.addr)
+		//}
 		return
 	}
 	if offs == 0x2118 {
@@ -829,7 +866,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2119 {
 		// VMDATAH
-		h.s.VRAM[h.ppu.addr<<1+1] = value
+		h.s.VRAM[(h.ppu.addr<<1)+1] = value
 		if h.ppu.incrMode == true {
 			h.ppu.addr += h.ppu.incrAmt
 		}
