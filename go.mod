@@ -3,7 +3,7 @@ module o2
 go 1.17
 
 require (
-	github.com/alttpo/snes v0.0.0-20220403043531-87b982b3b123
+	github.com/alttpo/snes v0.0.0-20220403183906-79a7d694d2b3
 	github.com/getlantern/systray v1.3.2
 	github.com/gobwas/ws v1.0.4
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966

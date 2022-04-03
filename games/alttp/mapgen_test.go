@@ -80,33 +80,28 @@ func TestGenerateMap(t *testing.T) {
 	a.SetBase(0x00_5000)
 	a.SEP(0x30)
 
+	a.Comment("InitializeTriforceIntro: sets up initial state")
+	a.JSL(0x0C_F03B)
+
 	// general world state:
-	//s.WRAM[0xF3C5] = 0x02 // not raining
 	a.Comment("disable rain")
 	a.LDA_imm8_b(0x02)
 	a.STA_abs(0xF3C5)
 
 	a.Comment("no bed cutscene")
-	//s.WRAM[0xF3C6] = 0x10 // no bed cutscene
 	a.LDA_imm8_b(0x10)
 	a.STA_abs(0xF3C6)
 
 	// prepare to call the underworld room load module:
 	a.Comment("module $06, submodule $00:")
-	//s.WRAM[0x10] = 0x06
-	//s.WRAM[0x11] = 0x00
-	//s.WRAM[0xB0] = 0x00
 	a.LDA_imm8_b(0x06)
 	a.STA_dp(0x10)
-	a.LDA_imm8_b(0x00)
-	a.STA_dp(0x11)
-	a.STA_dp(0xB0)
+	a.STZ_dp(0x11)
+	a.STZ_dp(0xB0)
 
 	a.Comment("dungeon ID ($FF = cave)")
-	//s.WRAM[0x040C] = 0xFF // dungeon ID ($FF = cave)
 	a.LDA_imm8_b(0xFF)
 	a.STA_abs(0x040C)
-	//s.WRAM[0x010E] = 0x00 // dungeon entrance ID
 	a.Comment("dungeon entrance ID")
 	a.LDA_imm8_b(0x00)
 	a.STA_abs(0x010E)
@@ -117,51 +112,20 @@ func TestGenerateMap(t *testing.T) {
 
 	a.Label("loadSupertile")
 	a.SEP(0x30)
-	a.JSL(0x02_5100) // load underworld room
+	a.INC_abs(0x0710)
+	a.Comment("Intro_InitializeDefaultGFX after JSL DecompressAnimatedUnderworldTiles")
+	a.JSL(0x0C_C237)
+	a.STZ_dp(0x11)
+	a.Comment("LoadUnderworldSupertile")
+	a.JSL(0x02_5100)
 
 	a.Label("updateVRAM")
-	a.REP(0x10)
-
-	a.Comment("prepare for PPU writes")
-	a.LDA_imm8_b(0x80)
-	a.STA_abs(0x2100) // INIDISP
-	//a.STZ_abs(0x420c) // HDMAENABLE
-
-	//a.Comment("disable sprite updates")
-	//a.LDA_imm8_b(0x01)
-	//a.STA_abs(0x0710)
-	//a.Comment("JSR NMI_DoUpdates")
-	//a.JSR_abs(0x89E0) // NMI_DoUpdates
-
-	// this code replicates the one relevant bit of NMI_DoUpdates:
-
-	a.Comment("DMA0MODE")
-	//#_0089EF: LDX.w #$1801
-	a.LDX_abs(0x1801)
-	//#_0089F2: STX.w DMA0MODE
-	a.STX_abs(0x4300)
-
-	a.Comment("DMA0ADDRB")
-	//#_008A5C: LDA.b #$7E
-	a.LDA_imm8_b(0x7E)
-	//#_008A5E: STA.w DMA0ADDRB
-	a.STA_abs(0x4304)
-
-	a.Comment("DMA0ADDRL")
-	a.LDX_abs(0x0ADC)
-	a.STX_abs(0x4302)
-
-	a.Comment("VMADDR")
-	a.LDX_abs(0x0134)
-	a.STX_abs(0x2116)
-
-	a.Comment("DMA0SIZE")
-	a.LDX_imm16_w(0x0400)
-	a.STX_abs(0x4305)
-
-	a.Comment("DMAENABLE")
-	a.LDA_imm8_b(0x01)
-	a.STA_abs(0x420B)
+	// this code sets up the DMA transfer parameters for animated BG tiles:
+	a.Comment("NMI_PrepareSprites")
+	a.JSR_abs(0x85FC)
+	a.Comment("NMI_DoUpdates")
+	a.JSR_abs(0x89E0) // NMI_DoUpdates
+	// WDM triggers an abort for values >= 10
 	a.WDM(0xAA)
 
 	if err = a.Finalize(); err != nil {
@@ -172,6 +136,7 @@ func TestGenerateMap(t *testing.T) {
 	// emit into our custom $02:5100 routine:
 	a = asm.NewEmitter(s.HWIO.Dyn[0x100:], true)
 	a.SetBase(0x02_5100)
+	a.Comment("LoadUnderworldSupertile:")
 	a.Comment("setup bank restore back to $00")
 	a.SEP(0x30)
 	a.LDA_imm8_b(0x00)
@@ -265,8 +230,8 @@ func TestGenerateMap(t *testing.T) {
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 
 		// loadSupertile:
-		s.SetPC(0x00_5026)
-		if stopPC, expectedPC, cycles := s.RunUntil(0x00_5055, 0x1000_0000); stopPC != expectedPC {
+		s.SetPC(0x00_5028)
+		if stopPC, expectedPC, cycles := s.RunUntil(0x00_503d, 0x1000_0000); stopPC != expectedPC {
 			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 			t.Fatal(err)
 		}

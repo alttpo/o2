@@ -1,8 +1,8 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/alttpo/snes v0.0.0-20220403043531-87b982b3b123 h1:rgnEhqYu4UgzUNdTbmA5dr8YzT/Wlf30DEV+Goc63bU=
-github.com/alttpo/snes v0.0.0-20220403043531-87b982b3b123/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
+github.com/alttpo/snes v0.0.0-20220403183906-79a7d694d2b3 h1:OOZuXcgIn1yy5m3kNV1ZULM5v320LrWKTlKjUTsspzM=
+github.com/alttpo/snes v0.0.0-20220403183906-79a7d694d2b3/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
 github.com/alttpo/systray v1.3.2 h1:86rDHDv/Q8MNA4TEd4Hy7TcSV+0TpNC0sZ8xc1bBNUI=
 github.com/alttpo/systray v1.3.2/go.mod h1:SHjooj3IKvtx2SeEbHOaDgTZ6dN3oYoMJAjtcN75Dzo=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
