@@ -362,34 +362,35 @@ func TestGenerateMap(t *testing.T) {
 
 	wg.Wait()
 
-	// condense all maps into one image:
-	const divider = 8
-	const supertilepx = 512 / divider
+	// condense all maps into one image at different scale levels:
+	for _, divider := range []int{8, 4, 2, 1} {
+		supertilepx := 512 / divider
 
-	for _, sc := range []struct {
-		S draw.Scaler
-		N string
-	}{
-		{draw.NearestNeighbor, "nn"},
-		{draw.ApproxBiLinear, "ab"},
-		{draw.BiLinear, "bl"},
-		{draw.CatmullRom, "cr"},
-	} {
-		all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
-		for st := 0; st < 0x128; st++ {
-			row := st / 0x10
-			col := st % 0x10
-			sc.S.Scale(
-				all,
-				image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
-				maptiles[st],
-				maptiles[st].Bounds(),
-				draw.Src,
-				nil,
-			)
-		}
-		if err = exportPNG(fmt.Sprintf("data/all-%s.png", sc.N), all); err != nil {
-			panic(err)
+		for _, sc := range []struct {
+			S draw.Scaler
+			N string
+		}{
+			{draw.NearestNeighbor, "nn"},
+			{draw.ApproxBiLinear, "ab"},
+			//{draw.BiLinear, "bl"},
+			//{draw.CatmullRom, "cr"},
+		} {
+			all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+			for st := 0; st < 0x128; st++ {
+				row := st / 0x10
+				col := st % 0x10
+				sc.S.Scale(
+					all,
+					image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
+					maptiles[st],
+					maptiles[st].Bounds(),
+					draw.Src,
+					nil,
+				)
+			}
+			if err = exportPNG(fmt.Sprintf("data/all-%d-%s.png", divider, sc.N), all); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
