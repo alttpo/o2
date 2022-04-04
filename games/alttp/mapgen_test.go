@@ -92,6 +92,8 @@ func TestGenerateMap(t *testing.T) {
 	a.LDA_imm8_b(0x10)
 	a.STA_abs(0xF3C6)
 
+	loadEntrancePC := a.Label("loadEntrance")
+	a.SEP(0x30)
 	// prepare to call the underworld room load module:
 	a.Comment("module $06, submodule $00:")
 	a.LDA_imm8_b(0x06)
@@ -99,17 +101,18 @@ func TestGenerateMap(t *testing.T) {
 	a.STZ_dp(0x11)
 	a.STZ_dp(0xB0)
 
-	a.Comment("dungeon ID ($FF = cave)")
+	a.Comment("dungeon DungeonID ($FF = cave)")
+	setDungeonIDPC := a.Label("setDungeonID")
 	a.LDA_imm8_b(0xFF)
 	a.STA_abs(0x040C)
-	a.Comment("dungeon entrance ID")
+	a.Comment("dungeon entrance DungeonID")
+	setEntranceIDPC := a.Label("setEntranceID")
 	a.LDA_imm8_b(0x08)
 	a.STA_abs(0x010E)
 
 	// this seems like double work; let's try without it:
 	a.Comment("JSL MainRouting")
 	a.JSL(0x00_80B5)
-
 	a.BRA("updateVRAM")
 
 	loadSupertilePC := a.Label("loadSupertile")
@@ -228,8 +231,8 @@ func TestGenerateMap(t *testing.T) {
 
 	const entranceCount = 0x84
 	var entrances [entranceCount]struct {
-		ST uint16 // supertile    $A0
-		ID uint8  // dungeon ID $040C
+		ST        uint16 // supertile    $A0
+		DungeonID uint8  // dungeon DungeonID $040C
 	}
 
 	{
@@ -244,22 +247,26 @@ func TestGenerateMap(t *testing.T) {
 		tblDungeonId, _ := lorom.BusAddressToPak(0x02_D1EF)
 		for i := range entrances {
 			entrances[i].ST = binary.LittleEndian.Uint16(s.ROM[tblRoomId+uint32(i)<<1 : tblRoomId+uint32(i)<<1+2])
-			entrances[i].ID = s.ROM[tblDungeonId+uint32(i)]
+			entrances[i].DungeonID = s.ROM[tblDungeonId+uint32(i)]
 		}
 	}
 
 	wg := sync.WaitGroup{}
 	// supertile:
 	for eID, entr := range entrances {
-		s.WRAM[0x010E] = uint8(eID)
 		supertile := entr.ST
-
 		//fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
-		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
-		s.WRAM[0x040C] = entr.ID
 
+		s.HWIO.Dyn[setDungeonIDPC+1-0x5000] = entr.DungeonID
+		s.HWIO.Dyn[setEntranceIDPC+1-0x5000] = uint8(eID)
+
+		//binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
+		//s.WRAM[0x040C] = entr.DungeonID
+
+		s.SetPC(loadEntrancePC)
+		_ = loadSupertilePC
 		// loadSupertile:
-		s.SetPC(loadSupertilePC)
+		//s.SetPC(loadSupertilePC)
 		if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
 			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 			t.Fatal(err)
