@@ -103,7 +103,7 @@ func TestGenerateMap(t *testing.T) {
 	a.LDA_imm8_b(0xFF)
 	a.STA_abs(0x040C)
 	a.Comment("dungeon entrance ID")
-	a.LDA_imm8_b(0x00)
+	a.LDA_imm8_b(0x08)
 	a.STA_abs(0x010E)
 
 	a.Comment("JSL MainRouting")
