@@ -695,7 +695,7 @@ func (s *System) RunUntil(targetPC uint32, maxCycles uint64) (stopPC uint32, exp
 	return
 }
 
-type DMARegs [7]byte
+type DMARegs [16]byte
 
 func (c *DMARegs) ctrl() byte { return c[0] }
 func (c *DMARegs) dest() byte { return c[1] }
@@ -797,7 +797,7 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 type HWIO struct {
 	s *System
 
-	dmaregs [16]DMARegs
+	dmaregs [8]DMARegs
 	dma     [8]DMAChannel
 
 	ppu struct {
