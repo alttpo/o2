@@ -71,95 +71,124 @@ func TestGenerateMap(t *testing.T) {
 	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
 	// this is useless zeroing of memory; don't need to run it
 	//#_00802C: JSR Startup_InitializeMemory
-	if stopPC, expectedPC, cycles := s.RunUntil(0x00_8029, 0x1_000); stopPC != expectedPC {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+	if err = s.Exec(0x00_8029); err != nil {
 		t.Fatal(err)
 	}
 
-	// emit into our custom $00:5000 routine:
-	a = asm.NewEmitter(s.HWIO.Dyn[:], true)
-	a.SetBase(0x00_5000)
-	a.SEP(0x30)
-
-	a.Comment("InitializeTriforceIntro: sets up initial state")
-	a.JSL(0x0C_F03B)
-
-	// general world state:
-	a.Comment("disable rain")
-	a.LDA_imm8_b(0x02)
-	a.STA_abs(0xF3C5)
-
-	a.Comment("no bed cutscene")
-	a.LDA_imm8_b(0x10)
-	a.STA_abs(0xF3C6)
-
-	loadEntrancePC := a.Label("loadEntrance")
-	a.SEP(0x30)
-	// prepare to call the underworld room load module:
-	a.Comment("module $06, submodule $00:")
-	a.LDA_imm8_b(0x06)
-	a.STA_dp(0x10)
-	a.STZ_dp(0x11)
-	a.STZ_dp(0xB0)
-
-	a.Comment("dungeon entrance DungeonID")
-	setEntranceIDPC := a.Label("setEntranceID")
-	a.LDA_imm8_b(0x08)
-	a.STA_abs(0x010E)
-
-	// this seems like double work; let's try without it:
-	a.Comment("JSL MainRouting")
-	a.JSL(0x00_80B5)
-	a.BRA("updateVRAM")
-
-	loadSupertilePC := a.Label("loadSupertile")
-	a.SEP(0x30)
-	a.INC_abs(0x0710)
-	a.Comment("Intro_InitializeDefaultGFX after JSL DecompressAnimatedUnderworldTiles")
-	a.JSL(0x0C_C237)
-	a.STZ_dp(0x11)
-	a.Comment("LoadUnderworldSupertile")
-	a.JSL(0x02_5100)
-
-	a.Label("updateVRAM")
-	// this code sets up the DMA transfer parameters for animated BG tiles:
-	a.Comment("NMI_PrepareSprites")
-	a.JSR_abs(0x85FC)
-	a.Comment("NMI_DoUpdates")
-	a.JSR_abs(0x89E0) // NMI_DoUpdates
-	// WDM triggers an abort for values >= 10
-	donePC := a.Label("done")
-	a.WDM(0xAA)
-
-	if err = a.Finalize(); err != nil {
-		panic(err)
+	var b01LoadAdjancentDoorsPC uint32 = 0x01_5100
+	var setAdjacentSupertilePC uint32
+	{
+		// must execute in bank $01
+		a = asm.NewEmitter(s.HWIO.Dyn[b01LoadAdjancentDoorsPC&0xFFFF-0x5000:], true)
+		a.SetBase(b01LoadAdjancentDoorsPC)
+		a.Label("loadAdjacentDoors")
+		a.REP(0x30)
+		setAdjacentSupertilePC = a.Label("setAdjacentSupertile") + 1
+		a.LDX_imm16_w(0x0000)
+		//Underworld_LoadAdjacentRoomDoors#_01B7EF
+		a.JSR_abs(0xB7EF) // 0x01_B7EF
+		a.WDM(0xAA)
+		// finalize labels
+		if err = a.Finalize(); err != nil {
+			panic(err)
+		}
+		a.WriteTextTo(s.Logger)
 	}
-	a.WriteTextTo(s.Logger)
 
-	// emit into our custom $02:5100 routine:
-	a = asm.NewEmitter(s.HWIO.Dyn[0x100:], true)
-	a.SetBase(0x02_5100)
-	a.Comment("LoadUnderworldSupertile:")
-	a.Comment("setup bank restore back to $00")
-	a.SEP(0x30)
-	a.LDA_imm8_b(0x00)
-	a.PHA()
-	a.PLB()
-	a.Comment("in Underworld_LoadEntrance_DoPotsBlocksTorches at PHB and bank switch to $7e")
-	a.JSR_abs(0xD854)
-	a.Comment("Module06_UnderworldLoad after JSR Underworld_LoadEntrance")
-	a.JMP_abs_imm16_w(0x8157)
-	a.Comment("implied RTL")
-	a.WriteTextTo(s.Logger)
+	b02LoadUnderworldSupertilePC := uint32(0x02_5200)
+	{
+		// emit into our custom $02:5100 routine:
+		a = asm.NewEmitter(s.HWIO.Dyn[b02LoadUnderworldSupertilePC&0xFFFF-0x5000:], true)
+		a.SetBase(b02LoadUnderworldSupertilePC)
+		a.Comment("setup bank restore back to $00")
+		a.SEP(0x30)
+		a.LDA_imm8_b(0x00)
+		a.PHA()
+		a.PLB()
+		a.Comment("in Underworld_LoadEntrance_DoPotsBlocksTorches at PHB and bank switch to $7e")
+		a.JSR_abs(0xD854)
+		a.Comment("Module06_UnderworldLoad after JSR Underworld_LoadEntrance")
+		a.JMP_abs_imm16_w(0x8157)
+		a.Comment("implied RTL")
+		a.WriteTextTo(s.Logger)
+	}
 
-	// skip over music & sfx loading since we did not implement APU registers:
-	a = newEmitterAt(s, 0x02_8293, true)
-	//#_028293: JSR Underworld_LoadSongBankIfNeeded
-	a.JMP_abs_imm16_w(0x82BC)
-	//.exit
-	//#_0282BC: SEP #$20
-	//#_0282BE: RTL
-	a.WriteTextTo(s.Logger)
+	var loadEntrancePC uint32
+	var setEntranceIDPC uint32
+	var loadSupertilePC uint32
+	var donePC uint32
+	{
+		// emit into our custom $00:5000 routine:
+		a = asm.NewEmitter(s.HWIO.Dyn[:], true)
+		a.SetBase(0x00_5000)
+		a.SEP(0x30)
+
+		a.Comment("InitializeTriforceIntro: sets up initial state")
+		a.JSL(0x0C_F03B)
+
+		// general world state:
+		a.Comment("disable rain")
+		a.LDA_imm8_b(0x02)
+		a.STA_abs(0xF3C5)
+
+		a.Comment("no bed cutscene")
+		a.LDA_imm8_b(0x10)
+		a.STA_abs(0xF3C6)
+
+		loadEntrancePC = a.Label("loadEntrance")
+		a.SEP(0x30)
+		// prepare to call the underworld room load module:
+		a.Comment("module $06, submodule $00:")
+		a.LDA_imm8_b(0x06)
+		a.STA_dp(0x10)
+		a.STZ_dp(0x11)
+		a.STZ_dp(0xB0)
+
+		a.Comment("dungeon entrance DungeonID")
+		setEntranceIDPC = a.Label("setEntranceID") + 1
+		a.LDA_imm8_b(0x08)
+		a.STA_abs(0x010E)
+
+		// loads a dungeon given an entrance ID:
+		a.Comment("JSL MainRouting")
+		a.JSL(0x00_80B5)
+		a.BRA("updateVRAM")
+
+		loadSupertilePC = a.Label("loadSupertile")
+		a.SEP(0x30)
+		a.INC_abs(0x0710)
+		a.Comment("Intro_InitializeDefaultGFX after JSL DecompressAnimatedUnderworldTiles")
+		a.JSL(0x0C_C237)
+		a.STZ_dp(0x11)
+		a.Comment("LoadUnderworldSupertile")
+		a.JSL(b02LoadUnderworldSupertilePC)
+
+		a.Label("updateVRAM")
+		// this code sets up the DMA transfer parameters for animated BG tiles:
+		a.Comment("NMI_PrepareSprites")
+		a.JSR_abs(0x85FC)
+		a.Comment("NMI_DoUpdates")
+		a.JSR_abs(0x89E0) // NMI_DoUpdates
+		// WDM triggers an abort for values >= 10
+		donePC = a.Label("done")
+		a.WDM(0xAA)
+		// finalize labels
+		if err = a.Finalize(); err != nil {
+			panic(err)
+		}
+		a.WriteTextTo(s.Logger)
+	}
+
+	{
+		// skip over music & sfx loading since we did not implement APU registers:
+		a = newEmitterAt(s, 0x02_8293, true)
+		//#_028293: JSR Underworld_LoadSongBankIfNeeded
+		a.JMP_abs_imm16_w(0x82BC)
+		//.exit
+		//#_0282BC: SEP #$20
+		//#_0282BE: RTL
+		a.WriteTextTo(s.Logger)
+	}
 
 	if false {
 		a = newEmitterAt(s, 0x02_C300, true)
@@ -214,93 +243,91 @@ func TestGenerateMap(t *testing.T) {
 	//s.LoggerCPU = os.Stdout
 
 	// run the initialization code:
-	s.SetPC(0x00_5000)
-	if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+	if err = s.ExecAt(0x00_5000, donePC); err != nil {
 		t.Fatal(err)
 	}
 
-	//patchedTileset := false
-	patchedTileset := true
-	dumpedAsm := false
-
 	maptiles := make([]image.Image, 0x128)
-
-	const entranceCount = 0x84
-	var entrances [entranceCount]struct {
-		ST        uint16 // supertile    $A0
-		DungeonID uint8  // dungeon DungeonID $040C
-	}
-
-	if false {
-		le := binary.LittleEndian
-
-		//.room_id
-		//; writes to $A0, $048E
-		//#_02C577: dw $0104 ; 0x00
-		tblRoomId, _ := lorom.BusAddressToPak(0x02_C577)
-
-		//.dungeon_id
-		//; writes to $040C
-		//#_02D1EF: db $FF ; 0x00
-		tblDungeonId, _ := lorom.BusAddressToPak(0x02_D1EF)
-		for i := range entrances {
-			entrances[i].ST = le.Uint16(s.ROM[tblRoomId+uint32(i)<<1 : tblRoomId+uint32(i)<<1+2])
-			entrances[i].DungeonID = s.ROM[tblDungeonId+uint32(i)]
-		}
-
-		// from every entrance, discover reachable supertiles:
-		//RoomData_DoorDataPointers:
-		//#_1F83C0: dl RoomDataDoors_0000
-		//#_1F83C3: dl RoomDataDoors_0001
-
-		//doordata:
-		//#_1F8792: db $61, $18 ; Door 0x18 | Dir:01 | Pos:0C
-		//#_1F8794: db $FF, $FF ; Layer03 / End
-		// $61 >> 3 == $0C (pos)
-		// $61  & 7 == $01 (dir)
-
-		// doordata contains a `pos` element which is looked up in one of these tables:
-		//DoorTileMapPositions_NorthWall:
-		//#_00997E: dw $021C
-	}
 
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
-	for eID := uint8(0); eID < 0x84; eID++ {
+	const entranceCount = 0x84
+	for eID := uint8(0); eID < entranceCount; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 		// poke the entrance ID into our asm code:
-		s.HWIO.Dyn[setEntranceIDPC+1-0x5000] = eID
+		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 
-		//binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
-		//s.WRAM[0x040C] = entr.DungeonID
-
-		s.SetPC(loadEntrancePC)
 		_ = loadSupertilePC
-		// loadSupertile:
-		//s.SetPC(loadSupertilePC)
-		if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
-			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
 
 		supertile := s.ReadWRAM16(0xA0)
 		fmt.Fprintf(s.Logger, "  supertile   = $%03x\n", supertile)
 
+		// render the entrance supertile in the background:
+		err = renderSupertile(s, &wg, maptiles, supertile)
+
 		//for offs := uint32(0x0438); offs < 0x044A; offs += 2 {
 		//	stairCount := s.ReadWRAM16(offs)
 		//	fmt.Fprintf(s.Logger, "  stair count? [$%04x] = $%04x\n", offs, stairCount)
 		//}
 
+		// discover all supertile exits from this supertile:
+		exitSupertiles := make([]uint16, 0, 16)
+
+		var stairs uint32
 		doorTypes := make([]uint16, 0, 16)
 		for offs := uint32(0x1980); offs < 0x19A0; offs += 2 {
 			doorType := s.ReadWRAM16(offs)
 			if doorType == 0 {
 				break
 			}
+
 			doorTypes = append(doorTypes, doorType)
+
+			// small-key locked stairwells
+			if doorType >= 0x20 && doorType <= 0x26 {
+				stairs++
+				//STAIR0TO        = $7EC001
+				//STAIR1TO        = $7EC002
+				//STAIR2TO        = $7EC003
+				//STAIR3TO        = $7EC004
+				exitSupertiles = append(exitSupertiles, uint16(read8(s.WRAM[:], 0xC000+stairs)))
+			}
 		}
 		fmt.Fprintf(s.Logger, "  door types = %#v\n", doorTypes)
+
+		// iterate through adjacent supertiles and determine door linkages:
+		if supertile&0x000F != 0x000F {
+			// find right-side doors:
+			write16(s.HWIO.Dyn[:], setAdjacentSupertilePC-0x01_5000, supertile+1)
+			if err = s.ExecAt(b01LoadAdjancentDoorsPC, 0); err != nil {
+				panic(err)
+			}
+
+			fmt.Fprintf(s.Logger, "  RIGHT SIDE:")
+			adjDoorCount := s.CPU.RY >> 1
+			fmt.Fprintf(s.Logger, "    door count = $%04x\n", adjDoorCount)
+			fmt.Fprintf(
+				s.Logger,
+				"    doors = {$%04x, $%04x, $%04x, $%04x, $%04x, $%04x, $%04x, $%04x, ...}\n",
+				read16(s.WRAM[:], 0x1110),
+				read16(s.WRAM[:], 0x1112),
+				read16(s.WRAM[:], 0x1114),
+				read16(s.WRAM[:], 0x1116),
+				read16(s.WRAM[:], 0x1118),
+				read16(s.WRAM[:], 0x111a),
+				read16(s.WRAM[:], 0x111c),
+				read16(s.WRAM[:], 0x111e),
+			)
+		}
+
+		// determine if falling through pits and pots is feasible:
+		// alternatively: decide if the WARPTO byte was leaked from a neighboring room header table entry
+		//WARPTO          = $7EC000
+		//s.ReadWRAM8(0xC000)
+		fmt.Fprintf(s.Logger, "  exits = %#v\n", exitSupertiles)
 
 		// gfx output is:
 		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
@@ -308,122 +335,14 @@ func TestGenerateMap(t *testing.T) {
 		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $C300[0x0200] = CGRAM palette
 
-		if dumpedAsm {
-			s.LoggerCPU = nil
-		}
-
-		// after first run, prevent further tileset updates to VRAM:
-		if !patchedTileset {
-			a = newEmitterAt(s, 0x00_E1DB, true)
-			//InitializeTilesets:
-			//	#_00E1DB: PHB
-			a.RTL()
-			a.WriteTextTo(s.Logger)
-
-			// patch out decompress tiles:
-			a = newEmitterAt(s, 0x02_8183, true)
-			//#_028183: JSL DecompressAnimatedUnderworldTiles
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.WriteTextTo(s.Logger)
-
-			a = newEmitterAt(s, 0x02_8199, true)
-			//#_028199: JSR Underworld_LoadPalettes
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.WriteTextTo(s.Logger)
-
-			a = newEmitterAt(s, 0x02_824E, true)
-			//#_02824E: JSL Follower_Initialize
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			//#_028252: JSL Sprite_ResetAll
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			//#_028256: JSL Underworld_ResetSprites
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.NOP()
-			a.WriteTextTo(s.Logger)
-
-			patchedTileset = true
-			if !dumpedAsm {
-				//s.LoggerCPU = os.Stdout
-				dumpedAsm = true
-			}
-		}
-
-		// dump VRAM+WRAM for each supertile:
-		vram := make([]byte, 65536)
-		copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
-		wram := make([]byte, 131072)
-		copy(wram, s.WRAM[:])
-		wg.Add(1)
-		go func(st uint16, wram []byte, vram []byte) {
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
-
-			cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
-			pal := cgramToPalette(cgram)
-
-			// render BG image:
-			if true {
-				g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
-
-				// BG2 first:
-				renderBG(
-					g,
-					(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-					vram[0x4000:0x8000],
-				)
-
-				// BG1:
-				renderBG(
-					g,
-					(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-					vram[0x4000:0x8000],
-				)
-
-				// store full underworld rendering for inclusion into EG map:
-				maptiles[st] = g
-
-				if err = exportPNG(fmt.Sprintf("data/%03X.bg1.png", st), g); err != nil {
-					panic(err)
-				}
-			}
-
-			// render VRAM BG tiles to a PNG:
-			if false {
-				tiles := 0x4000 / 32
-				g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
-				for t := 0; t < tiles; t++ {
-					// palette 2
-					z := uint16(t) | (2 << 10)
-					draw4bppTile(
-						g,
-						z,
-						vram[0x4000:0x8000],
-						t%16,
-						t/16,
-					)
-				}
-
-				if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
-					panic(err)
-				}
-			}
-
-			wg.Done()
-		}(supertile, wram, vram)
+		// loadSupertile:
+		//binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
+		//s.WRAM[0x040C] = entr.DungeonID
+		//s.SetPC(loadSupertilePC)
+		//if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
+		//	err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		//	t.Fatal(err)
+		//}
 	}
 
 	wg.Wait()
@@ -463,6 +382,77 @@ func TestGenerateMap(t *testing.T) {
 			}
 		}
 	}
+}
+
+func renderSupertile(s *System, wg *sync.WaitGroup, maptiles []image.Image, supertile uint16) (err error) {
+	// dump VRAM+WRAM for each supertile:
+	vram := make([]byte, 65536)
+	copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
+	wram := make([]byte, 131072)
+	copy(wram, s.WRAM[:])
+
+	wg.Add(1)
+	go func(st uint16, wram []byte, vram []byte) {
+		var err error
+
+		ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
+		ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
+		//ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
+
+		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
+		pal := cgramToPalette(cgram)
+
+		// render BG image:
+		if true {
+			g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+
+			// BG2 first:
+			renderBG(
+				g,
+				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+				vram[0x4000:0x8000],
+			)
+
+			// BG1:
+			renderBG(
+				g,
+				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
+				vram[0x4000:0x8000],
+			)
+
+			// store full underworld rendering for inclusion into EG map:
+			maptiles[st] = g
+
+			if err = exportPNG(fmt.Sprintf("data/%03X.bg1.png", st), g); err != nil {
+				panic(err)
+			}
+		}
+
+		// render VRAM BG tiles to a PNG:
+		if false {
+			tiles := 0x4000 / 32
+			g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+			for t := 0; t < tiles; t++ {
+				// palette 2
+				z := uint16(t) | (2 << 10)
+				draw4bppTile(
+					g,
+					z,
+					vram[0x4000:0x8000],
+					t%16,
+					t/16,
+				)
+			}
+
+			if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
+				panic(err)
+			}
+		}
+
+		wg.Done()
+	}(supertile, wram, vram)
+
+	return err
 }
 
 func exportPNG(name string, g image.Image) (err error) {
@@ -551,6 +541,27 @@ func draw4bppTile(g *image.Paletted, z uint16, tiles []uint8, tx int, ty int) {
 			g.SetColorIndex(tx<<3+fx, ty<<3+fy, p+i)
 		}
 	}
+}
+
+func read16(b []byte, addr uint32) uint16 {
+	return binary.LittleEndian.Uint16(b[addr : addr+2])
+}
+
+func read8(b []byte, addr uint32) uint8 {
+	return b[addr]
+}
+
+func write8(b []byte, addr uint32, value uint8) {
+	b[addr] = value
+}
+
+func write16(b []byte, addr uint32, value uint16) {
+	binary.LittleEndian.PutUint16(b[addr:addr+2], value)
+}
+
+func write24(b []byte, addr uint32, value uint32) {
+	binary.LittleEndian.PutUint16(b[addr:addr+2], uint16(value&0x00FFFF))
+	b[addr+3] = byte(value >> 16)
 }
 
 type System struct {
@@ -746,6 +757,24 @@ func (s *System) RunUntil(targetPC uint32, maxCycles uint64) (stopPC uint32, exp
 	return
 }
 
+func (s *System) ExecAt(startPC, donePC uint32) (err error) {
+	s.SetPC(startPC)
+	return s.Exec(donePC)
+}
+
+func (s *System) Exec(donePC uint32) (err error) {
+	var stopPC uint32
+	var expectedPC uint32
+	var cycles uint64
+
+	if stopPC, expectedPC, cycles = s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
+		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		return
+	}
+
+	return
+}
+
 type DMARegs [16]byte
 
 func (c *DMARegs) ctrl() byte { return c[0] }
@@ -869,9 +898,9 @@ func (h *HWIO) Read(address uint32) (value byte) {
 		return
 	}
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "hwio[$%04x] -> $%02x\n", offs, value)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] -> $%02x\n", offs, value)
+	//}
 	return
 }
 
