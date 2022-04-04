@@ -106,11 +106,13 @@ func TestGenerateMap(t *testing.T) {
 	a.LDA_imm8_b(0x08)
 	a.STA_abs(0x010E)
 
+	// this seems like double work; let's try without it:
 	a.Comment("JSL MainRouting")
 	a.JSL(0x00_80B5)
+
 	a.BRA("updateVRAM")
 
-	a.Label("loadSupertile")
+	loadSupertilePC := a.Label("loadSupertile")
 	a.SEP(0x30)
 	a.INC_abs(0x0710)
 	a.Comment("Intro_InitializeDefaultGFX after JSL DecompressAnimatedUnderworldTiles")
@@ -126,6 +128,7 @@ func TestGenerateMap(t *testing.T) {
 	a.Comment("NMI_DoUpdates")
 	a.JSR_abs(0x89E0) // NMI_DoUpdates
 	// WDM triggers an abort for values >= 10
+	donePC := a.Label("done")
 	a.WDM(0xAA)
 
 	if err = a.Finalize(); err != nil {
@@ -210,9 +213,9 @@ func TestGenerateMap(t *testing.T) {
 
 	//s.LoggerCPU = os.Stdout
 
-	// run module 06 to load underworld and NMI_DoUpdates after it:
+	// run the initialization code:
 	s.SetPC(0x00_5000)
-	if stopPC, expectedPC, cycles := s.RunUntil(0x00_5055, 0x1000_0000); stopPC != expectedPC {
+	if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 		t.Fatal(err)
 	}
@@ -223,15 +226,41 @@ func TestGenerateMap(t *testing.T) {
 
 	maptiles := make([]image.Image, 0x128)
 
+	const entranceCount = 0x84
+	var entrances [entranceCount]struct {
+		ST uint16 // supertile    $A0
+		ID uint8  // dungeon ID $040C
+	}
+
+	{
+		//.room_id
+		//; writes to $A0, $048E
+		//#_02C577: dw $0104 ; 0x00
+		tblRoomId, _ := lorom.BusAddressToPak(0x02_C577)
+
+		//.dungeon_id
+		//; writes to $040C
+		//#_02D1EF: db $FF ; 0x00
+		tblDungeonId, _ := lorom.BusAddressToPak(0x02_D1EF)
+		for i := range entrances {
+			entrances[i].ST = binary.LittleEndian.Uint16(s.ROM[tblRoomId+uint32(i)<<1 : tblRoomId+uint32(i)<<1+2])
+			entrances[i].ID = s.ROM[tblDungeonId+uint32(i)]
+		}
+	}
+
 	wg := sync.WaitGroup{}
 	// supertile:
-	for supertile := uint16(0); supertile < 0x128; supertile++ {
+	for eID, entr := range entrances {
+		s.WRAM[0x010E] = uint8(eID)
+		supertile := entr.ST
+
 		//fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
 		binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
+		s.WRAM[0x040C] = entr.ID
 
 		// loadSupertile:
-		s.SetPC(0x00_5028)
-		if stopPC, expectedPC, cycles := s.RunUntil(0x00_503d, 0x1000_0000); stopPC != expectedPC {
+		s.SetPC(loadSupertilePC)
+		if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
 			err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 			t.Fatal(err)
 		}
@@ -377,13 +406,17 @@ func TestGenerateMap(t *testing.T) {
 		} {
 			all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
 			for st := 0; st < 0x128; st++ {
+				stMap := maptiles[st]
+				if stMap == nil {
+					continue
+				}
 				row := st / 0x10
 				col := st % 0x10
 				sc.S.Scale(
 					all,
 					image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
-					maptiles[st],
-					maptiles[st].Bounds(),
+					stMap,
+					stMap.Bounds(),
 					draw.Src,
 					nil,
 				)
