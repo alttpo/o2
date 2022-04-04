@@ -13,6 +13,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"io/ioutil"
 	"o2/snes"
 	"os"
 	"sync"
@@ -101,10 +102,6 @@ func TestGenerateMap(t *testing.T) {
 	a.STZ_dp(0x11)
 	a.STZ_dp(0xB0)
 
-	a.Comment("dungeon DungeonID ($FF = cave)")
-	setDungeonIDPC := a.Label("setDungeonID")
-	a.LDA_imm8_b(0xFF)
-	a.STA_abs(0x040C)
 	a.Comment("dungeon entrance DungeonID")
 	setEntranceIDPC := a.Label("setEntranceID")
 	a.LDA_imm8_b(0x08)
@@ -235,7 +232,9 @@ func TestGenerateMap(t *testing.T) {
 		DungeonID uint8  // dungeon DungeonID $040C
 	}
 
-	{
+	if false {
+		le := binary.LittleEndian
+
 		//.room_id
 		//; writes to $A0, $048E
 		//#_02C577: dw $0104 ; 0x00
@@ -246,19 +245,32 @@ func TestGenerateMap(t *testing.T) {
 		//#_02D1EF: db $FF ; 0x00
 		tblDungeonId, _ := lorom.BusAddressToPak(0x02_D1EF)
 		for i := range entrances {
-			entrances[i].ST = binary.LittleEndian.Uint16(s.ROM[tblRoomId+uint32(i)<<1 : tblRoomId+uint32(i)<<1+2])
+			entrances[i].ST = le.Uint16(s.ROM[tblRoomId+uint32(i)<<1 : tblRoomId+uint32(i)<<1+2])
 			entrances[i].DungeonID = s.ROM[tblDungeonId+uint32(i)]
 		}
+
+		// from every entrance, discover reachable supertiles:
+		//RoomData_DoorDataPointers:
+		//#_1F83C0: dl RoomDataDoors_0000
+		//#_1F83C3: dl RoomDataDoors_0001
+
+		//doordata:
+		//#_1F8792: db $61, $18 ; Door 0x18 | Dir:01 | Pos:0C
+		//#_1F8794: db $FF, $FF ; Layer03 / End
+		// $61 >> 3 == $0C (pos)
+		// $61  & 7 == $01 (dir)
+
+		// doordata contains a `pos` element which is looked up in one of these tables:
+		//DoorTileMapPositions_NorthWall:
+		//#_00997E: dw $021C
 	}
 
+	// iterate over entrances:
 	wg := sync.WaitGroup{}
-	// supertile:
-	for eID, entr := range entrances {
-		supertile := entr.ST
-		//fmt.Fprintf(s.Logger, "supertile $%03x\n", supertile)
-
-		s.HWIO.Dyn[setDungeonIDPC+1-0x5000] = entr.DungeonID
-		s.HWIO.Dyn[setEntranceIDPC+1-0x5000] = uint8(eID)
+	for eID := uint8(0); eID < 0x84; eID++ {
+		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
+		// poke the entrance ID into our asm code:
+		s.HWIO.Dyn[setEntranceIDPC+1-0x5000] = eID
 
 		//binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
 		//s.WRAM[0x040C] = entr.DungeonID
@@ -272,7 +284,25 @@ func TestGenerateMap(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// output is:
+		supertile := s.ReadWRAM16(0xA0)
+		fmt.Fprintf(s.Logger, "  supertile   = $%03x\n", supertile)
+
+		//for offs := uint32(0x0438); offs < 0x044A; offs += 2 {
+		//	stairCount := s.ReadWRAM16(offs)
+		//	fmt.Fprintf(s.Logger, "  stair count? [$%04x] = $%04x\n", offs, stairCount)
+		//}
+
+		doorTypes := make([]uint16, 0, 16)
+		for offs := uint32(0x1980); offs < 0x19A0; offs += 2 {
+			doorType := s.ReadWRAM16(offs)
+			if doorType == 0 {
+				break
+			}
+			doorTypes = append(doorTypes, doorType)
+		}
+		fmt.Fprintf(s.Logger, "  door types = %#v\n", doorTypes)
+
+		// gfx output is:
 		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
 		//  s.WRAM: $2000[0x2000] = BG1 1024x1024 tile map, [64][64]uint16
 		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
@@ -338,15 +368,15 @@ func TestGenerateMap(t *testing.T) {
 		copy(wram, s.WRAM[:])
 		wg.Add(1)
 		go func(st uint16, wram []byte, vram []byte) {
-			//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
-			//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
-			//ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
 
 			cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
 			pal := cgramToPalette(cgram)
 
 			// render BG image:
-			{
+			if true {
 				g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 
 				// BG2 first:
@@ -372,7 +402,7 @@ func TestGenerateMap(t *testing.T) {
 			}
 
 			// render VRAM BG tiles to a PNG:
-			{
+			if false {
 				tiles := 0x4000 / 32
 				g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
 				for t := 0; t < tiles; t++ {
@@ -665,6 +695,20 @@ func (s *System) CreateEmulator() (err error) {
 	}
 
 	return
+}
+
+func (s *System) ReadWRAM24(offs uint32) uint32 {
+	lohi := uint32(binary.LittleEndian.Uint16(s.WRAM[offs : offs+2]))
+	bank := uint32(s.WRAM[offs+3])
+	return bank<<16 | lohi
+}
+
+func (s *System) ReadWRAM16(offs uint32) uint16 {
+	return binary.LittleEndian.Uint16(s.WRAM[offs : offs+2])
+}
+
+func (s *System) ReadWRAM8(offs uint32) uint8 {
+	return s.WRAM[offs]
 }
 
 func (s *System) SetPC(pc uint32) {
