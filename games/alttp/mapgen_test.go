@@ -75,15 +75,15 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var b01LoadAdjancentDoorsPC uint32 = 0x01_5100
-	var setAdjacentSupertilePC uint32
+	var b01LoadDoorsPC uint32 = 0x01_5100
+	var b01LoadDoorsSetSupertilePC uint32
 	{
 		// must execute in bank $01
-		a = asm.NewEmitter(s.HWIO.Dyn[b01LoadAdjancentDoorsPC&0xFFFF-0x5000:], true)
-		a.SetBase(b01LoadAdjancentDoorsPC)
+		a = asm.NewEmitter(s.HWIO.Dyn[b01LoadDoorsPC&0xFFFF-0x5000:], true)
+		a.SetBase(b01LoadDoorsPC)
 		a.Label("loadAdjacentDoors")
 		a.REP(0x30)
-		setAdjacentSupertilePC = a.Label("setAdjacentSupertile") + 1
+		b01LoadDoorsSetSupertilePC = a.Label("setAdjacentSupertile") + 1
 		a.LDX_imm16_w(0x0000)
 		//Underworld_LoadAdjacentRoomDoors#_01B7EF
 		a.JSR_abs(0xB7EF) // 0x01_B7EF
@@ -277,8 +277,8 @@ func TestGenerateMap(t *testing.T) {
 		exitSupertiles := make([]uint16, 0, 16)
 
 		var stairs uint32
-		doorTileMaps := make([]uint16, 0, 16)
 		doorTypes := make([]uint16, 0, 16)
+		doorTileMaps := make([]uint16, 0, 16)
 		for i := 0; i < 16; i++ {
 			doorTileMap := read16(s.WRAM[:], uint32(0x19A0+(i<<1)))
 			if doorTileMap == 0 {
@@ -303,6 +303,21 @@ func TestGenerateMap(t *testing.T) {
 		fmt.Fprintf(s.Logger, "  door types = %#v\n", doorTypes)
 		fmt.Fprintf(s.Logger, "  door tmaps = %#v\n", doorTileMaps)
 
+		// load current supertile's door data:
+		write16(s.HWIO.Dyn[:], b01LoadDoorsSetSupertilePC-0x01_5000, supertile)
+		if err = s.ExecAt(b01LoadDoorsPC, 0); err != nil {
+			panic(err)
+		}
+		thisDoorMeta := make([]RoomDoorMeta, 0, 16)
+		for m := 0; m < 16; m++ {
+			x := read16(s.WRAM[:], uint32(0x1110+(m<<1)))
+			if x == 0xFFFF {
+				break
+			}
+
+			thisDoorMeta = append(thisDoorMeta, RoomDoorMeta(x))
+		}
+
 		if supertile < 0x100 {
 			// EG1:
 			// iterate through adjacent supertiles and determine door linkages:
@@ -310,8 +325,8 @@ func TestGenerateMap(t *testing.T) {
 			if eastSupertile, ok := DirEast.MoveEG1(supertile); ok {
 				// find east-side doors:
 				fmt.Fprintf(s.Logger, "  EAST SIDE: $%03x\n", eastSupertile)
-				write16(s.HWIO.Dyn[:], setAdjacentSupertilePC-0x01_5000, eastSupertile)
-				if err = s.ExecAt(b01LoadAdjancentDoorsPC, 0); err != nil {
+				write16(s.HWIO.Dyn[:], b01LoadDoorsSetSupertilePC-0x01_5000, eastSupertile)
+				if err = s.ExecAt(b01LoadDoorsPC, 0); err != nil {
 					panic(err)
 				}
 
@@ -337,10 +352,10 @@ func TestGenerateMap(t *testing.T) {
 					if !dm.IsEdge() {
 						continue
 					}
-					dmOpp := uint16(dm.OppositeDirPos())
+					dmOpp := dm.OppositeDirPos()
 
-					for _, tm := range doorTileMaps {
-						if dmOpp == tm&0x00FF {
+					for _, tm := range thisDoorMeta {
+						if dmOpp == tm.DirPos() {
 							exitSupertiles = append(exitSupertiles, eastSupertile)
 							break adjLoop
 						}
