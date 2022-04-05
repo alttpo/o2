@@ -268,6 +268,8 @@ func TestGenerateMap(t *testing.T) {
 	for eID := uint8(0); eID < entranceCount; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 
+		// TODO: just JSR Underworld_LoadEntrance#_02D617 instead of all of Module06_UnderworldLoad
+
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		_ = loadSupertilePC
@@ -276,7 +278,6 @@ func TestGenerateMap(t *testing.T) {
 		}
 
 		supertile := Supertile(s.ReadWRAM16(0xA0))
-		fmt.Fprintf(s.Logger, "  supertile   = %s\n", supertile)
 
 		// render the entrance supertile in the background:
 		err = renderSupertile(s, &wg, maptiles, uint16(supertile))
