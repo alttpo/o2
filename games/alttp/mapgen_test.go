@@ -346,7 +346,7 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 
 	// condense all maps into one image at different scale levels:
-	for _, divider := range []int{8, 4, 2, 1} {
+	for _, divider := range []int{ /*8, 4, */ 2, 1} {
 		supertilepx := 512 / divider
 
 		for _, sc := range []struct {
@@ -358,6 +358,7 @@ func TestGenerateMap(t *testing.T) {
 			//{draw.BiLinear, "bl"},
 			//{draw.CatmullRom, "cr"},
 		} {
+			wga := sync.WaitGroup{}
 			all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
 			for st := 0; st < 0x128; st++ {
 				stMap := maptiles[st]
@@ -366,15 +367,20 @@ func TestGenerateMap(t *testing.T) {
 				}
 				row := st / 0x10
 				col := st % 0x10
-				sc.S.Scale(
-					all,
-					image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
-					stMap,
-					stMap.Bounds(),
-					draw.Src,
-					nil,
-				)
+				wga.Add(1)
+				go func() {
+					sc.S.Scale(
+						all,
+						image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
+						stMap,
+						stMap.Bounds(),
+						draw.Src,
+						nil,
+					)
+					wga.Done()
+				}()
 			}
+			wga.Wait()
 			if err = exportPNG(fmt.Sprintf("data/all-%d-%s.png", divider, sc.N), all); err != nil {
 				panic(err)
 			}
