@@ -301,26 +301,24 @@ func TestGenerateMap(t *testing.T) {
 		// iterate through adjacent supertiles and determine door linkages:
 		if supertile&0x000F != 0x000F {
 			// find right-side doors:
+			fmt.Fprintf(s.Logger, "  RIGHT SIDE:")
 			write16(s.HWIO.Dyn[:], setAdjacentSupertilePC-0x01_5000, supertile+1)
 			if err = s.ExecAt(b01LoadAdjancentDoorsPC, 0); err != nil {
 				panic(err)
 			}
 
-			fmt.Fprintf(s.Logger, "  RIGHT SIDE:")
-			adjDoorCount := s.CPU.RY >> 1
-			fmt.Fprintf(s.Logger, "    door count = $%04x\n", adjDoorCount)
-			fmt.Fprintf(
-				s.Logger,
-				"    doors = {$%04x, $%04x, $%04x, $%04x, $%04x, $%04x, $%04x, $%04x, ...}\n",
-				read16(s.WRAM[:], 0x1110),
-				read16(s.WRAM[:], 0x1112),
-				read16(s.WRAM[:], 0x1114),
-				read16(s.WRAM[:], 0x1116),
-				read16(s.WRAM[:], 0x1118),
-				read16(s.WRAM[:], 0x111a),
-				read16(s.WRAM[:], 0x111c),
-				read16(s.WRAM[:], 0x111e),
-			)
+			//adjDoorCount := s.CPU.RY >> 1
+			adjDoorMeta := make([]RoomDoorMeta, 0, 16)
+			for m := 0; m < 16; m++ {
+				x := read16(s.WRAM[:], uint32(0x1110+m<<1))
+				if x == 0xFFFF {
+					break
+				}
+
+				adjDoorMeta = append(adjDoorMeta, RoomDoorMeta(x))
+			}
+
+			fmt.Fprintf(s.Logger, "    doors = %+v\n", adjDoorMeta)
 		}
 
 		// determine if falling through pits and pots is feasible:
@@ -382,6 +380,18 @@ func TestGenerateMap(t *testing.T) {
 			}
 		}
 	}
+}
+
+type RoomDoorMeta uint16
+
+func (d RoomDoorMeta) Type() uint8 { return uint8(d >> 8) }
+func (d RoomDoorMeta) Pos() uint8  { return uint8((d & 0xFF) >> 3) }
+
+// TODO: Confirm `& 7` vs `& 3`
+func (d RoomDoorMeta) Dir() uint8 { return uint8((d & 0xFF) & 7) }
+
+func (d RoomDoorMeta) String() string {
+	return fmt.Sprintf("{T=%02x,D=%d,P=%02x}", d.Type(), d.Dir(), d.Pos())
 }
 
 func renderSupertile(s *System, wg *sync.WaitGroup, maptiles []image.Image, supertile uint16) (err error) {
