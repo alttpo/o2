@@ -85,7 +85,7 @@ STAIRS3:
     //; Door types TODO
     //DOOR0TYPE       = $7E1980
     //DOOR0DIRT       = $7E1981
-    $1980 [16]uint16 // door types, list ends at #$xx00
+    $1980 [16]uint16 // door types
 
     // door types:
     ; 0x00 - Normal door
@@ -144,7 +144,7 @@ STAIRS3:
     //; Door tile map location
     //DOOR0TMAPL      = $7E19A0
     //DOOR0TMAPH      = $7E19A1
-    $19A0 [16]uint16 // door tilemap locations
+    $19A0 [16]uint16 // door tilemap locations, list ends at #$0000
 
     //; Door direction
     //;   0x00 - North
@@ -174,3 +174,27 @@ JSR Underworld_LoadAdjacentRoomDoors
 ;    (x & 0xFF00) == 0x4000
 ; or (x & 0xFF00) >= 0x0200
 ; i.e. if the door is currently OPEN (1) or CLOSED (0). uses SRAM room state to determine open status
+
+
+
+RoomDraw_DoorPartnerSelfLocation:
+#_009AA2: dw $0000, $0010, $0020, $0030, $0040, $0050
+#_009AAE: dw $0061, $0071, $0081, $0091, $00A1, $00B1
+#_009ABA: dw $0002, $0012, $0022, $0032, $0042, $0052
+#_009AC6: dw $0063, $0073, $0083, $0093, $00A3, $00B3
+
+RoomDraw_DoorPartnerLocation:
+#_009AD2: dw $0061, $0071, $0081, $0091, $00A1, $00B1
+#_009ADE: dw $0000, $0010, $0020, $0030, $0040, $0050
+#_009AEA: dw $0063, $0073, $0083, $0093, $00A3, $00B3
+#_009AF6: dw $0002, $0012, $0022, $0032, $0042, $0052
+
+
+#_01B7A0: LDA.w $19A0,X
+#_01B7A3: AND.w #$00FF
+#_01B7A6: CMP.b $00
+
+#_01B7B3: LDA.w $19A0,X
+#_01B7B6: AND.w #$FF00
+#_01B7B9: CMP.w #$3000
+#_01B7BC: BEQ .no_match

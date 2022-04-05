@@ -277,48 +277,76 @@ func TestGenerateMap(t *testing.T) {
 		exitSupertiles := make([]uint16, 0, 16)
 
 		var stairs uint32
+		doorTileMaps := make([]uint16, 0, 16)
 		doorTypes := make([]uint16, 0, 16)
-		for offs := uint32(0x1980); offs < 0x19A0; offs += 2 {
-			doorType := s.ReadWRAM16(offs)
-			if doorType == 0 {
+		for i := 0; i < 16; i++ {
+			doorTileMap := read16(s.WRAM[:], uint32(0x19A0+(i<<1)))
+			if doorTileMap == 0 {
 				break
 			}
+			doorType := read16(s.WRAM[:], uint32(0x1980+(i<<1)))
 
 			doorTypes = append(doorTypes, doorType)
+			doorTileMaps = append(doorTileMaps, doorTileMap)
 
 			// small-key locked stairwells
 			if doorType >= 0x20 && doorType <= 0x26 {
-				stairs++
 				//STAIR0TO        = $7EC001
 				//STAIR1TO        = $7EC002
 				//STAIR2TO        = $7EC003
 				//STAIR3TO        = $7EC004
-				exitSupertiles = append(exitSupertiles, uint16(read8(s.WRAM[:], 0xC000+stairs)))
+				stairs++
+				stairSupertile := uint16(read8(s.WRAM[:], 0xC000+stairs))
+				exitSupertiles = append(exitSupertiles, stairSupertile)
 			}
 		}
 		fmt.Fprintf(s.Logger, "  door types = %#v\n", doorTypes)
+		fmt.Fprintf(s.Logger, "  door tmaps = %#v\n", doorTileMaps)
 
-		// iterate through adjacent supertiles and determine door linkages:
-		if supertile&0x000F != 0x000F {
-			// find right-side doors:
-			fmt.Fprintf(s.Logger, "  RIGHT SIDE:")
-			write16(s.HWIO.Dyn[:], setAdjacentSupertilePC-0x01_5000, supertile+1)
-			if err = s.ExecAt(b01LoadAdjancentDoorsPC, 0); err != nil {
-				panic(err)
-			}
+		if supertile < 0x100 {
+			// EG1:
+			// iterate through adjacent supertiles and determine door linkages:
 
-			//adjDoorCount := s.CPU.RY >> 1
-			adjDoorMeta := make([]RoomDoorMeta, 0, 16)
-			for m := 0; m < 16; m++ {
-				x := read16(s.WRAM[:], uint32(0x1110+m<<1))
-				if x == 0xFFFF {
-					break
+			if eastSupertile, ok := DirEast.MoveEG1(supertile); ok {
+				// find east-side doors:
+				fmt.Fprintf(s.Logger, "  EAST SIDE: $%03x\n", eastSupertile)
+				write16(s.HWIO.Dyn[:], setAdjacentSupertilePC-0x01_5000, eastSupertile)
+				if err = s.ExecAt(b01LoadAdjancentDoorsPC, 0); err != nil {
+					panic(err)
 				}
 
-				adjDoorMeta = append(adjDoorMeta, RoomDoorMeta(x))
-			}
+				//adjDoorCount := s.CPU.RY >> 1
+				adjDoorMeta := make([]RoomDoorMeta, 0, 16)
+				for m := 0; m < 16; m++ {
+					x := read16(s.WRAM[:], uint32(0x1110+(m<<1)))
+					if x == 0xFFFF {
+						break
+					}
 
-			fmt.Fprintf(s.Logger, "    doors = %+v\n", adjDoorMeta)
+					adjDoorMeta = append(adjDoorMeta, RoomDoorMeta(x))
+				}
+
+				fmt.Fprintf(s.Logger, "    doors = %+v\n", adjDoorMeta)
+
+				// at least one door linking back to our supertile is good enough:
+			adjLoop:
+				for _, dm := range adjDoorMeta {
+					if dm.Dir() != DirWest {
+						continue
+					}
+					if !dm.IsEdge() {
+						continue
+					}
+					dmOpp := uint16(dm.OppositeDirPos())
+
+					for _, tm := range doorTileMaps {
+						if dmOpp == tm&0x00FF {
+							exitSupertiles = append(exitSupertiles, eastSupertile)
+							break adjLoop
+						}
+					}
+				}
+			}
 		}
 
 		// determine if falling through pits and pots is feasible:
@@ -388,13 +416,92 @@ func TestGenerateMap(t *testing.T) {
 	}
 }
 
+type DoorDir uint8
+
+const (
+	DirNorth DoorDir = iota
+	DirSouth
+	DirWest
+	DirEast
+)
+
+func (d DoorDir) MoveEG1(supertile uint16) (uint16, bool) {
+	switch d {
+	case DirNorth:
+		return supertile - 0x10, supertile&0xF0 > 0
+	case DirSouth:
+		return supertile + 0x10, supertile&0xF0 < 0xF0
+	case DirWest:
+		return supertile - 1, supertile&0x0F > 0
+	case DirEast:
+		return supertile + 1, supertile&0x0F < 0x0F
+	}
+	return supertile, false
+}
+
+func (d DoorDir) MoveEG2(supertile uint16) (uint16, bool) {
+	if supertile < 0x100 {
+		return supertile, false
+	}
+
+	switch d {
+	case DirNorth:
+		return supertile - 0x10, supertile&0xF0 > 0
+	case DirSouth:
+		return supertile + 0x10, supertile&0xF0 < 0xF0
+	case DirWest:
+		return supertile - 1, supertile&0x0F > 0
+	case DirEast:
+		return supertile + 1, supertile&0x0F < 0x02
+	}
+	return supertile, false
+}
+
 type RoomDoorMeta uint16
 
-func (d RoomDoorMeta) Type() uint8 { return uint8(d >> 8) }
-func (d RoomDoorMeta) Pos() uint8  { return uint8((d & 0xFF) >> 3) }
+func (d RoomDoorMeta) Type() uint8   { return uint8(d >> 8) }
+func (d RoomDoorMeta) DirPos() uint8 { return uint8(d & 0xFF) }
+func (d RoomDoorMeta) Pos() uint8    { return uint8((d & 0xF0) >> 4) }
+func (d RoomDoorMeta) Dir() DoorDir  { return DoorDir(d & 0x0F) }
 
-// TODO: Confirm `& 7` vs `& 3`
-func (d RoomDoorMeta) Dir() uint8 { return uint8((d & 0xFF) & 7) }
+func (d RoomDoorMeta) IsEdge() bool {
+	dp := d.Pos()
+	switch d.Dir() {
+	case DirNorth:
+		return dp <= 5
+	case DirSouth:
+		return dp >= 6 && dp <= 0xB
+	case DirWest:
+		return dp <= 5
+	case DirEast:
+		return dp >= 6 && dp <= 0xB
+	}
+
+	return false
+}
+
+func (d RoomDoorMeta) OppositeDirPos() uint8 {
+	dp := d.Pos()
+	switch d.Dir() {
+	case DirNorth:
+		return (dp+6)<<4 | uint8(DirSouth)
+	case DirSouth:
+		return (dp-6)<<4 | uint8(DirNorth)
+	case DirWest:
+		return (dp+6)<<4 | uint8(DirEast)
+	case DirEast:
+		return (dp-6)<<4 | uint8(DirWest)
+	}
+	return dp
+}
+
+// PairsWith() impl based on this lookup table:
+//var (
+//	northPosDir = [...]uint8{0x00, 0x10, 0x20, 0x30, 0x40, 0x50}
+//	southPosDir = [...]uint8{0x61, 0x71, 0x81, 0x91, 0xA1, 0xB1}
+//	westPosDir  = [...]uint8{0x02, 0x12, 0x22, 0x32, 0x42, 0x52}
+//	eastPosDir  = [...]uint8{0x63, 0x73, 0x83, 0x93, 0xA3, 0xB3}
+//)
 
 func (d RoomDoorMeta) String() string {
 	return fmt.Sprintf("{T=%02x,D=%d,P=%02x}", d.Type(), d.Dir(), d.Pos())
