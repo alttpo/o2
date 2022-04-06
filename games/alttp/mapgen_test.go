@@ -93,15 +93,15 @@ func TestGenerateMap(t *testing.T) {
 			a.STA_dp(0xA0)
 			a.SEP(0x30)
 
-			a.Comment("Underworld_LoadRoom#_01873A") // loads header and draws room
+			// loads header and draws room
+			a.Comment("Underworld_LoadRoom#_01873A")
 			a.JSL(0x01_873A)
 			// Output:
 			// Clears $19A0[16]
 
-			// get tile attributes into $7F2000:
 			a.Comment("Underworld_LoadCustomTileAttributes#_0FFD65")
 			a.JSL(0x0F_FD65)
-			//JSL Underworld_LoadAttributeTable#_01B8BF
+			a.Comment("Underworld_LoadAttributeTable#_01B8BF")
 			a.JSL(0x01_B8BF)
 
 			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
@@ -164,8 +164,10 @@ func TestGenerateMap(t *testing.T) {
 		a.SetBase(0x00_5000)
 		a.SEP(0x30)
 
-		a.Comment("InitializeTriforceIntro: sets up initial state")
+		a.Comment("InitializeTriforceIntro#_0CF03B: sets up initial state")
 		a.JSL(0x0C_F03B)
+		a.Comment("LoadDefaultTileAttributes#_0FFD2A")
+		a.JSL(0x0F_FD2A)
 
 		// general world state:
 		a.Comment("disable rain")
