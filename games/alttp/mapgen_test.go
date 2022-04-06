@@ -14,7 +14,6 @@ import (
 	"image/png"
 	"io"
 	"io/ioutil"
-	"math"
 	"o2/snes"
 	"os"
 	"sync"
@@ -78,8 +77,6 @@ func TestGenerateMap(t *testing.T) {
 
 	var b01LoadAndDrawRoomPC uint32
 	var b01LoadAndDrawRoomSetSupertilePC uint32
-	var b01LoadRoomHeaderPC uint32
-	var b01LoadRoomHeaderSetSupertilePC uint32
 	{
 		// must execute in bank $01
 		a = asm.NewEmitter(s.HWIO.Dyn[0x01_5100&0xFFFF-0x5000:], true)
@@ -96,8 +93,6 @@ func TestGenerateMap(t *testing.T) {
 			// loads header and draws room
 			a.Comment("Underworld_LoadRoom#_01873A")
 			a.JSL(0x01_873A)
-			// Output:
-			// Clears $19A0[16]
 
 			a.Comment("Underworld_LoadCustomTileAttributes#_0FFD65")
 			a.JSL(0x0F_FD65)
@@ -105,24 +100,7 @@ func TestGenerateMap(t *testing.T) {
 			a.JSL(0x01_B8BF)
 
 			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
-			a.BRA("jslUnderworld_LoadHeader")
-		}
-
-		{
-			b01LoadRoomHeaderPC = a.Label("loadRoomHeader")
-			a.REP(0x30)
-			b01LoadRoomHeaderSetSupertilePC = a.Label("loadRoomHeaderSetSupertile") + 1
-			a.LDA_imm16_w(0x0000)
-			a.STA_dp(0xA0)
-			a.SEP(0x30)
-
-			a.Label("jslUnderworld_LoadHeader")
-			a.Comment("Underworld_LoadHeader#_01B564")
-			a.JSR_abs(0xB564) // 0x01_B564
-			// Output:
-			//   $7EC000..04 et al for header data
-			//     $19A0[16] = doors
-
+			//a.BRA("jslUnderworld_LoadHeader")
 			a.WDM(0xAA)
 		}
 
@@ -347,11 +325,6 @@ func TestGenerateMap(t *testing.T) {
 			// discover all supertile doorway/pit/warp exits from this supertile:
 			doorwaysTo := make([]Supertile, 0, 16)
 
-			// load current supertile's room header only (not tilemap):
-			//write16(s.HWIO.Dyn[:], b01LoadRoomHeaderSetSupertilePC-0x01_5000, uint16(this))
-			//if err = s.ExecAt(b01LoadRoomHeaderPC, 0); err != nil {
-			//	panic(err)
-			//}
 			// load and draw current supertile:
 			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(this))
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
@@ -370,24 +343,6 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(s.WRAM[:], 0xC003)))
 			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(s.WRAM[:], 0xC004)))
 
-			// discover doorways and inter-room stairwells:
-			thisDoorMeta := make([]RoomDoorMeta, 0, 16)
-			for m := 0; m < 16; m++ {
-				x := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
-				// stop marker:
-				if x == 0 {
-					break
-				}
-
-				dm := RoomDoorMeta(x)
-				fmt.Fprintf(s.Logger, "    door: %s\n", dm)
-				if dm.Type().IsExit() {
-					continue
-				}
-
-				thisDoorMeta = append(thisDoorMeta, dm)
-			}
-
 			exitSeen := make(map[Supertile]struct{}, 24)
 			markExit := func(st Supertile, name string) {
 				if _, ok := exitSeen[st]; ok {
@@ -402,26 +357,83 @@ func TestGenerateMap(t *testing.T) {
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, st)
 			}
 
-			// scan BG1 and BG2 tiletype map for warp tiles, door tiles, stair tiles, etc:
-			//WARPTO   = $7EC000
+			// make a mutable copy of the tile type map:
+			tiletypes := [0x2000]uint8{}
+			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
+
+			// process doors first:
+			doors := make([]Door, 0, 16)
+			for m := 0; m < 16; m++ {
+				tpos := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
+				// stop marker:
+				if tpos == 0 {
+					break
+				}
+
+				door := Door{
+					Pos:  tpos >> 1, // we're only interested in tile type map positions, not the gfx tile map
+					Type: DoorType(read16(s.WRAM[:], uint32(0x1980+(m<<1)))),
+					Dir:  DoorDir(read16(s.WRAM[:], uint32(0x19C0+(m<<1)))),
+				}
+
+				fmt.Fprintf(s.Logger, "    door: %#v\n", &door)
+
+				if door.Type.IsExit() {
+					// fill in exit doors with collision tiles so they don't interfere with inter-tile door detection:
+					for i := uint16(0); i < 4; i++ {
+						tiletypes[door.Pos+0x00+i] = 0x01
+						tiletypes[door.Pos+0x40+i] = 0x01
+					}
+					continue
+				}
+
+				doors = append(doors, door)
+			}
+
 			//STAIR0TO = $7EC001
 			//STAIR1TO = $7EC002
 			//STAIR2TO = $7EC003
 			//STAIR3TO = $7EC004
-			for _, offs := range []uint32{0x12000, 0x13000} {
-				for t := uint32(0); t < 0x1000; t++ {
-					x := read8(s.WRAM[:], offs+t)
+			stairExitTo := [4]Supertile{
+				Supertile(read8(s.WRAM[:], uint32(0xC001))),
+				Supertile(read8(s.WRAM[:], uint32(0xC002))),
+				Supertile(read8(s.WRAM[:], uint32(0xC003))),
+				Supertile(read8(s.WRAM[:], uint32(0xC004))),
+			}
 
-					var stairs uint32 = math.MaxUint32
+			// grab list of interroom staircases:
+			stairs := make([]StaircaseInterRoom, 0, 4)
+			for m := 0; m < 4; m++ {
+				pos := read16(s.WRAM[:], uint32(0x06B0+(m<<1)))
+				// stop marker:
+				if pos == 0 {
+					break
+				}
+
+				staircase := StaircaseInterRoom{
+					Pos:    pos,
+					ExitTo: stairExitTo[m],
+				}
+
+				fmt.Fprintf(s.Logger, "    interroom stairs: %#v\n", &staircase)
+
+				stairs = append(stairs, staircase)
+			}
+
+			//WARPTO   = $7EC000
+			warpExitTo := Supertile(read8(s.WRAM[:], 0xC000))
+
+			// scan BG1 and BG2 tiletype map for warp tiles, door tiles, stair tiles, etc:
+			for _, offs := range []uint32{0x0000, 0x1000} {
+				for t := uint32(0); t < 0x1000; t++ {
+					x := tiletypes[offs+t]
 
 					if x == 0x4B {
 						// warp tile
-						warpSupertile := Supertile(read8(s.WRAM[:], 0xC000))
-						markExit(warpSupertile, "warp")
+						markExit(warpExitTo, "warp")
 					} else if x == 0x89 {
 						// east/west transport door:
-						stairs = 3
-						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						stairSupertile := stairExitTo[3]
 						fmt.Fprintf(s.Logger, "    transport door to %s\n", stairSupertile)
 						markExit(stairSupertile, "transport door")
 					} else
@@ -436,77 +448,81 @@ func TestGenerateMap(t *testing.T) {
 					} else if x >= 0x3E && x <= 0x3F {
 						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
 					} else if x >= 0x5E && x <= 0x5F {
+						var stairs uint32
 						stairs = 0 // TODO confirm
 						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						stairSupertile := stairExitTo[stairs]
 						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
 					} else if x >= 0x30 && x <= 0x37 {
+						var stairs uint32
 						stairs = uint32(x & 0x03)
 						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						stairSupertile := stairExitTo[stairs]
 						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
 					} else if x >= 0x38 && x <= 0x39 {
+						var stairs uint32
 						stairs = 0 // TODO confirm
 						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						stairSupertile := stairExitTo[stairs]
 						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
 					}
 				}
 
 				// scan edges of map for open doorways:
 				for t := uint32(0); t < 0x40; t++ {
-					xNorth := read8(s.WRAM[:], offs+t)
+					xNorth := tiletypes[offs+t]
 					if xNorth == 0x80 {
 						// north open doorway:
 						if st, _, ok := this.MoveBy(DirNorth); ok {
 							markExit(st, "north open doorway")
 						}
 					}
-					xNorth = read8(s.WRAM[:], offs+0x0180+t)
-					if xNorth >= 0xF0 && xNorth <= 0xFF {
+					xNorth = tiletypes[offs+0x0180+t]
+					if xNorth >= 0xF0 {
+						// TODO: check for stairs behind F0:  34 or 5E at +0x100 and +0x0C0
 						if st, _, ok := this.MoveBy(DirNorth); ok {
 							markExit(st, "north door")
 						}
 					}
 
-					xSouth := read8(s.WRAM[:], offs+0x0FC0+t)
+					xSouth := tiletypes[offs+0x0FC0+t]
 					if xSouth == 0x80 {
 						// south open doorway
 						if st, _, ok := this.MoveBy(DirSouth); ok {
 							markExit(st, "south open doorway")
 						}
 					}
-					xSouth = read8(s.WRAM[:], offs+0x0EC0+t)
-					if xSouth >= 0xF0 && xSouth <= 0xFF {
+					xSouth = tiletypes[offs+0x0EC0+t]
+					if xSouth >= 0xF0 {
 						if st, _, ok := this.MoveBy(DirSouth); ok {
 							markExit(st, "south door")
 						}
 					}
 
-					xWest := read8(s.WRAM[:], offs+t<<6)
+					xWest := tiletypes[offs+t<<6]
 					if xWest == 0x81 {
 						// west open doorway:
 						if st, _, ok := this.MoveBy(DirWest); ok {
 							markExit(st, "west open doorway")
 						}
 					}
-					xWest = read8(s.WRAM[:], offs+0x04+t<<6)
-					if xWest >= 0xF0 && xWest <= 0xFF {
+					xWest = tiletypes[offs+0x04+t<<6]
+					if xWest >= 0xF0 {
 						// west open doorway:
 						if st, _, ok := this.MoveBy(DirWest); ok {
 							markExit(st, "west door")
 						}
 					}
 
-					xEast := read8(s.WRAM[:], offs+0x003F+t<<6)
+					xEast := tiletypes[offs+0x003F+t<<6]
 					if xEast == 0x81 {
 						// east open doorway:
 						if st, _, ok := this.MoveBy(DirEast); ok {
 							markExit(st, "east open doorway")
 						}
 					}
-					xEast = read8(s.WRAM[:], offs+0x003B+t<<6)
-					if xEast >= 0xF0 && xEast <= 0xFF {
+					xEast = tiletypes[offs+0x003B+t<<6]
+					if xEast >= 0xF0 {
 						// east open doorway:
 						if st, _, ok := this.MoveBy(DirEast); ok {
 							markExit(st, "east door")
@@ -515,74 +531,6 @@ func TestGenerateMap(t *testing.T) {
 				}
 			}
 
-			if this < 0x100 {
-				// EG1:
-				// iterate through adjacent supertiles and determine door linkages:
-				isLinked := false
-
-				if adjSupertile, dir, ok := this.MoveBy(DirEast); ok {
-					if _, visited := stVisited[adjSupertile]; !visited {
-						isLinked, err = checkDoorLinkage(
-							adjSupertile,
-							dir,
-							thisDoorMeta,
-							s,
-							b01LoadRoomHeaderSetSupertilePC,
-							b01LoadRoomHeaderPC,
-						)
-						if isLinked {
-							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
-						}
-					}
-				}
-				if adjSupertile, dir, ok := this.MoveBy(DirNorth); ok {
-					if _, visited := stVisited[adjSupertile]; !visited {
-						isLinked, err = checkDoorLinkage(
-							adjSupertile,
-							dir,
-							thisDoorMeta,
-							s,
-							b01LoadRoomHeaderSetSupertilePC,
-							b01LoadRoomHeaderPC,
-						)
-						if isLinked {
-							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
-						}
-					}
-				}
-				if adjSupertile, dir, ok := this.MoveBy(DirWest); ok {
-					if _, visited := stVisited[adjSupertile]; !visited {
-						isLinked, err = checkDoorLinkage(
-							adjSupertile,
-							dir,
-							thisDoorMeta,
-							s,
-							b01LoadRoomHeaderSetSupertilePC,
-							b01LoadRoomHeaderPC,
-						)
-						if isLinked {
-							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
-						}
-					}
-				}
-				if adjSupertile, dir, ok := this.MoveBy(DirSouth); ok {
-					if _, visited := stVisited[adjSupertile]; !visited {
-						isLinked, err = checkDoorLinkage(
-							adjSupertile,
-							dir,
-							thisDoorMeta,
-							s,
-							b01LoadRoomHeaderSetSupertilePC,
-							b01LoadRoomHeaderPC,
-						)
-						if isLinked {
-							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
-						}
-					}
-				}
-			}
-
-			//fmt.Fprintf(s.Logger, "    doorways to %#v\n", doorwaysTo)
 			for _, st := range doorwaysTo {
 				lifo = append(lifo, st)
 			}
@@ -662,56 +610,6 @@ func TestGenerateMap(t *testing.T) {
 	}
 }
 
-func checkDoorLinkage(
-	adjSupertile Supertile,
-	direction DoorDir,
-	thisDoorMeta []RoomDoorMeta,
-	s *System,
-	b01LoadRoomHeaderSetSupertilePC uint32,
-	b01LoadRoomHeaderPC uint32,
-) (bool, error) {
-	dirOpp := direction.Opposite()
-
-	// load up supertile's headers, with doors into $19A0[16]
-	write16(s.HWIO.Dyn[:], b01LoadRoomHeaderSetSupertilePC-0x01_5000, uint16(adjSupertile))
-	if err := s.ExecAt(b01LoadRoomHeaderPC, 0); err != nil {
-		return false, err
-	}
-
-	//adjDoorCount := s.CPU.RY >> 1
-	adjDoorMeta := make([]RoomDoorMeta, 0, 16)
-	for m := 0; m < 16; m++ {
-		x := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
-		// stop marker:
-		if x == 0 {
-			break
-		}
-
-		adjDoorMeta = append(adjDoorMeta, RoomDoorMeta(x))
-	}
-
-	fmt.Fprintf(s.Logger, "    %s %s doors = %+v\n", direction, adjSupertile, adjDoorMeta)
-
-	// at least one door linking back to our supertile is good enough:
-	for _, dm := range adjDoorMeta {
-		if dm.Dir() != dirOpp {
-			continue
-		}
-		if !dm.IsEdge() {
-			continue
-		}
-
-		dmOpp := dm.OppositeDirPos()
-		for _, tm := range thisDoorMeta {
-			if dmOpp == tm.DirPos() {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
 type Supertile uint16
 
 func (s Supertile) String() string { return fmt.Sprintf("$%03x", uint16(s)) }
@@ -728,6 +626,17 @@ func (s Supertile) MoveBy(dir DoorDir) (Supertile, DoorDir, bool) {
 		return Supertile(uint16(s) + 1), dir, uint16(s)&0x0F < 0xF
 	}
 	return s, dir, false
+}
+
+type StaircaseInterRoom struct {
+	Pos    uint16    // $06B0
+	ExitTo Supertile // $C001[0..3]
+}
+
+type Door struct {
+	Type DoorType // $1980
+	Pos  uint16   // $19A0
+	Dir  DoorDir  // $19C0
 }
 
 type DoorDir uint8
@@ -805,56 +714,6 @@ func (t DoorType) IsExit() bool {
 
 func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
-}
-
-type RoomDoorMeta uint16
-
-func (d RoomDoorMeta) Type() DoorType { return DoorType(d >> 8) }
-func (d RoomDoorMeta) DirPos() uint8  { return uint8(d & 0xFF) }
-func (d RoomDoorMeta) Pos() uint8     { return uint8((d & 0xF0) >> 4) }
-func (d RoomDoorMeta) Dir() DoorDir   { return DoorDir(d & 0x0F) }
-
-func (d RoomDoorMeta) IsEdge() bool {
-	dp := d.Pos()
-	switch d.Dir() {
-	case DirNorth:
-		return dp <= 5
-	case DirSouth:
-		return dp >= 6 && dp <= 0xB
-	case DirWest:
-		return dp <= 5
-	case DirEast:
-		return dp >= 6 && dp <= 0xB
-	}
-
-	return false
-}
-
-func (d RoomDoorMeta) OppositeDirPos() uint8 {
-	dp := d.Pos()
-	switch d.Dir() {
-	case DirNorth:
-		return (dp+6)<<4 | uint8(DirSouth)
-	case DirSouth:
-		return (dp-6)<<4 | uint8(DirNorth)
-	case DirWest:
-		return (dp+6)<<4 | uint8(DirEast)
-	case DirEast:
-		return (dp-6)<<4 | uint8(DirWest)
-	}
-	return dp
-}
-
-// PairsWith() impl based on this lookup table:
-//var (
-//	northPosDir = [...]uint8{0x00, 0x10, 0x20, 0x30, 0x40, 0x50}
-//	southPosDir = [...]uint8{0x61, 0x71, 0x81, 0x91, 0xA1, 0xB1}
-//	westPosDir  = [...]uint8{0x02, 0x12, 0x22, 0x32, 0x42, 0x52}
-//	eastPosDir  = [...]uint8{0x63, 0x73, 0x83, 0x93, 0xA3, 0xB3}
-//)
-
-func (d RoomDoorMeta) String() string {
-	return fmt.Sprintf("{$%04x: T=%02x,D=%s,P=%1x}", uint16(d), d.Type(), d.Dir(), d.Pos())
 }
 
 func renderSupertile(s *System, wg *sync.WaitGroup, maptiles []image.Image, supertile uint16) (err error) {
