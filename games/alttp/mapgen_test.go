@@ -312,7 +312,9 @@ func TestGenerateMap(t *testing.T) {
 		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
 
 		// render the entrance supertile in the background:
-		err = renderSupertile(s, &wg, maptiles, uint16(entranceSupertile))
+		if err = renderSupertile(s, &wg, maptiles, uint16(entranceSupertile)); err != nil {
+			t.Fatal(err)
+		}
 
 		// build a stack (LIFO) of supertiles to visit:
 		lifo := make([]Supertile, 0, 0x100)
@@ -526,22 +528,30 @@ func TestGenerateMap(t *testing.T) {
 		// which supertiles this entrance should render:
 		fmt.Fprintf(s.Logger, "  render: %#v\n", toRender)
 
-		// gfx output is:
-		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
-		//  s.WRAM: $2000[0x2000] = BG1 64x64 tile map  [64][64]uint16
-		//  s.WRAM: $4000[0x2000] = BG2 64x64 tile map  [64][64]uint16
-		//  s.WRAM:$12000[0x1000] = BG1 64x64 tile type [64][64]uint8
-		//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
-		//  s.WRAM: $C300[0x0200] = CGRAM palette
+		// render all supertiles found:
+		if len(toRender) >= 1 {
+			for _, st := range toRender[1:] {
+				// loadSupertile:
+				write16(s.WRAM[:], 0xA0, uint16(st))
+				if err = s.ExecAt(loadSupertilePC, donePC); err != nil {
+					t.Fatal(err)
+				}
 
-		// loadSupertile:
-		//binary.LittleEndian.PutUint16(s.WRAM[0xA0:0xA2], supertile)
-		//s.WRAM[0x040C] = entr.DungeonID
-		//s.SetPC(loadSupertilePC)
-		//if stopPC, expectedPC, cycles := s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
-		//	err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
-		//	t.Fatal(err)
-		//}
+				// render the supertile to an Image:
+				if err = renderSupertile(s, &wg, maptiles, uint16(st)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// gfx output is:
+			//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
+			//  s.WRAM: $2000[0x2000] = BG1 64x64 tile map  [64][64]uint16
+			//  s.WRAM: $4000[0x2000] = BG2 64x64 tile map  [64][64]uint16
+			//  s.WRAM:$12000[0x1000] = BG1 64x64 tile type [64][64]uint8
+			//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
+			//  s.WRAM: $C300[0x0200] = CGRAM palette
+		}
+
 	}
 
 	wg.Wait()
