@@ -77,27 +77,50 @@ func TestGenerateMap(t *testing.T) {
 
 	var b01LoadRoomHeaderPC uint32 = 0x01_5100
 	var b01LoadRoomHeaderSetSupertilePC uint32
+	var b01LoadAndDrawRoomPC uint32
 	{
 		// must execute in bank $01
 		a = asm.NewEmitter(s.HWIO.Dyn[b01LoadRoomHeaderPC&0xFFFF-0x5000:], true)
 		a.SetBase(b01LoadRoomHeaderPC)
 
-		a.Label("loadRoomHeader")
-		a.REP(0x30)
+		{
+			a.Label("loadRoomHeader")
+			a.REP(0x30)
 
-		b01LoadRoomHeaderSetSupertilePC = a.Label("setSupertile") + 1
-		a.LDA_imm16_w(0x0000)
-		a.STA_dp(0xA0)
+			b01LoadRoomHeaderSetSupertilePC = a.Label("setSupertile") + 1
+			a.LDA_imm16_w(0x0000)
+			a.STA_dp(0xA0)
 
-		// this only loads $1110[16], but we want the WARPTO and STAIRTO[4] headers loaded as well:
-		////Underworld_LoadAdjacentRoomDoors#_01B7EF
-		//a.LDX_imm16_w(0x0000)
-		//a.JSR_abs(0xB7EF) // 0x01_B7EF
+			// this only loads $1110[16], but we want the WARPTO and STAIRTO[4] headers loaded as well:
+			////Underworld_LoadAdjacentRoomDoors#_01B7EF
+			//a.LDX_imm16_w(0x0000)
+			//a.JSR_abs(0xB7EF) // 0x01_B7EF
 
-		a.Comment("Underworld_LoadHeader#_01B564")
-		a.JSR_abs(0xB564) // 0x01_B564
+			a.Comment("Underworld_LoadHeader#_01B564")
+			a.JSR_abs(0xB564) // 0x01_B564
+			// Output:
+			//   $7EC000..04 et al for header data
+			//     $19A0[16] = doors
 
-		a.WDM(0xAA)
+			a.WDM(0xAA)
+		}
+
+		{
+			b01LoadAndDrawRoomPC = a.Label("loadAndDrawRoom")
+			_ = b01LoadAndDrawRoomPC
+			a.SEP(0x30)
+
+			// JSL Underworld_LoadRoom#_01873A ; loads header and draws room
+			// Input:
+			//   $0110 = roomID*3
+			a.JSL(0x01_873A)
+			// Output:
+			// Clears $19A0[16]
+
+			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
+
+			a.WDM(0xAA)
+		}
 
 		// finalize labels
 		if err = a.Finalize(); err != nil {
