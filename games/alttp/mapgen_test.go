@@ -450,6 +450,67 @@ func TestGenerateMap(t *testing.T) {
 						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
 					}
 				}
+
+				// scan edges of map for open doorways:
+				for t := uint32(0); t < 0x40; t++ {
+					xNorth := read8(s.WRAM[:], offs+t)
+					if xNorth == 0x80 {
+						// north open doorway:
+						if st, _, ok := this.MoveBy(DirNorth); ok {
+							markExit(st, "north open doorway")
+						}
+					}
+					xNorth = read8(s.WRAM[:], offs+0x0180+t)
+					if xNorth >= 0xF0 && xNorth <= 0xFF {
+						if st, _, ok := this.MoveBy(DirNorth); ok {
+							markExit(st, "north door")
+						}
+					}
+
+					xSouth := read8(s.WRAM[:], offs+0x0FC0+t)
+					if xSouth == 0x80 {
+						// south open doorway
+						if st, _, ok := this.MoveBy(DirSouth); ok {
+							markExit(st, "south open doorway")
+						}
+					}
+					xSouth = read8(s.WRAM[:], offs+0x0EC0+t)
+					if xSouth >= 0xF0 && xSouth <= 0xFF {
+						if st, _, ok := this.MoveBy(DirSouth); ok {
+							markExit(st, "south door")
+						}
+					}
+
+					xWest := read8(s.WRAM[:], offs+t<<6)
+					if xWest == 0x81 {
+						// west open doorway:
+						if st, _, ok := this.MoveBy(DirWest); ok {
+							markExit(st, "west open doorway")
+						}
+					}
+					xWest = read8(s.WRAM[:], offs+0x04+t<<6)
+					if xWest >= 0xF0 && xWest <= 0xFF {
+						// west open doorway:
+						if st, _, ok := this.MoveBy(DirWest); ok {
+							markExit(st, "west door")
+						}
+					}
+
+					xEast := read8(s.WRAM[:], offs+0x003F+t<<6)
+					if xEast == 0x81 {
+						// east open doorway:
+						if st, _, ok := this.MoveBy(DirEast); ok {
+							markExit(st, "east open doorway")
+						}
+					}
+					xEast = read8(s.WRAM[:], offs+0x003B+t<<6)
+					if xEast >= 0xF0 && xEast <= 0xFF {
+						// east open doorway:
+						if st, _, ok := this.MoveBy(DirEast); ok {
+							markExit(st, "east door")
+						}
+					}
+				}
 			}
 
 			if this < 0x100 {
