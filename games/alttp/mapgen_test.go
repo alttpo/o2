@@ -361,6 +361,17 @@ func TestGenerateMap(t *testing.T) {
 			tiletypes := [0x2000]uint8{}
 			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
 
+			// propagate collision from BG1 to BG2 and vice versa; this should fill in unreachable areas:
+			for t := 0; t < 0x1000; t++ {
+				if tiletypes[t] == 0 && tiletypes[t+0x1000] != 0 {
+					tiletypes[t] = tiletypes[t+0x1000]
+				} else if tiletypes[t+0x1000] == 0 && tiletypes[t] != 0 {
+					tiletypes[t+0x1000] = tiletypes[t]
+				}
+			}
+
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
+
 			// process doors first:
 			doors := make([]Door, 0, 16)
 			for m := 0; m < 16; m++ {
@@ -411,8 +422,7 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				staircase := StaircaseInterRoom{
-					Pos:    pos,
-					ExitTo: stairExitTo[m],
+					Pos: pos,
 				}
 
 				fmt.Fprintf(s.Logger, "    interroom stairs: %#v\n", &staircase)
@@ -481,60 +491,58 @@ func TestGenerateMap(t *testing.T) {
 
 				// scan edges of map for open doorways:
 				for t := uint32(0); t < 0x40; t++ {
-					xNorth := tiletypes[offs+t]
-					if xNorth == 0x80 {
-						// north open doorway:
-						if st, _, ok := this.MoveBy(DirNorth); ok {
+					if st, _, ok := this.MoveBy(DirNorth); ok {
+						x := tiletypes[offs+t]
+						if x == 0x80 {
 							markExit(st, "north open doorway")
+						} else if x == 0x00 {
+							markExit(st, "north open walkway")
 						}
-					}
-					xNorth = tiletypes[offs+0x0180+t]
-					if xNorth >= 0xF0 {
-						if st, _, ok := this.MoveBy(DirNorth); ok {
+
+						x = tiletypes[offs+0x0180+t]
+						if x >= 0xF0 {
 							markExit(st, "north door")
 						}
 					}
 
-					xSouth := tiletypes[offs+0x0FC0+t]
-					if xSouth == 0x80 {
-						// south open doorway
-						if st, _, ok := this.MoveBy(DirSouth); ok {
+					if st, _, ok := this.MoveBy(DirSouth); ok {
+						x := tiletypes[offs+0x0FC0+t]
+						if x == 0x80 {
 							markExit(st, "south open doorway")
+						} else if x == 0x00 {
+							markExit(st, "south open walkway")
 						}
-					}
-					xSouth = tiletypes[offs+0x0EC0+t]
-					if xSouth >= 0xF0 {
-						if st, _, ok := this.MoveBy(DirSouth); ok {
+
+						x = tiletypes[offs+0x0EC0+t]
+						if x >= 0xF0 {
 							markExit(st, "south door")
 						}
 					}
 
-					xWest := tiletypes[offs+t<<6]
-					if xWest == 0x81 {
-						// west open doorway:
-						if st, _, ok := this.MoveBy(DirWest); ok {
+					if st, _, ok := this.MoveBy(DirWest); ok {
+						x := tiletypes[offs+t<<6]
+						if x == 0x81 {
 							markExit(st, "west open doorway")
+						} else if x == 0x00 {
+							markExit(st, "west open walkway")
 						}
-					}
-					xWest = tiletypes[offs+0x04+t<<6]
-					if xWest >= 0xF0 {
-						// west open doorway:
-						if st, _, ok := this.MoveBy(DirWest); ok {
+
+						x = tiletypes[offs+0x04+t<<6]
+						if x >= 0xF0 {
 							markExit(st, "west door")
 						}
 					}
 
-					xEast := tiletypes[offs+0x003F+t<<6]
-					if xEast == 0x81 {
-						// east open doorway:
-						if st, _, ok := this.MoveBy(DirEast); ok {
+					if st, _, ok := this.MoveBy(DirEast); ok {
+						x := tiletypes[offs+0x003F+t<<6]
+						if x == 0x81 {
 							markExit(st, "east open doorway")
+						} else if x == 0x00 {
+							markExit(st, "east open walkway")
 						}
-					}
-					xEast = tiletypes[offs+0x003B+t<<6]
-					if xEast >= 0xF0 {
-						// east open doorway:
-						if st, _, ok := this.MoveBy(DirEast); ok {
+
+						x = tiletypes[offs+0x003B+t<<6]
+						if x >= 0xF0 {
 							markExit(st, "east door")
 						}
 					}
@@ -639,8 +647,7 @@ func (s Supertile) MoveBy(dir DoorDir) (Supertile, DoorDir, bool) {
 }
 
 type StaircaseInterRoom struct {
-	Pos    uint16    // $06B0
-	ExitTo Supertile // $C001[0..3]
+	Pos uint16 // $06B0
 }
 
 type Door struct {
