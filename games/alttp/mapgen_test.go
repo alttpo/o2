@@ -75,49 +75,46 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var b01LoadRoomHeaderPC uint32 = 0x01_5100
-	var b01LoadRoomHeaderSetSupertilePC uint32
 	var b01LoadAndDrawRoomPC uint32
+	var b01LoadAndDrawRoomSetSupertilePC uint32
+	var b01LoadRoomHeaderPC uint32
+	var b01LoadRoomHeaderSetSupertilePC uint32
 	{
 		// must execute in bank $01
-		a = asm.NewEmitter(s.HWIO.Dyn[b01LoadRoomHeaderPC&0xFFFF-0x5000:], true)
-		a.SetBase(b01LoadRoomHeaderPC)
-
-		{
-			a.Label("loadRoomHeader")
-			a.REP(0x30)
-
-			b01LoadRoomHeaderSetSupertilePC = a.Label("setSupertile") + 1
-			a.LDA_imm16_w(0x0000)
-			a.STA_dp(0xA0)
-
-			// this only loads $1110[16], but we want the WARPTO and STAIRTO[4] headers loaded as well:
-			////Underworld_LoadAdjacentRoomDoors#_01B7EF
-			//a.LDX_imm16_w(0x0000)
-			//a.JSR_abs(0xB7EF) // 0x01_B7EF
-
-			a.Comment("Underworld_LoadHeader#_01B564")
-			a.JSR_abs(0xB564) // 0x01_B564
-			// Output:
-			//   $7EC000..04 et al for header data
-			//     $19A0[16] = doors
-
-			a.WDM(0xAA)
-		}
+		a = asm.NewEmitter(s.HWIO.Dyn[0x01_5100&0xFFFF-0x5000:], true)
+		a.SetBase(0x01_5100)
 
 		{
 			b01LoadAndDrawRoomPC = a.Label("loadAndDrawRoom")
-			_ = b01LoadAndDrawRoomPC
+			a.REP(0x30)
+			b01LoadAndDrawRoomSetSupertilePC = a.Label("loadAndDrawRoomSetSupertile") + 1
+			a.LDA_imm16_w(0x0000)
+			a.STA_dp(0xA0)
 			a.SEP(0x30)
 
-			// JSL Underworld_LoadRoom#_01873A ; loads header and draws room
-			// Input:
-			//   $0110 = roomID*3
+			a.Comment("Underworld_LoadRoom#_01873A") // loads header and draws room
 			a.JSL(0x01_873A)
 			// Output:
 			// Clears $19A0[16]
 
 			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
+			a.BRA("jslUnderworld_LoadHeader")
+		}
+
+		{
+			b01LoadRoomHeaderPC = a.Label("loadRoomHeader")
+			a.REP(0x30)
+			b01LoadRoomHeaderSetSupertilePC = a.Label("loadRoomHeaderSetSupertile") + 1
+			a.LDA_imm16_w(0x0000)
+			a.STA_dp(0xA0)
+			a.SEP(0x30)
+
+			a.Label("jslUnderworld_LoadHeader")
+			a.Comment("Underworld_LoadHeader#_01B564")
+			a.JSR_abs(0xB564) // 0x01_B564
+			// Output:
+			//   $7EC000..04 et al for header data
+			//     $19A0[16] = doors
 
 			a.WDM(0xAA)
 		}
@@ -147,6 +144,8 @@ func TestGenerateMap(t *testing.T) {
 		a.Comment("implied RTL")
 		a.WriteTextTo(s.Logger)
 	}
+
+	// TODO: just JSR Underworld_LoadEntrance#_02D617 instead of all of Module06_UnderworldLoad
 
 	var loadEntrancePC uint32
 	var setEntranceIDPC uint32
@@ -204,9 +203,11 @@ func TestGenerateMap(t *testing.T) {
 		a.JSR_abs(0x85FC)
 		a.Comment("NMI_DoUpdates")
 		a.JSR_abs(0x89E0) // NMI_DoUpdates
+
 		// WDM triggers an abort for values >= 10
 		donePC = a.Label("done")
 		a.WDM(0xAA)
+
 		// finalize labels
 		if err = a.Finalize(); err != nil {
 			panic(err)
@@ -294,8 +295,6 @@ func TestGenerateMap(t *testing.T) {
 	for eID := uint8(0); eID < entranceCount; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 
-		// TODO: just JSR Underworld_LoadEntrance#_02D617 instead of all of Module06_UnderworldLoad
-
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
@@ -323,6 +322,7 @@ func TestGenerateMap(t *testing.T) {
 
 			// skip this supertile if we already visited it:
 			if _, isVisited := stVisited[this]; isVisited {
+				fmt.Fprintf(s.Logger, "  already visited supertile %s\n", this)
 				continue
 			}
 
@@ -335,8 +335,13 @@ func TestGenerateMap(t *testing.T) {
 			doorwaysTo := make([]Supertile, 0, 16)
 
 			// load current supertile's room header only (not tilemap):
-			write16(s.HWIO.Dyn[:], b01LoadRoomHeaderSetSupertilePC-0x01_5000, uint16(this))
-			if err = s.ExecAt(b01LoadRoomHeaderPC, 0); err != nil {
+			//write16(s.HWIO.Dyn[:], b01LoadRoomHeaderSetSupertilePC-0x01_5000, uint16(this))
+			//if err = s.ExecAt(b01LoadRoomHeaderPC, 0); err != nil {
+			//	panic(err)
+			//}
+			// load and draw current supertile:
+			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(this))
+			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
 
@@ -356,7 +361,7 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				dm := RoomDoorMeta(x)
-				fmt.Fprintf(s.Logger, "  door: %s\n", dm)
+				fmt.Fprintf(s.Logger, "    door: %s\n", dm)
 				if dm.Type().IsExit() {
 					continue
 				}
@@ -449,12 +454,15 @@ func TestGenerateMap(t *testing.T) {
 				}
 			}
 
-			fmt.Fprintf(s.Logger, "    doorways to %#v\n", doorwaysTo)
+			//fmt.Fprintf(s.Logger, "    doorways to %#v\n", doorwaysTo)
 			for _, st := range doorwaysTo {
 				lifo = append(lifo, st)
 				toRender = append(toRender, st)
 			}
 		}
+
+		// which supertiles this entrance should render:
+		fmt.Fprintf(s.Logger, "  render: %#v\n", toRender)
 
 		// gfx output is:
 		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
