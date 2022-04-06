@@ -448,23 +448,34 @@ func TestGenerateMap(t *testing.T) {
 					} else if x >= 0x3E && x <= 0x3F {
 						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
 					} else if x >= 0x5E && x <= 0x5F {
-						var stairs uint32
-						stairs = 0 // TODO confirm
-						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := stairExitTo[stairs]
-						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+						doorTile := tiletypes[offs+0x40+t]
+						if doorTile&0xF8 == 0x30 {
+							stairs := doorTile & 0x03
+							fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
+							markExit(stairExitTo[stairs], fmt.Sprintf("stair%d", stairs))
+
+							// block up the stairwell:
+							for i := uint32(0); i < 2; i++ {
+								tiletypes[t+0x00+i] = 0x01
+								tiletypes[t+0x40+i] = 0x01
+							}
+							if tiletypes[offs+0x80+t] >= 0xF0 {
+								// block up the doorway so that door analysis does not think this door goes to an adjacent supertile:
+								for i := uint32(0); i < 2; i++ {
+									tiletypes[t+0x80+i] = 0x01
+									tiletypes[t+0xC0+i] = 0x01
+								}
+							}
+						}
 					} else if x >= 0x30 && x <= 0x37 {
-						var stairs uint32
-						stairs = uint32(x & 0x03)
+						stairs := x & 0x03
 						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := stairExitTo[stairs]
-						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+						markExit(stairExitTo[stairs], fmt.Sprintf("stair%d", stairs))
 					} else if x >= 0x38 && x <= 0x39 {
 						var stairs uint32
 						stairs = 0 // TODO confirm
 						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
-						stairSupertile := stairExitTo[stairs]
-						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+						markExit(stairExitTo[stairs], fmt.Sprintf("stair%d", stairs))
 					}
 				}
 
@@ -479,7 +490,6 @@ func TestGenerateMap(t *testing.T) {
 					}
 					xNorth = tiletypes[offs+0x0180+t]
 					if xNorth >= 0xF0 {
-						// TODO: check for stairs behind F0:  34 or 5E at +0x100 and +0x0C0
 						if st, _, ok := this.MoveBy(DirNorth); ok {
 							markExit(st, "north door")
 						}
