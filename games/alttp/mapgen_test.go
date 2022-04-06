@@ -86,10 +86,12 @@ func TestGenerateMap(t *testing.T) {
 		a.REP(0x30)
 
 		b01LoadRoomHeaderSetSupertilePC = a.Label("setSupertile") + 1
-		a.LDX_imm16_w(0x0000)
+		a.LDA_imm16_w(0x0000)
+		a.STA_dp(0xA0)
 
 		// this only loads $1110[16], but we want the WARPTO and STAIRTO[4] headers loaded as well:
 		////Underworld_LoadAdjacentRoomDoors#_01B7EF
+		//a.LDX_imm16_w(0x0000)
 		//a.JSR_abs(0xB7EF) // 0x01_B7EF
 
 		a.Comment("Underworld_LoadHeader#_01B564")
@@ -251,6 +253,7 @@ func TestGenerateMap(t *testing.T) {
 	}
 
 	//s.LoggerCPU = os.Stdout
+	_ = loadSupertilePC
 
 	// run the initialization code:
 	if err = s.ExecAt(0x00_5000, donePC); err != nil {
@@ -272,19 +275,18 @@ func TestGenerateMap(t *testing.T) {
 
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
-		_ = loadSupertilePC
 		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
 
-		supertile := Supertile(s.ReadWRAM16(0xA0))
+		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
 
 		// render the entrance supertile in the background:
-		err = renderSupertile(s, &wg, maptiles, uint16(supertile))
+		err = renderSupertile(s, &wg, maptiles, uint16(entranceSupertile))
 
 		// build a stack (LIFO) of supertiles to visit:
 		lifo := make([]Supertile, 0, 0x100)
-		lifo = append(lifo, supertile)
+		lifo = append(lifo, entranceSupertile)
 
 		// build a list of supertiles to render following from this entrance:
 		toRender := make([]Supertile, 0, 0x100)
@@ -296,6 +298,12 @@ func TestGenerateMap(t *testing.T) {
 			this := lifo[lifoEnd]
 			lifo = lifo[0:lifoEnd]
 
+			// skip this supertile if we already visited it:
+			if _, isVisited := stVisited[this]; isVisited {
+				continue
+			}
+
+			// mark as visited:
 			stVisited[this] = struct{}{}
 
 			fmt.Fprintf(s.Logger, "  supertile   = %s\n", this)
@@ -318,13 +326,14 @@ func TestGenerateMap(t *testing.T) {
 			var stairs uint32
 			thisDoorMeta := make([]RoomDoorMeta, 0, 16)
 			for m := 0; m < 16; m++ {
-				x := read16(s.WRAM[:], uint32(0x1110+(m<<1)))
-				if x == 0xFFFF {
-					// stop marker:
+				x := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
+				// stop marker:
+				if x == 0 {
 					break
 				}
 
 				dm := RoomDoorMeta(x)
+				fmt.Fprintf(s.Logger, "  door: %s\n", dm)
 				if dm.Type().IsExit() {
 					continue
 				}
@@ -338,6 +347,7 @@ func TestGenerateMap(t *testing.T) {
 					stairs++
 					stairSupertile := Supertile(read8(s.WRAM[:], 0xC000+stairs))
 					if _, visited := stVisited[stairSupertile]; !visited {
+						fmt.Fprintf(s.Logger, "    stairs to %s\n", stairSupertile)
 						doorwaysTo = append(doorwaysTo, stairSupertile)
 					}
 				}
@@ -348,57 +358,70 @@ func TestGenerateMap(t *testing.T) {
 			if this < 0x100 {
 				// EG1:
 				// iterate through adjacent supertiles and determine door linkages:
+				isLinked := false
 
 				if adjSupertile, dir, ok := this.MoveBy(DirEast); ok {
 					if _, visited := stVisited[adjSupertile]; !visited {
-						doorwaysTo, err = checkDoorLinkage(
+						isLinked, err = checkDoorLinkage(
 							adjSupertile,
 							dir,
-							doorwaysTo,
 							thisDoorMeta,
 							s,
 							b01LoadRoomHeaderSetSupertilePC,
 							b01LoadRoomHeaderPC,
 						)
+						if isLinked {
+							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
+							doorwaysTo = append(doorwaysTo, adjSupertile)
+						}
 					}
 				}
 				if adjSupertile, dir, ok := this.MoveBy(DirNorth); ok {
 					if _, visited := stVisited[adjSupertile]; !visited {
-						doorwaysTo, err = checkDoorLinkage(
+						isLinked, err = checkDoorLinkage(
 							adjSupertile,
 							dir,
-							doorwaysTo,
 							thisDoorMeta,
 							s,
 							b01LoadRoomHeaderSetSupertilePC,
 							b01LoadRoomHeaderPC,
 						)
+						if isLinked {
+							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
+							doorwaysTo = append(doorwaysTo, adjSupertile)
+						}
 					}
 				}
 				if adjSupertile, dir, ok := this.MoveBy(DirWest); ok {
 					if _, visited := stVisited[adjSupertile]; !visited {
-						doorwaysTo, err = checkDoorLinkage(
+						isLinked, err = checkDoorLinkage(
 							adjSupertile,
 							dir,
-							doorwaysTo,
 							thisDoorMeta,
 							s,
 							b01LoadRoomHeaderSetSupertilePC,
 							b01LoadRoomHeaderPC,
 						)
+						if isLinked {
+							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
+							doorwaysTo = append(doorwaysTo, adjSupertile)
+						}
 					}
 				}
 				if adjSupertile, dir, ok := this.MoveBy(DirSouth); ok {
 					if _, visited := stVisited[adjSupertile]; !visited {
-						doorwaysTo, err = checkDoorLinkage(
+						isLinked, err = checkDoorLinkage(
 							adjSupertile,
 							dir,
-							doorwaysTo,
 							thisDoorMeta,
 							s,
 							b01LoadRoomHeaderSetSupertilePC,
 							b01LoadRoomHeaderPC,
 						)
+						if isLinked {
+							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
+							doorwaysTo = append(doorwaysTo, adjSupertile)
+						}
 					}
 				}
 			}
@@ -474,32 +497,32 @@ func TestGenerateMap(t *testing.T) {
 func checkDoorLinkage(
 	adjSupertile Supertile,
 	direction DoorDir,
-	doorwaysTo []Supertile,
 	thisDoorMeta []RoomDoorMeta,
 	s *System,
-	b01LoadDoorsSetSupertilePC uint32,
-	b01LoadDoorsPC uint32,
-) ([]Supertile, error) {
+	b01LoadRoomHeaderSetSupertilePC uint32,
+	b01LoadRoomHeaderPC uint32,
+) (bool, error) {
 	dirOpp := direction.Opposite()
 
-	// load up supertile's doors into $1110[16]
-	write16(s.HWIO.Dyn[:], b01LoadDoorsSetSupertilePC-0x01_5000, uint16(adjSupertile))
-	if err := s.ExecAt(b01LoadDoorsPC, 0); err != nil {
-		return doorwaysTo, err
+	// load up supertile's headers, with doors into $19A0[16]
+	write16(s.HWIO.Dyn[:], b01LoadRoomHeaderSetSupertilePC-0x01_5000, uint16(adjSupertile))
+	if err := s.ExecAt(b01LoadRoomHeaderPC, 0); err != nil {
+		return false, err
 	}
 
 	//adjDoorCount := s.CPU.RY >> 1
 	adjDoorMeta := make([]RoomDoorMeta, 0, 16)
 	for m := 0; m < 16; m++ {
-		x := read16(s.WRAM[:], uint32(0x1110+(m<<1)))
-		if x == 0xFFFF {
+		x := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
+		// stop marker:
+		if x == 0 {
 			break
 		}
 
 		adjDoorMeta = append(adjDoorMeta, RoomDoorMeta(x))
 	}
 
-	//fmt.Fprintf(s.Logger, "    doors = %+v\n", adjDoorMeta)
+	fmt.Fprintf(s.Logger, "    %s %s doors = %+v\n", direction, adjSupertile, adjDoorMeta)
 
 	// at least one door linking back to our supertile is good enough:
 	for _, dm := range adjDoorMeta {
@@ -513,13 +536,12 @@ func checkDoorLinkage(
 		dmOpp := dm.OppositeDirPos()
 		for _, tm := range thisDoorMeta {
 			if dmOpp == tm.DirPos() {
-				doorwaysTo = append(doorwaysTo, adjSupertile)
-				return doorwaysTo, nil
+				return true, nil
 			}
 		}
 	}
 
-	return doorwaysTo, nil
+	return false, nil
 }
 
 type Supertile uint16
