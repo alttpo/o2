@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"io"
 	"io/ioutil"
+	"math"
 	"o2/snes"
 	"os"
 	"sync"
@@ -329,6 +330,7 @@ func TestGenerateMap(t *testing.T) {
 
 			// mark as visited:
 			stVisited[this] = struct{}{}
+			toRender = append(toRender, this)
 
 			fmt.Fprintf(s.Logger, "  supertile   = %s\n", this)
 
@@ -350,9 +352,13 @@ func TestGenerateMap(t *testing.T) {
 			// alternatively: decide if the WARPTO byte was leaked from a neighboring room header table entry
 			//WARPTO          = $7EC000
 			//s.ReadWRAM8(0xC000)
+			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(s.WRAM[:], 0xC000)))
+			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(s.WRAM[:], 0xC001)))
+			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(s.WRAM[:], 0xC002)))
+			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(s.WRAM[:], 0xC003)))
+			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(s.WRAM[:], 0xC004)))
 
 			// discover doorways and inter-room stairwells:
-			var stairs uint32
 			thisDoorMeta := make([]RoomDoorMeta, 0, 16)
 			for m := 0; m < 16; m++ {
 				x := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
@@ -374,31 +380,37 @@ func TestGenerateMap(t *testing.T) {
 			for t := uint32(0); t < 0x1000; t++ {
 				x := read8(s.WRAM[:], 0x12000+t)
 
+				var stairs uint32 = math.MaxUint32
+
 				// numbered stairwells:
-				if x&0xF0 == 0x30 {
-					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+				if x == 0x1D {
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x >= 0x1E && x <= 0x1F {
+					stairs = uint32(x - 0x1E)
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x == 0x22 {
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x == 0x3D {
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x >= 0x3E && x <= 0x3F {
+					stairs = uint32(x - 0x3E)
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x >= 0x5E && x <= 0x5F {
+					stairs = uint32(x - 0x5E)
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				} else if x&0xF0 == 0x30 {
+					stairs = uint32(x & 0x03)
+					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+				}
+
+				if stairs < 4 {
 					//STAIR0TO        = $7EC001
 					//STAIR1TO        = $7EC002
 					//STAIR2TO        = $7EC003
 					//STAIR3TO        = $7EC004
-					stairs = uint32(x & 0x0F)
-					stairSupertile := Supertile(read8(s.WRAM[:], 0xC000+stairs))
-					if _, visited := stVisited[stairSupertile]; !visited {
-						fmt.Fprintf(s.Logger, "    stairs to %s\n", stairSupertile)
-						doorwaysTo = append(doorwaysTo, stairSupertile)
-					}
-				}
-				if x >= 0x1D && x <= 0x1F {
-					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
-				}
-				if x == 0x22 {
-					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
-				}
-				if x >= 0x3D && x <= 0x3F {
-					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
-				}
-				if x >= 0x5E && x <= 0x5F {
-					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+					stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+					fmt.Fprintf(s.Logger, "    stairs to %s\n", stairSupertile)
+					doorwaysTo = append(doorwaysTo, stairSupertile)
 				}
 			}
 
@@ -476,7 +488,6 @@ func TestGenerateMap(t *testing.T) {
 			//fmt.Fprintf(s.Logger, "    doorways to %#v\n", doorwaysTo)
 			for _, st := range doorwaysTo {
 				lifo = append(lifo, st)
-				toRender = append(toRender, st)
 			}
 		}
 
