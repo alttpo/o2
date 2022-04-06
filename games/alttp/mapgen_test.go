@@ -384,41 +384,69 @@ func TestGenerateMap(t *testing.T) {
 				thisDoorMeta = append(thisDoorMeta, dm)
 			}
 
-			// scan tilemap:
-			for t := uint32(0); t < 0x1000; t++ {
-				x := read8(s.WRAM[:], 0x12000+t)
-
-				var stairs uint32 = math.MaxUint32
-
-				// numbered stairwells:
-				if x == 0x1D {
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x >= 0x1E && x <= 0x1F {
-					stairs = uint32(x - 0x1E)
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x == 0x22 {
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x == 0x3D {
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x >= 0x3E && x <= 0x3F {
-					stairs = uint32(x - 0x3E)
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x >= 0x5E && x <= 0x5F {
-					stairs = uint32(x - 0x5E)
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
-				} else if x&0xF0 == 0x30 {
-					stairs = uint32(x & 0x03)
-					fmt.Fprintf(s.Logger, "    stair #%d $%02x at $%04x\n", stairs, x, t)
+			exitSeen := make(map[Supertile]struct{}, 24)
+			markExit := func(st Supertile, name string) {
+				if _, ok := exitSeen[st]; ok {
+					return
 				}
 
-				if stairs < 4 {
-					//STAIR0TO        = $7EC001
-					//STAIR1TO        = $7EC002
-					//STAIR2TO        = $7EC003
-					//STAIR3TO        = $7EC004
-					stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
-					fmt.Fprintf(s.Logger, "    stairs to %s\n", stairSupertile)
-					doorwaysTo = append(doorwaysTo, stairSupertile)
+				if st == 0 {
+					panic("exit to 0!!")
+				}
+				exitSeen[st] = struct{}{}
+				doorwaysTo = append(doorwaysTo, st)
+				fmt.Fprintf(s.Logger, "    %s to %s\n", name, st)
+			}
+
+			// scan BG1 and BG2 tiletype map for warp tiles, door tiles, stair tiles, etc:
+			//WARPTO   = $7EC000
+			//STAIR0TO = $7EC001
+			//STAIR1TO = $7EC002
+			//STAIR2TO = $7EC003
+			//STAIR3TO = $7EC004
+			for _, offs := range []uint32{0x12000, 0x13000} {
+				for t := uint32(0); t < 0x1000; t++ {
+					x := read8(s.WRAM[:], offs+t)
+
+					var stairs uint32 = math.MaxUint32
+
+					if x == 0x4B {
+						// warp tile
+						warpSupertile := Supertile(read8(s.WRAM[:], 0xC000))
+						markExit(warpSupertile, "warp")
+					} else if x == 0x89 {
+						// east/west transport door:
+						stairs = 3
+						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						fmt.Fprintf(s.Logger, "    transport door to %s\n", stairSupertile)
+						markExit(stairSupertile, "transport door")
+					} else
+
+					// supertile exiting stairwells:
+					if x >= 0x1D && x <= 0x1F {
+						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
+					} else if x == 0x22 {
+						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
+					} else if x == 0x3D {
+						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
+					} else if x >= 0x3E && x <= 0x3F {
+						fmt.Fprintf(s.Logger, "    stair $%02x at $%04x\n", x, t)
+					} else if x >= 0x5E && x <= 0x5F {
+						stairs = 0 // TODO confirm
+						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
+						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+					} else if x >= 0x30 && x <= 0x37 {
+						stairs = uint32(x & 0x03)
+						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
+						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+					} else if x >= 0x38 && x <= 0x39 {
+						stairs = 0 // TODO confirm
+						fmt.Fprintf(s.Logger, "    stair%d $%02x at $%04x\n", stairs, x, t)
+						stairSupertile := Supertile(read8(s.WRAM[:], 0xC001+stairs))
+						markExit(stairSupertile, fmt.Sprintf("stair%d", stairs))
+					}
 				}
 			}
 
@@ -438,8 +466,7 @@ func TestGenerateMap(t *testing.T) {
 							b01LoadRoomHeaderPC,
 						)
 						if isLinked {
-							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
-							doorwaysTo = append(doorwaysTo, adjSupertile)
+							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
 						}
 					}
 				}
@@ -454,8 +481,7 @@ func TestGenerateMap(t *testing.T) {
 							b01LoadRoomHeaderPC,
 						)
 						if isLinked {
-							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
-							doorwaysTo = append(doorwaysTo, adjSupertile)
+							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
 						}
 					}
 				}
@@ -470,8 +496,7 @@ func TestGenerateMap(t *testing.T) {
 							b01LoadRoomHeaderPC,
 						)
 						if isLinked {
-							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
-							doorwaysTo = append(doorwaysTo, adjSupertile)
+							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
 						}
 					}
 				}
@@ -486,8 +511,7 @@ func TestGenerateMap(t *testing.T) {
 							b01LoadRoomHeaderPC,
 						)
 						if isLinked {
-							fmt.Fprintf(s.Logger, "    %s doorway to %s\n", dir, adjSupertile)
-							doorwaysTo = append(doorwaysTo, adjSupertile)
+							markExit(adjSupertile, fmt.Sprintf("%s doorway", dir))
 						}
 					}
 				}
