@@ -98,7 +98,11 @@ func TestGenerateMap(t *testing.T) {
 			// Output:
 			// Clears $19A0[16]
 
-			// TODO: get tile attributes into $7F2000 as well
+			// get tile attributes into $7F2000:
+			a.Comment("Underworld_LoadCustomTileAttributes#_0FFD65")
+			a.JSL(0x0F_FD65)
+			//JSL Underworld_LoadAttributeTable#_01B8BF
+			a.JSL(0x01_B8BF)
 
 			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
 			a.BRA("jslUnderworld_LoadHeader")
