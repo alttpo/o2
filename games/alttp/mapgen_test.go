@@ -297,6 +297,7 @@ func TestGenerateMap(t *testing.T) {
 
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
+		// load the entrance and draw the room:
 		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
@@ -366,21 +367,39 @@ func TestGenerateMap(t *testing.T) {
 					continue
 				}
 
-				// small-key locked stairwells
-				if dm.Type().IsStairwell() {
+				thisDoorMeta = append(thisDoorMeta, dm)
+			}
+
+			// scan tilemap:
+			for t := uint32(0); t < 0x1000; t++ {
+				x := read8(s.WRAM[:], 0x12000+t)
+
+				// numbered stairwells:
+				if x&0xF0 == 0x30 {
+					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
 					//STAIR0TO        = $7EC001
 					//STAIR1TO        = $7EC002
 					//STAIR2TO        = $7EC003
 					//STAIR3TO        = $7EC004
-					stairs++
+					stairs = uint32(x & 0x0F)
 					stairSupertile := Supertile(read8(s.WRAM[:], 0xC000+stairs))
 					if _, visited := stVisited[stairSupertile]; !visited {
 						fmt.Fprintf(s.Logger, "    stairs to %s\n", stairSupertile)
 						doorwaysTo = append(doorwaysTo, stairSupertile)
 					}
 				}
-
-				thisDoorMeta = append(thisDoorMeta, dm)
+				if x >= 0x1D && x <= 0x1F {
+					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+				}
+				if x == 0x22 {
+					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+				}
+				if x >= 0x3D && x <= 0x3F {
+					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+				}
+				if x >= 0x5E && x <= 0x5F {
+					fmt.Fprintf(s.Logger, "    stairs $%02x at $%04x\n", x, t)
+				}
 			}
 
 			if this < 0x100 {
@@ -466,8 +485,10 @@ func TestGenerateMap(t *testing.T) {
 
 		// gfx output is:
 		//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
-		//  s.WRAM: $2000[0x2000] = BG1 1024x1024 tile map, [64][64]uint16
-		//  s.WRAM: $4000[0x2000] = BG2 1024x1024 tile map, [64][64]uint16
+		//  s.WRAM: $2000[0x2000] = BG1 64x64 tile map  [64][64]uint16
+		//  s.WRAM: $4000[0x2000] = BG2 64x64 tile map  [64][64]uint16
+		//  s.WRAM:$12000[0x1000] = BG1 64x64 tile type [64][64]uint8
+		//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
 		//  s.WRAM: $C300[0x0200] = CGRAM palette
 
 		// loadSupertile:
