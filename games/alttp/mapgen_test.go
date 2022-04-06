@@ -98,6 +98,8 @@ func TestGenerateMap(t *testing.T) {
 			// Output:
 			// Clears $19A0[16]
 
+			// TODO: get tile attributes into $7F2000 as well
+
 			// then JSR Underworld_LoadHeader#_01B564 to reload the doors into $19A0[16]
 			a.BRA("jslUnderworld_LoadHeader")
 		}
@@ -347,6 +349,8 @@ func TestGenerateMap(t *testing.T) {
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
+
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(this)), s.WRAM[:], 0644)
 
 			// determine if falling through pits and pots is feasible:
 			// alternatively: decide if the WARPTO byte was leaked from a neighboring room header table entry
@@ -763,8 +767,8 @@ func renderSupertile(s *System, wg *sync.WaitGroup, maptiles []image.Image, supe
 	go func(st uint16, wram []byte, vram []byte) {
 		var err error
 
-		ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
-		ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
+		//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
+		//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
 		//ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
 
 		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
