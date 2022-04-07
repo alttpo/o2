@@ -122,15 +122,17 @@ func TestGenerateMap(t *testing.T) {
 		a.WriteTextTo(s.Logger)
 	}
 
-	// TODO: pit detection using Link_ControlHandler
-	// bank 07
-	// force a pit detection:
-	// set $02E4 = 0 to allow control of link
-	// set $55 = 0 to disable cape
-	// set $5D base state to $01 to check pits
-	// set $5B = $02
-	// JSL Link_Main#_078000
-	// output $59 != 0 if pit detected; $A0 changed
+	if false {
+		// TODO: pit detection using Link_ControlHandler
+		// bank 07
+		// force a pit detection:
+		// set $02E4 = 0 to allow control of link
+		// set $55 = 0 to disable cape
+		// set $5D base state to $01 to check pits
+		// set $5B = $02
+		// JSL Link_Main#_078000
+		// output $59 != 0 if pit detected; $A0 changed
+	}
 
 	var loadEntrancePC uint32
 	var setEntranceIDPC uint32
@@ -293,6 +295,17 @@ func TestGenerateMap(t *testing.T) {
 	// make a set to determine which supertiles have been visited:
 	stVisited := make(map[Supertile]struct{})
 
+	//RoomsWithPitDamage#_00990C [0x70]uint16
+	roomsWithPitDamage := make(map[Supertile]bool, 0x128)
+	for i := Supertile(0); i < 0x128; i++ {
+		roomsWithPitDamage[i] = false
+	}
+	for i := 0; i < 0x70; i++ {
+		romaddr, _ := lorom.BusAddressToPak(0x00_990C)
+		st := Supertile(read16(s.ROM[:], romaddr+uint32(i)<<1))
+		roomsWithPitDamage[st] = true
+	}
+
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
 	const entranceCount = 0x84
@@ -359,6 +372,9 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(s.WRAM[:], 0xC002)))
 			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(s.WRAM[:], 0xC003)))
 			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(s.WRAM[:], 0xC004)))
+
+			// check if room causes pit damage vs warp:
+			// RoomsWithPitDamage#_00990C [0x70]uint16
 
 			exitSeen := make(map[Supertile]struct{}, 24)
 			markExit := func(st Supertile, name string) {
@@ -470,6 +486,7 @@ func TestGenerateMap(t *testing.T) {
 
 			//WARPTO   = $7EC000
 			warpExitTo := Supertile(read8(s.WRAM[:], 0xC000))
+			pitDamages := roomsWithPitDamage[this]
 
 			// scan BG1 and BG2 tiletype map for warp tiles, door tiles, stair tiles, etc:
 			for _, offs := range []uint32{0x0000, 0x1000} {
@@ -478,10 +495,10 @@ func TestGenerateMap(t *testing.T) {
 
 					if x == 0x4B {
 						// warp tile
-						markExit(warpExitTo, "warp")
-						//} else if x == 0x20 && warpExitTo != 0 {
-						//	// pit tile
-						//	markExit(warpExitTo, "pit")
+						markExit(warpExitTo, fmt.Sprintf("warp($%04x)", offs+t))
+					} else if x == 0x20 && !pitDamages && warpExitTo != 0 {
+						// pit tile
+						markExit(warpExitTo, fmt.Sprintf("pit($%04x)", offs+t))
 					} else if x == 0x89 {
 						// east/west transport door:
 						stairSupertile := stairExitTo[3]
