@@ -450,7 +450,7 @@ func TestGenerateMap(t *testing.T) {
 				for t := uint32(0); t < 0x40; t++ {
 					if st, _, ok := this.MoveBy(DirNorth); ok {
 						x := tiletypes[offs+t]
-						if x == 0x80 {
+						if x == 0x80 || x == 0x84 {
 							markExit(st, "north open doorway")
 						} else if x == 0x00 {
 							markExit(st, "north open walkway")
@@ -464,7 +464,7 @@ func TestGenerateMap(t *testing.T) {
 
 					if st, _, ok := this.MoveBy(DirSouth); ok {
 						x := tiletypes[offs+0x0FC0+t]
-						if x == 0x80 {
+						if x == 0x80 || x == 0x84 {
 							markExit(st, "south open doorway")
 						} else if x == 0x00 {
 							markExit(st, "south open walkway")
@@ -478,7 +478,7 @@ func TestGenerateMap(t *testing.T) {
 
 					if st, _, ok := this.MoveBy(DirWest); ok {
 						x := tiletypes[offs+t<<6]
-						if x == 0x81 {
+						if x == 0x81 || x == 0x85 {
 							markExit(st, "west open doorway")
 						} else if x == 0x00 {
 							markExit(st, "west open walkway")
@@ -492,7 +492,7 @@ func TestGenerateMap(t *testing.T) {
 
 					if st, _, ok := this.MoveBy(DirEast); ok {
 						x := tiletypes[offs+0x003F+t<<6]
-						if x == 0x81 {
+						if x == 0x81 || x == 0x85 {
 							markExit(st, "east open doorway")
 						} else if x == 0x00 {
 							markExit(st, "east open walkway")
