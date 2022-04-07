@@ -271,23 +271,26 @@ func TestGenerateMap(t *testing.T) {
 			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
 
-			// seed flood fills from all edge tiles
-			// if hit a ledge tile, we're on the solid side
-			// otherwise, we're on the walkable side
-			//correctBG2edgeFill(&tiletypes)
-			//cleanedMap := tiletypes
-
 			cleanedMap := [0x2000]uint8{}
 			for i := range cleanedMap {
 				cleanedMap[i] = 0x01
 			}
-			handleLinkAccessibleTiles(
-				&tiletypes,
-				[]mapCoord{entryCoord},
-				func(t mapCoord, v uint8) {
-					cleanedMap[t] = v
-				},
-			)
+			if false {
+				// seed flood fills from all edge tiles
+				// if hit a ledge tile, we're on the solid side
+				// otherwise, we're on the walkable side
+				correctBG2edgeFill(&tiletypes)
+				cleanedMap = tiletypes
+			} else {
+				// discover Link-accessible tiles:
+				handleLinkAccessibleTiles(
+					&tiletypes,
+					[]mapCoord{entryCoord},
+					func(t mapCoord, v uint8) {
+						cleanedMap[t] = v
+					},
+				)
+			}
 
 			// cleaned-up map:
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(this)), cleanedMap[:], 0644)
@@ -818,8 +821,9 @@ func correctBG2edgeFill(tiletypes *[0x2000]byte) {
 
 func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, f func(t mapCoord, v uint8)) {
 	type state struct {
-		t mapCoord
-		d DoorDir
+		t      mapCoord
+		d      DoorDir
+		inPipe bool
 	}
 
 	var lifoSpace [0x2000]state
@@ -845,9 +849,83 @@ func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, 
 		if _, ok := visited[s.t]; ok {
 			continue
 		}
-		visited[s.t] = empty{}
 
 		v := tiletypes[s.t]
+
+		if s.inPipe {
+			// pipe exit:
+			if v == 0xBE {
+				visited[s.t] = empty{}
+				f(s.t, v)
+
+				// continue in the same direction but not in pipe-follower state:
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+				continue
+			}
+
+			// TR west to south or north to east:
+			if v == 0xB2 {
+				if s.d == DirWest {
+					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				} else if s.d == DirNorth {
+					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				}
+				continue
+			}
+			// TR south to east or west to north:
+			if v == 0xB3 {
+				if s.d == DirSouth {
+					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				} else if s.d == DirWest {
+					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				}
+				continue
+			}
+			// TR north to west or east to south:
+			if v == 0xB4 {
+				if s.d == DirNorth {
+					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				} else if s.d == DirEast {
+					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				}
+				continue
+			}
+			// TR east to north or south to west:
+			if v == 0xB5 {
+				if s.d == DirEast {
+					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				} else if s.d == DirSouth {
+					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+				}
+				continue
+			}
+
+			// for anything else we just continue in the same direction:
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			continue
+		}
+
+		visited[s.t] = empty{}
 
 		if v == 0x00 ||
 			v == 0x08 || v == 0x09 ||
@@ -878,6 +956,26 @@ func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, 
 		if v == 0x20 {
 			// Link can fall into pit but cannot move beyond it:
 			f(s.t, v)
+			continue
+		}
+
+		// TR pipe entrance:
+		if v == 0xBE {
+			f(s.t, v)
+
+			// find corresponding B0..B1 directional pipe to follow:
+			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (tiletypes[tn] >= 0xB0 && tiletypes[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (tiletypes[tn] >= 0xB0 && tiletypes[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (tiletypes[tn] >= 0xB0 && tiletypes[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (tiletypes[tn] >= 0xB0 && tiletypes[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
 			continue
 		}
 
