@@ -233,7 +233,7 @@ func TestGenerateMap(t *testing.T) {
 	}
 
 	// test floodfill tile type map from four corners:
-	if false {
+	if true {
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x34 // TT entrance
 		// load the entrance and draw the room:
@@ -245,7 +245,10 @@ func TestGenerateMap(t *testing.T) {
 		//this := Supertile(0x072) // HC basement
 		//this := Supertile(0x084) // DP entrance
 		//this := Supertile(0x071) // HC boom guard
-		for this := Supertile(0); this < 0x100; this++ {
+		this := Supertile(0x014) // TR lava room
+		write16(s.WRAM[:], 0x20, (0x405>>6)<<3)
+		write16(s.WRAM[:], 0x22, (0x405&0x03F)<<3)
+		/*for this := Supertile(0); this < 0x100; this++*/ {
 			fmt.Fprintf(s.Logger, "st = %s\n", this)
 
 			// load and draw current supertile:
@@ -253,6 +256,15 @@ func TestGenerateMap(t *testing.T) {
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
+
+			// if this is the entrance, Link should be already moved to his starting position:
+			entryLayer := read8(s.WRAM[:], 0xEE)
+			entryCoord := AbsToMapCoord(
+				read16(s.WRAM[:], 0x22),
+				read16(s.WRAM[:], 0x20),
+			) | mapCoord(uint16(entryLayer)<<12)
+
+			fmt.Fprintf(s.Logger, "  coord = %04x\n", entryCoord)
 
 			// make a mutable copy of the tile type map:
 			tiletypes := [0x2000]uint8{}
@@ -262,29 +274,23 @@ func TestGenerateMap(t *testing.T) {
 			// seed flood fills from all edge tiles
 			// if hit a ledge tile, we're on the solid side
 			// otherwise, we're on the walkable side
-			visited := make(map[mapCoord]empty, 0x1000)
-			lifo := make([]mapCoord, 0, 0x1000)
-			for e := mapCoord(1); e < 0x3E; e++ {
-				edges := [...]mapCoord{
-					0x40 + e,      // north
-					e << 6,        // west
-					0x0F80 + e,    // south
-					0x003F + e<<6, // east
-				}
-				for _, te := range edges {
-					tiles, makeSolid := floodFill(&tiletypes, te, lifo[:0], visited)
-					// if the tile map is entirely empty then make it solid
-					// otherwise, it must be not walkable and potentially solid:
-					if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
-						for _, t := range tiles {
-							tiletypes[0x1000+t] = 0x01
-						}
-					}
-				}
+			//correctBG2edgeFill(&tiletypes)
+			//cleanedMap := tiletypes
+
+			cleanedMap := [0x2000]uint8{}
+			for i := range cleanedMap {
+				cleanedMap[i] = 0x01
 			}
+			handleLinkAccessibleTiles(
+				&tiletypes,
+				[]mapCoord{entryCoord},
+				func(t mapCoord, v uint8) {
+					cleanedMap[t] = v
+				},
+			)
 
 			// cleaned-up map:
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(this)), tiletypes[:], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(this)), cleanedMap[:], 0644)
 		}
 
 		return
@@ -320,6 +326,13 @@ func TestGenerateMap(t *testing.T) {
 		}
 
 		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
+
+		// if this is the entrance, Link should be already moved to his starting position:
+		entryLayer := read8(s.WRAM[:], 0xEE)
+		entryCoord := AbsToMapCoord(
+			read16(s.WRAM[:], 0x22),
+			read16(s.WRAM[:], 0x20),
+		) | mapCoord(uint16(entryLayer)<<12)
 
 		// render the entrance supertile in the background:
 		if err = renderSupertile(s, &wg, maptiles, uint16(entranceSupertile)); err != nil {
@@ -400,29 +413,21 @@ func TestGenerateMap(t *testing.T) {
 			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
 
+			// discover entrances into the room
+			var entryPoints []mapCoord
+			if this == entranceSupertile {
+				entryPoints = append(entryPoints, entryCoord)
+			}
+			handleLinkAccessibleTiles(
+				&tiletypes,
+				entryPoints,
+				func(t mapCoord, v uint8) {},
+			)
+
 			// seed flood fills from all edge tiles
 			// if hit a ledge tile, we're on the solid side
 			// otherwise, we're on the walkable side
-			visited := make(map[mapCoord]empty, 0x1000)
-			tileLifo := [0x1000]mapCoord{}
-			for e := mapCoord(1); e < 0x3E; e++ {
-				edges := [...]mapCoord{
-					0x40 + e,      // north
-					e << 6,        // west
-					0x0F80 + e,    // south
-					0x003F + e<<6, // east
-				}
-				for _, te := range edges {
-					tiles, makeSolid := floodFill(&tiletypes, te, tileLifo[:0], visited)
-					// if the tile map is entirely empty then make it solid
-					// otherwise, it must be not walkable and potentially solid:
-					if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
-						for _, t := range tiles {
-							tiletypes[0x1000+t] = 0x01
-						}
-					}
-				}
-			}
+			correctBG2edgeFill(&tiletypes)
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.zmap", uint16(this)), tiletypes[:], 0644)
 
@@ -686,79 +691,220 @@ func TestGenerateMap(t *testing.T) {
 	}
 }
 
-type mapCoord = uint16
+type mapCoord uint16
 type empty = struct{}
 
-func floodFill(
-	tiletypes *[0x2000]byte,
-	seed mapCoord,
-	lifo []mapCoord,
-	visited map[mapCoord]empty,
-) (
-	tiles []mapCoord,
-	makeSolid bool,
-) {
-	tiles = make([]mapCoord, 0, 0x1000)
-	isSolid := false
-	isWalkable := false
+func AbsToMapCoord(absX, absY uint16) mapCoord {
+	return mapCoord((absY&0x01FF)<<3 | (absX&0x01FF)>>3)
+}
 
-	lifo = append(lifo, seed)
+func (t mapCoord) MoveBy(dir DoorDir, increment int) (mapCoord, DoorDir, bool) {
+	it := int(t)
+	row := (it & 0xFC0) >> 6
+	col := it & 0x3F
+
+	switch dir {
+	case DirNorth:
+		if row >= 0+increment {
+			return mapCoord(it - (increment << 6)), dir, true
+		}
+		return t, dir, false
+	case DirSouth:
+		if row <= 0x3F-increment {
+			return mapCoord(it + (increment << 6)), dir, true
+		}
+		return t, dir, false
+	case DirWest:
+		if col >= 0+increment {
+			return mapCoord(it - increment), dir, true
+		}
+		return t, dir, false
+	case DirEast:
+		if col <= 0x3F-increment {
+			return mapCoord(it + increment), dir, true
+		}
+		return t, dir, false
+	}
+
+	return t, dir, false
+}
+
+func correctBG2edgeFill(tiletypes *[0x2000]byte) {
+	visited := make(map[mapCoord]empty, 0x1000)
+	tileLifo := [0x1000]mapCoord{}
+	lifo := tileLifo[:0]
+	for e := mapCoord(1); e < 0x3E; e++ {
+		// start filling from 1 tile in from each edge:
+		edges := [...]mapCoord{
+			0x40 + e,      // north
+			e << 6,        // west
+			0x0F80 + e,    // south
+			0x003F + e<<6, // east
+		}
+		for _, te := range edges {
+			tiles := make([]mapCoord, 0, 0x1000)
+			isSolid := false
+			isWalkable := false
+
+			lifo = append(lifo, te)
+			for len(lifo) != 0 {
+				lifoEnd := len(lifo) - 1
+				t := lifo[lifoEnd]
+				lifo = lifo[0:lifoEnd]
+
+				if _, ok := visited[t]; ok {
+					continue
+				}
+
+				visited[t] = empty{}
+				row := (t & 0xFC0) >> 6
+				col := t & 0x3F
+
+				// read tile:
+				v := tiletypes[0x1000+t]
+				//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
+
+				// flood fill empty space:
+				if v == 0 {
+					// mark this tile for updating if isSolid ends up true:
+					tiles = append(tiles, t)
+
+					// flood fill in cardinal directions:
+					if row > 1 {
+						lifo = append(lifo, t-0x40)
+					}
+					if row < 0x3E {
+						lifo = append(lifo, t+0x40)
+					}
+					if col > 1 {
+						lifo = append(lifo, t-0x01)
+					}
+					if col < 0x3E {
+						lifo = append(lifo, t+0x01)
+					}
+					continue
+				}
+
+				// ledge tiles:
+				if v >= 0x28 && v <= 0x2B {
+					isSolid = true
+					continue
+				}
+				if v == 0x01 {
+					isSolid = true
+					continue
+				}
+
+				if v == 0x04 {
+					isWalkable = true
+					continue
+				}
+			}
+
+			makeSolid := !isWalkable && isSolid
+
+			// if the tile map is entirely empty then make it solid
+			// otherwise, it must be not walkable and potentially solid:
+			if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
+				for _, t := range tiles {
+					tiletypes[0x1000+t] = 0x01
+				}
+			}
+		}
+	}
+
+	return
+}
+
+func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, f func(t mapCoord, v uint8)) {
+	type state struct {
+		t mapCoord
+		d DoorDir
+	}
+
+	var lifoSpace [0x2000]state
+	lifo := lifoSpace[:0]
+	if len(entryPoints) > 0 {
+		for _, point := range entryPoints {
+			// pick any starting direction, usually south:
+			lifo = append(lifo, state{t: point, d: DirSouth})
+		}
+	} else {
+		// TODO: find feasible entry points
+	}
+
+	// track visited tiles:
+	visited := make(map[mapCoord]empty, 0x2000)
+
+	// handle the stack of locations to traverse:
 	for len(lifo) != 0 {
-		lifoEnd := len(lifo) - 1
-		t := lifo[lifoEnd]
-		lifo = lifo[0:lifoEnd]
+		lifoLen := len(lifo) - 1
+		s := lifo[lifoLen]
+		lifo = lifo[:lifoLen]
 
-		if _, ok := visited[t]; ok {
+		if _, ok := visited[s.t]; ok {
+			continue
+		}
+		visited[s.t] = empty{}
+
+		v := tiletypes[s.t]
+
+		if v == 0x00 ||
+			v == 0x08 || v == 0x09 ||
+			v == 0x0C || v == 0x1C ||
+			v == 0x22 ||
+			v == 0x23 || v == 0x24 ||
+			(v >= 0x0D && v <= 0x0F) {
+			// no collision:
+			f(s.t, v)
+
+			// can move in any direction:
+			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
 			continue
 		}
 
-		visited[t] = empty{}
-		row := (t & 0xFC0) >> 6
-		col := t & 0x3F
-
-		// read tile:
-		v := tiletypes[0x1000+t]
-		//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
-
-		// flood fill empty space:
-		if v == 0 {
-			// mark this tile for updating if isSolid ends up true:
-			tiles = append(tiles, t)
-
-			// flood fill in cardinal directions:
-			if row > 1 {
-				lifo = append(lifo, t-0x40)
-			}
-			if row < 0x3E {
-				lifo = append(lifo, t+0x40)
-			}
-			if col > 1 {
-				lifo = append(lifo, t-0x01)
-			}
-			if col < 0x3E {
-				lifo = append(lifo, t+0x01)
-			}
+		// pit:
+		if v == 0x20 {
+			// Link can fall into pit but cannot move beyond it:
+			f(s.t, v)
 			continue
 		}
 
 		// ledge tiles:
-		if v >= 0x28 && v <= 0x2B {
-			isSolid = true
-			continue
-		}
-		if v == 0x01 {
-			isSolid = true
+		if v >= 0x28 && v <= 0x2F {
+			// TODO: allow jumping off from BG1 to BG2
 			continue
 		}
 
-		if v == 0x04 {
-			isWalkable = true
+		// north-facing stairs:
+		if v >= 0x1D && v <= 0x1F {
+			f(s.t, v)
+
+			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+				// TODO: determine BG1->BG2 or BG2->BG1 direction
+				// swap from BG2 to BG1:
+				//if v >= 0x1E {
+				//	tn -= 0x1000
+				//}
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
 			continue
 		}
+
+		// anything else is considered solid:
+		continue
 	}
-
-	makeSolid = !isWalkable && isSolid
-	return
 }
 
 type Supertile uint16
