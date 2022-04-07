@@ -14,7 +14,6 @@ import (
 	"image/png"
 	"io"
 	"io/ioutil"
-	"o2/snes"
 	"os"
 	"sync"
 	"testing"
@@ -38,7 +37,6 @@ func TestGenerateMap(t *testing.T) {
 	}
 
 	var s *System
-	var rom *snes.ROM
 
 	// create the CPU-only SNES emulator:
 	s = &System{
@@ -57,12 +55,6 @@ func TestGenerateMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	rom, err = snes.NewROM("alttp-jp.sfc", s.ROM[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = rom
 
 	var a *asm.Emitter
 
