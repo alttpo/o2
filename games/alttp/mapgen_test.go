@@ -220,6 +220,119 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// test floodfill tile type map from four corners:
+	if true {
+		// poke the entrance ID into our asm code:
+		s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x34 // TT entrance
+		// load the entrance and draw the room:
+		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
+			t.Fatal(err)
+		}
+
+		this := Supertile(s.ReadWRAM16(0xA0))
+		fmt.Fprintf(s.Logger, "st = %s\n", this)
+
+		// load and draw current supertile:
+		write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(this))
+		if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+			panic(err)
+		}
+
+		// make a mutable copy of the tile type map:
+		tiletypes := [0x2000]uint8{}
+		copy(tiletypes[:], s.WRAM[0x12000:0x14000])
+		ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
+
+		// seed flood fills from all edge tiles
+		// if hit a ledge tile, we're on the solid side
+		// otherwise, we're on the walkable side
+		type mapCoord = uint16
+		type empty = struct{}
+		visited := make(map[mapCoord]empty, 0x1000)
+		lifo := make([]mapCoord, 0, 0x1000)
+
+		ff := func(seed mapCoord, lifo []mapCoord) (tiles []mapCoord, isSolid bool, isWalkable bool) {
+			tiles = make([]mapCoord, 0, 0x1000)
+			isSolid = false
+			isWalkable = false
+
+			lifo = append(lifo, seed)
+			for len(lifo) != 0 {
+				lifoEnd := len(lifo) - 1
+				t := lifo[lifoEnd]
+				lifo = lifo[0:lifoEnd]
+
+				if _, ok := visited[t]; ok {
+					continue
+				}
+
+				visited[t] = empty{}
+				row := t & 0xFC0
+				col := t & 0x3F
+
+				// read tile:
+				v := tiletypes[0x1000+t]
+				//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
+
+				// flood fill empty space:
+				if v == 0 {
+					// mark this tile for updating if isSolid ends up true:
+					tiles = append(tiles, t)
+
+					// flood fill in cardinal directions:
+					if row > 0 {
+						lifo = append(lifo, t-0x40)
+					}
+					if row < 0xFC0 {
+						lifo = append(lifo, t+0x40)
+					}
+					if col > 0 {
+						lifo = append(lifo, t-0x01)
+					}
+					if col < 0x3F {
+						lifo = append(lifo, t+0x01)
+					}
+					continue
+				}
+
+				// ledge tiles:
+				if v >= 0x28 && v <= 0x2B {
+					isSolid = true
+					continue
+				}
+				if v == 0x01 {
+					isSolid = true
+					continue
+				}
+
+				if v == 0x04 {
+					isWalkable = true
+					continue
+				}
+			}
+			return
+		}
+
+		for e := mapCoord(0); e < 0x40; e++ {
+			// flood fill from top edge:
+			if tiles, isSolid, isWalkable := ff(e, lifo[:0]); isSolid || isWalkable {
+				if !isWalkable && isSolid {
+					for _, t := range tiles {
+						tiletypes[0x1000+t] = 0x01
+					}
+				}
+			}
+			//lifo = append(lifo, t<<6)
+			//lifo = append(lifo, 0x1FC0+t)
+			//lifo = append(lifo, 0x003F+t<<6)
+		}
+
+		// cleaned-up map:
+		ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(this)), tiletypes[:], 0644)
+
+		return
+	}
+
 	maptiles := make([]image.Image, 0x128)
 
 	// make a set to determine which supertiles have been visited:
