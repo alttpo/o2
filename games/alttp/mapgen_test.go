@@ -245,10 +245,15 @@ func TestGenerateMap(t *testing.T) {
 		//this := Supertile(0x072) // HC basement
 		//this := Supertile(0x084) // DP entrance
 		//this := Supertile(0x071) // HC boom guard
-		this := Supertile(0x014) // TR lava room
-		write16(s.WRAM[:], 0x20, (0x405>>6)<<3)
-		write16(s.WRAM[:], 0x22, (0x405&0x03F)<<3)
-		/*for this := Supertile(0); this < 0x100; this++*/ {
+		//this, thisCoord := Supertile(0x014), mapCoord(0x06DB) // TR lava room, middle of TR by chest
+		//this, thisCoord := Supertile(0x061), mapCoord(0x06DB) // HC entrance, middle
+		this, thisCoord := Supertile(0x027), mapCoord(0x06DF) // TH big chest, middle
+
+		write16(s.WRAM[:], 0x20, uint16((thisCoord>>6)<<3))
+		write16(s.WRAM[:], 0x22, uint16((thisCoord&0x03F)<<3))
+
+		/*for this := Supertile(0); this < 0x100; this++*/
+		{
 			fmt.Fprintf(s.Logger, "st = %s\n", this)
 
 			// load and draw current supertile:
@@ -925,15 +930,29 @@ func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, 
 			continue
 		}
 
-		visited[s.t] = empty{}
-
-		if v == 0x00 ||
+		isPassable := v == 0x00 ||
+			// water:
 			v == 0x08 || v == 0x09 ||
+			// layer passthrough:
 			v == 0x0C || v == 0x1C ||
+			// manual stairs:
 			v == 0x22 ||
+			// floor switches:
 			v == 0x23 || v == 0x24 ||
-			(v >= 0x0D && v <= 0x0F) {
+			// spikes / floor ice:
+			(v >= 0x0D && v <= 0x0F) ||
+			// pots/pegs/blocks:
+			v&0xF0 == 0x70 ||
+			// star tiles:
+			v == 0x3A || v == 0x3B ||
+			// thick grass:
+			v == 0x40 ||
+			// warp:
+			v == 0x4B
+
+		if isPassable {
 			// no collision:
+			visited[s.t] = empty{}
 			f(s.t, v)
 
 			// can move in any direction:
@@ -955,12 +974,14 @@ func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, 
 		// pit:
 		if v == 0x20 {
 			// Link can fall into pit but cannot move beyond it:
+			//visited[s.t] = empty{}
 			f(s.t, v)
 			continue
 		}
 
 		// TR pipe entrance:
 		if v == 0xBE {
+			visited[s.t] = empty{}
 			f(s.t, v)
 
 			// find corresponding B0..B1 directional pipe to follow:
@@ -981,18 +1002,36 @@ func handleLinkAccessibleTiles(tiletypes *[0x2000]byte, entryPoints []mapCoord, 
 
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2F {
-			// TODO: allow jumping off from BG1 to BG2
+			// TODO: allow jumping off ledge
+			visited[s.t] = empty{}
 			continue
 		}
 
 		// north-facing stairs:
 		if v >= 0x1D && v <= 0x1F {
+			visited[s.t] = empty{}
 			f(s.t, v)
 
 			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 				// TODO: determine BG1->BG2 or BG2->BG1 direction
 				// swap from BG2 to BG1:
 				//if v >= 0x1E {
+				//	tn -= 0x1000
+				//}
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			continue
+		}
+
+		// south-facing stairs:
+		if v >= 0x3D && v <= 0x3F {
+			visited[s.t] = empty{}
+			f(s.t, v)
+
+			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+				// TODO: determine BG1->BG2 or BG2->BG1 direction
+				// swap from BG2 to BG1:
+				//if v >= 0x3E {
 				//	tn -= 0x1000
 				//}
 				lifo = append(lifo, state{t: tn, d: dir})
