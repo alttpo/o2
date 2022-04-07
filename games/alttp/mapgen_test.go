@@ -122,6 +122,16 @@ func TestGenerateMap(t *testing.T) {
 		a.WriteTextTo(s.Logger)
 	}
 
+	// TODO: pit detection using Link_ControlHandler
+	// bank 07
+	// force a pit detection:
+	// set $02E4 = 0 to allow control of link
+	// set $55 = 0 to disable cape
+	// set $5D base state to $01 to check pits
+	// set $5B = $02
+	// JSL Link_Main#_078000
+	// output $59 != 0 if pit detected; $A0 changed
+
 	var loadEntrancePC uint32
 	var setEntranceIDPC uint32
 	var loadSupertilePC uint32
@@ -352,6 +362,11 @@ func TestGenerateMap(t *testing.T) {
 
 			exitSeen := make(map[Supertile]struct{}, 24)
 			markExit := func(st Supertile, name string) {
+				// for EG2:
+				if this >= 0x100 {
+					st |= 0x100
+				}
+
 				if _, ok := exitSeen[st]; ok {
 					return
 				}
@@ -464,6 +479,9 @@ func TestGenerateMap(t *testing.T) {
 					if x == 0x4B {
 						// warp tile
 						markExit(warpExitTo, "warp")
+						//} else if x == 0x20 && warpExitTo != 0 {
+						//	// pit tile
+						//	markExit(warpExitTo, "pit")
 					} else if x == 0x89 {
 						// east/west transport door:
 						stairSupertile := stairExitTo[3]
