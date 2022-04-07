@@ -221,7 +221,7 @@ func TestGenerateMap(t *testing.T) {
 	}
 
 	// test floodfill tile type map from four corners:
-	if true {
+	if false {
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x34 // TT entrance
 		// load the entrance and draw the room:
@@ -250,73 +250,8 @@ func TestGenerateMap(t *testing.T) {
 			// seed flood fills from all edge tiles
 			// if hit a ledge tile, we're on the solid side
 			// otherwise, we're on the walkable side
-			type mapCoord = uint16
-			type empty = struct{}
 			visited := make(map[mapCoord]empty, 0x1000)
 			lifo := make([]mapCoord, 0, 0x1000)
-
-			ff := func(seed mapCoord, lifo []mapCoord) (tiles []mapCoord, isSolid bool, isWalkable bool) {
-				tiles = make([]mapCoord, 0, 0x1000)
-				isSolid = false
-				isWalkable = false
-
-				lifo = append(lifo, seed)
-				for len(lifo) != 0 {
-					lifoEnd := len(lifo) - 1
-					t := lifo[lifoEnd]
-					lifo = lifo[0:lifoEnd]
-
-					if _, ok := visited[t]; ok {
-						continue
-					}
-
-					visited[t] = empty{}
-					row := (t & 0xFC0) >> 6
-					col := t & 0x3F
-
-					// read tile:
-					v := tiletypes[0x1000+t]
-					//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
-
-					// flood fill empty space:
-					if v == 0 {
-						// mark this tile for updating if isSolid ends up true:
-						tiles = append(tiles, t)
-
-						// flood fill in cardinal directions:
-						if row > 1 {
-							lifo = append(lifo, t-0x40)
-						}
-						if row < 0x3E {
-							lifo = append(lifo, t+0x40)
-						}
-						if col > 1 {
-							lifo = append(lifo, t-0x01)
-						}
-						if col < 0x3E {
-							lifo = append(lifo, t+0x01)
-						}
-						continue
-					}
-
-					// ledge tiles:
-					if v >= 0x28 && v <= 0x2B {
-						isSolid = true
-						continue
-					}
-					if v == 0x01 {
-						isSolid = true
-						continue
-					}
-
-					if v == 0x04 {
-						isWalkable = true
-						continue
-					}
-				}
-				return
-			}
-
 			for e := mapCoord(1); e < 0x3E; e++ {
 				edges := [...]mapCoord{
 					0x40 + e,      // north
@@ -325,10 +260,10 @@ func TestGenerateMap(t *testing.T) {
 					0x003F + e<<6, // east
 				}
 				for _, te := range edges {
-					tiles, isSolid, isWalkable := ff(te, lifo[:0])
+					tiles, makeSolid := floodFill(&tiletypes, te, lifo[:0], visited)
 					// if the tile map is entirely empty then make it solid
 					// otherwise, it must be not walkable and potentially solid:
-					if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || (!isWalkable && isSolid) {
+					if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
 						for _, t := range tiles {
 							tiletypes[0x1000+t] = 0x01
 						}
@@ -432,18 +367,33 @@ func TestGenerateMap(t *testing.T) {
 			// make a mutable copy of the tile type map:
 			tiletypes := [0x2000]uint8{}
 			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
-
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
 
-			// FAIL: while this works for HC $001 it fails for TT entrance $0DB
-			// propagate collision from BG1 to BG2 and vice versa; this should fill in unreachable areas:
-			//for t := 0; t < 0x1000; t++ {
-			//	if tiletypes[t] == 0 && tiletypes[t+0x1000] != 0 {
-			//		tiletypes[t] = tiletypes[t+0x1000]
-			//	} else if tiletypes[t+0x1000] == 0 && tiletypes[t] != 0 {
-			//		tiletypes[t+0x1000] = tiletypes[t]
-			//	}
-			//}
+			// seed flood fills from all edge tiles
+			// if hit a ledge tile, we're on the solid side
+			// otherwise, we're on the walkable side
+			visited := make(map[mapCoord]empty, 0x1000)
+			tileLifo := [0x1000]mapCoord{}
+			for e := mapCoord(1); e < 0x3E; e++ {
+				edges := [...]mapCoord{
+					0x40 + e,      // north
+					e << 6,        // west
+					0x0F80 + e,    // south
+					0x003F + e<<6, // east
+				}
+				for _, te := range edges {
+					tiles, makeSolid := floodFill(&tiletypes, te, tileLifo[:0], visited)
+					// if the tile map is entirely empty then make it solid
+					// otherwise, it must be not walkable and potentially solid:
+					if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
+						for _, t := range tiles {
+							tiletypes[0x1000+t] = 0x01
+						}
+					}
+				}
+			}
+
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.zmap", uint16(this)), tiletypes[:], 0644)
 
 			// process doors first:
 			doors := make([]Door, 0, 16)
@@ -563,27 +513,27 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				// scan edges of map for open doorways:
-				for t := uint32(0); t < 0x40; t++ {
+				for t := uint32(1); t < 0x3E; t++ {
 					if st, _, ok := this.MoveBy(DirNorth); ok {
-						x := tiletypes[offs+t]
+						x := tiletypes[offs+0x40+t]
 						if x == 0x80 || x == 0x84 {
 							markExit(st, "north open doorway")
 						} else if x == 0x00 {
-							//markExit(st, "north open walkway")
+							markExit(st, "north open walkway")
 						}
 
-						x = tiletypes[offs+0x0180+t]
+						x = tiletypes[offs+0x0140+t]
 						if x >= 0xF0 {
 							markExit(st, "north door")
 						}
 					}
 
 					if st, _, ok := this.MoveBy(DirSouth); ok {
-						x := tiletypes[offs+0x0FC0+t]
+						x := tiletypes[offs+0x0F80+t]
 						if x == 0x80 || x == 0x84 {
 							markExit(st, "south open doorway")
 						} else if x == 0x00 {
-							//markExit(st, "south open walkway")
+							markExit(st, "south open walkway")
 						}
 
 						x = tiletypes[offs+0x0EC0+t]
@@ -593,25 +543,25 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					if st, _, ok := this.MoveBy(DirWest); ok {
-						x := tiletypes[offs+t<<6]
+						x := tiletypes[offs+1+t<<6]
 						if x == 0x81 || x == 0x85 {
 							markExit(st, "west open doorway")
 						} else if x == 0x00 {
-							//markExit(st, "west open walkway")
+							markExit(st, "west open walkway")
 						}
 
-						x = tiletypes[offs+0x04+t<<6]
+						x = tiletypes[offs+0x03+t<<6]
 						if x >= 0xF0 {
 							markExit(st, "west door")
 						}
 					}
 
 					if st, _, ok := this.MoveBy(DirEast); ok {
-						x := tiletypes[offs+0x003F+t<<6]
+						x := tiletypes[offs+0x003E+t<<6]
 						if x == 0x81 || x == 0x85 {
 							markExit(st, "east open doorway")
 						} else if x == 0x00 {
-							//markExit(st, "east open walkway")
+							markExit(st, "east open walkway")
 						}
 
 						x = tiletypes[offs+0x003B+t<<6]
@@ -699,6 +649,81 @@ func TestGenerateMap(t *testing.T) {
 			}
 		}
 	}
+}
+
+type mapCoord = uint16
+type empty = struct{}
+
+func floodFill(
+	tiletypes *[0x2000]byte,
+	seed mapCoord,
+	lifo []mapCoord,
+	visited map[mapCoord]empty,
+) (
+	tiles []mapCoord,
+	makeSolid bool,
+) {
+	tiles = make([]mapCoord, 0, 0x1000)
+	isSolid := false
+	isWalkable := false
+
+	lifo = append(lifo, seed)
+	for len(lifo) != 0 {
+		lifoEnd := len(lifo) - 1
+		t := lifo[lifoEnd]
+		lifo = lifo[0:lifoEnd]
+
+		if _, ok := visited[t]; ok {
+			continue
+		}
+
+		visited[t] = empty{}
+		row := (t & 0xFC0) >> 6
+		col := t & 0x3F
+
+		// read tile:
+		v := tiletypes[0x1000+t]
+		//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
+
+		// flood fill empty space:
+		if v == 0 {
+			// mark this tile for updating if isSolid ends up true:
+			tiles = append(tiles, t)
+
+			// flood fill in cardinal directions:
+			if row > 1 {
+				lifo = append(lifo, t-0x40)
+			}
+			if row < 0x3E {
+				lifo = append(lifo, t+0x40)
+			}
+			if col > 1 {
+				lifo = append(lifo, t-0x01)
+			}
+			if col < 0x3E {
+				lifo = append(lifo, t+0x01)
+			}
+			continue
+		}
+
+		// ledge tiles:
+		if v >= 0x28 && v <= 0x2B {
+			isSolid = true
+			continue
+		}
+		if v == 0x01 {
+			isSolid = true
+			continue
+		}
+
+		if v == 0x04 {
+			isWalkable = true
+			continue
+		}
+	}
+
+	makeSolid = !isWalkable && isSolid
+	return
 }
 
 type Supertile uint16
