@@ -318,16 +318,17 @@ func TestGenerateMap(t *testing.T) {
 			tiletypes := [0x2000]uint8{}
 			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
 
-			// propagate collision from BG1 to BG2 and vice versa; this should fill in unreachable areas:
-			for t := 0; t < 0x1000; t++ {
-				if tiletypes[t] == 0 && tiletypes[t+0x1000] != 0 {
-					tiletypes[t] = tiletypes[t+0x1000]
-				} else if tiletypes[t+0x1000] == 0 && tiletypes[t] != 0 {
-					tiletypes[t+0x1000] = tiletypes[t]
-				}
-			}
-
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
+
+			// FAIL: while this works for HC $001 it fails for TT entrance $0DB
+			// propagate collision from BG1 to BG2 and vice versa; this should fill in unreachable areas:
+			//for t := 0; t < 0x1000; t++ {
+			//	if tiletypes[t] == 0 && tiletypes[t+0x1000] != 0 {
+			//		tiletypes[t] = tiletypes[t+0x1000]
+			//	} else if tiletypes[t+0x1000] == 0 && tiletypes[t] != 0 {
+			//		tiletypes[t+0x1000] = tiletypes[t]
+			//	}
+			//}
 
 			// process doors first:
 			doors := make([]Door, 0, 16)
@@ -453,7 +454,7 @@ func TestGenerateMap(t *testing.T) {
 						if x == 0x80 || x == 0x84 {
 							markExit(st, "north open doorway")
 						} else if x == 0x00 {
-							markExit(st, "north open walkway")
+							//markExit(st, "north open walkway")
 						}
 
 						x = tiletypes[offs+0x0180+t]
@@ -467,7 +468,7 @@ func TestGenerateMap(t *testing.T) {
 						if x == 0x80 || x == 0x84 {
 							markExit(st, "south open doorway")
 						} else if x == 0x00 {
-							markExit(st, "south open walkway")
+							//markExit(st, "south open walkway")
 						}
 
 						x = tiletypes[offs+0x0EC0+t]
@@ -481,7 +482,7 @@ func TestGenerateMap(t *testing.T) {
 						if x == 0x81 || x == 0x85 {
 							markExit(st, "west open doorway")
 						} else if x == 0x00 {
-							markExit(st, "west open walkway")
+							//markExit(st, "west open walkway")
 						}
 
 						x = tiletypes[offs+0x04+t<<6]
@@ -495,7 +496,7 @@ func TestGenerateMap(t *testing.T) {
 						if x == 0x81 || x == 0x85 {
 							markExit(st, "east open doorway")
 						} else if x == 0x00 {
-							markExit(st, "east open walkway")
+							//markExit(st, "east open walkway")
 						}
 
 						x = tiletypes[offs+0x003B+t<<6]
