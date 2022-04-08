@@ -1496,39 +1496,132 @@ func drawSupertile(
 
 	// render BG image:
 	if true {
-		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
-
+		g := image.NewNRGBA(image.Rect(0, 0, 512, 512))
+		bg1 := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+		bg2 := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 		doBG2 := !isDark
 
-		bg1 := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:]
-		bg2 := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:]
+		bg1wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:]
+		bg2wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:]
 		tileset := vram[0x4000:0x8000]
 
-		// draw from back to front order:
+		//subdes := read8(wram, 0x1D)
+		n0414 := read8(wram, 0x0414)
+		translucent := n0414 == 0x07
+		halfColor := n0414 == 0x04
+		flip := n0414 == 0x03
+		if translucent || halfColor {
+			// render bg1 and bg2 separately
 
-		// BG2 priority 0:
-		if doBG2 {
-			renderBG(g, bg2, tileset, 0)
+			// draw from back to front order:
+			// BG2 priority 0:
+			if doBG2 {
+				renderBG(bg2, bg2wram, tileset, 0)
+			}
+
+			// BG1 priority 0:
+			renderBG(bg1, bg1wram, tileset, 0)
+
+			// BG2 priority 1:
+			if doBG2 {
+				renderBG(bg2, bg2wram, tileset, 1)
+			}
+
+			// BG1 priority 1:
+			renderBG(bg1, bg1wram, tileset, 1)
+
+			// combine bg1 and bg2:
+			sat := func(v uint32) uint16 {
+				if v > 0xffff {
+					return 0xffff
+				}
+				return uint16(v)
+			}
+
+			if halfColor {
+				for y := 0; y < 512; y++ {
+					for x := 0; x < 512; x++ {
+						r1, g1, b1, _ := bg1.At(x, y).RGBA()
+						r2, g2, b2, _ := bg2.At(x, y).RGBA()
+						c := color.RGBA64{
+							R: sat(r1 + r2>>1),
+							G: sat(g1 + g2>>1),
+							B: sat(b1 + b2>>1),
+							A: 0xffff,
+						}
+						g.Set(x, y, c)
+					}
+				}
+			} else {
+				for y := 0; y < 512; y++ {
+					for x := 0; x < 512; x++ {
+						r1, g1, b1, _ := bg1.At(x, y).RGBA()
+						r2, g2, b2, _ := bg2.At(x, y).RGBA()
+						c := color.RGBA64{
+							R: sat(r1 + r2),
+							G: sat(g1 + g2),
+							B: sat(b1 + b2),
+							A: 0xffff,
+						}
+						g.Set(x, y, c)
+					}
+				}
+			}
+		} else if flip {
+			// draw from back to front order:
+
+			// BG1 priority 1:
+			renderBG(bg1, bg1wram, tileset, 1)
+
+			// BG1 priority 0:
+			renderBG(bg1, bg1wram, tileset, 0)
+
+			// BG2 priority 1:
+			if doBG2 {
+				renderBG(bg1, bg2wram, tileset, 1)
+			}
+
+			// BG2 priority 0:
+			if doBG2 {
+				renderBG(bg1, bg2wram, tileset, 0)
+			}
+
+			draw.Draw(g, g.Bounds(), bg1, image.Point{}, draw.Src)
+		} else {
+			// draw from back to front order:
+			// BG2 priority 0:
+			if doBG2 {
+				renderBG(bg1, bg2wram, tileset, 0)
+			}
+
+			// BG1 priority 0:
+			renderBG(bg1, bg1wram, tileset, 0)
+
+			// BG2 priority 1:
+			if doBG2 {
+				renderBG(bg1, bg2wram, tileset, 1)
+			}
+
+			// BG1 priority 1:
+			renderBG(bg1, bg1wram, tileset, 1)
+
+			draw.Draw(g, g.Bounds(), bg1, image.Point{}, draw.Src)
 		}
-
-		// BG1 priority 0:
-		renderBG(g, bg1, tileset, 0)
-
-		// BG2 priority 1:
-		if doBG2 {
-			renderBG(g, bg2, tileset, 1)
-		}
-
-		// BG1 priority 1:
-		renderBG(g, bg1, tileset, 1)
 
 		// draw supertile number in top-left:
+		stStr := fmt.Sprintf("%03X", st)
+		(&font.Drawer{
+			Dst:  g,
+			Src:  image.NewUniform(color.RGBA{0, 0, 0, 255}),
+			Face: inconsolata.Bold8x16,
+			Dot:  fixed.Point26_6{fixed.I(5), fixed.I(5 + 12)},
+		}).DrawString(stStr)
 		(&font.Drawer{
 			Dst:  g,
 			Src:  image.NewUniform(color.RGBA{255, 255, 255, 255}),
 			Face: inconsolata.Bold8x16,
 			Dot:  fixed.Point26_6{fixed.I(4), fixed.I(4 + 12)},
-		}).DrawString(fmt.Sprintf("%03X", st))
+		}).DrawString(stStr)
 
 		// store full underworld rendering for inclusion into EG map:
 		maptiles[st] = g
