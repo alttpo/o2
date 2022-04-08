@@ -1077,6 +1077,10 @@ lifoLoop:
 		if v == 0x1D {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
+
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
 			continue
 		}
 		// north-facing stairs, layer changing:
@@ -1105,6 +1109,10 @@ lifoLoop:
 		if v == 0x3D {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
+
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
 			continue
 		}
 		if v >= 0x3E && v <= 0x3F {
@@ -1129,7 +1137,7 @@ lifoLoop:
 		}
 
 		// doorways:
-		if v >= 0x80 && v <= 0x8D {
+		if v >= 0x80 && v <= 0x8F {
 			if v&1 == 0 {
 				// north-south
 				if s.d == DirNone {
