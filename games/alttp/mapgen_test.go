@@ -152,11 +152,11 @@ func TestGenerateMap(t *testing.T) {
 		// general world state:
 		a.Comment("disable rain")
 		a.LDA_imm8_b(0x02)
-		a.STA_abs(0xF3C5)
+		a.STA_long(0x7EF3C5)
 
 		a.Comment("no bed cutscene")
 		a.LDA_imm8_b(0x10)
-		a.STA_abs(0xF3C6)
+		a.STA_long(0x7EF3C6)
 
 		loadEntrancePC = a.Label("loadEntrance")
 		a.SEP(0x30)
@@ -173,7 +173,7 @@ func TestGenerateMap(t *testing.T) {
 		a.STA_abs(0x010E)
 
 		// loads a dungeon given an entrance ID:
-		a.Comment("JSL MainRouting")
+		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
 		a.BRA("updateVRAM")
 
@@ -333,9 +333,15 @@ func TestGenerateMap(t *testing.T) {
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		// load the entrance and draw the room:
+		//if eID == 0x32 {
+		//	s.LoggerCPU = os.Stdout
+		//}
 		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
+		//if eID == 0x32 {
+		//	s.LoggerCPU = nil
+		//}
 
 		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
 
@@ -428,6 +434,7 @@ func TestGenerateMap(t *testing.T) {
 			// discover entrances into the room
 			entryPoints := make([]mapCoord, 0, 120)
 			if this == entranceSupertile {
+				fmt.Fprintf(s.Logger, "    entrance point: $%04x\n", uint16(entryCoord))
 				entryPoints = append(entryPoints, entryCoord)
 			}
 			// track visited tiles:
@@ -677,6 +684,7 @@ func TestGenerateMap(t *testing.T) {
 		// render all supertiles found:
 		if len(toRender) >= 1 {
 			for _, st := range toRender[1:] {
+				// TODO: clone System instances and parallelize
 				// loadSupertile:
 				write16(s.WRAM[:], 0xA0, uint16(st))
 				if err = s.ExecAt(loadSupertilePC, donePC); err != nil {
@@ -697,7 +705,6 @@ func TestGenerateMap(t *testing.T) {
 			//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
 			//  s.WRAM: $C300[0x0200] = CGRAM palette
 		}
-
 	}
 
 	wg.Wait()
