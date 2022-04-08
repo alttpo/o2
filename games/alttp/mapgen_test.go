@@ -1067,9 +1067,39 @@ lifoLoop:
 		}
 
 		// ledge tiles:
-		if v >= 0x28 && v <= 0x2F {
-			// TODO: allow jumping off ledge
+		if v >= 0x28 && v <= 0x2B {
 			visited[s.t] = empty{}
+
+			// check 4 tiles from ledge for pit:
+			t, dir, ok := s.t.MoveBy(s.d, 4)
+			if !ok {
+				continue
+			}
+
+			// pit tile on same layer?
+			v = m[t]
+			if v == 0x20 {
+				// visit it next:
+				lifo = append(lifo, state{t: t, d: dir})
+			} else if v == 0x1C { // or 0x0C ?
+				// layer pass through:
+				if t < 0x1000 {
+					t += 0x1000
+				} else if t >= 0x1000 {
+					// TODO: does it make sense to go from BG2 to BG1 here?
+					t -= 0x1000
+				}
+
+				// check again for pit tile on the opposite layer:
+				v = m[t]
+				if v == 0x20 {
+					// visit it next:
+					lifo = append(lifo, state{t: t, d: dir})
+				}
+			} else if v == 0x0C {
+				panic(fmt.Errorf("TODO handle $0C in pit case t=$%04x", uint16(t)))
+			}
+
 			continue
 		}
 
