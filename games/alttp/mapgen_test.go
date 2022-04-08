@@ -646,6 +646,7 @@ func TestGenerateMap(t *testing.T) {
 				copy(tiles[:], s.WRAM[0x12000:0x14000])
 
 				// discover accessible pits:
+				fmt.Fprintf(s.Logger, "    scan entry points %#v\n", entryPoints)
 				handleLinkAccessibleTiles(
 					&tiles,
 					visited,
@@ -984,7 +985,7 @@ lifoLoop:
 			// water:
 			v == 0x08 || v == 0x09 ||
 			// layer passthrough:
-			v == 0x0C || v == 0x1C ||
+			//v == 0x0C || v == 0x1C ||
 			// manual stairs:
 			v == 0x22 ||
 			// floor switches:
@@ -1066,32 +1067,55 @@ lifoLoop:
 		}
 
 		// north-facing stairs:
-		if v >= 0x1D && v <= 0x1F {
+		if v == 0x1D {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+			continue
+		}
+		// north-facing stairs, layer changing:
+		if v >= 0x1E && v <= 0x1F {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-				// TODO: determine BG1->BG2 or BG2->BG1 direction
-				// swap from BG2 to BG1:
-				//if v >= 0x1E {
-				//	tn -= 0x1000
-				//}
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				if dir == DirNorth {
+					// swap from BG2 to BG1:
+					if tn >= 0x1000 {
+						tn -= 0x1000
+					}
+				} else if dir == DirSouth {
+					// swap from BG1 to BG2:
+					if tn < 0x1000 {
+						tn += 0x1000
+					}
+				}
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
 		}
 
 		// south-facing stairs:
-		if v >= 0x3D && v <= 0x3F {
+		if v == 0x3D {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+			continue
+		}
+		if v >= 0x3E && v <= 0x3F {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-				// TODO: determine BG1->BG2 or BG2->BG1 direction
-				// swap from BG2 to BG1:
-				//if v >= 0x3E {
-				//	tn -= 0x1000
-				//}
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				if dir == DirNorth {
+					// swap from BG2 to BG1:
+					if tn >= 0x1000 {
+						tn -= 0x1000
+					}
+				} else if dir == DirSouth {
+					// swap from BG1 to BG2:
+					if tn < 0x1000 {
+						tn += 0x1000
+					}
+				}
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
@@ -1099,34 +1123,47 @@ lifoLoop:
 
 		// doorways:
 		if v >= 0x80 && v <= 0x8D {
-			visited[s.t] = empty{}
-			f(s.t, s.d, v)
-
 			if v&1 == 0 {
 				// north-south
-				if s.d != DirNorth && s.d != DirSouth {
-					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir})
-					} else if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir})
+				if s.d == DirNone {
+					// scout in both directions:
+					if _, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+						lifo = append(lifo, state{t: s.t, d: dir})
+					}
+					if _, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+						lifo = append(lifo, state{t: s.t, d: dir})
 					}
 					continue
 				}
 
+				if s.d != DirNorth && s.d != DirSouth {
+					panic(fmt.Errorf("north-south door approached from perpendicular direction %s at $%04x", s.d, s.t))
+				}
+
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
 			} else {
 				// east-west
-				if s.d != DirEast && s.d != DirWest {
-					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir})
-					} else if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir})
+				if s.d == DirNone {
+					// scout in both directions:
+					if _, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+						lifo = append(lifo, state{t: s.t, d: dir})
+					}
+					if _, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+						lifo = append(lifo, state{t: s.t, d: dir})
 					}
 					continue
 				}
 
+				if s.d != DirEast && s.d != DirWest {
+					panic(fmt.Errorf("east-west door approached from perpendicular direction %s at $%04x", s.d, s.t))
+				}
+
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
@@ -1210,6 +1247,9 @@ lifoLoop:
 					break
 				}
 			}
+			if !ok {
+				continue
+			}
 
 			// clear up the end of the doorway:
 			for i := 0; i < 2; i++ {
@@ -1218,13 +1258,15 @@ lifoLoop:
 				f(t, s.d, rt)
 
 				// move next:
-				t, _, ok = s.t.MoveBy(s.d, 1)
+				t, _, ok = t.MoveBy(s.d, 1)
 				if !ok {
 					break
 				}
 			}
 
-			lifo = append(lifo, state{t: t, d: s.d})
+			if ok {
+				lifo = append(lifo, state{t: t, d: s.d})
+			}
 			continue
 		}
 
