@@ -9,6 +9,9 @@ import (
 	"github.com/alttpo/snes/emulator/memory"
 	"github.com/alttpo/snes/mapping/lorom"
 	"golang.org/x/image/draw"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/inconsolata"
+	"golang.org/x/image/math/fixed"
 	"image"
 	"image/color"
 	"image/png"
@@ -353,8 +356,15 @@ func TestGenerateMap(t *testing.T) {
 		) | mapCoord(uint16(entryLayer)<<12)
 
 		// render the entrance supertile in the background:
-		if err = renderSupertile(s, &wg, maptiles, uint16(entranceSupertile)); err != nil {
-			t.Fatal(err)
+		{
+			// dump VRAM+WRAM for each supertile:
+			vram := make([]byte, 65536)
+			copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
+			wram := make([]byte, 131072)
+			copy(wram, s.WRAM[:])
+
+			wg.Add(1)
+			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram)
 		}
 
 		// build a stack (LIFO) of supertiles to visit:
@@ -403,6 +413,9 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(s.WRAM[:], 0xC002)))
 			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(s.WRAM[:], 0xC003)))
 			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(s.WRAM[:], 0xC004)))
+
+			isDarkRoom := read8(s.WRAM[:], 0xC005) != 0
+			fmt.Fprintf(s.Logger, "    DARK     = %v\n", isDarkRoom)
 
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
@@ -692,9 +705,13 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				// render the supertile to an Image:
-				if err = renderSupertile(s, &wg, maptiles, uint16(st)); err != nil {
-					t.Fatal(err)
-				}
+				vram := make([]byte, 65536)
+				copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
+				wram := make([]byte, 131072)
+				copy(wram, s.WRAM[:])
+
+				wg.Add(1)
+				go drawSupertile(&wg, maptiles, uint16(st), wram, vram)
 			}
 
 			// gfx output is:
@@ -718,12 +735,21 @@ func TestGenerateMap(t *testing.T) {
 			N string
 		}{
 			{draw.NearestNeighbor, "nn"},
-			{draw.ApproxBiLinear, "ab"},
+			//{draw.ApproxBiLinear, "ab"},
 			//{draw.BiLinear, "bl"},
 			//{draw.CatmullRom, "cr"},
 		} {
 			wga := sync.WaitGroup{}
+
 			all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+			// clear the image and remove alpha layer
+			draw.Draw(
+				all,
+				all.Bounds(),
+				image.NewUniform(color.NRGBA{0, 0, 0, 255}),
+				image.Point{},
+				draw.Src)
+
 			for st := 0; st < 0x128; st++ {
 				stMap := maptiles[st]
 				if stMap == nil {
@@ -1426,75 +1452,70 @@ func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
 }
 
-func renderSupertile(s *System, wg *sync.WaitGroup, maptiles []image.Image, supertile uint16) (err error) {
-	// dump VRAM+WRAM for each supertile:
-	vram := make([]byte, 65536)
-	copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
-	wram := make([]byte, 131072)
-	copy(wram, s.WRAM[:])
+func drawSupertile(wg *sync.WaitGroup, maptiles []image.Image, st uint16, wram []byte, vram []byte) {
+	var err error
 
-	wg.Add(1)
-	go func(st uint16, wram []byte, vram []byte) {
-		var err error
+	//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
 
-		//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", st), wram, 0644)
-		//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
-		//ioutil.WriteFile(fmt.Sprintf("data/%03X.cgram", st), wram[0xC300:0xC700], 0644)
+	cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
+	pal := cgramToPalette(cgram)
 
-		cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
-		pal := cgramToPalette(cgram)
+	// render BG image:
+	if true {
+		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 
-		// render BG image:
-		if true {
-			g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
+		// BG2 first:
+		renderBG(
+			g,
+			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+			vram[0x4000:0x8000],
+		)
 
-			// BG2 first:
-			renderBG(
+		// BG1:
+		renderBG(
+			g,
+			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
+			vram[0x4000:0x8000],
+		)
+
+		// draw supertile number in top-left:
+		(&font.Drawer{
+			Dst:  g,
+			Src:  image.NewUniform(color.RGBA{255, 255, 255, 255}),
+			Face: inconsolata.Bold8x16,
+			Dot:  fixed.Point26_6{fixed.I(4), fixed.I(4 + 12)},
+		}).DrawString(fmt.Sprintf("%03X", st))
+
+		// store full underworld rendering for inclusion into EG map:
+		maptiles[st] = g
+
+		if err = exportPNG(fmt.Sprintf("data/%03X.png", st), g); err != nil {
+			panic(err)
+		}
+	}
+
+	// render VRAM BG tiles to a PNG:
+	if false {
+		tiles := 0x4000 / 32
+		g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+		for t := 0; t < tiles; t++ {
+			// palette 2
+			z := uint16(t) | (2 << 10)
+			draw4bppTile(
 				g,
-				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+				z,
 				vram[0x4000:0x8000],
+				t%16,
+				t/16,
 			)
-
-			// BG1:
-			renderBG(
-				g,
-				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-				vram[0x4000:0x8000],
-			)
-
-			// store full underworld rendering for inclusion into EG map:
-			maptiles[st] = g
-
-			if err = exportPNG(fmt.Sprintf("data/%03X.bg1.png", st), g); err != nil {
-				panic(err)
-			}
 		}
 
-		// render VRAM BG tiles to a PNG:
-		if false {
-			tiles := 0x4000 / 32
-			g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
-			for t := 0; t < tiles; t++ {
-				// palette 2
-				z := uint16(t) | (2 << 10)
-				draw4bppTile(
-					g,
-					z,
-					vram[0x4000:0x8000],
-					t%16,
-					t/16,
-				)
-			}
-
-			if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
-				panic(err)
-			}
+		if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
+			panic(err)
 		}
+	}
 
-		wg.Done()
-	}(supertile, wram, vram)
-
-	return err
+	wg.Done()
 }
 
 func exportPNG(name string, g image.Image) (err error) {
