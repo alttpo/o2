@@ -363,8 +363,10 @@ func TestGenerateMap(t *testing.T) {
 			wram := make([]byte, 131072)
 			copy(wram, s.WRAM[:])
 
+			isDark := read8(wram, 0xC005) != 0
+
 			wg.Add(1)
-			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram)
+			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram, isDark)
 		}
 
 		// build a stack (LIFO) of supertiles to visit:
@@ -698,6 +700,7 @@ func TestGenerateMap(t *testing.T) {
 		if len(toRender) >= 1 {
 			for _, st := range toRender[1:] {
 				// TODO: clone System instances and parallelize
+
 				// loadSupertile:
 				write16(s.WRAM[:], 0xA0, uint16(st))
 				if err = s.ExecAt(loadSupertilePC, donePC); err != nil {
@@ -710,8 +713,34 @@ func TestGenerateMap(t *testing.T) {
 				wram := make([]byte, 131072)
 				copy(wram, s.WRAM[:])
 
+				isDark := read8(wram, 0xC005) != 0
+
 				wg.Add(1)
-				go drawSupertile(&wg, maptiles, uint16(st), wram, vram)
+				go drawSupertile(&wg, maptiles, uint16(st), wram, vram, isDark)
+
+				// render VRAM BG tiles to a PNG:
+				if false {
+					cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
+					pal := cgramToPalette(cgram)
+
+					tiles := 0x4000 / 32
+					g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+					for t := 0; t < tiles; t++ {
+						// palette 2
+						z := uint16(t) | (2 << 10)
+						draw4bppTile(
+							g,
+							z,
+							vram[0x4000:0x8000],
+							t%16,
+							t/16,
+						)
+					}
+
+					if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
+						panic(err)
+					}
+				}
 			}
 
 			// gfx output is:
@@ -1452,7 +1481,14 @@ func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
 }
 
-func drawSupertile(wg *sync.WaitGroup, maptiles []image.Image, st uint16, wram []byte, vram []byte) {
+func drawSupertile(
+	wg *sync.WaitGroup,
+	maptiles []image.Image,
+	st uint16,
+	wram []byte,
+	vram []byte,
+	isDark bool,
+) {
 	var err error
 
 	//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
@@ -1465,11 +1501,13 @@ func drawSupertile(wg *sync.WaitGroup, maptiles []image.Image, st uint16, wram [
 		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 
 		// BG2 first:
-		renderBG(
-			g,
-			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-			vram[0x4000:0x8000],
-		)
+		if !isDark {
+			renderBG(
+				g,
+				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
+				vram[0x4000:0x8000],
+			)
+		}
 
 		// BG1:
 		renderBG(
@@ -1490,27 +1528,6 @@ func drawSupertile(wg *sync.WaitGroup, maptiles []image.Image, st uint16, wram [
 		maptiles[st] = g
 
 		if err = exportPNG(fmt.Sprintf("data/%03X.png", st), g); err != nil {
-			panic(err)
-		}
-	}
-
-	// render VRAM BG tiles to a PNG:
-	if false {
-		tiles := 0x4000 / 32
-		g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
-		for t := 0; t < tiles; t++ {
-			// palette 2
-			z := uint16(t) | (2 << 10)
-			draw4bppTile(
-				g,
-				z,
-				vram[0x4000:0x8000],
-				t%16,
-				t/16,
-			)
-		}
-
-		if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
 			panic(err)
 		}
 	}
