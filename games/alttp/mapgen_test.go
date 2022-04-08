@@ -363,10 +363,8 @@ func TestGenerateMap(t *testing.T) {
 			wram := make([]byte, 131072)
 			copy(wram, s.WRAM[:])
 
-			isDark := read8(wram, 0xC005) != 0
-
 			wg.Add(1)
-			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram, isDark)
+			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram)
 		}
 
 		// build a stack (LIFO) of supertiles to visit:
@@ -713,10 +711,8 @@ func TestGenerateMap(t *testing.T) {
 				wram := make([]byte, 131072)
 				copy(wram, s.WRAM[:])
 
-				isDark := read8(wram, 0xC005) != 0
-
 				wg.Add(1)
-				go drawSupertile(&wg, maptiles, uint16(st), wram, vram, isDark)
+				go drawSupertile(&wg, maptiles, uint16(st), wram, vram)
 
 				// render VRAM BG tiles to a PNG:
 				if false {
@@ -1487,9 +1483,11 @@ func drawSupertile(
 	st uint16,
 	wram []byte,
 	vram []byte,
-	isDark bool,
 ) {
 	var err error
+
+	// assume WRAM has rendering state as well:
+	isDark := read8(wram, 0xC005) != 0
 
 	//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
 
@@ -1500,21 +1498,29 @@ func drawSupertile(
 	if true {
 		g := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 
-		// BG2 first:
-		if !isDark {
-			renderBG(
-				g,
-				(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:],
-				vram[0x4000:0x8000],
-			)
+		doBG2 := !isDark
+
+		bg1 := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:]
+		bg2 := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:]
+		tileset := vram[0x4000:0x8000]
+
+		// draw from back to front order:
+
+		// BG2 priority 0:
+		if doBG2 {
+			renderBG(g, bg2, tileset, 0)
 		}
 
-		// BG1:
-		renderBG(
-			g,
-			(*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:],
-			vram[0x4000:0x8000],
-		)
+		// BG1 priority 0:
+		renderBG(g, bg1, tileset, 0)
+
+		// BG2 priority 1:
+		if doBG2 {
+			renderBG(g, bg2, tileset, 1)
+		}
+
+		// BG1 priority 1:
+		renderBG(g, bg1, tileset, 1)
 
 		// draw supertile number in top-left:
 		(&font.Drawer{
@@ -1574,12 +1580,17 @@ func cgramToPalette(cgram []uint16) color.Palette {
 	return pal
 }
 
-func renderBG(g *image.Paletted, bg []uint16, tiles []uint8) {
+func renderBG(g *image.Paletted, bg []uint16, tiles []uint8, prio uint8) {
 	a := uint32(0)
 	for ty := 0; ty < 64; ty++ {
 		for tx := 0; tx < 64; tx++ {
 			z := bg[a]
 			a++
+
+			// priority check:
+			if (z&0x2000 != 0) != (prio != 0) {
+				continue
+			}
 
 			draw4bppTile(g, z, tiles, tx, ty)
 		}
