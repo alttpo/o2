@@ -1137,6 +1137,13 @@ lifoLoop:
 			doorType := v
 			visited[s.t] = empty{}
 
+			max := 10
+			rt := uint8(0x81)
+			if s.d == DirNorth || s.d == DirSouth {
+				max = 12
+				rt = 0x80
+			}
+
 			// 2 tiles behind a door could be a stairwell
 			t, _, ok := s.t.MoveBy(s.d, 2)
 			if !ok {
@@ -1148,13 +1155,6 @@ lifoLoop:
 				visited[t] = empty{}
 				f(t, s.d, v)
 				continue
-			}
-
-			max := 10
-			rt := uint8(0x81)
-			if s.d == DirNorth || s.d == DirSouth {
-				max = 12
-				rt = 0x80
 			}
 
 			// make an open doorway:
@@ -1189,6 +1189,7 @@ lifoLoop:
 			// clear up the end of the doorway:
 			for i := 0; i < 2; i++ {
 				m[t] = rt
+				visited[t] = empty{}
 				f(t, s.d, rt)
 
 				// move next:
