@@ -655,6 +655,9 @@ func TestGenerateMap(t *testing.T) {
 						if v == 0x20 {
 							// pit tile
 							markExit(warpExitTo, fmt.Sprintf("pit($%04x)", t))
+						} else if v == 0x62 {
+							// pit tile
+							markExit(warpExitTo, fmt.Sprintf("bombableFloor($%04x)", t))
 						}
 					},
 				)
@@ -774,6 +777,8 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 			return mapCoord(it + increment), dir, true
 		}
 		return t, dir, false
+	default:
+		panic("bad direction")
 	}
 
 	return t, dir, false
@@ -886,7 +891,7 @@ func handleLinkAccessibleTiles(
 	lifo := lifoSpace[:0]
 	for _, point := range entryPoints {
 		// pick any starting direction, usually south:
-		lifo = append(lifo, state{t: point, d: DirSouth})
+		lifo = append(lifo, state{t: point, d: DirNone})
 	}
 
 	// handle the stack of locations to traverse:
@@ -1135,7 +1140,27 @@ lifoLoop:
 		// doors:
 		if v >= 0xF0 {
 			doorType := v
-			visited[s.t] = empty{}
+
+			// determine a direction to head in if we have none:
+			if s.d == DirNone {
+				var ok bool
+				var t mapCoord
+				if t, _, ok = s.t.MoveBy(DirNorth, 1); ok && m[t] == 0x00 {
+					s.d = DirSouth
+				} else if t, _, ok = s.t.MoveBy(DirEast, 1); ok && m[t] == 0x00 {
+					s.d = DirWest
+				} else if t, _, ok = s.t.MoveBy(DirSouth, 1); ok && m[t] == 0x00 {
+					s.d = DirNorth
+				} else if t, _, ok = s.t.MoveBy(DirWest, 1); ok && m[t] == 0x00 {
+					s.d = DirEast
+				} else {
+					// maybe we're too far in the door:
+					continue
+				}
+
+				lifo = append(lifo, state{t: t, d: s.d})
+				continue
+			}
 
 			max := 10
 			rt := uint8(0x81)
@@ -1243,6 +1268,7 @@ const (
 	DirSouth
 	DirWest
 	DirEast
+	DirNone
 )
 
 func (d Direction) MoveEG2(s Supertile) (Supertile, bool) {
