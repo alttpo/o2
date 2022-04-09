@@ -1608,6 +1608,29 @@ func drawSupertile(
 			draw.Draw(g, g.Bounds(), bg1, image.Point{}, draw.Src)
 		}
 
+		//if isDark {
+		//	// darken the room
+		//	draw.Draw(
+		//		g,
+		//		g.Bounds(),
+		//		image.NewUniform(color.RGBA64{0, 0, 0, 0x8000}),
+		//		image.Point{},
+		//		draw.Over,
+		//	)
+		//}
+
+		// INIDISP contains PPU brightness
+		brightness := read8(wram, 0x13) & 0xF
+		if brightness < 15 {
+			draw.Draw(
+				g,
+				g.Bounds(),
+				image.NewUniform(color.RGBA64{0, 0, 0, uint16(brightness) << 12}),
+				image.Point{},
+				draw.Over,
+			)
+		}
+
 		// draw supertile number in top-left:
 		stStr := fmt.Sprintf("%03X", st)
 		(&font.Drawer{
