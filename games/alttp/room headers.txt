@@ -66,6 +66,53 @@ STAIRS2:
 STAIRS3:
     $7EC004 <- x
 
+---------------------------------
+BG2PROP analysis:
+
+.has_moving_wall_tag
+#_0192BA: LDA.w $0403
+#_0192BD: AND.w DoorFlagMasks-1,Y
+#_0192C0: BEQ .draw_wall
+
+---
+
+#_06E4CC: LDA.w $046C
+#_06E4CF: CMP.b #$04
+#_06E4D1: BEQ Sprite_CheckTileCollision_set_layer
+
+#_06E4D3: STZ.w $0F20,X
+
+#_06E4D6: JSR Sprite_CheckTileCollisionSingleLayer
+
+---
+
+$0414 = room visual effects; affects CGADSUBQ ($9A)
+
+#_0281EF: LDY.w $0414
+#_0281F2: BEQ .no_room_effect
+
+; Check for translucent backgrounds.
+
+; prevent color math always
+#_0281F4: LDA.b #$32
+#_0281F6: CPY.b #$07
+#_0281F8: BEQ .set_room_effect
+
+; prevent color math inside window
+; clip to black in window
+#_0281FA: LDA.b #$62
+#_0281FC: CPY.b #$04
+#_0281FE: BEQ .set_room_effect
+
+.no_room_effect
+#_028200: LDA.b #$20 ; prevent color math inside window
+
+.set_room_effect
+#_028202: STA.b $9A
+
+---------------------------------
+
+
 // load doors:
     // from every entrance, discover reachable supertiles:
     //RoomData_DoorDataPointers:
