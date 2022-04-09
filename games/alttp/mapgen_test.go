@@ -1539,20 +1539,26 @@ func drawSupertile(
 			}
 
 			if halfColor {
+				// color math: add, half
 				for y := 0; y < 512; y++ {
 					for x := 0; x < 512; x++ {
-						r1, g1, b1, _ := bg1.At(x, y).RGBA()
-						r2, g2, b2, _ := bg2.At(x, y).RGBA()
-						c := color.RGBA64{
-							R: sat(r1 + r2>>1),
-							G: sat(g1 + g2>>1),
-							B: sat(b1 + b2>>1),
-							A: 0xffff,
+						if bg2.ColorIndexAt(x, y) != 0 {
+							r1, g1, b1, _ := bg1.At(x, y).RGBA()
+							r2, g2, b2, _ := bg2.At(x, y).RGBA()
+							c := color.RGBA64{
+								R: sat(r1>>1 + r2>>1),
+								G: sat(g1>>1 + g2>>1),
+								B: sat(b1>>1 + b2>>1),
+								A: 0xffff,
+							}
+							g.Set(x, y, c)
+						} else {
+							g.Set(x, y, bg1.At(x, y))
 						}
-						g.Set(x, y, c)
 					}
 				}
 			} else {
+				// color math: add
 				for y := 0; y < 512; y++ {
 					for x := 0; x < 512; x++ {
 						r1, g1, b1, _ := bg1.At(x, y).RGBA()
