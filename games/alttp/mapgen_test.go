@@ -311,10 +311,8 @@ func TestGenerateMap(t *testing.T) {
 		return
 	}
 
-	maptiles := make([]image.Image, 0x128)
-
 	// make a set to determine which supertiles have been visited:
-	stVisited := make(map[Supertile]struct{})
+	stVisited := make(map[Supertile]empty)
 
 	//RoomsWithPitDamage#_00990C [0x70]uint16
 	roomsWithPitDamage := make(map[Supertile]bool, 0x128)
@@ -327,9 +325,11 @@ func TestGenerateMap(t *testing.T) {
 		roomsWithPitDamage[st] = true
 	}
 
+	const entranceCount = 0x84
+	entranceGroups := make([]Entrance, entranceCount)
+
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
-	const entranceCount = 0x84
 	for eID := uint8(0); eID < entranceCount; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 
@@ -340,6 +340,8 @@ func TestGenerateMap(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		g := &entranceGroups[eID]
+
 		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
 
 		// if this is the entrance, Link should be already moved to his starting position:
@@ -349,24 +351,29 @@ func TestGenerateMap(t *testing.T) {
 			read16(s.WRAM[:], 0x20),
 		) | mapCoord(uint16(entryLayer)<<12)
 
-		// render the entrance supertile in the background:
-		{
-			// dump VRAM+WRAM for each supertile:
-			vram := make([]byte, 65536)
-			copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
-			wram := make([]byte, 131072)
-			copy(wram, s.WRAM[:])
+		g.EntranceID = eID
+		g.EntryCoord = entryCoord
 
+		g.Rooms = make([]*RoomState, 0, 0x20)
+
+		{
+			room := &RoomState{
+				Supertile:    entranceSupertile,
+				Rendered:     nil,
+				TilesVisited: make(map[mapCoord]empty, 0x2000),
+			}
+			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+			copy(room.WRAM[:], s.WRAM[:])
+			g.Rooms = append(g.Rooms, room)
+
+			// render the entrance supertile in the background:
 			wg.Add(1)
-			go drawSupertile(&wg, maptiles, uint16(entranceSupertile), wram, vram)
+			go drawSupertile(&wg, room)
 		}
 
 		// build a stack (LIFO) of supertiles to visit:
 		lifo := make([]Supertile, 0, 0x100)
 		lifo = append(lifo, entranceSupertile)
-
-		// build a list of supertiles to render following from this entrance:
-		toRender := make([]Supertile, 0, 0x100)
 
 		// process the LIFO:
 		for len(lifo) != 0 {
@@ -382,8 +389,7 @@ func TestGenerateMap(t *testing.T) {
 			}
 
 			// mark as visited:
-			stVisited[this] = struct{}{}
-			toRender = append(toRender, this)
+			stVisited[this] = empty{}
 
 			fmt.Fprintf(s.Logger, "  supertile   = %s\n", this)
 
@@ -395,6 +401,16 @@ func TestGenerateMap(t *testing.T) {
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
+
+			// create a room out of it:
+			room := &RoomState{
+				Supertile:    this,
+				Rendered:     nil,
+				TilesVisited: make(map[mapCoord]empty, 0x2000),
+			}
+			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+			copy(room.WRAM[:], s.WRAM[:])
+			g.Rooms = append(g.Rooms, room)
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(this)), s.WRAM[:], 0644)
 
@@ -444,8 +460,6 @@ func TestGenerateMap(t *testing.T) {
 				fmt.Fprintf(s.Logger, "    entrance point: $%04x\n", uint16(entryCoord))
 				entryPoints = append(entryPoints, entryCoord)
 			}
-			// track visited tiles:
-			visited := make(map[mapCoord]empty, 0x2000)
 
 			// seed flood fills from all edge tiles
 			// if hit a ledge tile, we're on the solid side
@@ -663,7 +677,7 @@ func TestGenerateMap(t *testing.T) {
 				fmt.Fprintf(s.Logger, "    scan entry points %#v\n", entryPoints)
 				handleLinkAccessibleTiles(
 					&tiles,
-					visited,
+					room.TilesVisited,
 					entryPoints,
 					func(t mapCoord, d Direction, v uint8) {
 						reachable[t] = v
@@ -685,61 +699,50 @@ func TestGenerateMap(t *testing.T) {
 			}
 		}
 
-		// which supertiles this entrance should render:
-		fmt.Fprintf(s.Logger, "  render: %#v\n", toRender)
-
 		// render all supertiles found:
-		if len(toRender) >= 1 {
-			for _, st := range toRender[1:] {
+		if len(g.Rooms) >= 1 {
+			for _, room := range g.Rooms[1:] {
 				// TODO: clone System instances and parallelize
 
 				// loadSupertile:
-				write16(s.WRAM[:], 0xA0, uint16(st))
+				write16(s.WRAM[:], 0xA0, uint16(room.Supertile))
 				if err = s.ExecAt(loadSupertilePC, donePC); err != nil {
 					t.Fatal(err)
 				}
 
-				// render the supertile to an Image:
-				vram := make([]byte, 65536)
-				copy(vram, (*(*[65536]byte)(unsafe.Pointer(&s.VRAM[0])))[:])
-				wram := make([]byte, 131072)
-				copy(wram, s.WRAM[:])
+				{
+					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
+					copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+					copy(room.WRAM[:], s.WRAM[:])
 
-				wg.Add(1)
-				go drawSupertile(&wg, maptiles, uint16(st), wram, vram)
+					wg.Add(1)
+					go drawSupertile(&wg, room)
 
-				// render VRAM BG tiles to a PNG:
-				if false {
-					cgram := (*(*[0x100]uint16)(unsafe.Pointer(&wram[0xC300])))[:]
-					pal := cgramToPalette(cgram)
+					// render VRAM BG tiles to a PNG:
+					if false {
+						cgram := (*(*[0x100]uint16)(unsafe.Pointer(&room.WRAM[0xC300])))[:]
+						pal := cgramToPalette(cgram)
 
-					tiles := 0x4000 / 32
-					g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
-					for t := 0; t < tiles; t++ {
-						// palette 2
-						z := uint16(t) | (2 << 10)
-						draw4bppTile(
-							g,
-							z,
-							vram[0x4000:0x8000],
-							t%16,
-							t/16,
-						)
-					}
+						tiles := 0x4000 / 32
+						g := image.NewPaletted(image.Rect(0, 0, 16*8, (tiles/16)*8), pal)
+						for t := 0; t < tiles; t++ {
+							// palette 2
+							z := uint16(t) | (2 << 10)
+							draw4bppTile(
+								g,
+								z,
+								room.VRAMTileSet[:],
+								t%16,
+								t/16,
+							)
+						}
 
-					if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", st), g); err != nil {
-						panic(err)
+						if err = exportPNG(fmt.Sprintf("data/%03X.vram.png", uint16(room.Supertile)), g); err != nil {
+							panic(err)
+						}
 					}
 				}
 			}
-
-			// gfx output is:
-			//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
-			//  s.WRAM: $2000[0x2000] = BG1 64x64 tile map  [64][64]uint16
-			//  s.WRAM: $4000[0x2000] = BG2 64x64 tile map  [64][64]uint16
-			//  s.WRAM:$12000[0x1000] = BG1 64x64 tile type [64][64]uint8
-			//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
-			//  s.WRAM: $C300[0x0200] = CGRAM palette
 		}
 	}
 
@@ -769,26 +772,31 @@ func TestGenerateMap(t *testing.T) {
 				image.Point{},
 				draw.Src)
 
-			for st := 0; st < 0x128; st++ {
-				stMap := maptiles[st]
-				if stMap == nil {
-					continue
+			for i := range entranceGroups {
+				g := &entranceGroups[i]
+				for _, room := range g.Rooms {
+					st := int(room.Supertile)
+					stMap := room.Rendered
+					if stMap == nil {
+						continue
+					}
+					row := st / 0x10
+					col := st % 0x10
+					wga.Add(1)
+					go func() {
+						sc.S.Scale(
+							all,
+							image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
+							stMap,
+							stMap.Bounds(),
+							draw.Src,
+							nil,
+						)
+						wga.Done()
+					}()
 				}
-				row := st / 0x10
-				col := st % 0x10
-				wga.Add(1)
-				go func() {
-					sc.S.Scale(
-						all,
-						image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
-						stMap,
-						stMap.Bounds(),
-						draw.Src,
-						nil,
-					)
-					wga.Done()
-				}()
 			}
+
 			wga.Wait()
 			if err = exportPNG(fmt.Sprintf("data/all-%d-%s.png", divider, sc.N), all); err != nil {
 				panic(err)
@@ -1368,6 +1376,8 @@ lifoLoop:
 type Entrance struct {
 	EntranceID uint8
 
+	EntryCoord mapCoord
+
 	Rooms []*RoomState
 }
 
@@ -1489,14 +1499,19 @@ func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
 }
 
-func drawSupertile(
-	wg *sync.WaitGroup,
-	maptiles []image.Image,
-	st uint16,
-	wram []byte,
-	vram []byte,
-) {
+func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
 	var err error
+	defer wg.Done()
+
+	// gfx output is:
+	//  s.VRAM: $4000[0x2000] = 4bpp tile graphics
+	//  s.WRAM: $2000[0x2000] = BG1 64x64 tile map  [64][64]uint16
+	//  s.WRAM: $4000[0x2000] = BG2 64x64 tile map  [64][64]uint16
+	//  s.WRAM:$12000[0x1000] = BG1 64x64 tile type [64][64]uint8
+	//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
+	//  s.WRAM: $C300[0x0200] = CGRAM palette
+
+	wram := room.WRAM[:]
 
 	// assume WRAM has rendering state as well:
 	isDark := read8(wram, 0xC005) != 0
@@ -1507,7 +1522,7 @@ func drawSupertile(
 	pal := cgramToPalette(cgram)
 
 	// render BG image:
-	if true {
+	if room.Rendered == nil {
 		g := image.NewNRGBA(image.Rect(0, 0, 512, 512))
 		bg1 := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
 		bg2 := image.NewPaletted(image.Rect(0, 0, 512, 512), pal)
@@ -1515,7 +1530,7 @@ func drawSupertile(
 
 		bg1wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:]
 		bg2wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:]
-		tileset := vram[0x4000:0x8000]
+		tileset := room.VRAMTileSet[:]
 
 		//subdes := read8(wram, 0x1D)
 		n0414 := read8(wram, 0x0414)
@@ -1650,7 +1665,7 @@ func drawSupertile(
 		}
 
 		// draw supertile number in top-left:
-		stStr := fmt.Sprintf("%03X", st)
+		stStr := fmt.Sprintf("%03X", uint16(room.Supertile))
 		(&font.Drawer{
 			Dst:  g,
 			Src:  image.NewUniform(color.RGBA{0, 0, 0, 255}),
@@ -1665,14 +1680,12 @@ func drawSupertile(
 		}).DrawString(stStr)
 
 		// store full underworld rendering for inclusion into EG map:
-		maptiles[st] = g
+		room.Rendered = g
 
-		if err = exportPNG(fmt.Sprintf("data/%03X.png", st), g); err != nil {
+		if err = exportPNG(fmt.Sprintf("data/%03X.png", uint16(room.Supertile)), g); err != nil {
 			panic(err)
 		}
 	}
-
-	wg.Done()
 }
 
 func exportPNG(name string, g image.Image) (err error) {
