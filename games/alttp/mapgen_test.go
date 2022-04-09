@@ -336,15 +336,9 @@ func TestGenerateMap(t *testing.T) {
 		// poke the entrance ID into our asm code:
 		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		// load the entrance and draw the room:
-		//if eID == 0x32 {
-		//	s.LoggerCPU = os.Stdout
-		//}
 		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
-		//if eID == 0x32 {
-		//	s.LoggerCPU = nil
-		//}
 
 		entranceSupertile := Supertile(s.ReadWRAM16(0xA0))
 
@@ -1369,6 +1363,24 @@ lifoLoop:
 		// anything else is considered solid:
 		continue
 	}
+}
+
+type Entrance struct {
+	EntranceID uint8
+
+	Rooms []*RoomState
+}
+
+type RoomState struct {
+	Supertile
+
+	Rendered image.Image
+
+	TilesVisited  map[mapCoord]empty
+	TilesWalkable [0x2000]byte
+
+	WRAM        [0x20000]byte
+	VRAMTileSet [0x4000]byte
 }
 
 type Supertile uint16
