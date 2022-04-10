@@ -384,6 +384,9 @@ func TestGenerateMap(t *testing.T) {
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
 			}
 
+			tiles := [0x2000]uint8{}
+			copy(tiles[:], room.WRAM[0x12000:0x14000])
+
 			// process doors first:
 			doors := make([]Door, 0, 16)
 			for m := 0; m < 16; m++ {
@@ -394,20 +397,30 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				door := Door{
-					Pos:  tpos >> 1, // we're only interested in tile type map positions, not the gfx tile map
+					Pos:  mapCoord(tpos >> 1),
 					Type: DoorType(read16(s.WRAM[:], uint32(0x1980+(m<<1)))),
 					Dir:  Direction(read16(s.WRAM[:], uint32(0x19C0+(m<<1)))),
 				}
 
 				fmt.Fprintf(s.Logger, "    door: %#v\n", &door)
 
+				if door.Type.IsExit() {
+					lyr, row, col := door.Pos.RowCol()
+					// patch up the door tiles to prevent reachability from exiting:
+					for y := uint16(0); y < 4; y++ {
+						for x := uint16(0); x < 4; x++ {
+							t := lyr | (row+y)<<6 | (col + x)
+							if tiles[t] >= 0xF0 {
+								tiles[t] = 0x00
+							}
+						}
+					}
+				}
+
 				doors = append(doors, door)
 			}
 
 			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
-
-			tiles := [0x2000]uint8{}
-			copy(tiles[:], room.WRAM[0x12000:0x14000])
 
 			// flood fill to find reachable tiles:
 			findReachableTiles(
@@ -418,44 +431,53 @@ func TestGenerateMap(t *testing.T) {
 					// here we found a reachable tile:
 					room.Reachable[t] = v
 
+					// door objects:
+					if v >= 0xF0 {
+						return
+					}
+
 					// interroom doorways:
 					if v >= 0x80 && v <= 0x8D {
-						if t.IsEdge() {
+						if ok, edir, _, _ := t.IsEdge(); ok {
 							if v&1 == 0 {
 								// north-south normal doorway (no teleport doorways for north-south):
-								if sn, _, ok := this.MoveBy(d); ok {
-									pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), d}, "north-south doorway")
+								if sn, _, ok := this.MoveBy(edir); ok {
+									pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, "north-south doorway")
 								}
 							} else {
 								// east-west doorway:
 								if v2 == 0x89 {
 									// teleport doorway:
 									if d == DirWest {
-										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeEdge(), d}, "west teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeEdge(), edir}, "west teleport doorway")
 									} else if d == DirEast {
-										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeEdge(), d}, "east teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeEdge(), edir}, "east teleport doorway")
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
 									}
 								} else {
 									// normal doorway:
-									if sn, _, ok := this.MoveBy(d); ok {
-										pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), d}, "east-west doorway")
+									if sn, _, ok := this.MoveBy(edir); ok {
+										pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, "east-west doorway")
 									}
 								}
 							}
 						}
+						return
 					}
 
 					// interroom stair exits:
 					if v >= 0x30 && v <= 0x37 {
 						if v2 == 0x5E || v2 == 0x5F {
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
-						} else {
-							// TODO: handle opposite stairwell entry:
-							panic(fmt.Errorf("TODO at %s", t))
-							// TODO: add extra fields to EntryPoint to find the matching stairwell point
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d}, fmt.Sprintf("straightStair(%s)", t))
+						} else if v2 == 0x38 {
+							// north stairs going down:
+							// NOTE: hack the stairwell position
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
+						} else if v2 == 0x39 {
+							// south stairs going up:
+							// NOTE: hack the stairwell position
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
 						}
 						return
 					}
@@ -638,16 +660,33 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 	return t, dir, false
 }
 
-func (t mapCoord) IsEdge() bool {
-	row := t >> 6
-	col := t & 0x3F
-	if row == 0 || row == 0x3F {
-		return true
+func (t mapCoord) RowCol() (layer, row, col uint16) {
+	layer = uint16(t & 0x1000)
+	row = uint16(t >> 6)
+	col = uint16(t & 0x3F)
+	return
+}
+
+func (t mapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
+	row = uint16(t >> 6)
+	col = uint16(t & 0x3F)
+	if row == 0 {
+		ok, dir = true, DirNorth
+		return
 	}
-	if col == 0 || col == 0x3F {
-		return true
+	if row == 0x3F {
+		ok, dir = true, DirSouth
+		return
 	}
-	return false
+	if col == 0 {
+		ok, dir = true, DirWest
+		return
+	}
+	if col == 0x3F {
+		ok, dir = true, DirEast
+		return
+	}
+	return
 }
 
 func (t mapCoord) OppositeEdge() mapCoord {
@@ -713,6 +752,10 @@ lifoLoop:
 		}
 
 		v := m[s.t]
+
+		if v == 0x0A {
+			panic("notify kan")
+		}
 
 		if s.inPipe {
 			// pipe exit:
@@ -813,7 +856,9 @@ lifoLoop:
 			// crystal pegs (orange/blue):
 			v == 0x66 || v == 0x67 ||
 			// conveyors:
-			(v >= 0x68 && v <= 0x6B)
+			(v >= 0x68 && v <= 0x6B) ||
+			// north/south dungeon swap door (for HC to sewers)
+			v == 0xA0
 
 		if isPassable {
 			// no collision:
@@ -993,7 +1038,7 @@ lifoLoop:
 					panic(fmt.Errorf("north-south door approached from perpendicular direction %s at %s", s.d, s.t))
 				}
 
-				//visited[s.t] = empty{}
+				visited[s.t] = empty{}
 				f(s.t, s.d, v, s.stairType)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
@@ -1015,7 +1060,7 @@ lifoLoop:
 					panic(fmt.Errorf("east-west door approached from perpendicular direction %s at %s", s.d, s.t))
 				}
 
-				//visited[s.t] = empty{}
+				visited[s.t] = empty{}
 				f(s.t, s.d, v, s.stairType)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
@@ -1226,7 +1271,7 @@ type StaircaseInterRoom struct {
 
 type Door struct {
 	Type DoorType  // $1980
-	Pos  uint16    // $19A0
+	Pos  mapCoord  // $19A0
 	Dir  Direction // $19C0
 }
 
