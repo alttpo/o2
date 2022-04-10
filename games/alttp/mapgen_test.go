@@ -402,7 +402,7 @@ func TestGenerateMap(t *testing.T) {
 					Dir:  Direction(read16(s.WRAM[:], uint32(0x19C0+(m<<1)))),
 				}
 
-				fmt.Fprintf(s.Logger, "    door: %#v\n", &door)
+				fmt.Fprintf(s.Logger, "    door: %v\n", &door)
 
 				if door.Type.IsExit() {
 					lyr, row, col := door.Pos.RowCol()
@@ -433,32 +433,57 @@ func TestGenerateMap(t *testing.T) {
 
 					// door objects:
 					if v >= 0xF0 {
+						fmt.Printf("    door tile $%02x at %s\n", v, t)
+						// dungeon exits are already patched out, so this should be a normal door
+						lyr, row, col := t.RowCol()
+						if row >= 0x3A {
+							// south:
+							if sn, sd, ok := this.MoveBy(DirSouth); ok {
+								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (0x06 << 6) | col), sd}, "south door")
+							}
+						} else if row <= 0x06 {
+							// north:
+							if sn, sd, ok := this.MoveBy(DirNorth); ok {
+								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (0x3A << 6) | col), sd}, "north door")
+							}
+						} else if col >= 0x3A {
+							// east:
+							if sn, sd, ok := this.MoveBy(DirEast); ok {
+								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (row << 6) | 0x06), sd}, "east door")
+							}
+						} else if col <= 0x06 {
+							// west:
+							if sn, sd, ok := this.MoveBy(DirWest); ok {
+								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (row << 6) | 0x3A), sd}, "west door")
+							}
+						}
+
 						return
 					}
 
 					// interroom doorways:
 					if v >= 0x80 && v <= 0x8D {
-						if ok, edir, _, _ := t.IsEdge(); ok {
+						if ok, edir, _, _ := t.IsDoorEdge(); ok {
 							if v&1 == 0 {
 								// north-south normal doorway (no teleport doorways for north-south):
 								if sn, _, ok := this.MoveBy(edir); ok {
-									pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, "north-south doorway")
+									pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "north-south doorway")
 								}
 							} else {
 								// east-west doorway:
 								if v2 == 0x89 {
 									// teleport doorway:
 									if d == DirWest {
-										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeEdge(), edir}, "west teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
 									} else if d == DirEast {
-										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeEdge(), edir}, "east teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge(), edir}, "east teleport doorway")
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
 									}
 								} else {
 									// normal doorway:
 									if sn, _, ok := this.MoveBy(edir); ok {
-										pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, "east-west doorway")
+										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "east-west doorway")
 									}
 								}
 							}
@@ -610,7 +635,8 @@ type empty = struct{}
 type mapCoord uint16
 
 func (t mapCoord) String() string {
-	return fmt.Sprintf("%04x", uint16(t))
+	_, row, col := t.RowCol()
+	return fmt.Sprintf("$%04x={%02x,%02x}", uint16(t), row, col)
 }
 
 type EntryPoint struct {
@@ -662,14 +688,13 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 
 func (t mapCoord) RowCol() (layer, row, col uint16) {
 	layer = uint16(t & 0x1000)
-	row = uint16(t >> 6)
+	row = uint16((t & 0x0FFF) >> 6)
 	col = uint16(t & 0x3F)
 	return
 }
 
 func (t mapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
-	row = uint16(t >> 6)
-	col = uint16(t & 0x3F)
+	_, row, col = t.RowCol()
 	if row == 0 {
 		ok, dir = true, DirNorth
 		return
@@ -690,20 +715,58 @@ func (t mapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
 }
 
 func (t mapCoord) OppositeEdge() mapCoord {
-	row := t >> 6
-	col := t & 0x3F
+	lyr, row, col := t.RowCol()
 	if row == 0 {
-		return t&0x1000 | (0x3F << 6) | col
+		return mapCoord(lyr | (0x3F << 6) | col)
 	}
 	if row == 0x3F {
-		return t&0x1000 | (0x00 << 6) | col
+		return mapCoord(lyr | (0x00 << 6) | col)
 	}
 	if col == 0 {
-		return t&0x1000 | row | 0x3F
+		return mapCoord(lyr | (row << 6) | 0x3F)
 	}
 	if col == 0x3F {
-		return t&0x1000 | row | 0x00
+		return mapCoord(lyr | (row << 6) | 0x00)
 	}
+	return t
+}
+
+func (t mapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
+	_, row, col = t.RowCol()
+	if row <= 0x06 {
+		ok, dir = true, DirNorth
+		return
+	}
+	if row >= 0x3A {
+		ok, dir = true, DirSouth
+		return
+	}
+	if col <= 0x06 {
+		ok, dir = true, DirWest
+		return
+	}
+	if col >= 0x3A {
+		ok, dir = true, DirEast
+		return
+	}
+	return
+}
+
+func (t mapCoord) OppositeDoorEdge() mapCoord {
+	lyr, row, col := t.RowCol()
+	if row <= 0x06 {
+		return mapCoord(lyr | (0x3A << 6) | col)
+	}
+	if row >= 0x3A {
+		return mapCoord(lyr | (0x06 << 6) | col)
+	}
+	if col <= 0x06 {
+		return mapCoord(lyr | (row << 6) | 0x3A)
+	}
+	if col >= 0x3A {
+		return mapCoord(lyr | (row << 6) | 0x06)
+	}
+	panic("not at an edge")
 	return t
 }
 
@@ -1149,73 +1212,82 @@ lifoLoop:
 				continue
 			}
 
-			max := 10
-			rt := uint8(0x81)
-			if s.d == DirNorth || s.d == DirSouth {
-				max = 12
-				rt = 0x80
-			}
+			if true {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v, 0)
 
-			// 2 tiles behind a door could be a stairwell
-			t, _, ok := s.t.MoveBy(s.d, 2)
-			if !ok {
-				continue
-			}
-			v = m[t]
-			if v >= 0x30 && v <= 0x39 {
-				// TODO: inter-room stairs (needs 0x5E stair type)
-				visited[t] = empty{}
-				f(t, s.d, v, doorType)
-				continue
-			}
+				if t, _, ok := s.t.MoveBy(s.d, 2); ok {
+					lifo = append(lifo, state{t: t, d: s.d})
+				}
+			} else {
+				max := 10
+				rt := uint8(0x81)
+				if s.d == DirNorth || s.d == DirSouth {
+					max = 12
+					rt = 0x80
+				}
 
-			// make an open doorway:
-			t = s.t
-			for i := 0; i < max; i++ {
+				// 2 tiles behind a door could be a stairwell
+				t, _, ok := s.t.MoveBy(s.d, 2)
+				if !ok {
+					continue
+				}
 				v = m[t]
-				// stop at different doorway number:
-				if v >= 0xF0 && v != doorType {
-					break
-				}
-				if v == 0x00 {
-					lifo = append(lifo, state{t: t, d: s.d})
-					continue lifoLoop
-				}
-				if v >= 0x80 && v <= 0x8D {
-					lifo = append(lifo, state{t: t, d: s.d})
-					continue lifoLoop
+				if v >= 0x30 && v <= 0x39 {
+					// TODO: inter-room stairs (needs 0x5E stair type)
+					visited[t] = empty{}
+					f(t, s.d, v, doorType)
+					continue
 				}
 
-				// clear the doorway:
-				m[t] = rt
-				visited[t] = empty{}
-				f(t, s.d, rt, doorType)
+				// make an open doorway:
+				t = s.t
+				for i := 0; i < max; i++ {
+					v = m[t]
+					// stop at different doorway number:
+					if v >= 0xF0 && v != doorType {
+						break
+					}
+					if v == 0x00 {
+						lifo = append(lifo, state{t: t, d: s.d})
+						continue lifoLoop
+					}
+					if v >= 0x80 && v <= 0x8D {
+						lifo = append(lifo, state{t: t, d: s.d})
+						continue lifoLoop
+					}
 
-				// move forward:
-				t, _, ok = t.MoveBy(s.d, 1)
+					// clear the doorway:
+					m[t] = rt
+					visited[t] = empty{}
+					f(t, s.d, rt, doorType)
+
+					// move forward:
+					t, _, ok = t.MoveBy(s.d, 1)
+					if !ok {
+						break
+					}
+				}
 				if !ok {
-					break
+					continue
 				}
-			}
-			if !ok {
-				continue
-			}
 
-			// clear up the end of the doorway:
-			for i := 0; i < 2; i++ {
-				m[t] = rt
-				visited[t] = empty{}
-				f(t, s.d, rt, doorType)
+				// clear up the end of the doorway:
+				for i := 0; i < 2; i++ {
+					m[t] = rt
+					visited[t] = empty{}
+					f(t, s.d, rt, doorType)
 
-				// move next:
-				t, _, ok = t.MoveBy(s.d, 1)
-				if !ok {
-					break
+					// move next:
+					t, _, ok = t.MoveBy(s.d, 1)
+					if !ok {
+						break
+					}
 				}
-			}
 
-			if ok {
-				lifo = append(lifo, state{t: t, d: s.d})
+				if ok {
+					lifo = append(lifo, state{t: t, d: s.d})
+				}
 			}
 			continue
 		}
@@ -1273,6 +1345,21 @@ type Door struct {
 	Type DoorType  // $1980
 	Pos  mapCoord  // $19A0
 	Dir  Direction // $19C0
+}
+
+func (d *Door) ContainsCoord(t mapCoord) bool {
+	dl, dr, dc := d.Pos.RowCol()
+	tl, tr, tc := t.RowCol()
+	if tl != dl {
+		return false
+	}
+	if tc < dc || tc >= dc+4 {
+		return false
+	}
+	if tr < dr || dr >= dr+4 {
+		return false
+	}
+	return true
 }
 
 type Direction uint8
@@ -1351,6 +1438,10 @@ func (t DoorType) IsExit() bool {
 
 func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
+}
+
+func (t DoorType) String() string {
+	return fmt.Sprintf("$%02x", uint8(t))
 }
 
 func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
