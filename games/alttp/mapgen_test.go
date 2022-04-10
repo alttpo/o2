@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"unsafe"
@@ -230,9 +231,109 @@ func TestGenerateMap(t *testing.T) {
 	//s.LoggerCPU = os.Stdout
 	_ = loadSupertilePC
 
+	idealROM := make([]byte, 0x800000)
+	idealDyn := make([]byte, 0x3000)
+	copy(idealROM, s.ROM[:])
+	copy(idealDyn, s.Dyn[:])
+
 	// run the initialization code:
 	if err = s.ExecAt(0x00_5000, donePC); err != nil {
 		t.Fatal(err)
+	}
+
+	if true {
+		rooms := make([]*RoomState, 0, 0x100)
+		wg := sync.WaitGroup{}
+		for this := uint16(0x100); this <= 0x200; this++ {
+			fmt.Printf("%s\n", Supertile(this))
+			func() {
+				defer func() {
+					if err := recover(); err != nil {
+						fmt.Println(err)
+						fmt.Println(string(debug.Stack()))
+					}
+				}()
+
+				// run the initialization code:
+				s.CPU.Reset()
+				copy(s.ROM[:], idealROM)
+				copy(s.Dyn[:], idealDyn)
+				for i := range s.WRAM {
+					s.WRAM[i] = 0
+				}
+				if err = s.ExecAt(0x00_5000, donePC); err != nil {
+					panic(err)
+				}
+
+				// poke the entrance ID into our asm code:
+				s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x34 // TT entrance
+				// load the entrance and draw the room:
+				if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
+					fmt.Println(err)
+				}
+
+				// load and draw current supertile:
+				write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(this))
+				if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+					fmt.Println(err)
+				}
+
+				room := &RoomState{
+					Supertile:    Supertile(this),
+					Rendered:     nil,
+					TilesVisited: make(map[mapCoord]empty, 0x2000),
+				}
+				copy(room.VRAMTileSet[:], s.VRAM[0x4000:])
+				copy(room.WRAM[:], s.WRAM[:])
+				rooms = append(rooms, room)
+
+				// render the supertile in the background:
+				wg.Add(1)
+				go drawSupertile(&wg, room)
+			}()
+		}
+
+		wg.Wait()
+
+		const supertilepx = 512
+		all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x100*supertilepx)/0x10))
+		// clear the image and remove alpha layer
+		draw.Draw(
+			all,
+			all.Bounds(),
+			image.NewUniform(color.NRGBA{0, 0, 0, 255}),
+			image.Point{},
+			draw.Src)
+
+		for _, room := range rooms {
+			st := int(room.Supertile) - 0x100
+			stMap := room.Rendered
+			if stMap == nil {
+				continue
+			}
+			row := st / 0x10
+			col := st % 0x10
+			wg.Add(1)
+			go func() {
+				draw.NearestNeighbor.Scale(
+					all,
+					image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
+					stMap,
+					stMap.Bounds(),
+					draw.Src,
+					nil,
+				)
+				wg.Done()
+			}()
+		}
+
+		wg.Wait()
+
+		if err = exportPNG(fmt.Sprintf("data/eg2.png"), all); err != nil {
+			panic(err)
+		}
+
+		return
 	}
 
 	// test floodfill tile type map from four corners:
@@ -362,7 +463,7 @@ func TestGenerateMap(t *testing.T) {
 				Rendered:     nil,
 				TilesVisited: make(map[mapCoord]empty, 0x2000),
 			}
-			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+			copy(room.VRAMTileSet[:], s.VRAM[0x4000:])
 			copy(room.WRAM[:], s.WRAM[:])
 			g.Rooms = append(g.Rooms, room)
 
@@ -408,7 +509,7 @@ func TestGenerateMap(t *testing.T) {
 				Rendered:     nil,
 				TilesVisited: make(map[mapCoord]empty, 0x2000),
 			}
-			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+			copy(room.VRAMTileSet[:], s.VRAM[0x4000:])
 			copy(room.WRAM[:], s.WRAM[:])
 			g.Rooms = append(g.Rooms, room)
 
@@ -712,7 +813,7 @@ func TestGenerateMap(t *testing.T) {
 
 				{
 					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
-					copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
+					copy(room.VRAMTileSet[:], s.VRAM[0x4000:])
 					copy(room.WRAM[:], s.WRAM[:])
 
 					wg.Add(1)
@@ -1390,7 +1491,7 @@ type RoomState struct {
 	TilesWalkable [0x2000]byte
 
 	WRAM        [0x20000]byte
-	VRAMTileSet [0x4000]byte
+	VRAMTileSet [0x8000]byte
 }
 
 type Supertile uint16
@@ -1810,7 +1911,7 @@ type System struct {
 
 	ROM  [0x1000000]byte
 	WRAM [0x20000]byte
-	SRAM [0x10000]byte
+	SRAM [0x80000]byte
 
 	VRAM [0x10000]byte
 
@@ -1825,7 +1926,7 @@ func (s *System) CreateEmulator() (err error) {
 	s.CPU, _ = cpu65c816.New(s.Bus)
 
 	// map in ROM to Bus; parts of this mapping will be overwritten:
-	for b := uint32(0); b < 0x40; b++ {
+	for b := uint32(0); b < 0x80; b++ {
 		halfBank := b << 15
 		bank := b << 16
 		err = s.Bus.Attach(
@@ -1850,7 +1951,7 @@ func (s *System) CreateEmulator() (err error) {
 		}
 	}
 
-	// SRAM (banks 70-7D,F0-FF) (7E,7F) will be overwritten with WRAM:
+	// SRAM (banks 70-7D,F0-FF); (7E,7F) will be overwritten with WRAM:
 	for b := uint32(0); b < uint32(len(s.SRAM)>>15); b++ {
 		bank := b << 16
 		halfBank := b << 15
@@ -2005,7 +2106,7 @@ func (s *System) Exec(donePC uint32) (err error) {
 	var expectedPC uint32
 	var cycles uint64
 
-	if stopPC, expectedPC, cycles = s.RunUntil(donePC, 0x1000_0000); stopPC != expectedPC {
+	if stopPC, expectedPC, cycles = s.RunUntil(donePC, 0x800_0000); stopPC != expectedPC {
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
 		return
 	}
@@ -2092,17 +2193,23 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 				}
 				break
 			case 2:
-				panic("mode 2!!!")
+				//panic("mode 2!!!")
+				break copyloop
 			case 3:
-				panic("mode 3!!!")
+				//panic("mode 3!!!")
+				break copyloop
 			case 4:
-				panic("mode 4!!!")
+				//panic("mode 4!!!")
+				break copyloop
 			case 5:
-				panic("mode 5!!!")
+				//panic("mode 5!!!")
+				break copyloop
 			case 6:
-				panic("mode 6!!!")
+				//panic("mode 6!!!")
+				break copyloop
 			case 7:
-				panic("mode 7!!!")
+				//panic("mode 7!!!")
+				break copyloop
 			}
 		}
 	}
@@ -2234,7 +2341,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 		}
 		h.ppu.addrRemapping = (value & 0x0C) >> 2
 		if h.ppu.addrRemapping != 0 {
-			panic(fmt.Errorf("unsupported VRAM address remapping mode %d", h.ppu.addrRemapping))
+			//panic(fmt.Errorf("unsupported VRAM address remapping mode %d", h.ppu.addrRemapping))
 		}
 		//if h.s.Logger != nil {
 		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
@@ -2283,9 +2390,9 @@ func (h *HWIO) Write(address uint32, value byte) {
 		return
 	}
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
+	//}
 }
 
 func (h *HWIO) Shutdown() {
