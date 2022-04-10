@@ -112,6 +112,18 @@ $0414 = room visual effects; affects CGADSUBQ ($9A)
 
 ---------------------------------
 
+ROOM TAGS:
+
+set $04C7 to zero
+set $04BA to zero
+set $AE to tag value
+set $20,$22 to coords of star tile or switch tile to activate ($23, $3A, $3B)
+JSL Underworld_HandleRoomTags#_01C2FD
+// sets $04BA
+set $10 to $07
+set $11 to $03
+JSL MainRouting
+
 
 // load doors:
     // from every entrance, discover reachable supertiles:
