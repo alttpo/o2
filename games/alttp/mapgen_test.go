@@ -248,6 +248,7 @@ func TestGenerateMap(t *testing.T) {
 
 	const entranceCount = 0x84
 	entranceGroups := make([]Entrance, entranceCount)
+	supertiles := make(map[Supertile]*RoomState, 0x128)
 
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
@@ -266,15 +267,19 @@ func TestGenerateMap(t *testing.T) {
 		g.Supertile = Supertile(s.ReadWRAM16(0xA0))
 
 		g.Rooms = make([]*RoomState, 0, 0x20)
-		g.Supertiles = make(map[Supertile]*RoomState, 0x20)
 
 		// function to create a room and track it:
 		createRoom := func(st Supertile) (room *RoomState) {
 			var ok bool
-			if room, ok = g.Supertiles[st]; ok {
+			if room, ok = supertiles[st]; ok {
+				//fmt.Printf("reusing room %s\n", st)
+				//if eID != room.EntranceID {
+				//	panic(fmt.Errorf("conflicting entrances for room %s", st))
+				//}
 				return room
 			}
 
+			fmt.Printf("    creating room %s\n", st)
 			room = &RoomState{
 				Supertile:    st,
 				Rendered:     nil,
@@ -295,7 +300,7 @@ func TestGenerateMap(t *testing.T) {
 			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
 			copy(room.WRAM[:], s.WRAM[:])
 			g.Rooms = append(g.Rooms, room)
-			g.Supertiles[st] = room
+			supertiles[st] = room
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), room.WRAM[:], 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), room.WRAM[0x12000:0x14000], 0644)
