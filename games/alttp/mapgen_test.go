@@ -283,18 +283,12 @@ func TestGenerateMap(t *testing.T) {
 			for i := range cleanedMap {
 				cleanedMap[i] = 0x01
 			}
-			if false {
-				// seed flood fills from all edge tiles
-				// if hit a ledge tile, we're on the solid side
-				// otherwise, we're on the walkable side
-				correctBG2edgeFill(&tiletypes)
-				cleanedMap = tiletypes
-			} else {
+			{
 				// track visited tiles:
 				visited := make(map[mapCoord]empty, 0x2000)
 
 				// discover Link-accessible tiles:
-				handleLinkAccessibleTiles(
+				findReachableTiles(
 					&tiletypes,
 					visited,
 					EntryPoint{this, entryCoord, DirNone},
@@ -357,6 +351,11 @@ func TestGenerateMap(t *testing.T) {
 				TilesVisited: make(map[mapCoord]empty, 0x2000),
 			}
 
+			// make a map full of $01 Collision and carve out reachable areas:
+			for i := range room.Reachable {
+				room.Reachable[i] = 0x01
+			}
+
 			// load and draw current supertile:
 			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
@@ -369,7 +368,7 @@ func TestGenerateMap(t *testing.T) {
 			g.Supertiles[st] = room
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), room.WRAM[:], 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), s.WRAM[0x12000:0x14000], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), room.WRAM[0x12000:0x14000], 0644)
 
 			return
 		}
@@ -475,53 +474,40 @@ func TestGenerateMap(t *testing.T) {
 				doors = append(doors, door)
 			}
 
-			// grab list of interroom staircases:
-			stairs := make([]StaircaseInterRoom, 0, 4)
-			for m := 0; m < 4; m++ {
-				pos := read16(s.WRAM[:], uint32(0x06B0+(m<<1)))
-				// stop marker:
-				if pos == 0 {
-					break
-				}
-
-				staircase := StaircaseInterRoom{
-					Pos: pos,
-				}
-
-				fmt.Fprintf(s.Logger, "    interroom stairs: %#v\n", &staircase)
-
-				stairs = append(stairs, staircase)
-			}
-
-			// make a map full of $01 Collision and carve out reachable areas:
-			for i := range room.TilesWalkable {
-				room.TilesWalkable[i] = 0x01
-			}
+			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
 
 			tiles := [0x2000]uint8{}
 			copy(tiles[:], room.WRAM[0x12000:0x14000])
 
-			handleLinkAccessibleTiles(
+			// flood fill to find reachable tiles:
+			findReachableTiles(
 				&tiles,
 				room.TilesVisited,
 				ep,
 				func(t mapCoord, d Direction, v uint8) {
-					// here we reached a walkable tile:
-					room.TilesWalkable[t] = v
+					// here we found a reachable tile:
+					room.Reachable[t] = v
+
+					// interroom stairs:
+					if v >= 0x30 && v <= 0x37 {
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d}, fmt.Sprintf("stair($%04x)", uint16(t)))
+						return
+					}
 
 					if !pitDamages && warpExitTo != 0 {
 						if v == 0x20 {
 							// pit tile
-							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("pit($%04x)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("pit($%04x)", uint16(t)))
 						} else if v == 0x62 {
 							// pit tile
-							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("bombableFloor($%04x)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("bombableFloor($%04x)", uint16(t)))
 						}
+						return
 					}
 				},
 			)
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.rch", uint16(this)), room.TilesWalkable[:], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.rch", uint16(this)), room.Reachable[:], 0644)
 		}
 
 		// render all supertiles found:
@@ -685,94 +671,7 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 	return t, dir, false
 }
 
-func correctBG2edgeFill(tiletypes *[0x2000]byte) {
-	visited := make(map[mapCoord]empty, 0x1000)
-	tileLifo := [0x1000]mapCoord{}
-	lifo := tileLifo[:0]
-	for e := mapCoord(1); e < 0x3E; e++ {
-		// start filling from 1 tile in from each edge:
-		edges := [...]mapCoord{
-			0x40 + e,      // north
-			e << 6,        // west
-			0x0F80 + e,    // south
-			0x003F + e<<6, // east
-		}
-		for _, te := range edges {
-			tiles := make([]mapCoord, 0, 0x1000)
-			isSolid := false
-			isWalkable := false
-
-			lifo = append(lifo, te)
-			for len(lifo) != 0 {
-				lifoEnd := len(lifo) - 1
-				t := lifo[lifoEnd]
-				lifo = lifo[0:lifoEnd]
-
-				if _, ok := visited[t]; ok {
-					continue
-				}
-
-				visited[t] = empty{}
-				row := (t & 0xFC0) >> 6
-				col := t & 0x3F
-
-				// read tile:
-				v := tiletypes[0x1000+t]
-				//fmt.Fprintf(s.Logger, "[$%03x] -> $%02x\n", t, x)
-
-				// flood fill empty space:
-				if v == 0 {
-					// mark this tile for updating if isSolid ends up true:
-					tiles = append(tiles, t)
-
-					// flood fill in cardinal directions:
-					if row > 1 {
-						lifo = append(lifo, t-0x40)
-					}
-					if row < 0x3E {
-						lifo = append(lifo, t+0x40)
-					}
-					if col > 1 {
-						lifo = append(lifo, t-0x01)
-					}
-					if col < 0x3E {
-						lifo = append(lifo, t+0x01)
-					}
-					continue
-				}
-
-				// ledge tiles:
-				if v >= 0x28 && v <= 0x2B {
-					isSolid = true
-					continue
-				}
-				if v == 0x01 {
-					isSolid = true
-					continue
-				}
-
-				if v == 0x04 {
-					isWalkable = true
-					continue
-				}
-			}
-
-			makeSolid := !isWalkable && isSolid
-
-			// if the tile map is entirely empty then make it solid
-			// otherwise, it must be not walkable and potentially solid:
-			if (len(tiles) == 0x1000-0x40-0x40-0x3E-0x3E) || makeSolid {
-				for _, t := range tiles {
-					tiletypes[0x1000+t] = 0x01
-				}
-			}
-		}
-	}
-
-	return
-}
-
-func handleLinkAccessibleTiles(
+func findReachableTiles(
 	m *[0x2000]byte,
 	visited map[mapCoord]empty,
 	entryPoint EntryPoint,
@@ -923,32 +822,43 @@ lifoLoop:
 			continue
 		}
 
+		// north-facing stairs:
+		if v == 0x1D {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			continue
+		}
+		// north-facing stairs, layer changing:
+		if v >= 0x1E && v <= 0x1F {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				if dir == DirNorth {
+					// swap from BG2 to BG1:
+					if tn >= 0x1000 {
+						tn -= 0x1000
+					}
+				} else if dir == DirSouth {
+					// swap from BG1 to BG2:
+					if tn < 0x1000 {
+						tn += 0x1000
+					}
+				}
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			continue
+		}
+
 		// pit:
 		if v == 0x20 {
 			// Link can fall into pit but cannot move beyond it:
 			//visited[s.t] = empty{}
 			f(s.t, s.d, v)
-			continue
-		}
-
-		// TR pipe entrance:
-		if v == 0xBE {
-			visited[s.t] = empty{}
-			f(s.t, s.d, v)
-
-			// find corresponding B0..B1 directional pipe to follow:
-			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-			}
-			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-			}
-			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-			}
-			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-			}
 			continue
 		}
 
@@ -989,38 +899,6 @@ lifoLoop:
 			continue
 		}
 
-		// north-facing stairs:
-		if v == 0x1D {
-			visited[s.t] = empty{}
-			f(s.t, s.d, v)
-
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
-			}
-			continue
-		}
-		// north-facing stairs, layer changing:
-		if v >= 0x1E && v <= 0x1F {
-			visited[s.t] = empty{}
-			f(s.t, s.d, v)
-
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				if dir == DirNorth {
-					// swap from BG2 to BG1:
-					if tn >= 0x1000 {
-						tn -= 0x1000
-					}
-				} else if dir == DirSouth {
-					// swap from BG1 to BG2:
-					if tn < 0x1000 {
-						tn += 0x1000
-					}
-				}
-				lifo = append(lifo, state{t: tn, d: dir})
-			}
-			continue
-		}
-
 		// south-facing stairs:
 		if v == 0x3D {
 			visited[s.t] = empty{}
@@ -1049,6 +927,26 @@ lifoLoop:
 				}
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
+			continue
+		}
+
+		if v >= 0x5E && v <= 0x5F {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			// 2 tiles behind a generic stairwell could be interroom stairs:
+			t, _, ok := s.t.MoveBy(s.d, 2)
+			if !ok {
+				continue
+			}
+			v = m[t]
+			if v >= 0x30 && v <= 0x37 {
+				// stairwell:
+				visited[t] = empty{}
+				f(t, s.d, v)
+				continue
+			}
+
 			continue
 		}
 
@@ -1104,6 +1002,27 @@ lifoLoop:
 
 		// TODO layer toggle shutter doors:
 		//(v >= 0x90 && v <= 0xAF)
+
+		// TR pipe entrance:
+		if v == 0xBE {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			// find corresponding B0..B1 directional pipe to follow:
+			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}
+			continue
+		}
 
 		// doors:
 		if v >= 0xF0 {
@@ -1221,8 +1140,8 @@ type RoomState struct {
 
 	Rendered image.Image
 
-	TilesVisited  map[mapCoord]empty
-	TilesWalkable [0x2000]byte
+	TilesVisited map[mapCoord]empty
+	Reachable    [0x2000]byte
 
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
