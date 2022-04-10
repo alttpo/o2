@@ -311,9 +311,6 @@ func TestGenerateMap(t *testing.T) {
 		return
 	}
 
-	// make a set to determine which supertiles have been visited:
-	stVisited := make(map[Supertile]empty)
-
 	//RoomsWithPitDamage#_00990C [0x70]uint16
 	roomsWithPitDamage := make(map[Supertile]bool, 0x128)
 	for i := Supertile(0); i < 0x128; i++ {
@@ -349,15 +346,31 @@ func TestGenerateMap(t *testing.T) {
 
 		// function to create a room and track it:
 		createRoom := func(st Supertile) (room *RoomState) {
+			var ok bool
+			if room, ok = g.Supertiles[st]; ok {
+				return room
+			}
+
 			room = &RoomState{
 				Supertile:    st,
 				Rendered:     nil,
 				TilesVisited: make(map[mapCoord]empty, 0x2000),
 			}
+
+			// load and draw current supertile:
+			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
+			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+				panic(err)
+			}
+
 			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
 			copy(room.WRAM[:], s.WRAM[:])
 			g.Rooms = append(g.Rooms, room)
 			g.Supertiles[st] = room
+
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), room.WRAM[:], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), s.WRAM[0x12000:0x14000], 0644)
+
 			return
 		}
 
@@ -375,8 +388,9 @@ func TestGenerateMap(t *testing.T) {
 			go drawSupertile(&wg, room)
 		}
 
-		// build a stack (LIFO) of supertiles to visit:
+		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
+		// TODO: determine entrance direction
 		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone})
 
 		// process the LIFO:
@@ -388,30 +402,13 @@ func TestGenerateMap(t *testing.T) {
 
 			this := ep.Supertile
 
-			// skip this supertile if we already visited it:
-			if _, isVisited := stVisited[this]; isVisited {
-				fmt.Fprintf(s.Logger, "  already visited supertile %s\n", this)
-				continue
-			}
-
-			// mark as visited:
-			stVisited[this] = empty{}
-
 			fmt.Fprintf(s.Logger, "  supertile   = %s\n", this)
 
-			// load and draw current supertile:
-			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(this))
-			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
-				panic(err)
-			}
-
-			// create a room out of it:
+			// create a room by emulation:
 			room := createRoom(this)
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(this)), s.WRAM[:], 0644)
-
 			//WARPTO   = $7EC000
-			warpExitTo := Supertile(read8(s.WRAM[:], 0xC000))
+			warpExitTo := Supertile(read8(room.WRAM[:], 0xC000))
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
 			pitDamages := roomsWithPitDamage[this]
@@ -421,27 +418,27 @@ func TestGenerateMap(t *testing.T) {
 			//STAIR2TO = $7EC003
 			//STAIR3TO = $7EC004
 			stairExitTo := [4]Supertile{
-				Supertile(read8(s.WRAM[:], uint32(0xC001))),
-				Supertile(read8(s.WRAM[:], uint32(0xC002))),
-				Supertile(read8(s.WRAM[:], uint32(0xC003))),
-				Supertile(read8(s.WRAM[:], uint32(0xC004))),
+				Supertile(read8(room.WRAM[:], uint32(0xC001))),
+				Supertile(read8(room.WRAM[:], uint32(0xC002))),
+				Supertile(read8(room.WRAM[:], uint32(0xC003))),
+				Supertile(read8(room.WRAM[:], uint32(0xC004))),
 			}
 			_ = stairExitTo
 
-			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(s.WRAM[:], 0xC000)))
-			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(s.WRAM[:], 0xC001)))
-			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(s.WRAM[:], 0xC002)))
-			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(s.WRAM[:], 0xC003)))
-			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(s.WRAM[:], 0xC004)))
+			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(room.WRAM[:], 0xC000)))
+			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(room.WRAM[:], 0xC001)))
+			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(room.WRAM[:], 0xC002)))
+			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(room.WRAM[:], 0xC003)))
+			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(room.WRAM[:], 0xC004)))
 
 			isDarkRoom := read8(s.WRAM[:], 0xC005) != 0
 			fmt.Fprintf(s.Logger, "    DARK     = %v\n", isDarkRoom)
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
-			markExit := func(ep EntryPoint, name string) {
-				if ep.Supertile == 0 {
-					panic("exit to 0!!")
-				}
+			pushEntryPoint := func(ep EntryPoint, name string) {
+				//if ep.Supertile == 0 {
+				//	panic("exit to 0!!")
+				//}
 
 				// for EG2:
 				if this >= 0x100 {
@@ -457,11 +454,6 @@ func TestGenerateMap(t *testing.T) {
 				lifo = append(lifo, ep)
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
 			}
-
-			// make a mutable copy of the tile type map:
-			tiletypes := [0x2000]uint8{}
-			copy(tiletypes[:], s.WRAM[0x12000:0x14000])
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(this)), tiletypes[:], 0644)
 
 			// process doors first:
 			doors := make([]Door, 0, 16)
@@ -507,22 +499,24 @@ func TestGenerateMap(t *testing.T) {
 			}
 
 			tiles := [0x2000]uint8{}
-			copy(tiles[:], s.WRAM[0x12000:0x14000])
+			copy(tiles[:], room.WRAM[0x12000:0x14000])
 
 			handleLinkAccessibleTiles(
 				&tiles,
 				room.TilesVisited,
 				ep,
 				func(t mapCoord, d Direction, v uint8) {
+					// here we reached a walkable tile:
 					room.TilesWalkable[t] = v
-					if v == 0x20 {
-						if !pitDamages && warpExitTo != 0 {
+
+					if !pitDamages && warpExitTo != 0 {
+						if v == 0x20 {
 							// pit tile
-							markExit(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("pit($%04x)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("pit($%04x)", t))
+						} else if v == 0x62 {
+							// pit tile
+							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("bombableFloor($%04x)", t))
 						}
-					} else if v == 0x62 {
-						// pit tile
-						markExit(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("bombableFloor($%04x)", t))
 					}
 				},
 			)
