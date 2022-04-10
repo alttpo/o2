@@ -476,11 +476,11 @@ func TestGenerateMap(t *testing.T) {
 								}
 							} else {
 								// east-west doorway:
-								if v2 == 0x89 {
+								if v == 0x89 || v2 == 0x89 {
 									// teleport doorway:
-									if d == DirWest {
+									if edir == DirWest {
 										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
-									} else if d == DirEast {
+									} else if edir == DirEast {
 										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge(), edir}, "east teleport doorway")
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
@@ -953,17 +953,12 @@ lifoLoop:
 			visited[s.t] = empty{}
 			f(s.t, s.d, v, 0)
 
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				if dir == DirNorth {
-					// swap from BG2 to BG1:
-					if tn >= 0x1000 {
-						tn -= 0x1000
-					}
-				} else if dir == DirSouth {
-					// swap from BG1 to BG2:
-					if tn < 0x1000 {
-						tn += 0x1000
-					}
+			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
+				// swap layers:
+				if tn >= 0x1000 {
+					tn -= 0x1000
+				} else if tn < 0x1000 {
+					tn += 0x1000
 				}
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
@@ -1059,17 +1054,12 @@ lifoLoop:
 			visited[s.t] = empty{}
 			f(s.t, s.d, v, 0)
 
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				if dir == DirNorth {
-					// swap from BG2 to BG1:
-					if tn >= 0x1000 {
-						tn -= 0x1000
-					}
-				} else if dir == DirSouth {
-					// swap from BG1 to BG2:
-					if tn < 0x1000 {
-						tn += 0x1000
-					}
+			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
+				// swap layers:
+				if tn >= 0x1000 {
+					tn -= 0x1000
+				} else if tn < 0x1000 {
+					tn += 0x1000
 				}
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
@@ -1435,7 +1425,11 @@ func (t DoorType) IsExit() bool {
 		return true
 	}
 	if t == 0x2A {
-		// bombable exit door:
+		// bombable cave exit:
+		return true
+	}
+	if t == 0x2E {
+		// bombable door exit(?):
 		return true
 	}
 	return false
