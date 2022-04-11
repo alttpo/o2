@@ -420,6 +420,42 @@ func TestGenerateMap(t *testing.T) {
 							}
 						}
 					}
+				} else {
+					tileType := tiles[door.Pos+0x41]
+					switch door.Dir {
+					case DirNorth:
+						break
+					case DirSouth:
+						break
+					case DirEast:
+						break
+					case DirWest:
+						// check 7 tiles behind door for opposite door tile:
+						tn, _, ok := door.Pos.MoveBy(door.Dir, 7)
+						if !ok {
+							break
+						}
+						tn += 0x40
+
+						opposingDoors := (tileType >= 0xF8 && tiles[tn] == tileType-8) ||
+							(tileType >= 0xF0 && tiles[tn] == tileType+8)
+						openDoorway := tiles[tn] == 0x81
+
+						if opposingDoors || openDoorway {
+							// have a matching opposite door tile:
+							// attempt to blow it open:
+							tn = door.Pos + 0x40
+							for i := 0; i < 8; i++ {
+								if tiles[tn] != 0x01 && tiles[tn] != 0x81 {
+									break
+								}
+
+								tiles[tn+0x00] = 0x81
+								tiles[tn+0x40] = 0x81
+								tn, _, _ = tn.MoveBy(door.Dir, 1)
+							}
+						}
+					}
 				}
 
 				doors = append(doors, door)
