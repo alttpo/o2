@@ -1153,11 +1153,7 @@ func findReachableTiles(
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
-				if tn >= 0x1000 {
-					tn -= 0x1000
-				} else if tn < 0x1000 {
-					tn += 0x1000
-				}
+				tn ^= 0x1000
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
@@ -1187,13 +1183,8 @@ func findReachableTiles(
 				// visit it next:
 				lifo = append(lifo, state{t: t, d: dir})
 			} else if v == 0x1C { // or 0x0C ?
-				// layer pass through:
-				if t < 0x1000 {
-					t += 0x1000
-				} else if t >= 0x1000 {
-					// TODO: does it make sense to go from BG2 to BG1 here?
-					t -= 0x1000
-				}
+				// swap layers:
+				t ^= 0x1000
 
 				// check again for pit tile on the opposite layer:
 				v = m[t]
@@ -1251,11 +1242,7 @@ func findReachableTiles(
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
-				if tn >= 0x1000 {
-					tn -= 0x1000
-				} else if tn < 0x1000 {
-					tn += 0x1000
-				}
+				tn ^= 0x1000
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
