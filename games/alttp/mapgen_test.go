@@ -250,6 +250,37 @@ func TestGenerateMap(t *testing.T) {
 	entranceGroups := make([]Entrance, entranceCount)
 	supertiles := make(map[Supertile]*RoomState, 0x128)
 
+	// scan underworld for certain tile types:
+	if false {
+		// poke the entrance ID into our asm code:
+		s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x00
+		// load the entrance and draw the room:
+		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
+			t.Fatal(err)
+		}
+
+		for st := uint16(0); st < 0x128; st++ {
+			// load and draw current supertile:
+			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
+			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+				panic(err)
+			}
+
+			found := false
+			for t, v := range s.WRAM[0x12000:0x14000] {
+				if v == 0x0A {
+					found = true
+					fmt.Printf("%s: %s = $0A\n", Supertile(st), MapCoord(t))
+				}
+			}
+
+			if found {
+				ioutil.WriteFile(fmt.Sprintf("data/%03x.tmap", st), s.WRAM[0x12000:0x14000], 0644)
+			}
+		}
+		return
+	}
+
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
 	for eID := uint8(0); eID < entranceCount; eID++ {
