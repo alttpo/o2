@@ -358,6 +358,8 @@ func TestGenerateMap(t *testing.T) {
 
 				fmt.Fprintf(s.Logger, "    door: %v\n", door)
 
+				isDoorEdge, _, _, _ := door.Pos.IsDoorEdge()
+
 				if door.Type.IsExit() {
 					lyr, row, col := door.Pos.RowCol()
 					// patch up the door tiles to prevent reachability from exiting:
@@ -369,7 +371,7 @@ func TestGenerateMap(t *testing.T) {
 							}
 						}
 					}
-				} else if isDoorEdge, _, _, _ := door.Pos.IsDoorEdge(); !isDoorEdge {
+				} else if !isDoorEdge {
 					var (
 						start        MapCoord
 						tn           MapCoord
@@ -481,6 +483,32 @@ func TestGenerateMap(t *testing.T) {
 						//fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
 						tiles[int(tn)+adj] = doorwayTile
 						tn, _, _ = tn.MoveBy(door.Dir, 1)
+					}
+				} else if isDoorEdge {
+					// open up edge doors that are actually stairwells:
+					var stair MapCoord
+
+					switch door.Dir {
+					case DirNorth:
+						stair = door.Pos + 0x01
+						break
+					case DirSouth:
+						stair = door.Pos + 0xC1
+						break
+					case DirEast:
+						stair = door.Pos + 0x43
+						break
+					case DirWest:
+						stair = door.Pos + 0x40
+						break
+					}
+
+					v := tiles[stair]
+					if v >= 0x30 && v <= 0x39 {
+						tiles[door.Pos+0x41+0x00] = 0x00
+						tiles[door.Pos+0x41+0x01] = 0x00
+						tiles[door.Pos+0x41+0x40] = 0x00
+						tiles[door.Pos+0x41+0x41] = 0x00
 					}
 				}
 
