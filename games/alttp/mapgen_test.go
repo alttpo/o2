@@ -987,7 +987,7 @@ lifoLoop:
 			// water:
 			v == 0x08 || v == 0x09 ||
 			// layer passthrough:
-			//v == 0x0C || v == 0x1C ||
+			v == 0x0C || v == 0x1C ||
 			// manual stairs:
 			v == 0x22 ||
 			// floor switches:
@@ -1102,7 +1102,7 @@ lifoLoop:
 				// try one tile beyond the exit:
 				if tn, _, ok := s.t.MoveBy(s.d, 1); ok {
 					s.stairType = m[tn]
-					fmt.Printf("NOTE: found %02x at %s for stair type\n", m[tn], tn)
+					fmt.Printf("    stair type %02x at %s\n", m[tn], tn)
 				}
 			}
 			f(s.t, s.d, v, s.stairType)
