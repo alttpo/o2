@@ -283,7 +283,7 @@ func TestGenerateMap(t *testing.T) {
 			room = &RoomState{
 				Supertile:    st,
 				Rendered:     nil,
-				TilesVisited: make(map[mapCoord]empty, 0x2000),
+				TilesVisited: make(map[MapCoord]empty, 0x2000),
 			}
 
 			// make a map full of $01 Collision and carve out reachable areas:
@@ -320,7 +320,7 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				door := Door{
-					Pos:  mapCoord(tpos >> 1),
+					Pos:  MapCoord(tpos >> 1),
 					Type: DoorType(read16(wram[:], uint32(0x1980+(m<<1)))),
 					Dir:  Direction(read16(wram[:], uint32(0x19C0+(m<<1)))),
 				}
@@ -340,8 +340,8 @@ func TestGenerateMap(t *testing.T) {
 					}
 				} else if isDoorEdge, _, _, _ := door.Pos.IsDoorEdge(); !isDoorEdge {
 					var (
-						start        mapCoord
-						tn           mapCoord
+						start        MapCoord
+						tn           MapCoord
 						doorTileType uint8
 						maxCount     int
 						count        int
@@ -380,6 +380,9 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					doorTileType = tiles[start]
+					if doorTileType < 0xF0 {
+						continue
+					}
 
 					var oppositeDoorType uint8
 					if doorTileType >= 0xF8 {
@@ -429,11 +432,11 @@ func TestGenerateMap(t *testing.T) {
 		}
 
 		// if this is the entrance, Link should be already moved to his starting position:
-		entryLayer := read8(s.WRAM[:], 0xEE)
-		g.EntryCoord = AbsToMapCoord(
-			read16(s.WRAM[:], 0x22),
-			read16(s.WRAM[:], 0x20),
-		) | mapCoord(uint16(entryLayer)<<12)
+		linkX := read16((&s.WRAM)[:], 0x22)
+		linkY := read16((&s.WRAM)[:], 0x20)
+		linkLayer := read16((&s.WRAM)[:], 0xEE)
+		g.EntryCoord = AbsToMapCoord(linkX, linkY, linkLayer)
+		fmt.Fprintf(s.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
 
 		{
 			room := createRoom(g.Supertile)
@@ -486,9 +489,7 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram[:], 0xC002)))
 			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram[:], 0xC003)))
 			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram[:], 0xC004)))
-
-			isDarkRoom := read8(wram[:], 0xC005) != 0
-			fmt.Fprintf(s.Logger, "    DARK     = %v\n", isDarkRoom)
+			fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
 			pushEntryPoint := func(ep EntryPoint, name string) {
@@ -518,7 +519,7 @@ func TestGenerateMap(t *testing.T) {
 				&room.Tiles,
 				room.TilesVisited,
 				ep,
-				func(t mapCoord, d Direction, v uint8) {
+				func(t MapCoord, d Direction, v uint8) {
 					// here we found a reachable tile:
 					room.Reachable[t] = v
 
@@ -530,22 +531,22 @@ func TestGenerateMap(t *testing.T) {
 						if row >= 0x3A {
 							// south:
 							if sn, sd, ok := this.MoveBy(DirSouth); ok {
-								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (0x06 << 6) | col), sd}, "south door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x06 << 6) | col), sd}, "south door")
 							}
 						} else if row <= 0x06 {
 							// north:
 							if sn, sd, ok := this.MoveBy(DirNorth); ok {
-								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (0x3A << 6) | col), sd}, "north door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x3A << 6) | col), sd}, "north door")
 							}
 						} else if col >= 0x3A {
 							// east:
 							if sn, sd, ok := this.MoveBy(DirEast); ok {
-								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (row << 6) | 0x06), sd}, "east door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x06), sd}, "east door")
 							}
 						} else if col <= 0x06 {
 							// west:
 							if sn, sd, ok := this.MoveBy(DirWest); ok {
-								pushEntryPoint(EntryPoint{sn, mapCoord(lyr | (row << 6) | 0x3A), sd}, "west door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x3A), sd}, "west door")
 							}
 						}
 
@@ -707,74 +708,86 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 
 	// condense all maps into one image at different scale levels:
-	for _, divider := range []int{ /*8, 4, */ 2, 1} {
+	for _, divider := range []int{1} {
 		supertilepx := 512 / divider
 
-		for _, sc := range []struct {
-			S draw.Scaler
-			N string
-		}{
-			{draw.NearestNeighbor, "nn"},
-			//{draw.ApproxBiLinear, "ab"},
-			//{draw.BiLinear, "bl"},
-			//{draw.CatmullRom, "cr"},
-		} {
-			wga := sync.WaitGroup{}
+		wga := sync.WaitGroup{}
 
-			all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
-			// clear the image and remove alpha layer
-			draw.Draw(
-				all,
-				all.Bounds(),
-				image.NewUniform(color.NRGBA{0, 0, 0, 255}),
-				image.Point{},
-				draw.Src)
+		all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+		// clear the image and remove alpha layer
+		draw.Draw(
+			all,
+			all.Bounds(),
+			image.NewUniform(color.NRGBA{0, 0, 0, 255}),
+			image.Point{},
+			draw.Src)
 
-			for i := range entranceGroups {
-				g := &entranceGroups[i]
-				for _, room := range g.Rooms {
-					st := int(room.Supertile)
-					stMap := room.Rendered
-					if stMap == nil {
-						continue
-					}
-					row := st / 0x10
-					col := st % 0x10
-					wga.Add(1)
-					go func() {
-						sc.S.Scale(
-							all,
-							image.Rect(col*supertilepx, row*supertilepx, col*supertilepx+supertilepx, row*supertilepx+supertilepx),
-							stMap,
-							stMap.Bounds(),
-							draw.Src,
-							nil,
-						)
-						wga.Done()
-					}()
+		greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
+
+		for i := range entranceGroups {
+			g := &entranceGroups[i]
+			for _, room := range g.Rooms {
+				st := int(room.Supertile)
+				stMap := room.Rendered
+				if stMap == nil {
+					continue
 				}
-			}
 
-			wga.Wait()
-			if err = exportPNG(fmt.Sprintf("data/all-%d-%s.png", divider, sc.N), all); err != nil {
-				panic(err)
+				row := st / 0x10
+				col := st % 0x10
+				wga.Add(1)
+				go func(room *RoomState) {
+					stx := col * supertilepx
+					sty := row * supertilepx
+					draw.NearestNeighbor.Scale(
+						all,
+						image.Rect(stx, sty, stx+supertilepx, sty+supertilepx),
+						stMap,
+						stMap.Bounds(),
+						draw.Src,
+						nil,
+					)
+
+					// green highlight spots that are reachable:
+					if true {
+						maxRange := 0x2000
+						if room.IsDarkRoom() {
+							maxRange = 0x1000
+						}
+						for t := 0; t < maxRange; t++ {
+							if room.Reachable[t] == 0x01 {
+								continue
+							}
+
+							_, tr, tc := MapCoord(t).RowCol()
+							draw.Draw(all, image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8), greenTint, image.Point{}, draw.Over)
+						}
+					}
+
+					wga.Done()
+				}(room)
 			}
+		}
+
+		wga.Wait()
+		if err = exportPNG(fmt.Sprintf("data/all-%d.png", divider), all); err != nil {
+			panic(err)
 		}
 	}
 }
 
 type empty = struct{}
 
-type mapCoord uint16
+type MapCoord uint16
 
-func (t mapCoord) String() string {
+func (t MapCoord) String() string {
 	_, row, col := t.RowCol()
 	return fmt.Sprintf("$%04x={%02x,%02x}", uint16(t), row, col)
 }
 
 type EntryPoint struct {
 	Supertile
-	Point mapCoord
+	Point MapCoord
 	Direction
 }
 
@@ -782,11 +795,16 @@ func (ep EntryPoint) String() string {
 	return fmt.Sprintf("{%s, %s, %s}", ep.Supertile, ep.Point, ep.Direction)
 }
 
-func AbsToMapCoord(absX, absY uint16) mapCoord {
-	return mapCoord((absY&0x01FF)<<3 | (absX&0x01FF)>>3)
+func AbsToMapCoord(absX, absY, layer uint16) MapCoord {
+	// modeled after RoomTag_GetTilemapCoords#_01CDA5
+	c := ((absY+0xFFFF)&0x01F8)<<3 | ((absX+0x000E)&0x01F8)>>3
+	if layer != 0 {
+		return MapCoord(c | 0x1000)
+	}
+	return MapCoord(c)
 }
 
-func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, bool) {
+func (t MapCoord) MoveBy(dir Direction, increment int) (MapCoord, Direction, bool) {
 	it := int(t)
 	row := (it & 0xFC0) >> 6
 	col := it & 0x3F
@@ -794,22 +812,22 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 	switch dir {
 	case DirNorth:
 		if row >= 0+increment {
-			return mapCoord(it - (increment << 6)), dir, true
+			return MapCoord(it - (increment << 6)), dir, true
 		}
 		return t, dir, false
 	case DirSouth:
 		if row <= 0x3F-increment {
-			return mapCoord(it + (increment << 6)), dir, true
+			return MapCoord(it + (increment << 6)), dir, true
 		}
 		return t, dir, false
 	case DirWest:
 		if col >= 0+increment {
-			return mapCoord(it - increment), dir, true
+			return MapCoord(it - increment), dir, true
 		}
 		return t, dir, false
 	case DirEast:
 		if col <= 0x3F-increment {
-			return mapCoord(it + increment), dir, true
+			return MapCoord(it + increment), dir, true
 		}
 		return t, dir, false
 	default:
@@ -819,14 +837,14 @@ func (t mapCoord) MoveBy(dir Direction, increment int) (mapCoord, Direction, boo
 	return t, dir, false
 }
 
-func (t mapCoord) RowCol() (layer, row, col uint16) {
+func (t MapCoord) RowCol() (layer, row, col uint16) {
 	layer = uint16(t & 0x1000)
 	row = uint16((t & 0x0FFF) >> 6)
 	col = uint16(t & 0x3F)
 	return
 }
 
-func (t mapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
+func (t MapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
 	_, row, col = t.RowCol()
 	if row == 0 {
 		ok, dir = true, DirNorth
@@ -847,24 +865,24 @@ func (t mapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
 	return
 }
 
-func (t mapCoord) OppositeEdge() mapCoord {
+func (t MapCoord) OppositeEdge() MapCoord {
 	lyr, row, col := t.RowCol()
 	if row == 0 {
-		return mapCoord(lyr | (0x3F << 6) | col)
+		return MapCoord(lyr | (0x3F << 6) | col)
 	}
 	if row == 0x3F {
-		return mapCoord(lyr | (0x00 << 6) | col)
+		return MapCoord(lyr | (0x00 << 6) | col)
 	}
 	if col == 0 {
-		return mapCoord(lyr | (row << 6) | 0x3F)
+		return MapCoord(lyr | (row << 6) | 0x3F)
 	}
 	if col == 0x3F {
-		return mapCoord(lyr | (row << 6) | 0x00)
+		return MapCoord(lyr | (row << 6) | 0x00)
 	}
 	return t
 }
 
-func (t mapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
+func (t MapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
 	_, row, col = t.RowCol()
 	if row <= 0x06 {
 		ok, dir = true, DirNorth
@@ -885,19 +903,19 @@ func (t mapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
 	return
 }
 
-func (t mapCoord) OppositeDoorEdge() mapCoord {
+func (t MapCoord) OppositeDoorEdge() MapCoord {
 	lyr, row, col := t.RowCol()
 	if row <= 0x06 {
-		return mapCoord(lyr | (0x3A << 6) | col)
+		return MapCoord(lyr | (0x3A << 6) | col)
 	}
 	if row >= 0x3A {
-		return mapCoord(lyr | (0x06 << 6) | col)
+		return MapCoord(lyr | (0x06 << 6) | col)
 	}
 	if col <= 0x06 {
-		return mapCoord(lyr | (row << 6) | 0x3A)
+		return MapCoord(lyr | (row << 6) | 0x3A)
 	}
 	if col >= 0x3A {
-		return mapCoord(lyr | (row << 6) | 0x06)
+		return MapCoord(lyr | (row << 6) | 0x06)
 	}
 	panic("not at an edge")
 	return t
@@ -905,12 +923,12 @@ func (t mapCoord) OppositeDoorEdge() mapCoord {
 
 func findReachableTiles(
 	m *[0x2000]uint8,
-	visited map[mapCoord]empty,
+	visited map[MapCoord]empty,
 	entryPoint EntryPoint,
-	visit func(t mapCoord, d Direction, v uint8),
+	visit func(t MapCoord, d Direction, v uint8),
 ) {
 	type state struct {
-		t      mapCoord
+		t      MapCoord
 		d      Direction
 		inPipe bool
 	}
@@ -922,7 +940,7 @@ func findReachableTiles(
 	lifo := lifoSpace[:0]
 	lifo = append(lifo, state{t: entryPoint.Point, d: entryPoint.Direction})
 
-	pushAllDirections := func(t mapCoord) {
+	pushAllDirections := func(t MapCoord) {
 		// can move in any direction:
 		if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
 			lifo = append(lifo, state{t: tn, d: dir})
@@ -1144,9 +1162,10 @@ func findReachableTiles(
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
-			}
+			// don't continue beyond a staircase:
+			//if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+			//	lifo = append(lifo, state{t: tn, d: dir})
+			//}
 			continue
 		}
 
@@ -1155,9 +1174,10 @@ func findReachableTiles(
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
-			}
+			// don't continue beyond a staircase:
+			//if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+			//	lifo = append(lifo, state{t: tn, d: dir})
+			//}
 			continue
 		}
 
@@ -1255,10 +1275,10 @@ func findReachableTiles(
 		if v == 0x89 {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
+
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
-
 			continue
 		}
 		// entrance door (8E = north-south?, 8F = east-west??):
@@ -1312,7 +1332,7 @@ func findReachableTiles(
 			// determine a direction to head in if we have none:
 			if s.d == DirNone {
 				var ok bool
-				var t mapCoord
+				var t MapCoord
 				if t, _, ok = s.t.MoveBy(DirNorth, 1); ok && m[t] == 0x00 {
 					s.d = DirSouth
 				} else if t, _, ok = s.t.MoveBy(DirEast, 1); ok && m[t] == 0x00 {
@@ -1350,7 +1370,7 @@ type Entrance struct {
 	EntranceID uint8
 	Supertile
 
-	EntryCoord mapCoord
+	EntryCoord MapCoord
 
 	Rooms      []*RoomState
 	Supertiles map[Supertile]*RoomState
@@ -1363,13 +1383,15 @@ type RoomState struct {
 
 	Doors []Door
 
-	TilesVisited map[mapCoord]empty
+	TilesVisited map[MapCoord]empty
 	Tiles        [0x2000]byte
 	Reachable    [0x2000]byte
 
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
 }
+
+func (r *RoomState) IsDarkRoom() bool { return read8((&r.WRAM)[:], 0xC005) != 0 }
 
 type Supertile uint16
 
@@ -1395,11 +1417,11 @@ type StaircaseInterRoom struct {
 
 type Door struct {
 	Type DoorType  // $1980
-	Pos  mapCoord  // $19A0
+	Pos  MapCoord  // $19A0
 	Dir  Direction // $19C0
 }
 
-func (d *Door) ContainsCoord(t mapCoord) bool {
+func (d *Door) ContainsCoord(t MapCoord) bool {
 	dl, dr, dc := d.Pos.RowCol()
 	tl, tr, tc := t.RowCol()
 	if tl != dl {
@@ -1512,10 +1534,10 @@ func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
 	//  s.WRAM:$12000[0x1000] = BG2 64x64 tile type [64][64]uint8
 	//  s.WRAM: $C300[0x0200] = CGRAM palette
 
-	wram := room.WRAM[:]
+	wram := (&room.WRAM)[:]
 
 	// assume WRAM has rendering state as well:
-	isDark := read8(wram, 0xC005) != 0
+	isDark := room.IsDarkRoom()
 
 	//ioutil.WriteFile(fmt.Sprintf("data/%03X.vram", st), vram, 0644)
 
@@ -1531,7 +1553,7 @@ func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
 
 		bg1wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x2000])))[:]
 		bg2wram := (*(*[0x1000]uint16)(unsafe.Pointer(&wram[0x4000])))[:]
-		tileset := room.VRAMTileSet[:]
+		tileset := (&room.VRAMTileSet)[:]
 
 		//subdes := read8(wram, 0x1D)
 		n0414 := read8(wram, 0x0414)
