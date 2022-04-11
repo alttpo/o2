@@ -1397,18 +1397,33 @@ type Supertile uint16
 
 func (s Supertile) String() string { return fmt.Sprintf("$%03x", uint16(s)) }
 
-func (s Supertile) MoveBy(dir Direction) (Supertile, Direction, bool) {
+func (s Supertile) MoveBy(dir Direction) (sn Supertile, sd Direction, ok bool) {
+	sn, sd, ok = s, dir, false
 	switch dir {
 	case DirNorth:
-		return Supertile(uint16(s) - 0x10), dir, uint16(s)&0xF0 > 0
+		sn = Supertile(uint16(s) - 0x10)
+		ok = uint16(s)&0xF0 > 0
+		break
 	case DirSouth:
-		return Supertile(uint16(s) + 0x10), dir, uint16(s)&0xF0 < 0xF0
+		sn = Supertile(uint16(s) + 0x10)
+		ok = uint16(s)&0xF0 < 0xF0
+		break
 	case DirWest:
-		return Supertile(uint16(s) - 1), dir, uint16(s)&0x0F > 0
+		sn = Supertile(uint16(s) - 1)
+		ok = uint16(s)&0x0F > 0
+		break
 	case DirEast:
-		return Supertile(uint16(s) + 1), dir, uint16(s)&0x0F < 0xF
+		sn = Supertile(uint16(s) + 1)
+		ok = uint16(s)&0x0F < 0xF
+		break
 	}
-	return s, dir, false
+
+	// don't cross EG maps:
+	if sn&0xFF00 != s&0xFF00 {
+		ok = false
+	}
+
+	return
 }
 
 type StaircaseInterRoom struct {
