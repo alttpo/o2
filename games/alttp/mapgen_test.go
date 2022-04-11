@@ -252,7 +252,7 @@ func TestGenerateMap(t *testing.T) {
 
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
-	for eID := uint8(0x2d); eID < 0x2e; eID++ {
+	for eID := uint8(0); eID < entranceCount; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 
 		// poke the entrance ID into our asm code:
@@ -410,9 +410,9 @@ func TestGenerateMap(t *testing.T) {
 							break
 						}
 
-						fmt.Printf("    blow open %s\n", tn)
+						//fmt.Printf("    blow open %s\n", tn)
 						tiles[tn] = doorwayTile
-						fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
+						//fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
 						tiles[int(tn)+adj] = doorwayTile
 						tn, _, _ = tn.MoveBy(door.Dir, 1)
 					}
@@ -523,7 +523,7 @@ func TestGenerateMap(t *testing.T) {
 
 					// door objects:
 					if v >= 0xF0 {
-						fmt.Printf("    door tile $%02x at %s\n", v, t)
+						//fmt.Printf("    door tile $%02x at %s\n", v, t)
 						// dungeon exits are already patched out, so this should be a normal door
 						lyr, row, col := t.RowCol()
 						if row >= 0x3A {
@@ -583,9 +583,7 @@ func TestGenerateMap(t *testing.T) {
 
 					// interroom stair exits:
 					if v == 0x5E || v == 0x5F {
-						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
-						pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
-						return
+						panic(fmt.Errorf("should NEVER see $%02x at %s %s", v, t, d))
 					} else if v == 0x38 {
 						// north stairs going down:
 						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
@@ -608,7 +606,7 @@ func TestGenerateMap(t *testing.T) {
 							vn = room.Tiles[t-0x40]
 						}
 
-						if vn == 0x5E {
+						if vn == 0x5E || vn == 0x5F {
 							// spiral staircase
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
 							return
@@ -1180,7 +1178,8 @@ func findReachableTiles(
 		}
 
 		// spiral staircase:
-		if v >= 0x5E && v <= 0x5F {
+		// $5F is the layer 2 version of $5E (spiral staircase)
+		if v == 0x5E || v == 0x5F {
 			visited[s.t] = empty{}
 
 			// don't visit spiral stairs, just skip over them:
