@@ -420,41 +420,74 @@ func TestGenerateMap(t *testing.T) {
 							}
 						}
 					}
-				} else {
+				} else if isDoorEdge, _, _, _ := door.Pos.IsDoorEdge(); !isDoorEdge {
 					tileType := tiles[door.Pos+0x41]
+
+					var (
+						incrMajor   int
+						incrMinor   int
+						count       int
+						doorwayTile uint8
+						adj         int
+					)
+
+					var (
+						ok bool
+						tn mapCoord
+					)
+
 					switch door.Dir {
 					case DirNorth:
+						incrMajor, incrMinor = 9, 5
+						doorwayTile = 0x80
+						adj = 1
 						break
 					case DirSouth:
+						incrMajor, incrMinor = 9, 5
+						doorwayTile = 0x80
+						adj = 1
 						break
 					case DirEast:
+						incrMajor, incrMinor = 7, 3
+						doorwayTile = 0x81
+						adj = 0x40
 						break
 					case DirWest:
-						// check 7 tiles behind door for opposite door tile:
-						tn, _, ok := door.Pos.MoveBy(door.Dir, 7)
-						if !ok {
-							break
-						}
-						tn += 0x40
+						incrMajor, incrMinor = 7, 3
+						doorwayTile = 0x81
+						adj = 0x40
+						break
+					}
 
+					if tn, _, ok = door.Pos.MoveBy(door.Dir, incrMajor); ok {
+						// check 7 tiles behind door for opposite door tile:
+						tn = mapCoord(int(tn) + adj)
 						opposingDoors := (tileType >= 0xF8 && tiles[tn] == tileType-8) ||
 							(tileType >= 0xF0 && tiles[tn] == tileType+8)
-						openDoorway := tiles[tn] == 0x81
 
-						if opposingDoors || openDoorway {
-							// have a matching opposite door tile:
-							// attempt to blow it open:
-							tn = door.Pos + 0x40
-							for i := 0; i < 8; i++ {
-								if tiles[tn] != 0x01 && tiles[tn] != 0x81 {
-									break
-								}
-
-								tiles[tn+0x00] = 0x81
-								tiles[tn+0x40] = 0x81
-								tn, _, _ = tn.MoveBy(door.Dir, 1)
-							}
+						if opposingDoors {
+							count = incrMajor + 1
+						} else {
+							count = incrMinor + 1
 						}
+					} else if tn, _, ok = door.Pos.MoveBy(door.Dir, incrMinor); ok && tiles[int(tn)+adj] == doorwayTile {
+						// partial doorway
+						count = incrMinor + 1
+					} else {
+						fmt.Printf("    bad doorway at %s\n", door.Pos)
+						continue
+					}
+
+					// blow open the doorway:
+					tn = mapCoord(int(door.Pos) + adj)
+					for i := 0; i < count; i++ {
+						if tiles[tn] != 0x01 && tiles[tn] != doorwayTile {
+							break
+						}
+
+						tiles[tn+0x00] = doorwayTile
+						tiles[int(tn)+adj] = doorwayTile
+						tn, _, _ = tn.MoveBy(door.Dir, 1)
 					}
 				}
 
