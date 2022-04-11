@@ -402,7 +402,87 @@ func TestGenerateMap(t *testing.T) {
 					continue
 				}
 
-				if !isDoorEdge {
+				if isDoorEdge {
+					// blow open edge doorways:
+					var (
+						start        MapCoord
+						tn           MapCoord
+						doorTileType uint8
+						doorwayTile  uint8
+						adj          int
+					)
+
+					var ok bool
+					lyr, _, _ := door.Pos.RowCol()
+
+					switch door.Dir {
+					case DirNorth:
+						start = door.Pos + 0x81
+						doorwayTile = 0x80 | uint8(lyr>>10)
+						adj = 1
+						break
+					case DirSouth:
+						start = door.Pos + 0x41
+						doorwayTile = 0x80 | uint8(lyr>>10)
+						adj = 1
+						break
+					case DirEast:
+						start = door.Pos + 0x42
+						doorwayTile = 0x81 | uint8(lyr>>10)
+						adj = 0x40
+						break
+					case DirWest:
+						start = door.Pos + 0x42
+						doorwayTile = 0x81 | uint8(lyr>>10)
+						adj = 0x40
+						break
+					}
+
+					doorTileType = tiles[start]
+					if doorTileType < 0xF0 {
+						// don't blow this doorway; it's custom:
+						continue
+					}
+
+					tn = start
+					canBlow := func(v uint8) bool {
+						if v == 0x01 || v == 0x00 {
+							return true
+						}
+						if v == doorTileType {
+							return true
+						}
+						if v >= 0x28 && v <= 0x2B {
+							return true
+						}
+						if v == 0x10 {
+							// slope?? found in sanctuary $002
+							return true
+						}
+						return false
+					}
+					for i := 0; i < 12; i++ {
+						v := tiles[tn]
+						if canBlow(v) {
+							fmt.Printf("    blow open %s\n", tn)
+							tiles[tn] = doorwayTile
+							fmt.Printf("    blow open %s\n", MapCoord(int(tn)+adj))
+							tiles[int(tn)+adj] = doorwayTile
+						} else {
+							panic(fmt.Errorf("something blocking the doorway at %s: $%02x", tn, v))
+							break
+						}
+
+						tn, _, ok = tn.MoveBy(door.Dir, 1)
+						if !ok {
+							break
+						}
+					}
+					continue
+				}
+
+				//if !isDoorEdge
+				{
 					var (
 						start        MapCoord
 						tn           MapCoord
