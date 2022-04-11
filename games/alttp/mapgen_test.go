@@ -927,6 +927,19 @@ func (t MapCoord) MoveBy(dir Direction, increment int) (MapCoord, Direction, boo
 	row := (it & 0xFC0) >> 6
 	col := it & 0x3F
 
+	// don't allow perpendicular movement along the outer edge
+	// this prevents accidental/leaky flood fill along the edges
+	if row == 0 || row == 0x3F {
+		if dir != DirNorth && dir != DirSouth {
+			return t, dir, false
+		}
+	}
+	if col == 0 || col == 0x3F {
+		if dir != DirWest && dir != DirEast {
+			return t, dir, false
+		}
+	}
+
 	switch dir {
 	case DirNorth:
 		if row >= 0+increment {
