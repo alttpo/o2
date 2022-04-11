@@ -379,16 +379,47 @@ func TestGenerateMap(t *testing.T) {
 						break
 					}
 
-					doorTileType = tiles[start]
-					if doorTileType < 0xF0 {
-						continue
-					}
+					var mustStop func(uint8) bool
 
-					var oppositeDoorType uint8
-					if doorTileType >= 0xF8 {
-						oppositeDoorType = doorTileType - 8
-					} else if doorTileType >= 0xF0 {
-						oppositeDoorType = doorTileType + 8
+					doorTileType = tiles[start]
+					if doorTileType >= 0x80 && doorTileType <= 0x8D {
+						mustStop = func(v uint8) bool {
+							if v == 0x01 {
+								return false
+							}
+							if v == doorwayTile {
+								return false
+							}
+							if v >= 0xF0 {
+								return false
+							}
+							return true
+						}
+					} else if doorTileType < 0xF0 {
+						continue
+					} else {
+						oppositeDoorType := uint8(0)
+						if doorTileType >= 0xF8 {
+							oppositeDoorType = doorTileType - 8
+						} else if doorTileType >= 0xF0 {
+							oppositeDoorType = doorTileType + 8
+						}
+
+						mustStop = func(v uint8) bool {
+							if v == 0x01 {
+								return false
+							}
+							if v == doorwayTile {
+								return false
+							}
+							if v == oppositeDoorType {
+								return false
+							}
+							if v == doorTileType {
+								return false
+							}
+							return true
+						}
 					}
 
 					// check many tiles behind door for opposite door tile:
@@ -396,7 +427,7 @@ func TestGenerateMap(t *testing.T) {
 					tn = start
 					for ; i < maxCount; i++ {
 						v := tiles[tn]
-						if v != 0x01 && v != oppositeDoorType && v != doorTileType && v != doorwayTile {
+						if mustStop(v) {
 							break
 						}
 						tn, _, ok = tn.MoveBy(door.Dir, 1)
@@ -410,7 +441,7 @@ func TestGenerateMap(t *testing.T) {
 					tn = start
 					for i := 0; i < count; i++ {
 						v := tiles[tn]
-						if v != 0x01 && v != oppositeDoorType && v != doorTileType && v != doorwayTile {
+						if mustStop(v) {
 							break
 						}
 
