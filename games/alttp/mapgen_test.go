@@ -533,12 +533,6 @@ func TestGenerateMap(t *testing.T) {
 					ep.Supertile |= 0x100
 				}
 
-				// TODO: address this; probably would only need it to prevent accidental infinite loops
-				//if _, ok := exitSeen[st]; ok {
-				//	return
-				//}
-				//exitSeen[st] = struct{}{}
-
 				lifo = append(lifo, ep)
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
 			}
@@ -696,10 +690,10 @@ func TestGenerateMap(t *testing.T) {
 					if !pitDamages && warpExitTo != 0 {
 						if v == 0x20 {
 							// pit tile
-							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("pit(%s)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t & 0x0FFF, d}, fmt.Sprintf("pit(%s)", t))
 						} else if v == 0x62 {
 							// bombable floor tile
-							pushEntryPoint(EntryPoint{warpExitTo, t, d}, fmt.Sprintf("bombableFloor(%s)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t & 0x0FFF, d}, fmt.Sprintf("bombableFloor(%s)", t))
 						}
 						return
 					}
