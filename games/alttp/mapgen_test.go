@@ -527,7 +527,7 @@ func TestGenerateMap(t *testing.T) {
 			}
 			room.Doors = doors
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), room.Tiles[:], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
 			return
 		}
@@ -610,8 +610,9 @@ func TestGenerateMap(t *testing.T) {
 			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
 
 			// flood fill to find reachable tiles:
+			tiles := &room.Tiles
 			findReachableTiles(
-				&room.Tiles,
+				tiles,
 				room.TilesVisited,
 				ep,
 				func(t MapCoord, d Direction, v uint8) {
@@ -650,47 +651,49 @@ func TestGenerateMap(t *testing.T) {
 
 					// interroom doorways:
 					if (v >= 0x80 && v <= 0x8D) || (v >= 0x90 && v <= 97) {
-						if ok, edir, _, _ := t.IsDoorEdge(); ok {
+						if ok, edir, _, _ := t.IsDoorEdge(); ok && edir == d {
+							// at or beyond the door edge zones:
+							swapLayers := MapCoord(0)
+
+							// search the doorway for layer-swaps:
+							tn := t
+							for i := 0; i < 8; i++ {
+								vd := tiles[tn]
+								room.Reachable[tn] = vd
+								if vd >= 0x90 && vd <= 0x9F {
+									swapLayers = MapCoord(0x1000)
+								}
+								if vd >= 0xA8 && vd <= 0xAF {
+									swapLayers = MapCoord(0x1000)
+								}
+
+								// advance into the doorway:
+								tn, _, ok = tn.MoveBy(edir, 1)
+								if !ok {
+									break
+								}
+							}
+
 							if v&1 == 0 {
 								// north-south normal doorway (no teleport doorways for north-south):
 								if sn, _, ok := this.MoveBy(edir); ok {
-									if v&0x10 == 0x10 {
-										// layer swap:
-										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge() ^ 0x1000, edir}, "north-south doorway (layer swap)")
-									} else {
-										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "north-south doorway")
-									}
+									pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "north-south doorway")
 								}
 							} else {
 								// east-west doorway:
 								if v == 0x89 {
 									// teleport doorway:
 									if edir == DirWest {
-										if v&0x10 == 0x10 {
-											// layer swap:
-											pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge() ^ 0x1000, edir}, "west teleport doorway (layer swap)")
-										} else {
-											pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
-										}
+										pushEntryPoint(EntryPoint{stairExitTo[2], t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "west teleport doorway")
 									} else if edir == DirEast {
-										if v&0x10 == 0x10 {
-											// layer swap:
-											pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge() ^ 0x1000, edir}, "east teleport doorway (layer swap)")
-										} else {
-											pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge(), edir}, "east teleport doorway")
-										}
+										pushEntryPoint(EntryPoint{stairExitTo[3], t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "east teleport doorway")
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
 									}
 								} else {
 									// normal doorway:
 									if sn, _, ok := this.MoveBy(edir); ok {
-										if v&0x10 == 0x10 {
-											// layer swap:
-											pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge() ^ 0x1000, edir}, "east-west doorway (layer swap)")
-										} else {
-											pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "east-west doorway")
-										}
+										pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "east-west doorway")
 									}
 								}
 							}
@@ -699,15 +702,15 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					// interroom stair exits:
-					if v == 0x5E || v == 0x5F {
-						panic(fmt.Errorf("should NEVER see $%02x at %s %s", v, t, d))
-					}
+					//if v == 0x5E || v == 0x5F {
+					//	panic(fmt.Errorf("should NEVER see $%02x at %s %s", v, t, d))
+					//}
 
 					// these are stair EDGEs; don't think we care:
 					if v == 0x38 {
 						// north stairs going down:
 						var vn uint8
-						vn = room.Tiles[t+0x40]
+						vn = tiles[t+0x40]
 						if vn < 0x30 && v >= 0x38 {
 							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
 						}
@@ -717,7 +720,7 @@ func TestGenerateMap(t *testing.T) {
 					} else if v == 0x39 {
 						// south stairs going up:
 						var vn uint8
-						vn = room.Tiles[t-0x40]
+						vn = tiles[t-0x40]
 						if vn < 0x30 && v >= 0x38 {
 							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
 						}
@@ -728,9 +731,9 @@ func TestGenerateMap(t *testing.T) {
 
 					if v >= 0x30 && v < 0x38 {
 						var vn uint8
-						vn = room.Tiles[t-0x40]
+						vn = tiles[t-0x40]
 						if vn == 0x80 || vn == 0x26 {
-							vn = room.Tiles[t+0x40]
+							vn = tiles[t+0x40]
 						}
 
 						if vn == 0x5E || vn == 0x5F {
@@ -980,38 +983,38 @@ func (t MapCoord) IsEdge() (ok bool, dir Direction, row, col uint16) {
 	return
 }
 
-func (t MapCoord) OppositeEdge() MapCoord {
+func (t MapCoord) OnEdge(d Direction) MapCoord {
 	lyr, row, col := t.RowCol()
-	if row == 0 {
-		return MapCoord(lyr | (0x3F << 6) | col)
-	}
-	if row == 0x3F {
+	switch d {
+	case DirNorth:
 		return MapCoord(lyr | (0x00 << 6) | col)
-	}
-	if col == 0 {
-		return MapCoord(lyr | (row << 6) | 0x3F)
-	}
-	if col == 0x3F {
+	case DirSouth:
+		return MapCoord(lyr | (0x3F << 6) | col)
+	case DirWest:
 		return MapCoord(lyr | (row << 6) | 0x00)
+	case DirEast:
+		return MapCoord(lyr | (row << 6) | 0x3F)
+	default:
+		panic("bad direction")
 	}
 	return t
 }
 
 func (t MapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
 	_, row, col = t.RowCol()
-	if row <= 0x06 {
+	if row <= 0x08 {
 		ok, dir = true, DirNorth
 		return
 	}
-	if row >= 0x3A {
+	if row >= 0x3F-8 {
 		ok, dir = true, DirSouth
 		return
 	}
-	if col <= 0x06 {
+	if col <= 0x08 {
 		ok, dir = true, DirWest
 		return
 	}
-	if col >= 0x3A {
+	if col >= 0x3F-8 {
 		ok, dir = true, DirEast
 		return
 	}
@@ -1020,16 +1023,16 @@ func (t MapCoord) IsDoorEdge() (ok bool, dir Direction, row, col uint16) {
 
 func (t MapCoord) OppositeDoorEdge() MapCoord {
 	lyr, row, col := t.RowCol()
-	if row <= 0x06 {
+	if row <= 0x08 {
 		return MapCoord(lyr | (0x3A << 6) | col)
 	}
-	if row >= 0x3A {
+	if row >= 0x3F-8 {
 		return MapCoord(lyr | (0x06 << 6) | col)
 	}
-	if col <= 0x06 {
+	if col <= 0x08 {
 		return MapCoord(lyr | (row << 6) | 0x3A)
 	}
-	if col >= 0x3A {
+	if col >= 0x3F-8 {
 		return MapCoord(lyr | (row << 6) | 0x06)
 	}
 	panic("not at an edge")
@@ -1082,10 +1085,6 @@ func findReachableTiles(
 		}
 
 		v := m[s.t]
-
-		if v == 0x0A {
-			panic("notify kan")
-		}
 
 		if s.inPipe {
 			// pipe exit:
@@ -1234,6 +1233,7 @@ func findReachableTiles(
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2B {
 			visited[s.t] = empty{}
+			f(s.t, s.d, v)
 
 			// check 4 tiles from ledge for pit:
 			t, dir, ok := s.t.MoveBy(s.d, 4)
@@ -1282,10 +1282,12 @@ func findReachableTiles(
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			// don't continue beyond a staircase:
-			//if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-			//	lifo = append(lifo, state{t: tn, d: dir})
-			//}
+			// don't continue beyond a staircase unless it's our entry point:
+			if len(lifo) == 0 {
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+			}
 			continue
 		}
 
@@ -1316,9 +1318,7 @@ func findReachableTiles(
 		// $5F is the layer 2 version of $5E (spiral staircase)
 		if v == 0x5E || v == 0x5F {
 			visited[s.t] = empty{}
-
-			// don't visit spiral stairs, just skip over them:
-			//f(s.t, s.d, m[s.t])
+			f(s.t, s.d, m[s.t])
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
@@ -1347,6 +1347,11 @@ func findReachableTiles(
 
 				visited[s.t] = empty{}
 				f(s.t, s.d, v)
+
+				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
+					// don't move past door edge:
+					continue
+				}
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
@@ -1369,6 +1374,11 @@ func findReachableTiles(
 
 				visited[s.t] = empty{}
 				f(s.t, s.d, v)
+
+				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
+					// don't move past door edge:
+					continue
+				}
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
@@ -1380,6 +1390,10 @@ func findReachableTiles(
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
+			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
+				// don't move past door edge:
+				continue
+			}
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
@@ -1401,14 +1415,30 @@ func findReachableTiles(
 				continue
 			}
 
+			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
+				// don't move past door edge:
+				continue
+			}
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
 		}
 
-		// TODO layer toggle shutter doors:
-		//(v >= 0x90 && v <= 0xAF)
+		// Layer/dungeon toggle doorways:
+		if v >= 0x90 && v <= 0xAF {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
+				// don't move past door edge:
+				continue
+			}
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
+			continue
+		}
 
 		// TR pipe entrance:
 		if v == 0xBE {
@@ -1454,13 +1484,11 @@ func findReachableTiles(
 				continue
 			}
 
-			if true {
-				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
 
-				if t, _, ok := s.t.MoveBy(s.d, 2); ok {
-					lifo = append(lifo, state{t: t, d: s.d})
-				}
+			if t, _, ok := s.t.MoveBy(s.d, 2); ok {
+				lifo = append(lifo, state{t: t, d: s.d})
 			}
 			continue
 		}
