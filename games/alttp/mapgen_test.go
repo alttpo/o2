@@ -1162,10 +1162,12 @@ func findReachableTiles(
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
-			// don't continue beyond a staircase:
-			//if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-			//	lifo = append(lifo, state{t: tn, d: dir})
-			//}
+			// don't continue beyond a staircase unless it's our entry point:
+			if len(lifo) == 0 {
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+			}
 			continue
 		}
 
@@ -1522,10 +1524,10 @@ func (t DoorType) IsExit() bool {
 		// bombable cave exit:
 		return true
 	}
-	if t == 0x2E {
-		// bombable door exit(?):
-		return true
-	}
+	//if t == 0x2E {
+	//	// bombable door exit(?):
+	//	return true
+	//}
 	return false
 }
 
