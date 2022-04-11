@@ -360,6 +360,34 @@ func TestGenerateMap(t *testing.T) {
 
 				isDoorEdge, _, _, _ := door.Pos.IsDoorEdge()
 
+				{
+					// open up doors that are in front of interroom stairwells:
+					var stair MapCoord
+
+					switch door.Dir {
+					case DirNorth:
+						stair = door.Pos + 0x01
+						break
+					case DirSouth:
+						stair = door.Pos + 0xC1
+						break
+					case DirEast:
+						stair = door.Pos + 0x43
+						break
+					case DirWest:
+						stair = door.Pos + 0x40
+						break
+					}
+
+					v := tiles[stair]
+					if v >= 0x30 && v <= 0x39 {
+						tiles[door.Pos+0x41+0x00] = 0x00
+						tiles[door.Pos+0x41+0x01] = 0x00
+						tiles[door.Pos+0x41+0x40] = 0x00
+						tiles[door.Pos+0x41+0x41] = 0x00
+					}
+				}
+
 				if door.Type.IsExit() {
 					lyr, row, col := door.Pos.RowCol()
 					// patch up the door tiles to prevent reachability from exiting:
@@ -371,7 +399,10 @@ func TestGenerateMap(t *testing.T) {
 							}
 						}
 					}
-				} else if !isDoorEdge {
+					continue
+				}
+
+				if !isDoorEdge {
 					var (
 						start        MapCoord
 						tn           MapCoord
@@ -428,9 +459,7 @@ func TestGenerateMap(t *testing.T) {
 							}
 							return true
 						}
-					} else if doorTileType < 0xF0 {
-						continue
-					} else {
+					} else if doorTileType >= 0xF0 {
 						oppositeDoorType := uint8(0)
 						if doorTileType >= 0xF8 {
 							oppositeDoorType = doorTileType - 8
@@ -451,8 +480,16 @@ func TestGenerateMap(t *testing.T) {
 							if v == doorTileType {
 								return false
 							}
+							if v >= 0x28 || v <= 0x2B {
+								// ledge tiles can be found in doorway in fairy cave $008:
+								return false
+							}
 							return true
 						}
+					} else {
+						// bad door starter tile type
+						fmt.Fprintf(s.Logger, fmt.Sprintf("unrecognized door tile at %s: $%02x\n", start, doorTileType))
+						continue
 					}
 
 					// check many tiles behind door for opposite door tile:
@@ -483,32 +520,6 @@ func TestGenerateMap(t *testing.T) {
 						//fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
 						tiles[int(tn)+adj] = doorwayTile
 						tn, _, _ = tn.MoveBy(door.Dir, 1)
-					}
-				} else if isDoorEdge {
-					// open up edge doors that are actually stairwells:
-					var stair MapCoord
-
-					switch door.Dir {
-					case DirNorth:
-						stair = door.Pos + 0x01
-						break
-					case DirSouth:
-						stair = door.Pos + 0xC1
-						break
-					case DirEast:
-						stair = door.Pos + 0x43
-						break
-					case DirWest:
-						stair = door.Pos + 0x40
-						break
-					}
-
-					v := tiles[stair]
-					if v >= 0x30 && v <= 0x39 {
-						tiles[door.Pos+0x41+0x00] = 0x00
-						tiles[door.Pos+0x41+0x01] = 0x00
-						tiles[door.Pos+0x41+0x40] = 0x00
-						tiles[door.Pos+0x41+0x41] = 0x00
 					}
 				}
 
