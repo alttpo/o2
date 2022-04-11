@@ -585,28 +585,48 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					// interroom doorways:
-					if v >= 0x80 && v <= 0x8D {
+					if (v >= 0x80 && v <= 0x8D) || (v >= 0x90 && v <= 97) {
 						if ok, edir, _, _ := t.IsDoorEdge(); ok {
 							if v&1 == 0 {
 								// north-south normal doorway (no teleport doorways for north-south):
 								if sn, _, ok := this.MoveBy(edir); ok {
-									pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "north-south doorway")
+									if v&0x10 == 0x10 {
+										// layer swap:
+										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge() ^ 0x1000, edir}, "north-south doorway (layer swap)")
+									} else {
+										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "north-south doorway")
+									}
 								}
 							} else {
 								// east-west doorway:
 								if v == 0x89 {
 									// teleport doorway:
 									if edir == DirWest {
-										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
+										if v&0x10 == 0x10 {
+											// layer swap:
+											pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge() ^ 0x1000, edir}, "west teleport doorway (layer swap)")
+										} else {
+											pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
+										}
 									} else if edir == DirEast {
-										pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge(), edir}, "east teleport doorway")
+										if v&0x10 == 0x10 {
+											// layer swap:
+											pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge() ^ 0x1000, edir}, "east teleport doorway (layer swap)")
+										} else {
+											pushEntryPoint(EntryPoint{stairExitTo[3], t.OppositeDoorEdge(), edir}, "east teleport doorway")
+										}
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
 									}
 								} else {
 									// normal doorway:
 									if sn, _, ok := this.MoveBy(edir); ok {
-										pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "east-west doorway")
+										if v&0x10 == 0x10 {
+											// layer swap:
+											pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge() ^ 0x1000, edir}, "east-west doorway (layer swap)")
+										} else {
+											pushEntryPoint(EntryPoint{sn, t.OppositeDoorEdge(), edir}, "east-west doorway")
+										}
 									}
 								}
 							}
