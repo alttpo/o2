@@ -246,7 +246,7 @@ func TestGenerateMap(t *testing.T) {
 		roomsWithPitDamage[st] = true
 	}
 
-	const entranceCount = 0x84
+	const entranceCount = 0x85
 	entranceGroups := make([]Entrance, entranceCount)
 	supertiles := make(map[Supertile]*RoomState, 0x128)
 
