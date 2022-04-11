@@ -252,7 +252,7 @@ func TestGenerateMap(t *testing.T) {
 
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
-	for eID := uint8(0); eID < entranceCount; eID++ {
+	for eID := uint8(0x2d); eID < 0x2e; eID++ {
 		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
 
 		// poke the entrance ID into our asm code:
@@ -297,13 +297,132 @@ func TestGenerateMap(t *testing.T) {
 				panic(err)
 			}
 
+			wram := (&room.WRAM)[:]
+			tiles := (&room.Tiles)[:]
+
 			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
-			copy(room.WRAM[:], s.WRAM[:])
+			copy(wram, s.WRAM[:])
+			copy(tiles, s.WRAM[0x12000:0x14000])
+
 			g.Rooms = append(g.Rooms, room)
 			supertiles[st] = room
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), room.WRAM[:], 0644)
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), room.WRAM[0x12000:0x14000], 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), wram, 0644)
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), tiles, 0644)
+
+			// process doors first:
+			doors := make([]Door, 0, 16)
+			for m := 0; m < 16; m++ {
+				tpos := read16(wram[:], uint32(0x19A0+(m<<1)))
+				// stop marker:
+				if tpos == 0 {
+					break
+				}
+
+				door := Door{
+					Pos:  mapCoord(tpos >> 1),
+					Type: DoorType(read16(wram[:], uint32(0x1980+(m<<1)))),
+					Dir:  Direction(read16(wram[:], uint32(0x19C0+(m<<1)))),
+				}
+
+				fmt.Fprintf(s.Logger, "    door: %v\n", door)
+
+				if door.Type.IsExit() {
+					lyr, row, col := door.Pos.RowCol()
+					// patch up the door tiles to prevent reachability from exiting:
+					for y := uint16(0); y < 4; y++ {
+						for x := uint16(0); x < 4; x++ {
+							t := lyr | (row+y)<<6 | (col + x)
+							if tiles[t] >= 0xF0 {
+								tiles[t] = 0x00
+							}
+						}
+					}
+				} else if isDoorEdge, _, _, _ := door.Pos.IsDoorEdge(); !isDoorEdge {
+					var (
+						start        mapCoord
+						tn           mapCoord
+						doorTileType uint8
+						maxCount     int
+						count        int
+						doorwayTile  uint8
+						adj          int
+					)
+
+					var ok bool
+
+					switch door.Dir {
+					case DirNorth:
+						start = door.Pos + 0x81
+						maxCount = 12
+						doorwayTile = 0x80
+						adj = 1
+						break
+					case DirSouth:
+						start = door.Pos + 0x01
+						maxCount = 12
+						doorwayTile = 0x80
+						adj = 1
+						break
+					case DirEast:
+						start = door.Pos + 0x42
+						maxCount = 10
+						doorwayTile = 0x81
+						adj = 0x40
+						break
+					case DirWest:
+						start = door.Pos + 0x42
+						maxCount = 10
+						doorwayTile = 0x81
+						adj = 0x40
+						break
+					}
+
+					doorTileType = tiles[start]
+
+					var oppositeDoorType uint8
+					if doorTileType >= 0xF8 {
+						oppositeDoorType = doorTileType - 8
+					} else if doorTileType >= 0xF0 {
+						oppositeDoorType = doorTileType + 8
+					}
+
+					// check many tiles behind door for opposite door tile:
+					i := 0
+					tn = start
+					for ; i < maxCount; i++ {
+						v := tiles[tn]
+						if v != 0x01 && v != oppositeDoorType && v != doorTileType && v != doorwayTile {
+							break
+						}
+						tn, _, ok = tn.MoveBy(door.Dir, 1)
+						if !ok {
+							break
+						}
+					}
+					count = i
+
+					// blow open the doorway:
+					tn = start
+					for i := 0; i < count; i++ {
+						v := tiles[tn]
+						if v != 0x01 && v != oppositeDoorType && v != doorTileType && v != doorwayTile {
+							break
+						}
+
+						fmt.Printf("    blow open %s\n", tn)
+						tiles[tn] = doorwayTile
+						fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
+						tiles[int(tn)+adj] = doorwayTile
+						tn, _, _ = tn.MoveBy(door.Dir, 1)
+					}
+				}
+
+				doors = append(doors, door)
+			}
+			room.Doors = doors
+
+			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), room.Tiles[:], 0644)
 
 			return
 		}
@@ -341,8 +460,10 @@ func TestGenerateMap(t *testing.T) {
 			// create a room by emulation:
 			room := createRoom(this)
 
+			wram := (&room.WRAM)[:]
+
 			//WARPTO   = $7EC000
-			warpExitTo := Supertile(read8(room.WRAM[:], 0xC000))
+			warpExitTo := Supertile(read8(wram[:], 0xC000))
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
 			pitDamages := roomsWithPitDamage[this]
@@ -352,20 +473,20 @@ func TestGenerateMap(t *testing.T) {
 			//STAIR2TO = $7EC003
 			//STAIR3TO = $7EC004
 			stairExitTo := [4]Supertile{
-				Supertile(read8(room.WRAM[:], uint32(0xC001))),
-				Supertile(read8(room.WRAM[:], uint32(0xC002))),
-				Supertile(read8(room.WRAM[:], uint32(0xC003))),
-				Supertile(read8(room.WRAM[:], uint32(0xC004))),
+				Supertile(read8(wram[:], uint32(0xC001))),
+				Supertile(read8(wram[:], uint32(0xC002))),
+				Supertile(read8(wram[:], uint32(0xC003))),
+				Supertile(read8(wram[:], uint32(0xC004))),
 			}
 			_ = stairExitTo
 
-			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(room.WRAM[:], 0xC000)))
-			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(room.WRAM[:], 0xC001)))
-			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(room.WRAM[:], 0xC002)))
-			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(room.WRAM[:], 0xC003)))
-			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(room.WRAM[:], 0xC004)))
+			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram[:], 0xC000)))
+			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram[:], 0xC001)))
+			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram[:], 0xC002)))
+			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram[:], 0xC003)))
+			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram[:], 0xC004)))
 
-			isDarkRoom := read8(s.WRAM[:], 0xC005) != 0
+			isDarkRoom := read8(wram[:], 0xC005) != 0
 			fmt.Fprintf(s.Logger, "    DARK     = %v\n", isDarkRoom)
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
@@ -389,116 +510,11 @@ func TestGenerateMap(t *testing.T) {
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
 			}
 
-			tiles := [0x2000]uint8{}
-			copy(tiles[:], room.WRAM[0x12000:0x14000])
-
-			// process doors first:
-			doors := make([]Door, 0, 16)
-			for m := 0; m < 16; m++ {
-				tpos := read16(s.WRAM[:], uint32(0x19A0+(m<<1)))
-				// stop marker:
-				if tpos == 0 {
-					break
-				}
-
-				door := Door{
-					Pos:  mapCoord(tpos >> 1),
-					Type: DoorType(read16(s.WRAM[:], uint32(0x1980+(m<<1)))),
-					Dir:  Direction(read16(s.WRAM[:], uint32(0x19C0+(m<<1)))),
-				}
-
-				fmt.Fprintf(s.Logger, "    door: %v\n", &door)
-
-				if door.Type.IsExit() {
-					lyr, row, col := door.Pos.RowCol()
-					// patch up the door tiles to prevent reachability from exiting:
-					for y := uint16(0); y < 4; y++ {
-						for x := uint16(0); x < 4; x++ {
-							t := lyr | (row+y)<<6 | (col + x)
-							if tiles[t] >= 0xF0 {
-								tiles[t] = 0x00
-							}
-						}
-					}
-				} else if isDoorEdge, _, _, _ := door.Pos.IsDoorEdge(); !isDoorEdge {
-					tileType := tiles[door.Pos+0x41]
-
-					var (
-						incrMajor   int
-						incrMinor   int
-						count       int
-						doorwayTile uint8
-						adj         int
-					)
-
-					var (
-						ok bool
-						tn mapCoord
-					)
-
-					switch door.Dir {
-					case DirNorth:
-						incrMajor, incrMinor = 9, 5
-						doorwayTile = 0x80
-						adj = 1
-						break
-					case DirSouth:
-						incrMajor, incrMinor = 9, 5
-						doorwayTile = 0x80
-						adj = 1
-						break
-					case DirEast:
-						incrMajor, incrMinor = 7, 3
-						doorwayTile = 0x81
-						adj = 0x40
-						break
-					case DirWest:
-						incrMajor, incrMinor = 7, 3
-						doorwayTile = 0x81
-						adj = 0x40
-						break
-					}
-
-					if tn, _, ok = door.Pos.MoveBy(door.Dir, incrMajor); ok {
-						// check 7 tiles behind door for opposite door tile:
-						tn = mapCoord(int(tn) + adj)
-						opposingDoors := (tileType >= 0xF8 && tiles[tn] == tileType-8) ||
-							(tileType >= 0xF0 && tiles[tn] == tileType+8)
-
-						if opposingDoors {
-							count = incrMajor + 1
-						} else {
-							count = incrMinor + 1
-						}
-					} else if tn, _, ok = door.Pos.MoveBy(door.Dir, incrMinor); ok && tiles[int(tn)+adj] == doorwayTile {
-						// partial doorway
-						count = incrMinor + 1
-					} else {
-						fmt.Printf("    bad doorway at %s\n", door.Pos)
-						continue
-					}
-
-					// blow open the doorway:
-					tn = mapCoord(int(door.Pos) + adj)
-					for i := 0; i < count; i++ {
-						if tiles[tn] != 0x01 && tiles[tn] != doorwayTile {
-							break
-						}
-
-						tiles[tn+0x00] = doorwayTile
-						tiles[int(tn)+adj] = doorwayTile
-						tn, _, _ = tn.MoveBy(door.Dir, 1)
-					}
-				}
-
-				doors = append(doors, door)
-			}
-
 			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
 
 			// flood fill to find reachable tiles:
 			findReachableTiles(
-				&tiles,
+				&room.Tiles,
 				room.TilesVisited,
 				ep,
 				func(t mapCoord, d Direction, v, v2 uint8) {
@@ -611,8 +627,8 @@ func TestGenerateMap(t *testing.T) {
 
 				{
 					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
-					copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
-					copy(room.WRAM[:], s.WRAM[:])
+					copy((&room.VRAMTileSet)[:], (&s.VRAM)[0x4000:0x8000])
+					copy((&room.WRAM)[:], (&s.WRAM)[:])
 
 					wg.Add(1)
 					go drawSupertile(&wg, room)
@@ -630,7 +646,7 @@ func TestGenerateMap(t *testing.T) {
 							draw4bppTile(
 								g,
 								z,
-								room.VRAMTileSet[:],
+								(&room.VRAMTileSet)[:],
 								t%16,
 								t/16,
 							)
@@ -1376,7 +1392,10 @@ type RoomState struct {
 
 	Rendered image.Image
 
+	Doors []Door
+
 	TilesVisited map[mapCoord]empty
+	Tiles        [0x2000]byte
 	Reachable    [0x2000]byte
 
 	WRAM        [0x20000]byte
