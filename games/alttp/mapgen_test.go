@@ -350,30 +350,31 @@ func TestGenerateMap(t *testing.T) {
 					)
 
 					var ok bool
+					lyr, _, _ := door.Pos.RowCol()
 
 					switch door.Dir {
 					case DirNorth:
 						start = door.Pos + 0x81
 						maxCount = 12
-						doorwayTile = 0x80
+						doorwayTile = 0x80 | uint8(lyr>>10)
 						adj = 1
 						break
 					case DirSouth:
-						start = door.Pos + 0x01
+						start = door.Pos + 0x41
 						maxCount = 12
-						doorwayTile = 0x80
+						doorwayTile = 0x80 | uint8(lyr>>10)
 						adj = 1
 						break
 					case DirEast:
 						start = door.Pos + 0x42
 						maxCount = 10
-						doorwayTile = 0x81
+						doorwayTile = 0x81 | uint8(lyr>>10)
 						adj = 0x40
 						break
 					case DirWest:
 						start = door.Pos + 0x42
 						maxCount = 10
-						doorwayTile = 0x81
+						doorwayTile = 0x81 | uint8(lyr>>10)
 						adj = 0x40
 						break
 					}
