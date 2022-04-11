@@ -517,7 +517,7 @@ func TestGenerateMap(t *testing.T) {
 				&room.Tiles,
 				room.TilesVisited,
 				ep,
-				func(t mapCoord, d Direction, v, v2 uint8) {
+				func(t mapCoord, d Direction, v uint8) {
 					// here we found a reachable tile:
 					room.Reachable[t] = v
 
@@ -561,7 +561,7 @@ func TestGenerateMap(t *testing.T) {
 								}
 							} else {
 								// east-west doorway:
-								if v == 0x89 || v2 == 0x89 {
+								if v == 0x89 {
 									// teleport doorway:
 									if edir == DirWest {
 										pushEntryPoint(EntryPoint{stairExitTo[2], t.OppositeDoorEdge(), edir}, "west teleport doorway")
@@ -582,18 +582,52 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					// interroom stair exits:
-					if v >= 0x30 && v <= 0x37 {
-						if v2 == 0x5E || v2 == 0x5F {
+					if v == 0x5E || v == 0x5F {
+						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+						return
+					} else if v == 0x38 {
+						// north stairs going down:
+						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						// NOTE: hack the stairwell position
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
+						return
+					} else if v == 0x39 {
+						// south stairs going up:
+						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						// NOTE: hack the stairwell position
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
+						return
+					}
+
+					if v >= 0x30 && v < 0x38 {
+						var vn uint8
+						if v < 0x34 {
+							vn = room.Tiles[t+0x40]
+						} else {
+							vn = room.Tiles[t-0x40]
+						}
+
+						if vn == 0x5E {
+							// spiral staircase
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
-						} else if v2 == 0x38 {
+							return
+						} else if vn == 0x38 {
 							// north stairs going down:
 							// NOTE: hack the stairwell position
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
-						} else if v2 == 0x39 {
+							return
+						} else if vn == 0x39 {
 							// south stairs going up:
 							// NOTE: hack the stairwell position
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
+							return
+						} else if vn == 0x00 {
+							// straight stairs:
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("noneStair(%s)", t))
+							return
 						}
+						panic(fmt.Errorf("unhandled stair exit at %s %s", t, d))
 						return
 					}
 
@@ -864,14 +898,16 @@ func findReachableTiles(
 	m *[0x2000]uint8,
 	visited map[mapCoord]empty,
 	entryPoint EntryPoint,
-	f func(t mapCoord, d Direction, v uint8, v2 uint8),
+	visit func(t mapCoord, d Direction, v uint8),
 ) {
 	type state struct {
-		t         mapCoord
-		d         Direction
-		inPipe    bool
-		stairType uint8
+		t      mapCoord
+		d      Direction
+		inPipe bool
 	}
+
+	// if we ever need to wrap
+	f := visit
 
 	var lifoSpace [0x2000]state
 	lifo := lifoSpace[:0]
@@ -894,7 +930,6 @@ func findReachableTiles(
 	}
 
 	// handle the stack of locations to traverse:
-lifoLoop:
 	for len(lifo) != 0 {
 		lifoLen := len(lifo) - 1
 		s := lifo[lifoLen]
@@ -914,7 +949,7 @@ lifoLoop:
 			// pipe exit:
 			if v == 0xBE {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v, 0)
+				f(s.t, s.d, v)
 
 				// continue in the same direction but not in pipe-follower state:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -1016,7 +1051,7 @@ lifoLoop:
 		if isPassable {
 			// no collision:
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			// can move in any direction:
 			pushAllDirections(s.t)
@@ -1026,7 +1061,7 @@ lifoLoop:
 		// north-facing stairs:
 		if v == 0x1D {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
@@ -1036,7 +1071,7 @@ lifoLoop:
 		// north-facing stairs, layer changing:
 		if v >= 0x1E && v <= 0x1F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
@@ -1054,7 +1089,7 @@ lifoLoop:
 		if v == 0x20 {
 			// Link can fall into pit but cannot move beyond it:
 			//visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 			continue
 		}
 
@@ -1098,14 +1133,7 @@ lifoLoop:
 		// interroom stair exits:
 		if v >= 0x30 && v <= 0x37 {
 			visited[s.t] = empty{}
-			if s.stairType == 0 {
-				// try one tile beyond the exit:
-				if tn, _, ok := s.t.MoveBy(s.d, 1); ok {
-					s.stairType = m[tn]
-					fmt.Printf("    stair type %02x at %s\n", m[tn], tn)
-				}
-			}
-			f(s.t, s.d, v, s.stairType)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
@@ -1113,10 +1141,10 @@ lifoLoop:
 			continue
 		}
 
-		// 38=Straight inter-room stairs north/down edge (39= south/up edge):
+		// 38=Straight interroom stairs north/down edge (39= south/up edge):
 		if v == 0x38 || v == 0x39 {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, s.stairType)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
@@ -1127,7 +1155,7 @@ lifoLoop:
 		// south-facing single-layer auto stairs:
 		if v == 0x3D {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				lifo = append(lifo, state{t: tn, d: dir})
@@ -1137,7 +1165,7 @@ lifoLoop:
 		// south-facing layer-swap auto stairs:
 		if v >= 0x3E && v <= 0x3F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
@@ -1154,10 +1182,12 @@ lifoLoop:
 		// spiral staircase:
 		if v >= 0x5E && v <= 0x5F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+
+			// don't visit spiral stairs, just skip over them:
+			//f(s.t, s.d, m[s.t])
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir, stairType: v})
+				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
 		}
@@ -1182,7 +1212,7 @@ lifoLoop:
 				}
 
 				visited[s.t] = empty{}
-				f(s.t, s.d, v, s.stairType)
+				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
@@ -1204,7 +1234,7 @@ lifoLoop:
 				}
 
 				visited[s.t] = empty{}
-				f(s.t, s.d, v, s.stairType)
+				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
@@ -1214,9 +1244,9 @@ lifoLoop:
 		// east-west teleport door
 		if v == 0x89 {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir, stairType: v})
+				lifo = append(lifo, state{t: tn, d: dir})
 			}
 
 			continue
@@ -1224,7 +1254,7 @@ lifoLoop:
 		// entrance door (8E = north-south?, 8F = east-west??):
 		if v == 0x8E || v == 0x8F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			if s.d == DirNone {
 				// scout in both directions:
@@ -1238,7 +1268,7 @@ lifoLoop:
 			}
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir, stairType: v})
+				lifo = append(lifo, state{t: tn, d: dir})
 			}
 			continue
 		}
@@ -1249,7 +1279,7 @@ lifoLoop:
 		// TR pipe entrance:
 		if v == 0xBE {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v, 0)
+			f(s.t, s.d, v)
 
 			// find corresponding B0..B1 directional pipe to follow:
 			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
@@ -1269,8 +1299,6 @@ lifoLoop:
 
 		// doors:
 		if v >= 0xF0 {
-			doorType := v
-
 			// determine a direction to head in if we have none:
 			if s.d == DirNone {
 				var ok bool
@@ -1294,78 +1322,9 @@ lifoLoop:
 
 			if true {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v, 0)
+				f(s.t, s.d, v)
 
 				if t, _, ok := s.t.MoveBy(s.d, 2); ok {
-					lifo = append(lifo, state{t: t, d: s.d})
-				}
-			} else {
-				max := 10
-				rt := uint8(0x81)
-				if s.d == DirNorth || s.d == DirSouth {
-					max = 12
-					rt = 0x80
-				}
-
-				// 2 tiles behind a door could be a stairwell
-				t, _, ok := s.t.MoveBy(s.d, 2)
-				if !ok {
-					continue
-				}
-				v = m[t]
-				if v >= 0x30 && v <= 0x39 {
-					// TODO: inter-room stairs (needs 0x5E stair type)
-					visited[t] = empty{}
-					f(t, s.d, v, doorType)
-					continue
-				}
-
-				// make an open doorway:
-				t = s.t
-				for i := 0; i < max; i++ {
-					v = m[t]
-					// stop at different doorway number:
-					if v >= 0xF0 && v != doorType {
-						break
-					}
-					if v == 0x00 {
-						lifo = append(lifo, state{t: t, d: s.d})
-						continue lifoLoop
-					}
-					if v >= 0x80 && v <= 0x8D {
-						lifo = append(lifo, state{t: t, d: s.d})
-						continue lifoLoop
-					}
-
-					// clear the doorway:
-					m[t] = rt
-					visited[t] = empty{}
-					f(t, s.d, rt, doorType)
-
-					// move forward:
-					t, _, ok = t.MoveBy(s.d, 1)
-					if !ok {
-						break
-					}
-				}
-				if !ok {
-					continue
-				}
-
-				// clear up the end of the doorway:
-				for i := 0; i < 2; i++ {
-					m[t] = rt
-					visited[t] = empty{}
-					f(t, s.d, rt, doorType)
-
-					// move next:
-					t, _, ok = t.MoveBy(s.d, 1)
-					if !ok {
-						break
-					}
-				}
-
-				if ok {
 					lifo = append(lifo, state{t: t, d: s.d})
 				}
 			}
