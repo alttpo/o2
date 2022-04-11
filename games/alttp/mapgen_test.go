@@ -585,15 +585,26 @@ func TestGenerateMap(t *testing.T) {
 					// interroom stair exits:
 					if v == 0x5E || v == 0x5F {
 						panic(fmt.Errorf("should NEVER see $%02x at %s %s", v, t, d))
-					} else if v == 0x38 {
+					}
+
+					// these are stair EDGEs; don't think we care:
+					if v == 0x38 {
 						// north stairs going down:
-						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						var vn uint8
+						vn = room.Tiles[t+0x40]
+						if vn < 0x30 && v >= 0x38 {
+							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						}
 						// NOTE: hack the stairwell position
 						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
 						return
 					} else if v == 0x39 {
 						// south stairs going up:
-						panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						var vn uint8
+						vn = room.Tiles[t-0x40]
+						if vn < 0x30 && v >= 0x38 {
+							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+						}
 						// NOTE: hack the stairwell position
 						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
 						return
@@ -601,10 +612,9 @@ func TestGenerateMap(t *testing.T) {
 
 					if v >= 0x30 && v < 0x38 {
 						var vn uint8
-						if v < 0x34 {
+						vn = room.Tiles[t-0x40]
+						if vn == 0x80 || vn == 0x26 {
 							vn = room.Tiles[t+0x40]
-						} else {
-							vn = room.Tiles[t-0x40]
 						}
 
 						if vn == 0x5E || vn == 0x5F {
@@ -614,16 +624,16 @@ func TestGenerateMap(t *testing.T) {
 						} else if vn == 0x38 {
 							// north stairs going down:
 							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("northStair(%s)", t))
 							return
 						} else if vn == 0x39 {
 							// south stairs going up:
 							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("southStair(%s)", t))
 							return
 						} else if vn == 0x00 {
 							// straight stairs:
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("noneStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("stair(%s)", t))
 							return
 						}
 						panic(fmt.Errorf("unhandled stair exit at %s %s", t, d))
