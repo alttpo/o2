@@ -347,6 +347,7 @@ func TestGenerateMap(t *testing.T) {
 				tpos := read16(wram[:], uint32(0x19A0+(m<<1)))
 				// stop marker:
 				if tpos == 0 {
+					fmt.Fprintf(s.Logger, "    door stop at marker\n")
 					break
 				}
 
@@ -355,6 +356,7 @@ func TestGenerateMap(t *testing.T) {
 					Type: DoorType(read16(wram[:], uint32(0x1980+(m<<1)))),
 					Dir:  Direction(read16(wram[:], uint32(0x19C0+(m<<1)))),
 				}
+				doors = append(doors, door)
 
 				fmt.Fprintf(s.Logger, "    door: %v\n", door)
 
@@ -602,10 +604,26 @@ func TestGenerateMap(t *testing.T) {
 						tn, _, _ = tn.MoveBy(door.Dir, 1)
 					}
 				}
-
-				doors = append(doors, door)
 			}
 			room.Doors = doors
+
+			// find layer-swap tiles in doorways:
+			swapCount := read16(wram, 0x044E)
+			room.SwapLayers = make(map[MapCoord]empty, swapCount*4)
+			for i := uint16(0); i < swapCount; i += 2 {
+				t := MapCoord(read16(wram, uint32(0x06C0+i)))
+
+				// mark the 2x2 tile as a layer-swap:
+				room.SwapLayers[t+0x00] = empty{}
+				room.SwapLayers[t+0x01] = empty{}
+				room.SwapLayers[t+0x40] = empty{}
+				room.SwapLayers[t+0x41] = empty{}
+				// have to put it on both layers? ew
+				room.SwapLayers[t|0x1000+0x00] = empty{}
+				room.SwapLayers[t|0x1000+0x01] = empty{}
+				room.SwapLayers[t|0x1000+0x40] = empty{}
+				room.SwapLayers[t|0x1000+0x41] = empty{}
+			}
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
@@ -613,9 +631,10 @@ func TestGenerateMap(t *testing.T) {
 		}
 
 		// if this is the entrance, Link should be already moved to his starting position:
-		linkX := read16((&s.WRAM)[:], 0x22)
-		linkY := read16((&s.WRAM)[:], 0x20)
-		linkLayer := read16((&s.WRAM)[:], 0xEE)
+		wram := (&s.WRAM)[:]
+		linkX := read16(wram, 0x22)
+		linkY := read16(wram, 0x20)
+		linkLayer := read16(wram, 0xEE)
 		g.EntryCoord = AbsToMapCoord(linkX, linkY, linkLayer)
 		fmt.Fprintf(s.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
 
@@ -735,22 +754,27 @@ func TestGenerateMap(t *testing.T) {
 							// at or beyond the door edge zones:
 							swapLayers := MapCoord(0)
 
-							// search the doorway for layer-swaps:
-							tn := t
-							for i := 0; i < 8; i++ {
-								vd := tiles[tn]
-								room.Reachable[tn] = vd
-								if vd >= 0x90 && vd <= 0x9F {
-									swapLayers = MapCoord(0x1000)
-								}
-								if vd >= 0xA8 && vd <= 0xAF {
-									swapLayers = MapCoord(0x1000)
-								}
+							{
+								// search the doorway for layer-swaps:
+								tn := t
+								for i := 0; i < 8; i++ {
+									vd := tiles[tn]
+									room.Reachable[tn] = vd
+									if vd >= 0x90 && vd <= 0x9F {
+										swapLayers = 0x1000
+									}
+									if vd >= 0xA8 && vd <= 0xAF {
+										swapLayers = 0x1000
+									}
+									if _, ok := room.SwapLayers[tn]; ok {
+										swapLayers = 0x1000
+									}
 
-								// advance into the doorway:
-								tn, _, ok = tn.MoveBy(edir, 1)
-								if !ok {
-									break
+									// advance into the doorway:
+									tn, _, ok = tn.MoveBy(edir, 1)
+									if !ok {
+										break
+									}
 								}
 							}
 
@@ -870,7 +894,7 @@ func TestGenerateMap(t *testing.T) {
 				{
 					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
 					copy((&room.VRAMTileSet)[:], (&s.VRAM)[0x4000:0x8000])
-					copy((&room.WRAM)[:], (&s.WRAM)[:])
+					copy((&room.WRAM)[:], wram)
 
 					wg.Add(1)
 					go drawSupertile(&wg, room)
@@ -981,6 +1005,10 @@ type MapCoord uint16
 func (t MapCoord) String() string {
 	_, row, col := t.RowCol()
 	return fmt.Sprintf("$%04x={%02x,%02x}", uint16(t), row, col)
+}
+
+func (t MapCoord) IsLayer2() bool {
+	return t&0x1000 != 0
 }
 
 type EntryPoint struct {
@@ -1606,7 +1634,8 @@ type RoomState struct {
 
 	Rendered image.Image
 
-	Doors []Door
+	Doors      []Door
+	SwapLayers map[MapCoord]empty // $06C0[size=$044E >> 1]
 
 	TilesVisited map[MapCoord]empty
 	Tiles        [0x2000]byte
@@ -1654,10 +1683,6 @@ func (s Supertile) MoveBy(dir Direction) (sn Supertile, sd Direction, ok bool) {
 	}
 
 	return
-}
-
-type StaircaseInterRoom struct {
-	Pos uint16 // $06B0
 }
 
 type Door struct {
@@ -1790,10 +1815,13 @@ func (t DoorType) IsLayer2() bool {
 	if t == 0x3E {
 		return true
 	}
+	if t == 0x40 {
+		return true
+	}
 	if t == 0x44 {
 		return true
 	}
-	if t >= 0x48 {
+	if t >= 0x48 && t <= 0x66 {
 		return true
 	}
 	return false
