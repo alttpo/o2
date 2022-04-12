@@ -1211,7 +1211,7 @@ func findReachableTiles(
 			// allow 00 and 01 in pipes for TR $015 center area:
 			if v == 0x00 || v == 0x01 {
 				// continue in the same direction:
-				visited[s.t] = empty{}
+				//visited[s.t] = empty{}
 				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
