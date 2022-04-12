@@ -1615,6 +1615,9 @@ func findReachableTiles(
 				}
 			} else if v == 0x0C {
 				panic(fmt.Errorf("TODO handle $0C in pit case t=%s", t))
+			} else if v == 0x00 {
+				// open floor:
+				lifo = append(lifo, state{t: t, d: dir})
 			}
 
 			continue
