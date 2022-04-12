@@ -1208,20 +1208,49 @@ func findReachableTiles(
 		v := m[s.t]
 
 		if s.inPipe {
-			// pipe exit:
-			if v == 0xBE {
+			// allow 00 and 01 in pipes for TR $015 center area:
+			if v == 0x00 || v == 0x01 {
+				// continue in the same direction:
 				visited[s.t] = empty{}
 				f(s.t, s.d, v)
-
-				// continue in the same direction but not in pipe-follower state:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
 
-			// TR west to south or north to east:
+			// straight:
+			if v == 0xB0 || v == 0xB1 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				// check for pipe exit 3 tiles in advance:
+				// this is done to skip collision tiles between B0/B1 and BE
+				if tn, dir, ok := s.t.MoveBy(s.d, 3); ok && m[tn] == 0xBE {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					continue
+				}
+
+				// continue in the same direction:
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					// if the pipe crosses another direction pipe skip over that bit of pipe:
+					if m[tn] == v^0x01 {
+						if tn, _, ok := tn.MoveBy(dir, 2); ok && v == m[tn] {
+							lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+							continue
+						}
+					}
+
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// west to south or north to east:
 			if v == 0xB2 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
 				if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
 						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
@@ -1233,8 +1262,11 @@ func findReachableTiles(
 				}
 				continue
 			}
-			// TR south to east or west to north:
+			// south to east or west to north:
 			if v == 0xB3 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
 				if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
 						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
@@ -1246,8 +1278,11 @@ func findReachableTiles(
 				}
 				continue
 			}
-			// TR north to west or east to south:
+			// north to west or east to south:
 			if v == 0xB4 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
 				if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
 						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
@@ -1259,8 +1294,11 @@ func findReachableTiles(
 				}
 				continue
 			}
-			// TR east to north or south to west:
+			// east to north or south to west:
 			if v == 0xB5 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
 				if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
@@ -1273,10 +1311,161 @@ func findReachableTiles(
 				continue
 			}
 
-			// for anything else we just continue in the same direction:
-			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			// line exit:
+			if v == 0xB6 {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				// check for 2 pit tiles beyond exit:
+				t := s.t
+				var ok bool
+				if t, _, ok = t.MoveBy(s.d, 1); !ok || m[t] != 0x20 {
+					continue
+				}
+				if t, _, ok = t.MoveBy(s.d, 1); !ok || m[t] != 0x20 {
+					continue
+				}
+
+				// continue in the same direction but not in pipe-follower state:
+				if tn, dir, ok := t.MoveBy(s.d, 1); ok && m[tn] != 0x20 {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+				continue
 			}
+
+			// south, west, east junction:
+			if v == 0xB7 {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// north, west, east junction:
+			if v == 0xB8 {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// north, east, south junction:
+			if v == 0xB9 {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// north, west, south junction:
+			if v == 0xBA {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// 4-way junction:
+			if v == 0xBB {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// possible exit:
+			if v == 0xBC {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// cross-over:
+			if v == 0xBD {
+				// do not mark as visited in case we cross from the other direction later:
+				//visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				// continue in the same direction:
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				continue
+			}
+
+			// pipe exit:
+			if v == 0xBE {
+				visited[s.t] = empty{}
+				f(s.t, s.d, v)
+
+				// continue in the same direction but not in pipe-follower state:
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+				continue
+			}
+
 			continue
 		}
 
@@ -1348,6 +1537,38 @@ func findReachableTiles(
 			// Link can fall into pit but cannot move beyond it:
 			//visited[s.t] = empty{}
 			f(s.t, s.d, v)
+
+			// check what's beyond the pit:
+			t := s.t
+			var ok bool
+			if t, _, ok = t.MoveBy(s.d, 1); !ok || m[t] != 0x20 {
+				continue
+			}
+			if t, _, ok = t.MoveBy(s.d, 1); !ok {
+				continue
+			}
+
+			v = m[t]
+
+			// somaria line start:
+			if v == 0xB6 || v == 0xBC {
+				visited[t] = empty{}
+				f(t, s.d, v)
+
+				// find corresponding B0..B1 directional line to follow:
+				if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+				if tn, dir, ok := t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				}
+			}
 			continue
 		}
 
@@ -1568,15 +1789,31 @@ func findReachableTiles(
 
 			// find corresponding B0..B1 directional pipe to follow:
 			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				// skip over 2 tiles
+				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
+					continue
+				}
 				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				// skip over 2 tiles
+				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
+					continue
+				}
 				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				// skip over 2 tiles
+				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
+					continue
+				}
 				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+				// skip over 2 tiles
+				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
+					continue
+				}
 				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 			}
 			continue
