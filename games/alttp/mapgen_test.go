@@ -1327,7 +1327,7 @@ func findReachableTiles(
 				}
 
 				// continue in the same direction but not in pipe-follower state:
-				if tn, dir, ok := t.MoveBy(s.d, 1); ok && m[tn] != 0x20 {
+				if tn, dir, ok := t.MoveBy(s.d, 1); ok && m[tn] == 0x00 {
 					lifo = append(lifo, state{t: tn, d: dir})
 				}
 				continue
@@ -1432,12 +1432,27 @@ func findReachableTiles(
 				//visited[s.t] = empty{}
 				f(s.t, s.d, v)
 
-				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
+				// continue in the same direction:
+				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
 				}
-				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+
+				// check for exits across pits:
+				if tn, dir, ok := s.t.MoveBy(s.d.RotateCW(), 1); ok && m[tn] == 0x20 {
+					if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x20 {
+						if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x00 {
+							lifo = append(lifo, state{t: tn, d: dir})
+						}
+					}
 				}
+				if tn, dir, ok := s.t.MoveBy(s.d.RotateCCW(), 1); ok && m[tn] == 0x20 {
+					if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x20 {
+						if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x00 {
+							lifo = append(lifo, state{t: tn, d: dir})
+						}
+					}
+				}
+
 				continue
 			}
 
@@ -1997,6 +2012,34 @@ func (d Direction) String() string {
 		return "east"
 	}
 	return ""
+}
+
+func (d Direction) RotateCW() Direction {
+	switch d {
+	case DirNorth:
+		return DirEast
+	case DirEast:
+		return DirSouth
+	case DirSouth:
+		return DirWest
+	case DirWest:
+		return DirNorth
+	}
+	return d
+}
+
+func (d Direction) RotateCCW() Direction {
+	switch d {
+	case DirNorth:
+		return DirWest
+	case DirWest:
+		return DirSouth
+	case DirSouth:
+		return DirEast
+	case DirEast:
+		return DirNorth
+	}
+	return d
 }
 
 type DoorType uint8
