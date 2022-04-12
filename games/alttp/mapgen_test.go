@@ -1759,6 +1759,46 @@ func (t DoorType) IsExit() bool {
 	return false
 }
 
+func (t DoorType) IsLayer2() bool {
+	if t == 0x02 {
+		return true
+	}
+	if t == 0x04 {
+		return true
+	}
+	if t == 0x06 {
+		return true
+	}
+	if t == 0x0C {
+		return true
+	}
+	if t == 0x10 {
+		return true
+	}
+	if t == 0x24 {
+		return true
+	}
+	if t == 0x26 {
+		return true
+	}
+	if t == 0x3A {
+		return true
+	}
+	if t == 0x3C {
+		return true
+	}
+	if t == 0x3E {
+		return true
+	}
+	if t == 0x44 {
+		return true
+	}
+	if t >= 0x48 {
+		return true
+	}
+	return false
+}
+
 func (t DoorType) IsStairwell() bool {
 	return t >= 0x20 && t <= 0x26
 }
