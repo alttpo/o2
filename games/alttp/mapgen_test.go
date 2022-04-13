@@ -1529,8 +1529,6 @@ func findReachableTiles(
 		isPassable := v == 0x00 ||
 			// water:
 			v == 0x08 || v == 0x09 ||
-			// layer passthrough:
-			v == 0x0C || v == 0x1C ||
 			// manual stairs:
 			v == 0x22 ||
 			// floor switches:
@@ -1564,6 +1562,26 @@ func findReachableTiles(
 			// can move in any direction:
 			pushAllDirections(s.t)
 			continue
+		}
+
+		// layer pass through:
+		if v == 0x1C {
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			if s.t&0x1000 == 0 {
+				// $1C falling onto $0C means scrolling floor:
+				if m[s.t|0x1000] == 0x0C {
+					// treat as regular floor:
+					pushAllDirections(s.t)
+				} else {
+					// drop to lower layer:
+					lifo = append(lifo, state{t: s.t | 0x1000, d: s.d})
+				}
+			}
+			continue
+		} else if v == 0x0C {
+			panic(fmt.Errorf("what to do for $0C at %s", s.t))
 		}
 
 		// north-facing stairs:
