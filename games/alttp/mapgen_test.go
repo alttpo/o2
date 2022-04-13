@@ -884,13 +884,12 @@ func TestGenerateMap(t *testing.T) {
 						} else if vn == 0x38 {
 							// north stairs going down:
 							//_, _, col := t.RowCol()
-							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("northStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t.FlipVertical()&0x0FFF | stairTargetLayer[v&3], d}, fmt.Sprintf("northStair(%s)", t))
 							return
 						} else if vn == 0x39 {
 							// south stairs going up:
 							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("southStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t.FlipVertical()&0x0FFF | stairTargetLayer[v&3], d}, fmt.Sprintf("southStair(%s)", t))
 							return
 						} else if vn == 0x00 {
 							// straight stairs:
@@ -1207,6 +1206,12 @@ func (t MapCoord) OppositeDoorEdge() MapCoord {
 	}
 	panic("not at an edge")
 	return t
+}
+
+func (t MapCoord) FlipVertical() MapCoord {
+	lyr, row, col := t.RowCol()
+	row = 0x40 - row
+	return MapCoord(lyr | (row << 6) | col)
 }
 
 func findReachableTiles(
