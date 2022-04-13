@@ -860,18 +860,25 @@ func TestGenerateMap(t *testing.T) {
 						if vn == 0x5E || vn == 0x5F {
 							// spiral staircase
 							tgtLayer := stairTargetLayer[v&3]
+							dt := t
 							if v&4 == 0 {
 								// going up
-								if t&0x1000 != tgtLayer {
-									t += 0xC0
+								if t&0x1000 != 0 {
+									dt += 0x80
 								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+								if tgtLayer != 0 {
+									dt += 0x80
+								}
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
 							} else {
 								// going down
-								if t&0x1000 != tgtLayer {
-									t -= 0x80
+								if t&0x1000 != 0 {
+									dt -= 0x80
 								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+								if tgtLayer != 0 {
+									dt -= 0x80
+								}
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
 							}
 							return
 						} else if vn == 0x38 {

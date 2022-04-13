@@ -67,6 +67,24 @@ STAIRS3:
     $7EC004 <- x
 
 ---------------------------------
+stairs
+
+going up: (submodule = #$12)
+    if currentLayer != 0 {
+        y += 0x80
+    }
+    if targetLayer != 0 {
+        y += 0x80
+    }
+
+going down: (submodule = #$11)
+    adjusted := 0
+    if currentLayer != 0 {
+
+    }
+
+
+---------------------------------
 BG2PROP analysis:
 
 .has_moving_wall_tag
