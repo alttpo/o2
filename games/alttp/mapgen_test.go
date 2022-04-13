@@ -876,6 +876,7 @@ func TestGenerateMap(t *testing.T) {
 							return
 						} else if vn == 0x38 {
 							// north stairs going down:
+							//_, _, col := t.RowCol()
 							// NOTE: hack the stairwell position
 							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("northStair(%s)", t))
 							return
@@ -894,17 +895,20 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					// pit exits:
-					if !pitDamages && warpExitTo != 0 {
+					if !pitDamages {
 						if v == 0x20 {
 							// pit tile
 							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("pit(%s)", t))
+							return
 						} else if v == 0x62 {
 							// bombable floor tile
 							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("bombableFloor(%s)", t))
-						} else if v == 0x4B {
-							// warp floor tile
-							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("warp(%s)", t))
+							return
 						}
+					}
+					if v == 0x4B {
+						// warp floor tile
+						pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("warp(%s)", t))
 						return
 					}
 				},
