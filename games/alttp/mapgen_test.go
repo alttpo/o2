@@ -303,19 +303,19 @@ func TestGenerateMap(t *testing.T) {
 		createRoom := func(st Supertile) (room *RoomState) {
 			var ok bool
 			if room, ok = supertiles[st]; ok {
-				//fmt.Printf("reusing room %s\n", st)
+				fmt.Printf("    reusing room %s: %p\n", st, room)
 				//if eID != room.EntranceID {
 				//	panic(fmt.Errorf("conflicting entrances for room %s", st))
 				//}
-				return room
+				return
 			}
 
-			fmt.Printf("    creating room %s\n", st)
 			room = &RoomState{
 				Supertile:    st,
 				Rendered:     nil,
 				TilesVisited: make(map[MapCoord]empty, 0x2000),
 			}
+			fmt.Printf("    creating room %s: %p\n", st, room)
 
 			// make a map full of $01 Collision and carve out reachable areas:
 			for i := range room.Reachable {
@@ -630,13 +630,15 @@ func TestGenerateMap(t *testing.T) {
 			return
 		}
 
-		// if this is the entrance, Link should be already moved to his starting position:
-		wram := (&s.WRAM)[:]
-		linkX := read16(wram, 0x22)
-		linkY := read16(wram, 0x20)
-		linkLayer := read16(wram, 0xEE)
-		g.EntryCoord = AbsToMapCoord(linkX, linkY, linkLayer)
-		fmt.Fprintf(s.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
+		{
+			// if this is the entrance, Link should be already moved to his starting position:
+			wram := (&s.WRAM)[:]
+			linkX := read16(wram, 0x22)
+			linkY := read16(wram, 0x20)
+			linkLayer := read16(wram, 0xEE)
+			g.EntryCoord = AbsToMapCoord(linkX, linkY, linkLayer)
+			fmt.Fprintf(s.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
+		}
 
 		{
 			room := createRoom(g.Supertile)
@@ -667,7 +669,7 @@ func TestGenerateMap(t *testing.T) {
 			wram := (&room.WRAM)[:]
 
 			//WARPTO   = $7EC000
-			warpExitTo := Supertile(read8(wram[:], 0xC000))
+			warpExitTo := Supertile(read8(wram, 0xC000))
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
 			pitDamages := roomsWithPitDamage[this]
@@ -677,18 +679,18 @@ func TestGenerateMap(t *testing.T) {
 			//STAIR2TO = $7EC003
 			//STAIR3TO = $7EC004
 			stairExitTo := [4]Supertile{
-				Supertile(read8(wram[:], uint32(0xC001))),
-				Supertile(read8(wram[:], uint32(0xC002))),
-				Supertile(read8(wram[:], uint32(0xC003))),
-				Supertile(read8(wram[:], uint32(0xC004))),
+				Supertile(read8(wram, uint32(0xC001))),
+				Supertile(read8(wram, uint32(0xC002))),
+				Supertile(read8(wram, uint32(0xC003))),
+				Supertile(read8(wram, uint32(0xC004))),
 			}
 			_ = stairExitTo
 
-			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram[:], 0xC000)))
-			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram[:], 0xC001)))
-			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram[:], 0xC002)))
-			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram[:], 0xC003)))
-			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram[:], 0xC004)))
+			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
+			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
+			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
+			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
+			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
 			fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
@@ -882,7 +884,12 @@ func TestGenerateMap(t *testing.T) {
 
 		// render all supertiles found:
 		if len(g.Rooms) >= 1 {
-			for _, room := range g.Rooms[1:] {
+			for _, room := range g.Rooms {
+				if room.Supertile == g.Supertile {
+					// entrance supertile is already rendered
+					continue
+				}
+
 				// TODO: clone System instances and parallelize
 
 				// loadSupertile:
@@ -894,7 +901,7 @@ func TestGenerateMap(t *testing.T) {
 				{
 					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
 					copy((&room.VRAMTileSet)[:], (&s.VRAM)[0x4000:0x8000])
-					copy((&room.WRAM)[:], wram)
+					copy((&room.WRAM)[:], (&s.WRAM)[:])
 
 					wg.Add(1)
 					go drawSupertile(&wg, room)
