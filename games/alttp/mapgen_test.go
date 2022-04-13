@@ -625,6 +625,20 @@ func TestGenerateMap(t *testing.T) {
 				room.SwapLayers[t|0x1000+0x41] = empty{}
 			}
 
+			// we don't need this.
+			//// find interroom stair objects:
+			//stairCount := uint32(0)
+			//for _, n := range []uint32{0x0438, 0x043A, 0x047E, 0x0482, 0x0480, 0x0484, 0x04A2, 0x04A6, 0x04A4, 0x04A8} {
+			//	index := uint32(read16(wram, n))
+			//	if index > stairCount {
+			//		stairCount = index
+			//	}
+			//}
+			//for i := uint32(0); i < stairCount; i += 2 {
+			//	t := MapCoord(read16(wram, 0x06B0+i))
+			//	fmt.Fprintf(s.Logger, "    interroom stair at %s\n", t)
+			//}
+
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
 			return
@@ -684,7 +698,12 @@ func TestGenerateMap(t *testing.T) {
 				Supertile(read8(wram, uint32(0xC003))),
 				Supertile(read8(wram, uint32(0xC004))),
 			}
-			_ = stairExitTo
+			stairTargetLayer := [4]MapCoord{
+				MapCoord(read8(wram, uint32(0x063D))&2) << 11,
+				MapCoord(read8(wram, uint32(0x063E))&2) << 11,
+				MapCoord(read8(wram, uint32(0x063F))&2) << 11,
+				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
+			}
 
 			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
 			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
@@ -821,7 +840,7 @@ func TestGenerateMap(t *testing.T) {
 							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
 						}
 						// NOTE: hack the stairwell position
-						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("straightStair(%s)", t))
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
 						return
 					} else if v == 0x39 {
 						// south stairs going up:
@@ -831,7 +850,7 @@ func TestGenerateMap(t *testing.T) {
 							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
 						}
 						// NOTE: hack the stairwell position
-						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("straightStair(%s)", t))
+						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
 						return
 					}
 
@@ -844,21 +863,34 @@ func TestGenerateMap(t *testing.T) {
 
 						if vn == 0x5E || vn == 0x5F {
 							// spiral staircase
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+							tgtLayer := stairTargetLayer[v&3]
+							if v&4 == 0 {
+								// going up
+								if t&0x1000 != tgtLayer {
+									t += 0x80
+								}
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+							} else {
+								// going down
+								if t&0x1000 != tgtLayer {
+									t -= 0x80
+								}
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+							}
 							return
 						} else if vn == 0x38 {
 							// north stairs going down:
 							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x1E9F, d}, fmt.Sprintf("northStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("northStair(%s)", t))
 							return
 						} else if vn == 0x39 {
 							// south stairs going up:
 							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F, d}, fmt.Sprintf("southStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("southStair(%s)", t))
 							return
 						} else if vn == 0x00 {
 							// straight stairs:
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t, d.Opposite()}, fmt.Sprintf("stair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | stairTargetLayer[v&3], d.Opposite()}, fmt.Sprintf("stair(%s)", t))
 							return
 						}
 						panic(fmt.Errorf("unhandled stair exit at %s %s", t, d))
