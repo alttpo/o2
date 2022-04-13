@@ -682,22 +682,18 @@ func TestGenerateMap(t *testing.T) {
 
 			wram := (&room.WRAM)[:]
 
-			//WARPTO   = $7EC000
-			warpExitTo := Supertile(read8(wram, 0xC000))
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
 			pitDamages := roomsWithPitDamage[this]
 
-			//STAIR0TO = $7EC001
-			//STAIR1TO = $7EC002
-			//STAIR2TO = $7EC003
-			//STAIR3TO = $7EC004
+			warpExitTo := Supertile(read8(wram, 0xC000))
 			stairExitTo := [4]Supertile{
 				Supertile(read8(wram, uint32(0xC001))),
 				Supertile(read8(wram, uint32(0xC002))),
 				Supertile(read8(wram, uint32(0xC003))),
 				Supertile(read8(wram, uint32(0xC004))),
 			}
+			warpExitLayer := MapCoord(read8(wram, uint32(0x063C))&2) << 11
 			stairTargetLayer := [4]MapCoord{
 				MapCoord(read8(wram, uint32(0x063D))&2) << 11,
 				MapCoord(read8(wram, uint32(0x063E))&2) << 11,
@@ -867,7 +863,7 @@ func TestGenerateMap(t *testing.T) {
 							if v&4 == 0 {
 								// going up
 								if t&0x1000 != tgtLayer {
-									t += 0x80
+									t += 0xC0
 								}
 								pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
 							} else {
@@ -901,10 +897,13 @@ func TestGenerateMap(t *testing.T) {
 					if !pitDamages && warpExitTo != 0 {
 						if v == 0x20 {
 							// pit tile
-							pushEntryPoint(EntryPoint{warpExitTo, t & 0x0FFF, d}, fmt.Sprintf("pit(%s)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("pit(%s)", t))
 						} else if v == 0x62 {
 							// bombable floor tile
-							pushEntryPoint(EntryPoint{warpExitTo, t & 0x0FFF, d}, fmt.Sprintf("bombableFloor(%s)", t))
+							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("bombableFloor(%s)", t))
+						} else if v == 0x4B {
+							// warp floor tile
+							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("warp(%s)", t))
 						}
 						return
 					}
