@@ -1329,7 +1329,6 @@ const (
 	StateFall
 	StateSwim
 	StatePipe
-	StateSomaria
 )
 
 func (s LinkState) String() string {
@@ -1342,8 +1341,6 @@ func (s LinkState) String() string {
 		return "swim"
 	case StatePipe:
 		return "pipe"
-	case StateSomaria:
-		return "somaria"
 	default:
 		panic("bad LinkState")
 	}
@@ -1520,10 +1517,9 @@ func (t MapCoord) OppositeEdge() MapCoord {
 }
 
 type ScanState struct {
-	t      MapCoord
-	d      Direction
-	s      LinkState
-	inPipe bool
+	t MapCoord
+	d Direction
+	s LinkState
 }
 
 type EntryPoint struct {
@@ -1559,6 +1555,22 @@ type RoomState struct {
 
 func (r *RoomState) push(s ScanState) {
 	r.lifo = append(r.lifo, s)
+}
+
+func (r *RoomState) pushAllDirections(t MapCoord, s LinkState) {
+	// can move in any direction:
+	if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
+		r.push(ScanState{t: tn, d: dir, s: s})
+	}
+	if tn, dir, ok := t.MoveBy(DirWest, 1); ok {
+		r.push(ScanState{t: tn, d: dir, s: s})
+	}
+	if tn, dir, ok := t.MoveBy(DirEast, 1); ok {
+		r.push(ScanState{t: tn, d: dir, s: s})
+	}
+	if tn, dir, ok := t.MoveBy(DirSouth, 1); ok {
+		r.push(ScanState{t: tn, d: dir, s: s})
+	}
 }
 
 func (r *RoomState) IsDarkRoom() bool {
@@ -1624,22 +1636,6 @@ func (r *RoomState) FindReachableTiles(
 	r.lifo = r.lifoSpace[:0]
 	r.push(ScanState{t: entryPoint.Point, d: entryPoint.Direction})
 
-	pushAllDirections := func(t MapCoord) {
-		// can move in any direction:
-		if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
-			r.push(ScanState{t: tn, d: dir})
-		}
-		if tn, dir, ok := t.MoveBy(DirWest, 1); ok {
-			r.push(ScanState{t: tn, d: dir})
-		}
-		if tn, dir, ok := t.MoveBy(DirEast, 1); ok {
-			r.push(ScanState{t: tn, d: dir})
-		}
-		if tn, dir, ok := t.MoveBy(DirSouth, 1); ok {
-			r.push(ScanState{t: tn, d: dir})
-		}
-	}
-
 	// handle the stack of locations to traverse:
 	for len(r.lifo) != 0 {
 		lifoLen := len(r.lifo) - 1
@@ -1652,14 +1648,14 @@ func (r *RoomState) FindReachableTiles(
 
 		v := m[s.t]
 
-		if s.inPipe {
+		if s.s == StatePipe {
 			// allow 00 and 01 in pipes for TR $015 center area:
 			if v == 0x00 || v == 0x01 {
 				// continue in the same direction:
 				//visited[s.t] = empty{}
 				f(s, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1672,7 +1668,7 @@ func (r *RoomState) FindReachableTiles(
 				// check for pipe exit 3 tiles in advance:
 				// this is done to skip collision tiles between B0/B1 and BE
 				if tn, dir, ok := s.t.MoveBy(s.d, 3); ok && m[tn] == 0xBE {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					continue
 				}
 
@@ -1681,12 +1677,12 @@ func (r *RoomState) FindReachableTiles(
 					// if the pipe crosses another direction pipe skip over that bit of pipe:
 					if m[tn] == v^0x01 {
 						if tn, _, ok := tn.MoveBy(dir, 2); ok && v == m[tn] {
-							r.push(ScanState{t: tn, d: dir, inPipe: true})
+							r.push(ScanState{t: tn, d: dir, s: StatePipe})
 							continue
 						}
 					}
 
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1698,11 +1694,11 @@ func (r *RoomState) FindReachableTiles(
 
 				if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				} else if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				}
 				continue
@@ -1714,11 +1710,11 @@ func (r *RoomState) FindReachableTiles(
 
 				if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				} else if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				}
 				continue
@@ -1730,11 +1726,11 @@ func (r *RoomState) FindReachableTiles(
 
 				if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				} else if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				}
 				continue
@@ -1746,11 +1742,11 @@ func (r *RoomState) FindReachableTiles(
 
 				if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				} else if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 				}
 				continue
@@ -1785,13 +1781,13 @@ func (r *RoomState) FindReachableTiles(
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1803,13 +1799,13 @@ func (r *RoomState) FindReachableTiles(
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1821,13 +1817,13 @@ func (r *RoomState) FindReachableTiles(
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1839,13 +1835,13 @@ func (r *RoomState) FindReachableTiles(
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1857,16 +1853,16 @@ func (r *RoomState) FindReachableTiles(
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1879,7 +1875,7 @@ func (r *RoomState) FindReachableTiles(
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 
 				// check for exits across pits:
@@ -1909,7 +1905,7 @@ func (r *RoomState) FindReachableTiles(
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					r.push(ScanState{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, s: StatePipe})
 				}
 				continue
 			}
@@ -1935,13 +1931,13 @@ func (r *RoomState) FindReachableTiles(
 			f(s, v)
 
 			// can move in any direction:
-			pushAllDirections(s.t)
+			r.pushAllDirections(s.t, StateWalk)
 
 			t := s.t ^ 0x1000
 
 			// check for water above/below us:
 			if v != 0x08 && m[t] == 0x08 {
-				pushAllDirections(t)
+				r.pushAllDirections(t, StateWalk)
 			}
 			if m[t] == 0x0A {
 				// deep water ladder:
@@ -1981,7 +1977,7 @@ func (r *RoomState) FindReachableTiles(
 				// $1C falling onto $0C means scrolling floor:
 				if m[s.t|0x1000] == 0x0C {
 					// treat as regular floor:
-					pushAllDirections(s.t)
+					r.pushAllDirections(s.t, StateWalk)
 				} else {
 					// drop to lower layer:
 					r.push(ScanState{t: s.t | 0x1000, d: s.d})
@@ -2049,16 +2045,16 @@ func (r *RoomState) FindReachableTiles(
 
 					// find corresponding B0..B1 directional line to follow:
 					if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 					if tn, dir, ok := t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 					if tn, dir, ok := t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 					if tn, dir, ok := t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						r.push(ScanState{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, s: StatePipe})
 					}
 					return
 				}
@@ -2297,28 +2293,28 @@ func (r *RoomState) FindReachableTiles(
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				r.push(ScanState{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, s: StatePipe})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				r.push(ScanState{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, s: StatePipe})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				r.push(ScanState{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, s: StatePipe})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				r.push(ScanState{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, s: StatePipe})
 			}
 			continue
 		}
