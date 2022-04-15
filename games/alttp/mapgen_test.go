@@ -735,6 +735,16 @@ func TestGenerateMap(t *testing.T) {
 					// here we found a reachable tile:
 					room.Reachable[t] = v
 
+					if v == 0x00 {
+						// detect edge walkways:
+						if ok, edir, _, _ := t.IsEdge(); ok {
+							if sn, _, ok := this.MoveBy(edir); ok {
+								pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, fmt.Sprintf("%s walkway", edir))
+							}
+						}
+						return
+					}
+
 					// door objects:
 					if v >= 0xF0 {
 						//fmt.Printf("    door tile $%02x at %s\n", v, t)
@@ -910,7 +920,6 @@ func TestGenerateMap(t *testing.T) {
 							dt := t.Col() + 2<<6
 							if v&4 == 0 {
 								// going up
-								panic("untested!")
 								if t&0x1000 != 0 {
 									// 32 pixels = 4 8x8 tiles
 									dt -= 4 << 6
@@ -1261,6 +1270,23 @@ func (t MapCoord) FlipVertical() MapCoord {
 	lyr, row, col := t.RowCol()
 	row = 0x40 - row
 	return MapCoord(lyr | (row << 6) | col)
+}
+
+func (t MapCoord) OppositeEdge() MapCoord {
+	lyr, row, col := t.RowCol()
+	if row == 0x00 {
+		return MapCoord(lyr | (0x3F << 6) | col)
+	}
+	if row == 0x3F {
+		return MapCoord(lyr | (0x00 << 6) | col)
+	}
+	if col == 0x00 {
+		return MapCoord(lyr | (row << 6) | 0x3F)
+	}
+	if col == 0x3F {
+		return MapCoord(lyr | (row << 6) | 0x00)
+	}
+	panic("not at an edge")
 }
 
 func findReachableTiles(
