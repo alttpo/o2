@@ -1686,6 +1686,12 @@ func findReachableTiles(
 					lifo = append(lifo, state{t: s.t | 0x1000, d: s.d})
 				}
 			}
+
+			// detect a hookable tile across this pit:
+			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
+				lifo = append(lifo, state{t: t, d: d})
+			})
+
 			continue
 		} else if v == 0x0C {
 			panic(fmt.Errorf("what to do for $0C at %s", s.t))
@@ -1760,31 +1766,9 @@ func findReachableTiles(
 			}()
 
 			// detect a hookable tile across this pit:
-			func() {
-				var ok bool
-				t := s.t
-				pt := t
-				// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
-				for i := 0; i < 0x1C; i++ {
-					// the previous tile technically doesn't need to be walkable but it prevents
-					// infinite loops due to not taking direction into account in the visited[] map
-					// and not marking pit tiles as visited
-					if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
-						lifo = append(lifo, state{t: pt, d: s.d})
-						break
-					}
-
-					if !canHookThru(m[t]) {
-						break
-					}
-
-					// advance 1 tile:
-					pt = t
-					if t, _, ok = t.MoveBy(s.d, 1); !ok {
-						break
-					}
-				}
-			}()
+			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
+				lifo = append(lifo, state{t: t, d: d})
+			})
 
 			continue
 		}
@@ -2073,6 +2057,32 @@ func findReachableTiles(
 
 		// anything else is considered solid:
 		continue
+	}
+}
+
+func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(MapCoord, Direction)) {
+	var ok bool
+	pt := t
+	// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
+	for i := 0; i < 0x1C; i++ {
+		// the previous tile technically doesn't need to be walkable but it prevents
+		// infinite loops due to not taking direction into account in the visited[] map
+		// and not marking pit tiles as visited
+		if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
+			//lifo = append(lifo, state{t: pt, d: d})
+			pushEntryPoint(pt, d)
+			break
+		}
+
+		if !canHookThru(m[t]) {
+			break
+		}
+
+		// advance 1 tile:
+		pt = t
+		if t, _, ok = t.MoveBy(d, 1); !ok {
+			break
+		}
 	}
 }
 
