@@ -1292,6 +1292,34 @@ func (t MapCoord) OppositeEdge() MapCoord {
 	panic("not at an edge")
 }
 
+// isAlwaysWalkable checks if the tile is always walkable on, regardless of state
+func isAlwaysWalkable(v uint8) bool {
+	return v == 0x00 || // no collision
+		v == 0x08 || v == 0x09 || // water
+		v == 0x22 || // manual stairs
+		v == 0x23 || v == 0x24 || // floor switches
+		(v >= 0x0D && v <= 0x0F) || // spikes / floor ice
+		v == 0x3A || v == 0x3B || // star tiles
+		v == 0x40 || // thick grass
+		v == 0x4B || // warp
+		v == 0x60 || // rupee tile
+		(v >= 0x68 && v <= 0x6B) || // conveyors
+		v == 0xA0 // north/south dungeon swap door (for HC to sewers)
+}
+
+// isMaybeWalkable checks if the tile could be walked on depending on what state it's in
+func isMaybeWalkable(v uint8) bool {
+	return v&0xF0 == 0x70 || // pots/pegs/blocks
+		v == 0x62 || // bombable floor
+		v == 0x66 || v == 0x67 // crystal pegs (orange/blue):
+}
+
+// isHookable determines if the tile can be attached to with a hookshot
+func isHookable(v uint8) bool {
+	return v == 0x27 || // general hookable object
+		v&0xF0 == 0x70 // pot/peg/block
+}
+
 func findReachableTiles(
 	m *[0x2000]uint8,
 	visited map[MapCoord]empty,
@@ -1616,35 +1644,7 @@ func findReachableTiles(
 			continue
 		}
 
-		isPassable := v == 0x00 ||
-			// water:
-			v == 0x08 || v == 0x09 ||
-			// manual stairs:
-			v == 0x22 ||
-			// floor switches:
-			v == 0x23 || v == 0x24 ||
-			// spikes / floor ice:
-			(v >= 0x0D && v <= 0x0F) ||
-			// pots/pegs/blocks:
-			v&0xF0 == 0x70 ||
-			// star tiles:
-			v == 0x3A || v == 0x3B ||
-			// thick grass:
-			v == 0x40 ||
-			// warp:
-			v == 0x4B ||
-			// rupee tile:
-			v == 0x60 ||
-			// bombable floor:
-			v == 0x62 || // TODO
-			// crystal pegs (orange/blue):
-			v == 0x66 || v == 0x67 ||
-			// conveyors:
-			(v >= 0x68 && v <= 0x6B) ||
-			// north/south dungeon swap door (for HC to sewers)
-			v == 0xA0
-
-		if isPassable {
+		if isAlwaysWalkable(v) || isMaybeWalkable(v) {
 			// no collision:
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
@@ -1704,36 +1704,60 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			// check what's beyond the pit:
-			t := s.t
-			var ok bool
-			if t, _, ok = t.MoveBy(s.d, 1); !ok || m[t] != 0x20 {
-				continue
-			}
-			if t, _, ok = t.MoveBy(s.d, 1); !ok {
-				continue
-			}
+			func() {
+				t := s.t
+				var ok bool
+				if t, _, ok = t.MoveBy(s.d, 1); !ok || m[t] != 0x20 {
+					return
+				}
+				if t, _, ok = t.MoveBy(s.d, 1); !ok {
+					return
+				}
 
-			v = m[t]
+				v = m[t]
 
-			// somaria line start:
-			if v == 0xB6 || v == 0xBC {
-				visited[t] = empty{}
-				f(t, s.d, v)
+				// somaria line start:
+				if v == 0xB6 || v == 0xBC {
+					visited[t] = empty{}
+					f(t, s.d, v)
 
-				// find corresponding B0..B1 directional line to follow:
-				if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					// find corresponding B0..B1 directional line to follow:
+					if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+					if tn, dir, ok := t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+					if tn, dir, ok := t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+					if tn, dir, ok := t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
+						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					}
+					return
 				}
-				if tn, dir, ok := t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+			}()
+
+			// detect a hookable tile across this pit:
+			func() {
+				var ok bool
+				t := s.t
+				pt := t
+				// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
+				for i := 0; i < 0x1C; i++ {
+					if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
+						lifo = append(lifo, state{t: pt, d: s.d})
+						break
+					}
+
+					// advance 1 tile:
+					pt = t
+					if t, _, ok = t.MoveBy(s.d, 1); !ok {
+						break
+					}
 				}
-				if tn, dir, ok := t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-				}
-				if tn, dir, ok := t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
-				}
-			}
+			}()
+
 			continue
 		}
 
