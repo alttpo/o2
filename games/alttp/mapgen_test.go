@@ -1046,6 +1046,7 @@ func TestGenerateMap(t *testing.T) {
 			draw.Src)
 
 		greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
+		redTint := image.NewUniform(color.NRGBA{255, 0, 0, 48})
 
 		for i := range entranceGroups {
 			g := &entranceGroups[i]
@@ -1078,12 +1079,23 @@ func TestGenerateMap(t *testing.T) {
 							maxRange = 0x1000
 						}
 						for t := 0; t < maxRange; t++ {
-							if room.Reachable[t] == 0x01 {
+							v := room.Reachable[t]
+							if v == 0x01 {
 								continue
+							}
+							overlay := greenTint
+							if v == 0x20 {
+								overlay = redTint
 							}
 
 							_, tr, tc := MapCoord(t).RowCol()
-							draw.Draw(all, image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8), greenTint, image.Point{}, draw.Over)
+							draw.Draw(
+								all,
+								image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8),
+								overlay,
+								image.Point{},
+								draw.Over,
+							)
 						}
 					}
 
