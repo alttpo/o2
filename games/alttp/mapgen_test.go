@@ -731,7 +731,10 @@ func TestGenerateMap(t *testing.T) {
 			tiles := &room.Tiles
 			room.FindReachableTiles(
 				ep,
-				func(t MapCoord, d Direction, v uint8) {
+				func(s ScanState, v uint8) {
+					t := s.t
+					d := s.d
+
 					// here we found a reachable tile:
 					room.Reachable[t] = v
 
@@ -1563,7 +1566,7 @@ func (r *RoomState) IsDarkRoom() bool {
 }
 
 // isAlwaysWalkable checks if the tile is always walkable on, regardless of state
-func isAlwaysWalkable(v uint8) bool {
+func (r *RoomState) isAlwaysWalkable(v uint8) bool {
 	return v == 0x00 || // no collision
 		v == 0x08 || // deep water
 		v == 0x09 || // shallow water
@@ -1579,13 +1582,13 @@ func isAlwaysWalkable(v uint8) bool {
 }
 
 // isMaybeWalkable checks if the tile could be walked on depending on what state it's in
-func isMaybeWalkable(v uint8) bool {
+func (r *RoomState) isMaybeWalkable(v uint8) bool {
 	return v&0xF0 == 0x70 || // pots/pegs/blocks
 		v == 0x62 || // bombable floor
 		v == 0x66 || v == 0x67 // crystal pegs (orange/blue):
 }
 
-func canHookThru(v uint8) bool {
+func (r *RoomState) canHookThru(v uint8) bool {
 	return v == 0x00 || // no collision
 		v == 0x08 || v == 0x09 || // water
 		(v >= 0x0D && v <= 0x0F) || // spikes / floor ice
@@ -1602,7 +1605,7 @@ func canHookThru(v uint8) bool {
 }
 
 // isHookable determines if the tile can be attached to with a hookshot
-func isHookable(v uint8) bool {
+func (r *RoomState) isHookable(v uint8) bool {
 	return v == 0x27 || // general hookable object
 		(v >= 0x58 && v <= 0x5D) || // chests (TODO: check $0500 table for kind)
 		v&0xF0 == 0x70 // pot/peg/block
@@ -1610,7 +1613,7 @@ func isHookable(v uint8) bool {
 
 func (r *RoomState) FindReachableTiles(
 	entryPoint EntryPoint,
-	visit func(t MapCoord, d Direction, v uint8),
+	visit func(s ScanState, v uint8),
 ) {
 	m := &r.Tiles
 	visited := r.TilesVisited
@@ -1654,7 +1657,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0x00 || v == 0x01 {
 				// continue in the same direction:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
@@ -1664,7 +1667,7 @@ func (r *RoomState) FindReachableTiles(
 			// straight:
 			if v == 0xB0 || v == 0xB1 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				// check for pipe exit 3 tiles in advance:
 				// this is done to skip collision tiles between B0/B1 and BE
@@ -1691,7 +1694,7 @@ func (r *RoomState) FindReachableTiles(
 			// west to south or north to east:
 			if v == 0xB2 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
@@ -1707,7 +1710,7 @@ func (r *RoomState) FindReachableTiles(
 			// south to east or west to north:
 			if v == 0xB3 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
@@ -1723,7 +1726,7 @@ func (r *RoomState) FindReachableTiles(
 			// north to west or east to south:
 			if v == 0xB4 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
@@ -1739,7 +1742,7 @@ func (r *RoomState) FindReachableTiles(
 			// east to north or south to west:
 			if v == 0xB5 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
@@ -1756,7 +1759,7 @@ func (r *RoomState) FindReachableTiles(
 			// line exit:
 			if v == 0xB6 {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				// check for 2 pit tiles beyond exit:
 				t := s.t
@@ -1779,7 +1782,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xB7 {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
@@ -1797,7 +1800,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xB8 {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
@@ -1815,7 +1818,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xB9 {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
@@ -1833,7 +1836,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xBA {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
@@ -1851,7 +1854,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xBB {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
 					r.push(ScanState{t: tn, d: dir, inPipe: true})
@@ -1872,7 +1875,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xBC {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -1902,7 +1905,7 @@ func (r *RoomState) FindReachableTiles(
 			if v == 0xBD {
 				// do not mark as visited in case we cross from the other direction later:
 				//visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -1914,7 +1917,7 @@ func (r *RoomState) FindReachableTiles(
 			// pipe exit:
 			if v == 0xBE {
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				// continue in the same direction but not in pipe-follower state:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -1926,10 +1929,10 @@ func (r *RoomState) FindReachableTiles(
 			continue
 		}
 
-		if isAlwaysWalkable(v) || isMaybeWalkable(v) {
+		if r.isAlwaysWalkable(v) || r.isMaybeWalkable(v) {
 			// no collision:
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// can move in any direction:
 			pushAllDirections(s.t)
@@ -1944,7 +1947,7 @@ func (r *RoomState) FindReachableTiles(
 				// deep water ladder:
 				// flip to other layer:
 				visited[t] = empty{}
-				f(t, s.d, v)
+				f(ScanState{t: t, d: s.d}, v)
 
 				if tn, dir, ok := t.MoveBy(s.d, 1); ok {
 					r.push(ScanState{t: tn, d: dir})
@@ -1956,12 +1959,12 @@ func (r *RoomState) FindReachableTiles(
 		if v == 0x0A {
 			// deep water ladder:
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// flip to other layer:
 			t := s.t ^ 0x1000
 			visited[t] = empty{}
-			f(t, s.d, v)
+			f(ScanState{t: t, d: s.d}, v)
 
 			if tn, dir, ok := t.MoveBy(s.d, 1); ok {
 				r.push(ScanState{t: tn, d: dir})
@@ -1972,7 +1975,7 @@ func (r *RoomState) FindReachableTiles(
 		// layer pass through:
 		if v == 0x1C {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if s.t&0x1000 == 0 {
 				// $1C falling onto $0C means scrolling floor:
@@ -1986,9 +1989,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 
 			// detect a hookable tile across this pit:
-			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				r.push(ScanState{t: t, d: d})
-			})
+			r.scanHookshot(s.t, s.d)
 
 			continue
 		} else if v == 0x0C {
@@ -1998,7 +1999,7 @@ func (r *RoomState) FindReachableTiles(
 		// north-facing stairs:
 		if v == 0x1D {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				r.push(ScanState{t: tn, d: dir})
@@ -2008,7 +2009,7 @@ func (r *RoomState) FindReachableTiles(
 		// north-facing stairs, layer changing:
 		if v >= 0x1E && v <= 0x1F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
@@ -2026,7 +2027,7 @@ func (r *RoomState) FindReachableTiles(
 			// TODO: fix this to accommodate both position and direction in the visited[] check and introduce
 			// a Falling direction
 			//visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// check what's beyond the pit:
 			func() {
@@ -2044,7 +2045,7 @@ func (r *RoomState) FindReachableTiles(
 				// somaria line start:
 				if v == 0xB6 || v == 0xBC {
 					visited[t] = empty{}
-					f(t, s.d, v)
+					f(ScanState{t: t, d: s.d}, v)
 
 					// find corresponding B0..B1 directional line to follow:
 					if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
@@ -2064,9 +2065,7 @@ func (r *RoomState) FindReachableTiles(
 			}()
 
 			// detect a hookable tile across this pit:
-			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				r.push(ScanState{t: t, d: d})
-			})
+			r.scanHookshot(s.t, s.d)
 
 			continue
 		}
@@ -2074,12 +2073,10 @@ func (r *RoomState) FindReachableTiles(
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2B {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// check for hookable tiles across from this ledge:
-			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				r.push(ScanState{t: t, d: d})
-			})
+			r.scanHookshot(s.t, s.d)
 
 			// check 4 tiles from ledge for pit:
 			t, dir, ok := s.t.MoveBy(s.d, 4)
@@ -2115,7 +2112,7 @@ func (r *RoomState) FindReachableTiles(
 		// interroom stair exits:
 		if v >= 0x30 && v <= 0x37 {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
 			if len(r.lifo) == 0 {
@@ -2129,7 +2126,7 @@ func (r *RoomState) FindReachableTiles(
 		// 38=Straight interroom stairs north/down edge (39= south/up edge):
 		if v == 0x38 || v == 0x39 {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
 			if len(r.lifo) == 0 {
@@ -2143,7 +2140,7 @@ func (r *RoomState) FindReachableTiles(
 		// south-facing single-layer auto stairs:
 		if v == 0x3D {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				r.push(ScanState{t: tn, d: dir})
@@ -2153,7 +2150,7 @@ func (r *RoomState) FindReachableTiles(
 		// south-facing layer-swap auto stairs:
 		if v >= 0x3E && v <= 0x3F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
@@ -2167,7 +2164,7 @@ func (r *RoomState) FindReachableTiles(
 		// $5F is the layer 2 version of $5E (spiral staircase)
 		if v == 0x5E || v == 0x5F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, m[s.t])
+			f(s, m[s.t])
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				r.push(ScanState{t: tn, d: dir})
@@ -2195,7 +2192,7 @@ func (r *RoomState) FindReachableTiles(
 				}
 
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
 					// don't move past door edge:
@@ -2222,7 +2219,7 @@ func (r *RoomState) FindReachableTiles(
 				}
 
 				visited[s.t] = empty{}
-				f(s.t, s.d, v)
+				f(s, v)
 
 				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
 					// don't move past door edge:
@@ -2237,7 +2234,7 @@ func (r *RoomState) FindReachableTiles(
 		// east-west teleport door
 		if v == 0x89 {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
 				// don't move past door edge:
@@ -2251,7 +2248,7 @@ func (r *RoomState) FindReachableTiles(
 		// entrance door (8E = north-south?, 8F = east-west??):
 		if v == 0x8E || v == 0x8F {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if s.d == DirNone {
 				// scout in both directions:
@@ -2277,7 +2274,7 @@ func (r *RoomState) FindReachableTiles(
 		// Layer/dungeon toggle doorways:
 		if v >= 0x90 && v <= 0xAF {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
 				// don't move past door edge:
@@ -2292,7 +2289,7 @@ func (r *RoomState) FindReachableTiles(
 		// TR pipe entrance:
 		if v == 0xBE {
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			// find corresponding B0..B1 directional pipe to follow:
 			if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
@@ -2350,7 +2347,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 
 			visited[s.t] = empty{}
-			f(s.t, s.d, v)
+			f(s, v)
 
 			if t, _, ok := s.t.MoveBy(s.d, 2); ok {
 				r.push(ScanState{t: t, d: s.d})
@@ -2364,10 +2361,12 @@ func (r *RoomState) FindReachableTiles(
 	}
 }
 
-func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(MapCoord, Direction)) {
+func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 	var ok bool
 	i := 0
 	pt := t
+
+	m := &r.Tiles
 
 	if m[t] >= 0x28 && m[t] <= 0x2B {
 		// find opposite ledge first:
@@ -2392,13 +2391,13 @@ func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(
 		// the previous tile technically doesn't need to be walkable but it prevents
 		// infinite loops due to not taking direction into account in the visited[] map
 		// and not marking pit tiles as visited
-		if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
+		if r.isHookable(m[t]) && r.isAlwaysWalkable(m[pt]) {
 			//r.push(ScanState{t: pt, d: d})
-			pushEntryPoint(pt, d)
+			r.push(ScanState{t: pt, d: d})
 			break
 		}
 
-		if !canHookThru(m[t]) {
+		if !r.canHookThru(m[t]) {
 			return
 		}
 
