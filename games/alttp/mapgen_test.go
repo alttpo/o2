@@ -1031,7 +1031,8 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 
 	// condense all maps into one image at different scale levels:
-	for _, divider := range []int{1} {
+	{
+		const divider = 1
 		supertilepx := 512 / divider
 
 		wga := sync.WaitGroup{}
@@ -1046,7 +1047,8 @@ func TestGenerateMap(t *testing.T) {
 			draw.Src)
 
 		greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
-		redTint := image.NewUniform(color.NRGBA{255, 0, 0, 48})
+		redTint := image.NewUniform(color.NRGBA{255, 0, 0, 56})
+		blueTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
 
 		for i := range entranceGroups {
 			g := &entranceGroups[i]
@@ -1063,13 +1065,12 @@ func TestGenerateMap(t *testing.T) {
 				go func(room *RoomState) {
 					stx := col * supertilepx
 					sty := row * supertilepx
-					draw.NearestNeighbor.Scale(
+					draw.Draw(
 						all,
 						image.Rect(stx, sty, stx+supertilepx, sty+supertilepx),
 						stMap,
-						stMap.Bounds(),
+						image.Point{},
 						draw.Src,
-						nil,
 					)
 
 					// green highlight spots that are reachable:
@@ -1083,12 +1084,16 @@ func TestGenerateMap(t *testing.T) {
 							if v == 0x01 {
 								continue
 							}
+
+							lyr, tr, tc := MapCoord(t).RowCol()
 							overlay := greenTint
+							if lyr != 0 {
+								overlay = blueTint
+							}
 							if v == 0x20 {
 								overlay = redTint
 							}
 
-							_, tr, tc := MapCoord(t).RowCol()
 							draw.Draw(
 								all,
 								image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8),
