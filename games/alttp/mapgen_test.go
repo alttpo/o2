@@ -1314,9 +1314,26 @@ func isMaybeWalkable(v uint8) bool {
 		v == 0x66 || v == 0x67 // crystal pegs (orange/blue):
 }
 
+func canHookThru(v uint8) bool {
+	return v == 0x00 || // no collision
+		v == 0x08 || v == 0x09 || // water
+		(v >= 0x0D && v <= 0x0F) || // spikes / floor ice
+		v == 0x1C || v == 0x0C || // layer pass through
+		v == 0x20 || // pit
+		v == 0x22 || // manual stairs
+		v == 0x23 || v == 0x24 || // floor switches
+		(v >= 0x28 && v <= 0x2B) || // ledge tiles
+		v == 0x3A || v == 0x3B || // star tiles
+		v == 0x40 || // thick grass
+		v == 0x4B || // warp
+		v == 0x60 || // rupee tile
+		(v >= 0x68 && v <= 0x6B) // conveyors
+}
+
 // isHookable determines if the tile can be attached to with a hookshot
 func isHookable(v uint8) bool {
 	return v == 0x27 || // general hookable object
+		(v >= 0x58 && v <= 0x5D) || // chests (TODO: check $0500 table for kind)
 		v&0xF0 == 0x70 // pot/peg/block
 }
 
@@ -1700,6 +1717,10 @@ func findReachableTiles(
 		// pit:
 		if v == 0x20 {
 			// Link can fall into pit but cannot move beyond it:
+
+			// don't mark as visited since it's possible we could also fall through this pit tile from above
+			// TODO: fix this to accommodate both position and direction in the visited[] check and introduce
+			// a Falling direction
 			//visited[s.t] = empty{}
 			f(s.t, s.d, v)
 
@@ -1745,8 +1766,15 @@ func findReachableTiles(
 				pt := t
 				// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
 				for i := 0; i < 0x1C; i++ {
+					// the previous tile technically doesn't need to be walkable but it prevents
+					// infinite loops due to not taking direction into account in the visited[] map
+					// and not marking pit tiles as visited
 					if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
 						lifo = append(lifo, state{t: pt, d: s.d})
+						break
+					}
+
+					if !canHookThru(m[t]) {
 						break
 					}
 
