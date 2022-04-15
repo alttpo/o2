@@ -822,33 +822,28 @@ func TestGenerateMap(t *testing.T) {
 						return
 					}
 
-					// interroom stair exits:
-					//if v == 0x5E || v == 0x5F {
-					//	panic(fmt.Errorf("should NEVER see $%02x at %s %s", v, t, d))
+					//// these are stair EDGEs; don't think we care:
+					//if v == 0x38 {
+					//	// north stairs going down:
+					//	var vn uint8
+					//	vn = tiles[t+0x40]
+					//	if vn < 0x30 && v >= 0x38 {
+					//		panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+					//	}
+					//	// NOTE: hack the stairwell position
+					//	pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
+					//	return
+					//} else if v == 0x39 {
+					//	// south stairs going up:
+					//	var vn uint8
+					//	vn = tiles[t-0x40]
+					//	if vn < 0x30 && v >= 0x38 {
+					//		panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
+					//	}
+					//	// NOTE: hack the stairwell position
+					//	pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
+					//	return
 					//}
-
-					// these are stair EDGEs; don't think we care:
-					if v == 0x38 {
-						// north stairs going down:
-						var vn uint8
-						vn = tiles[t+0x40]
-						if vn < 0x30 && v >= 0x38 {
-							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
-						}
-						// NOTE: hack the stairwell position
-						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
-						return
-					} else if v == 0x39 {
-						// south stairs going up:
-						var vn uint8
-						vn = tiles[t-0x40]
-						if vn < 0x30 && v >= 0x38 {
-							panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
-						}
-						// NOTE: hack the stairwell position
-						pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
-						return
-					}
 
 					if v >= 0x30 && v < 0x38 {
 						var vn uint8
@@ -882,14 +877,60 @@ func TestGenerateMap(t *testing.T) {
 							}
 							return
 						} else if vn == 0x38 {
-							// north stairs going down:
-							//_, _, col := t.RowCol()
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t.FlipVertical()&0x0FFF | stairTargetLayer[v&3], d}, fmt.Sprintf("northStair(%s)", t))
+							// north stairs:
+							tgtLayer := stairTargetLayer[v&3]
+							dt := t.Col() + 0xFC0 - 2<<6
+							if v&4 == 0 {
+								// going up
+								if t&0x1000 != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt -= 4 << 6
+								}
+								if tgtLayer != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt -= 4 << 6
+								}
+							} else {
+								// going down
+								// module #$07 submodule #$12 is going down north stairs (e.g. $042)
+								if t&0x1000 != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt += 4 << 6
+								}
+								if tgtLayer != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt += 4 << 6
+								}
+							}
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d}, fmt.Sprintf("northStair(%s)", t))
 							return
 						} else if vn == 0x39 {
-							// south stairs going up:
-							// NOTE: hack the stairwell position
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t.FlipVertical()&0x0FFF | stairTargetLayer[v&3], d}, fmt.Sprintf("southStair(%s)", t))
+							// south stairs:
+							tgtLayer := stairTargetLayer[v&3]
+							dt := t.Col() + 2<<6
+							if v&4 == 0 {
+								// going up
+								panic("untested!")
+								if t&0x1000 != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt -= 4 << 6
+								}
+								if tgtLayer != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt -= 4 << 6
+								}
+							} else {
+								// going down
+								if t&0x1000 != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt += 4 << 6
+								}
+								if tgtLayer != 0 {
+									// 32 pixels = 4 8x8 tiles
+									dt += 4 << 6
+								}
+							}
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d}, fmt.Sprintf("southStair(%s)", t))
 							return
 						} else if vn == 0x00 {
 							// straight stairs:
@@ -1122,6 +1163,14 @@ func (t MapCoord) MoveBy(dir Direction, increment int) (MapCoord, Direction, boo
 	}
 
 	return t, dir, false
+}
+
+func (t MapCoord) Row() MapCoord {
+	return t & 0x0FFF >> 6
+}
+
+func (t MapCoord) Col() MapCoord {
+	return t & 0x003F
 }
 
 func (t MapCoord) RowCol() (layer, row, col uint16) {
