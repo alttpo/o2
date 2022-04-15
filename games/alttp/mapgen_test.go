@@ -1118,6 +1118,222 @@ func TestGenerateMap(t *testing.T) {
 
 type empty = struct{}
 
+type Direction uint8
+
+const (
+	DirNorth Direction = iota
+	DirSouth
+	DirWest
+	DirEast
+	DirNone
+)
+
+func (d Direction) MoveEG2(s Supertile) (Supertile, bool) {
+	if s < 0x100 {
+		return s, false
+	}
+
+	switch d {
+	case DirNorth:
+		return s - 0x10, s&0xF0 > 0
+	case DirSouth:
+		return s + 0x10, s&0xF0 < 0xF0
+	case DirWest:
+		return s - 1, s&0x0F > 0
+	case DirEast:
+		return s + 1, s&0x0F < 0x02
+	}
+	return s, false
+}
+
+func (d Direction) Opposite() Direction {
+	switch d {
+	case DirNorth:
+		return DirSouth
+	case DirSouth:
+		return DirNorth
+	case DirWest:
+		return DirEast
+	case DirEast:
+		return DirWest
+	}
+	return d
+}
+
+func (d Direction) String() string {
+	switch d {
+	case DirNorth:
+		return "north"
+	case DirSouth:
+		return "south"
+	case DirWest:
+		return "west"
+	case DirEast:
+		return "east"
+	}
+	return ""
+}
+
+func (d Direction) RotateCW() Direction {
+	switch d {
+	case DirNorth:
+		return DirEast
+	case DirEast:
+		return DirSouth
+	case DirSouth:
+		return DirWest
+	case DirWest:
+		return DirNorth
+	}
+	return d
+}
+
+func (d Direction) RotateCCW() Direction {
+	switch d {
+	case DirNorth:
+		return DirWest
+	case DirWest:
+		return DirSouth
+	case DirSouth:
+		return DirEast
+	case DirEast:
+		return DirNorth
+	}
+	return d
+}
+
+type Supertile uint16
+
+func (s Supertile) String() string { return fmt.Sprintf("$%03x", uint16(s)) }
+
+func (s Supertile) MoveBy(dir Direction) (sn Supertile, sd Direction, ok bool) {
+	// don't move within EG2:
+	if s&0xFF00 != 0 {
+		ok = false
+	}
+
+	sn, sd, ok = s, dir, false
+	switch dir {
+	case DirNorth:
+		sn = Supertile(uint16(s) - 0x10)
+		ok = uint16(s)&0xF0 > 0
+		break
+	case DirSouth:
+		sn = Supertile(uint16(s) + 0x10)
+		ok = uint16(s)&0xF0 < 0xF0
+		break
+	case DirWest:
+		sn = Supertile(uint16(s) - 1)
+		ok = uint16(s)&0x0F > 0
+		break
+	case DirEast:
+		sn = Supertile(uint16(s) + 1)
+		ok = uint16(s)&0x0F < 0xF
+		break
+	}
+
+	// don't cross EG maps:
+	if sn&0xFF00 != 0 {
+		ok = false
+	}
+
+	return
+}
+
+type Door struct {
+	Type DoorType  // $1980
+	Pos  MapCoord  // $19A0
+	Dir  Direction // $19C0
+}
+
+func (d *Door) ContainsCoord(t MapCoord) bool {
+	dl, dr, dc := d.Pos.RowCol()
+	tl, tr, tc := t.RowCol()
+	if tl != dl {
+		return false
+	}
+	if tc < dc || tc >= dc+4 {
+		return false
+	}
+	if tr < dr || dr >= dr+4 {
+		return false
+	}
+	return true
+}
+
+type DoorType uint8
+
+func (t DoorType) IsExit() bool {
+	if t >= 0x04 && t <= 0x06 {
+		// exit door:
+		return true
+	}
+	if t >= 0x0A && t <= 0x12 {
+		// exit door:
+		return true
+	}
+	if t == 0x2A {
+		// bombable cave exit:
+		return true
+	}
+	//if t == 0x2E {
+	//	// bombable door exit(?):
+	//	return true
+	//}
+	return false
+}
+
+func (t DoorType) IsLayer2() bool {
+	if t == 0x02 {
+		return true
+	}
+	if t == 0x04 {
+		return true
+	}
+	if t == 0x06 {
+		return true
+	}
+	if t == 0x0C {
+		return true
+	}
+	if t == 0x10 {
+		return true
+	}
+	if t == 0x24 {
+		return true
+	}
+	if t == 0x26 {
+		return true
+	}
+	if t == 0x3A {
+		return true
+	}
+	if t == 0x3C {
+		return true
+	}
+	if t == 0x3E {
+		return true
+	}
+	if t == 0x40 {
+		return true
+	}
+	if t == 0x44 {
+		return true
+	}
+	if t >= 0x48 && t <= 0x66 {
+		return true
+	}
+	return false
+}
+
+func (t DoorType) IsStairwell() bool {
+	return t >= 0x20 && t <= 0x26
+}
+
+func (t DoorType) String() string {
+	return fmt.Sprintf("$%02x", uint8(t))
+}
+
 type MapCoord uint16
 
 func (t MapCoord) String() string {
@@ -1308,6 +1524,24 @@ func (t MapCoord) OppositeEdge() MapCoord {
 	}
 	panic("not at an edge")
 }
+
+type RoomState struct {
+	Supertile
+
+	Rendered image.Image
+
+	Doors      []Door
+	SwapLayers map[MapCoord]empty // $06C0[size=$044E >> 1]
+
+	TilesVisited map[MapCoord]empty
+	Tiles        [0x2000]byte
+	Reachable    [0x2000]byte
+
+	WRAM        [0x20000]byte
+	VRAMTileSet [0x4000]byte
+}
+
+func (r *RoomState) IsDarkRoom() bool { return read8((&r.WRAM)[:], 0xC005) != 0 }
 
 // isAlwaysWalkable checks if the tile is always walkable on, regardless of state
 func isAlwaysWalkable(v uint8) bool {
@@ -2171,240 +2405,6 @@ type Entrance struct {
 
 	Rooms      []*RoomState
 	Supertiles map[Supertile]*RoomState
-}
-
-type RoomState struct {
-	Supertile
-
-	Rendered image.Image
-
-	Doors      []Door
-	SwapLayers map[MapCoord]empty // $06C0[size=$044E >> 1]
-
-	TilesVisited map[MapCoord]empty
-	Tiles        [0x2000]byte
-	Reachable    [0x2000]byte
-
-	WRAM        [0x20000]byte
-	VRAMTileSet [0x4000]byte
-}
-
-func (r *RoomState) IsDarkRoom() bool { return read8((&r.WRAM)[:], 0xC005) != 0 }
-
-type Supertile uint16
-
-func (s Supertile) String() string { return fmt.Sprintf("$%03x", uint16(s)) }
-
-func (s Supertile) MoveBy(dir Direction) (sn Supertile, sd Direction, ok bool) {
-	// don't move within EG2:
-	if s&0xFF00 != 0 {
-		ok = false
-	}
-
-	sn, sd, ok = s, dir, false
-	switch dir {
-	case DirNorth:
-		sn = Supertile(uint16(s) - 0x10)
-		ok = uint16(s)&0xF0 > 0
-		break
-	case DirSouth:
-		sn = Supertile(uint16(s) + 0x10)
-		ok = uint16(s)&0xF0 < 0xF0
-		break
-	case DirWest:
-		sn = Supertile(uint16(s) - 1)
-		ok = uint16(s)&0x0F > 0
-		break
-	case DirEast:
-		sn = Supertile(uint16(s) + 1)
-		ok = uint16(s)&0x0F < 0xF
-		break
-	}
-
-	// don't cross EG maps:
-	if sn&0xFF00 != 0 {
-		ok = false
-	}
-
-	return
-}
-
-type Door struct {
-	Type DoorType  // $1980
-	Pos  MapCoord  // $19A0
-	Dir  Direction // $19C0
-}
-
-func (d *Door) ContainsCoord(t MapCoord) bool {
-	dl, dr, dc := d.Pos.RowCol()
-	tl, tr, tc := t.RowCol()
-	if tl != dl {
-		return false
-	}
-	if tc < dc || tc >= dc+4 {
-		return false
-	}
-	if tr < dr || dr >= dr+4 {
-		return false
-	}
-	return true
-}
-
-type Direction uint8
-
-const (
-	DirNorth Direction = iota
-	DirSouth
-	DirWest
-	DirEast
-	DirNone
-)
-
-func (d Direction) MoveEG2(s Supertile) (Supertile, bool) {
-	if s < 0x100 {
-		return s, false
-	}
-
-	switch d {
-	case DirNorth:
-		return s - 0x10, s&0xF0 > 0
-	case DirSouth:
-		return s + 0x10, s&0xF0 < 0xF0
-	case DirWest:
-		return s - 1, s&0x0F > 0
-	case DirEast:
-		return s + 1, s&0x0F < 0x02
-	}
-	return s, false
-}
-
-func (d Direction) Opposite() Direction {
-	switch d {
-	case DirNorth:
-		return DirSouth
-	case DirSouth:
-		return DirNorth
-	case DirWest:
-		return DirEast
-	case DirEast:
-		return DirWest
-	}
-	return d
-}
-
-func (d Direction) String() string {
-	switch d {
-	case DirNorth:
-		return "north"
-	case DirSouth:
-		return "south"
-	case DirWest:
-		return "west"
-	case DirEast:
-		return "east"
-	}
-	return ""
-}
-
-func (d Direction) RotateCW() Direction {
-	switch d {
-	case DirNorth:
-		return DirEast
-	case DirEast:
-		return DirSouth
-	case DirSouth:
-		return DirWest
-	case DirWest:
-		return DirNorth
-	}
-	return d
-}
-
-func (d Direction) RotateCCW() Direction {
-	switch d {
-	case DirNorth:
-		return DirWest
-	case DirWest:
-		return DirSouth
-	case DirSouth:
-		return DirEast
-	case DirEast:
-		return DirNorth
-	}
-	return d
-}
-
-type DoorType uint8
-
-func (t DoorType) IsExit() bool {
-	if t >= 0x04 && t <= 0x06 {
-		// exit door:
-		return true
-	}
-	if t >= 0x0A && t <= 0x12 {
-		// exit door:
-		return true
-	}
-	if t == 0x2A {
-		// bombable cave exit:
-		return true
-	}
-	//if t == 0x2E {
-	//	// bombable door exit(?):
-	//	return true
-	//}
-	return false
-}
-
-func (t DoorType) IsLayer2() bool {
-	if t == 0x02 {
-		return true
-	}
-	if t == 0x04 {
-		return true
-	}
-	if t == 0x06 {
-		return true
-	}
-	if t == 0x0C {
-		return true
-	}
-	if t == 0x10 {
-		return true
-	}
-	if t == 0x24 {
-		return true
-	}
-	if t == 0x26 {
-		return true
-	}
-	if t == 0x3A {
-		return true
-	}
-	if t == 0x3C {
-		return true
-	}
-	if t == 0x3E {
-		return true
-	}
-	if t == 0x40 {
-		return true
-	}
-	if t == 0x44 {
-		return true
-	}
-	if t >= 0x48 && t <= 0x66 {
-		return true
-	}
-	return false
-}
-
-func (t DoorType) IsStairwell() bool {
-	return t >= 0x20 && t <= 0x26
-}
-
-func (t DoorType) String() string {
-	return fmt.Sprintf("$%02x", uint8(t))
 }
 
 func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
