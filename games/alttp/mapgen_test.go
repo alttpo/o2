@@ -1312,7 +1312,8 @@ func (t MapCoord) OppositeEdge() MapCoord {
 // isAlwaysWalkable checks if the tile is always walkable on, regardless of state
 func isAlwaysWalkable(v uint8) bool {
 	return v == 0x00 || // no collision
-		v == 0x08 || v == 0x09 || // water
+		v == 0x08 || // deep water
+		v == 0x09 || // shallow water
 		v == 0x22 || // manual stairs
 		v == 0x23 || v == 0x24 || // floor switches
 		(v >= 0x0D && v <= 0x0F) || // spikes / floor ice
@@ -1685,6 +1686,39 @@ func findReachableTiles(
 
 			// can move in any direction:
 			pushAllDirections(s.t)
+
+			t := s.t ^ 0x1000
+
+			// check for water above/below us:
+			if v != 0x08 && m[t] == 0x08 {
+				pushAllDirections(t)
+			}
+			if m[t] == 0x0A {
+				// deep water ladder:
+				// flip to other layer:
+				visited[t] = empty{}
+				f(t, s.d, v)
+
+				if tn, dir, ok := t.MoveBy(s.d, 1); ok {
+					lifo = append(lifo, state{t: tn, d: dir})
+				}
+			}
+			continue
+		}
+
+		if v == 0x0A {
+			// deep water ladder:
+			visited[s.t] = empty{}
+			f(s.t, s.d, v)
+
+			// flip to other layer:
+			t := s.t ^ 0x1000
+			visited[t] = empty{}
+			f(t, s.d, v)
+
+			if tn, dir, ok := t.MoveBy(s.d, 1); ok {
+				lifo = append(lifo, state{t: tn, d: dir})
+			}
 			continue
 		}
 
@@ -1794,6 +1828,11 @@ func findReachableTiles(
 		if v >= 0x28 && v <= 0x2B {
 			visited[s.t] = empty{}
 			f(s.t, s.d, v)
+
+			// check for hookable tiles across from this ledge:
+			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
+				lifo = append(lifo, state{t: t, d: d})
+			})
 
 			// check 4 tiles from ledge for pit:
 			t, dir, ok := s.t.MoveBy(s.d, 4)
@@ -2073,15 +2112,36 @@ func findReachableTiles(
 		}
 
 		// anything else is considered solid:
+		//visited[s.t] = empty{}
 		continue
 	}
 }
 
 func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(MapCoord, Direction)) {
 	var ok bool
+	i := 0
 	pt := t
+
+	if m[t] >= 0x28 && m[t] <= 0x2B {
+		// find opposite ledge first:
+		ledgeTile := m[t]
+		for ; i < 0x1C; i++ {
+			// advance 1 tile:
+			if t, _, ok = t.MoveBy(d, 1); !ok {
+				return
+			}
+
+			if m[t] == ledgeTile {
+				break
+			}
+		}
+		if m[t] != ledgeTile {
+			return
+		}
+	}
+
 	// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
-	for i := 0; i < 0x1C; i++ {
+	for ; i < 0x1C; i++ {
 		// the previous tile technically doesn't need to be walkable but it prevents
 		// infinite loops due to not taking direction into account in the visited[] map
 		// and not marking pit tiles as visited
@@ -2092,13 +2152,13 @@ func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(
 		}
 
 		if !canHookThru(m[t]) {
-			break
+			return
 		}
 
 		// advance 1 tile:
 		pt = t
 		if t, _, ok = t.MoveBy(d, 1); !ok {
-			break
+			return
 		}
 	}
 }
