@@ -533,6 +533,9 @@ func TestGenerateMap(t *testing.T) {
 							if v == 0x01 {
 								return false
 							}
+							if v >= 0x28 && v <= 0x2B {
+								return false
+							}
 							if v == doorwayTile {
 								return false
 							}
@@ -562,7 +565,7 @@ func TestGenerateMap(t *testing.T) {
 							if v == doorTileType {
 								return false
 							}
-							if v >= 0x28 || v <= 0x2B {
+							if v >= 0x28 && v <= 0x2B {
 								// ledge tiles can be found in doorway in fairy cave $008:
 								return false
 							}
