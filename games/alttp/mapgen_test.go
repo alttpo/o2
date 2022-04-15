@@ -261,7 +261,7 @@ func TestGenerateMap(t *testing.T) {
 
 		for st := uint16(0); st < 0x128; st++ {
 			// load and draw current supertile:
-			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
+			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, st)
 			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
@@ -666,7 +666,6 @@ func TestGenerateMap(t *testing.T) {
 
 		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
-		// TODO: determine entrance direction
 		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone})
 
 		// process the LIFO:
@@ -730,9 +729,7 @@ func TestGenerateMap(t *testing.T) {
 
 			// flood fill to find reachable tiles:
 			tiles := &room.Tiles
-			findReachableTiles(
-				tiles,
-				room.TilesVisited,
+			room.FindReachableTiles(
 				ep,
 				func(t MapCoord, d Direction, v uint8) {
 					// here we found a reachable tile:
@@ -834,29 +831,6 @@ func TestGenerateMap(t *testing.T) {
 						}
 						return
 					}
-
-					//// these are stair EDGEs; don't think we care:
-					//if v == 0x38 {
-					//	// north stairs going down:
-					//	var vn uint8
-					//	vn = tiles[t+0x40]
-					//	if vn < 0x30 && v >= 0x38 {
-					//		panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
-					//	}
-					//	// NOTE: hack the stairwell position
-					//	pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x0E9F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
-					//	return
-					//} else if v == 0x39 {
-					//	// south stairs going up:
-					//	var vn uint8
-					//	vn = tiles[t-0x40]
-					//	if vn < 0x30 && v >= 0x38 {
-					//		panic(fmt.Errorf("stairs needs exit at %s %s", t, d))
-					//	}
-					//	// NOTE: hack the stairwell position
-					//	pushEntryPoint(EntryPoint{stairExitTo[v&3], 0x011F | stairTargetLayer[v&3], d}, fmt.Sprintf("straightStair(%s)", t))
-					//	return
-					//}
 
 					if v >= 0x30 && v < 0x38 {
 						var vn uint8
@@ -1345,14 +1319,31 @@ func (t MapCoord) IsLayer2() bool {
 	return t&0x1000 != 0
 }
 
-type EntryPoint struct {
-	Supertile
-	Point MapCoord
-	Direction
-}
+type LinkState uint8
 
-func (ep EntryPoint) String() string {
-	return fmt.Sprintf("{%s, %s, %s}", ep.Supertile, ep.Point, ep.Direction)
+const (
+	StateWalk LinkState = iota
+	StateFall
+	StateSwim
+	StatePipe
+	StateSomaria
+)
+
+func (s LinkState) String() string {
+	switch s {
+	case StateWalk:
+		return "walk"
+	case StateFall:
+		return "fall"
+	case StateSwim:
+		return "swim"
+	case StatePipe:
+		return "pipe"
+	case StateSomaria:
+		return "somaria"
+	default:
+		panic("bad LinkState")
+	}
 }
 
 func AbsToMapCoord(absX, absY, layer uint16) MapCoord {
@@ -1525,6 +1516,25 @@ func (t MapCoord) OppositeEdge() MapCoord {
 	panic("not at an edge")
 }
 
+type ScanState struct {
+	t      MapCoord
+	d      Direction
+	s      LinkState
+	inPipe bool
+}
+
+type EntryPoint struct {
+	Supertile
+	Point MapCoord
+	Direction
+	//LinkState
+}
+
+func (ep EntryPoint) String() string {
+	//return fmt.Sprintf("{%s, %s, %s, %s}", ep.Supertile, ep.Point, ep.Direction, ep.LinkState)
+	return fmt.Sprintf("{%s, %s, %s}", ep.Supertile, ep.Point, ep.Direction)
+}
+
 type RoomState struct {
 	Supertile
 
@@ -1539,9 +1549,18 @@ type RoomState struct {
 
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
+
+	lifoSpace [0x2000]ScanState
+	lifo      []ScanState
 }
 
-func (r *RoomState) IsDarkRoom() bool { return read8((&r.WRAM)[:], 0xC005) != 0 }
+func (r *RoomState) push(s ScanState) {
+	r.lifo = append(r.lifo, s)
+}
+
+func (r *RoomState) IsDarkRoom() bool {
+	return read8((&r.WRAM)[:], 0xC005) != 0
+}
 
 // isAlwaysWalkable checks if the tile is always walkable on, regardless of state
 func isAlwaysWalkable(v uint8) bool {
@@ -1589,46 +1608,40 @@ func isHookable(v uint8) bool {
 		v&0xF0 == 0x70 // pot/peg/block
 }
 
-func findReachableTiles(
-	m *[0x2000]uint8,
-	visited map[MapCoord]empty,
+func (r *RoomState) FindReachableTiles(
 	entryPoint EntryPoint,
 	visit func(t MapCoord, d Direction, v uint8),
 ) {
-	type state struct {
-		t      MapCoord
-		d      Direction
-		inPipe bool
-	}
+	m := &r.Tiles
+	visited := r.TilesVisited
 
 	// if we ever need to wrap
 	f := visit
 
-	var lifoSpace [0x2000]state
-	lifo := lifoSpace[:0]
-	lifo = append(lifo, state{t: entryPoint.Point, d: entryPoint.Direction})
+	r.lifo = r.lifoSpace[:0]
+	r.push(ScanState{t: entryPoint.Point, d: entryPoint.Direction})
 
 	pushAllDirections := func(t MapCoord) {
 		// can move in any direction:
 		if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
-			lifo = append(lifo, state{t: tn, d: dir})
+			r.push(ScanState{t: tn, d: dir})
 		}
 		if tn, dir, ok := t.MoveBy(DirWest, 1); ok {
-			lifo = append(lifo, state{t: tn, d: dir})
+			r.push(ScanState{t: tn, d: dir})
 		}
 		if tn, dir, ok := t.MoveBy(DirEast, 1); ok {
-			lifo = append(lifo, state{t: tn, d: dir})
+			r.push(ScanState{t: tn, d: dir})
 		}
 		if tn, dir, ok := t.MoveBy(DirSouth, 1); ok {
-			lifo = append(lifo, state{t: tn, d: dir})
+			r.push(ScanState{t: tn, d: dir})
 		}
 	}
 
 	// handle the stack of locations to traverse:
-	for len(lifo) != 0 {
-		lifoLen := len(lifo) - 1
-		s := lifo[lifoLen]
-		lifo = lifo[:lifoLen]
+	for len(r.lifo) != 0 {
+		lifoLen := len(r.lifo) - 1
+		s := r.lifo[lifoLen]
+		r.lifo = r.lifo[:lifoLen]
 
 		if _, ok := visited[s.t]; ok {
 			continue
@@ -1643,7 +1656,7 @@ func findReachableTiles(
 				//visited[s.t] = empty{}
 				f(s.t, s.d, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1656,7 +1669,7 @@ func findReachableTiles(
 				// check for pipe exit 3 tiles in advance:
 				// this is done to skip collision tiles between B0/B1 and BE
 				if tn, dir, ok := s.t.MoveBy(s.d, 3); ok && m[tn] == 0xBE {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 					continue
 				}
 
@@ -1665,12 +1678,12 @@ func findReachableTiles(
 					// if the pipe crosses another direction pipe skip over that bit of pipe:
 					if m[tn] == v^0x01 {
 						if tn, _, ok := tn.MoveBy(dir, 2); ok && v == m[tn] {
-							lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+							r.push(ScanState{t: tn, d: dir, inPipe: true})
 							continue
 						}
 					}
 
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1682,11 +1695,11 @@ func findReachableTiles(
 
 				if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				} else if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				}
 				continue
@@ -1698,11 +1711,11 @@ func findReachableTiles(
 
 				if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				} else if s.d == DirWest {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				}
 				continue
@@ -1714,11 +1727,11 @@ func findReachableTiles(
 
 				if s.d == DirNorth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				} else if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				}
 				continue
@@ -1730,11 +1743,11 @@ func findReachableTiles(
 
 				if s.d == DirEast {
 					if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				} else if s.d == DirSouth {
 					if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 				}
 				continue
@@ -1757,7 +1770,7 @@ func findReachableTiles(
 
 				// continue in the same direction but not in pipe-follower state:
 				if tn, dir, ok := t.MoveBy(s.d, 1); ok && m[tn] == 0x00 {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 				continue
 			}
@@ -1769,13 +1782,13 @@ func findReachableTiles(
 				f(s.t, s.d, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1787,13 +1800,13 @@ func findReachableTiles(
 				f(s.t, s.d, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1805,13 +1818,13 @@ func findReachableTiles(
 				f(s.t, s.d, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1823,13 +1836,13 @@ func findReachableTiles(
 				f(s.t, s.d, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1841,16 +1854,16 @@ func findReachableTiles(
 				f(s.t, s.d, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1863,21 +1876,21 @@ func findReachableTiles(
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 
 				// check for exits across pits:
 				if tn, dir, ok := s.t.MoveBy(s.d.RotateCW(), 1); ok && m[tn] == 0x20 {
 					if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x20 {
 						if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x00 {
-							lifo = append(lifo, state{t: tn, d: dir})
+							r.push(ScanState{t: tn, d: dir})
 						}
 					}
 				}
 				if tn, dir, ok := s.t.MoveBy(s.d.RotateCCW(), 1); ok && m[tn] == 0x20 {
 					if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x20 {
 						if tn, _, ok = tn.MoveBy(dir, 1); ok && m[tn] == 0x00 {
-							lifo = append(lifo, state{t: tn, d: dir})
+							r.push(ScanState{t: tn, d: dir})
 						}
 					}
 				}
@@ -1893,7 +1906,7 @@ func findReachableTiles(
 
 				// continue in the same direction:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+					r.push(ScanState{t: tn, d: dir, inPipe: true})
 				}
 				continue
 			}
@@ -1905,7 +1918,7 @@ func findReachableTiles(
 
 				// continue in the same direction but not in pipe-follower state:
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 				continue
 			}
@@ -1934,7 +1947,7 @@ func findReachableTiles(
 				f(t, s.d, v)
 
 				if tn, dir, ok := t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 			}
 			continue
@@ -1951,7 +1964,7 @@ func findReachableTiles(
 			f(t, s.d, v)
 
 			if tn, dir, ok := t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -1968,13 +1981,13 @@ func findReachableTiles(
 					pushAllDirections(s.t)
 				} else {
 					// drop to lower layer:
-					lifo = append(lifo, state{t: s.t | 0x1000, d: s.d})
+					r.push(ScanState{t: s.t | 0x1000, d: s.d})
 				}
 			}
 
 			// detect a hookable tile across this pit:
 			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				lifo = append(lifo, state{t: t, d: d})
+				r.push(ScanState{t: t, d: d})
 			})
 
 			continue
@@ -1988,7 +2001,7 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2000,7 +2013,7 @@ func findReachableTiles(
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
 				tn ^= 0x1000
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2035,16 +2048,16 @@ func findReachableTiles(
 
 					// find corresponding B0..B1 directional line to follow:
 					if tn, dir, ok := t.MoveBy(DirNorth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 					if tn, dir, ok := t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 					if tn, dir, ok := t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 					if tn, dir, ok := t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
-						lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+						r.push(ScanState{t: tn, d: dir, inPipe: true})
 					}
 					return
 				}
@@ -2052,7 +2065,7 @@ func findReachableTiles(
 
 			// detect a hookable tile across this pit:
 			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				lifo = append(lifo, state{t: t, d: d})
+				r.push(ScanState{t: t, d: d})
 			})
 
 			continue
@@ -2065,7 +2078,7 @@ func findReachableTiles(
 
 			// check for hookable tiles across from this ledge:
 			scanHookshot(s.t, s.d, m, func(t MapCoord, d Direction) {
-				lifo = append(lifo, state{t: t, d: d})
+				r.push(ScanState{t: t, d: d})
 			})
 
 			// check 4 tiles from ledge for pit:
@@ -2078,7 +2091,7 @@ func findReachableTiles(
 			v = m[t]
 			if v == 0x20 {
 				// visit it next:
-				lifo = append(lifo, state{t: t, d: dir})
+				r.push(ScanState{t: t, d: dir})
 			} else if v == 0x1C { // or 0x0C ?
 				// swap layers:
 				t ^= 0x1000
@@ -2087,13 +2100,13 @@ func findReachableTiles(
 				v = m[t]
 				if v == 0x20 {
 					// visit it next:
-					lifo = append(lifo, state{t: t, d: dir})
+					r.push(ScanState{t: t, d: dir})
 				}
 			} else if v == 0x0C {
 				panic(fmt.Errorf("TODO handle $0C in pit case t=%s", t))
 			} else if v == 0x00 {
 				// open floor:
-				lifo = append(lifo, state{t: t, d: dir})
+				r.push(ScanState{t: t, d: dir})
 			}
 
 			continue
@@ -2105,9 +2118,9 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
-			if len(lifo) == 0 {
+			if len(r.lifo) == 0 {
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 			}
 			continue
@@ -2119,9 +2132,9 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
-			if len(lifo) == 0 {
+			if len(r.lifo) == 0 {
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 			}
 			continue
@@ -2133,7 +2146,7 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2145,7 +2158,7 @@ func findReachableTiles(
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
 				// swap layers:
 				tn ^= 0x1000
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2157,7 +2170,7 @@ func findReachableTiles(
 			f(s.t, s.d, m[s.t])
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2169,10 +2182,10 @@ func findReachableTiles(
 				if s.d == DirNone {
 					// scout in both directions:
 					if _, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-						lifo = append(lifo, state{t: s.t, d: dir})
+						r.push(ScanState{t: s.t, d: dir})
 					}
 					if _, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-						lifo = append(lifo, state{t: s.t, d: dir})
+						r.push(ScanState{t: s.t, d: dir})
 					}
 					continue
 				}
@@ -2189,17 +2202,17 @@ func findReachableTiles(
 					continue
 				}
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 			} else {
 				// east-west
 				if s.d == DirNone {
 					// scout in both directions:
 					if _, dir, ok := s.t.MoveBy(DirWest, 1); ok {
-						lifo = append(lifo, state{t: s.t, d: dir})
+						r.push(ScanState{t: s.t, d: dir})
 					}
 					if _, dir, ok := s.t.MoveBy(DirEast, 1); ok {
-						lifo = append(lifo, state{t: s.t, d: dir})
+						r.push(ScanState{t: s.t, d: dir})
 					}
 					continue
 				}
@@ -2216,7 +2229,7 @@ func findReachableTiles(
 					continue
 				}
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 			}
 			continue
@@ -2231,7 +2244,7 @@ func findReachableTiles(
 				continue
 			}
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2243,10 +2256,10 @@ func findReachableTiles(
 			if s.d == DirNone {
 				// scout in both directions:
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
-					lifo = append(lifo, state{t: tn, d: dir})
+					r.push(ScanState{t: tn, d: dir})
 				}
 				continue
 			}
@@ -2256,7 +2269,7 @@ func findReachableTiles(
 				continue
 			}
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2271,7 +2284,7 @@ func findReachableTiles(
 				continue
 			}
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
-				lifo = append(lifo, state{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir})
 			}
 			continue
 		}
@@ -2287,28 +2300,28 @@ func findReachableTiles(
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirWest, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirEast, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, inPipe: true})
 			}
 			if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok && (m[tn] >= 0xB0 && m[tn] <= 0xB1) {
 				// skip over 2 tiles
 				if tn, dir, ok = tn.MoveBy(dir, 2); !ok {
 					continue
 				}
-				lifo = append(lifo, state{t: tn, d: dir, inPipe: true})
+				r.push(ScanState{t: tn, d: dir, inPipe: true})
 			}
 			continue
 		}
@@ -2332,7 +2345,7 @@ func findReachableTiles(
 					continue
 				}
 
-				lifo = append(lifo, state{t: t, d: s.d})
+				r.push(ScanState{t: t, d: s.d})
 				continue
 			}
 
@@ -2340,7 +2353,7 @@ func findReachableTiles(
 			f(s.t, s.d, v)
 
 			if t, _, ok := s.t.MoveBy(s.d, 2); ok {
-				lifo = append(lifo, state{t: t, d: s.d})
+				r.push(ScanState{t: t, d: s.d})
 			}
 			continue
 		}
@@ -2380,7 +2393,7 @@ func scanHookshot(t MapCoord, d Direction, m *[0x2000]byte, pushEntryPoint func(
 		// infinite loops due to not taking direction into account in the visited[] map
 		// and not marking pit tiles as visited
 		if isHookable(m[t]) && isAlwaysWalkable(m[pt]) {
-			//lifo = append(lifo, state{t: pt, d: d})
+			//r.push(ScanState{t: pt, d: d})
 			pushEntryPoint(pt, d)
 			break
 		}
