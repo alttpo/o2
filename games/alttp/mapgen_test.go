@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"github.com/alttpo/snes/asm"
@@ -1046,89 +1047,93 @@ func TestGenerateMap(t *testing.T) {
 
 	wg.Wait()
 
-	// condense all maps into one image at different scale levels:
-	{
-		const divider = 1
-		supertilepx := 512 / divider
+	// condense all maps into one image:
+	renderAll(entranceGroups)
+}
 
-		wga := sync.WaitGroup{}
+func renderAll(entranceGroups []Entrance) {
+	var err error
 
-		all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
-		// clear the image and remove alpha layer
-		draw.Draw(
-			all,
-			all.Bounds(),
-			image.NewUniform(color.NRGBA{0, 0, 0, 255}),
-			image.Point{},
-			draw.Src)
+	const divider = 1
+	supertilepx := 512 / divider
 
-		greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
-		redTint := image.NewUniform(color.NRGBA{255, 0, 0, 56})
-		blueTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
+	wga := sync.WaitGroup{}
 
-		for i := range entranceGroups {
-			g := &entranceGroups[i]
-			for _, room := range g.Rooms {
-				st := int(room.Supertile)
-				stMap := room.Rendered
-				if stMap == nil {
-					continue
+	all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+	// clear the image and remove alpha layer
+	draw.Draw(
+		all,
+		all.Bounds(),
+		image.NewUniform(color.NRGBA{0, 0, 0, 255}),
+		image.Point{},
+		draw.Src)
+
+	greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
+	redTint := image.NewUniform(color.NRGBA{255, 0, 0, 56})
+	blueTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
+
+	for i := range entranceGroups {
+		g := &entranceGroups[i]
+		for _, room := range g.Rooms {
+			st := int(room.Supertile)
+			stMap := room.Rendered
+			if stMap == nil {
+				continue
+			}
+
+			row := st / 0x10
+			col := st % 0x10
+			wga.Add(1)
+			go func(room *RoomState) {
+				stx := col * supertilepx
+				sty := row * supertilepx
+				draw.Draw(
+					all,
+					image.Rect(stx, sty, stx+supertilepx, sty+supertilepx),
+					stMap,
+					image.Point{},
+					draw.Src,
+				)
+
+				// green highlight spots that are reachable:
+				if true {
+					maxRange := 0x2000
+					if room.IsDarkRoom() {
+						maxRange = 0x1000
+					}
+					for t := 0; t < maxRange; t++ {
+						v := room.Reachable[t]
+						if v == 0x01 {
+							continue
+						}
+
+						lyr, tr, tc := MapCoord(t).RowCol()
+						overlay := greenTint
+						if lyr != 0 {
+							overlay = blueTint
+						}
+						if v == 0x20 {
+							overlay = redTint
+						}
+
+						draw.Draw(
+							all,
+							image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8),
+							overlay,
+							image.Point{},
+							draw.Over,
+						)
+					}
 				}
 
-				row := st / 0x10
-				col := st % 0x10
-				wga.Add(1)
-				go func(room *RoomState) {
-					stx := col * supertilepx
-					sty := row * supertilepx
-					draw.Draw(
-						all,
-						image.Rect(stx, sty, stx+supertilepx, sty+supertilepx),
-						stMap,
-						image.Point{},
-						draw.Src,
-					)
-
-					// green highlight spots that are reachable:
-					if true {
-						maxRange := 0x2000
-						if room.IsDarkRoom() {
-							maxRange = 0x1000
-						}
-						for t := 0; t < maxRange; t++ {
-							v := room.Reachable[t]
-							if v == 0x01 {
-								continue
-							}
-
-							lyr, tr, tc := MapCoord(t).RowCol()
-							overlay := greenTint
-							if lyr != 0 {
-								overlay = blueTint
-							}
-							if v == 0x20 {
-								overlay = redTint
-							}
-
-							draw.Draw(
-								all,
-								image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8),
-								overlay,
-								image.Point{},
-								draw.Over,
-							)
-						}
-					}
-
-					wga.Done()
-				}(room)
-			}
+				wga.Done()
+			}(room)
 		}
+	}
 
-		wga.Wait()
-		if err = exportPNG(fmt.Sprintf("data/all-%d.png", divider), all); err != nil {
-			panic(err)
-		}
+	wga.Wait()
+	if err = exportPNG(fmt.Sprintf("data/all-%d.png", divider), all); err != nil {
+		panic(err)
 	}
 }
 
@@ -2723,10 +2728,18 @@ func exportPNG(name string, g image.Image) (err error) {
 		}
 	}()
 
-	err = png.Encode(po, g)
+	bo := bufio.NewWriterSize(po, 8*1024*1024)
+
+	err = png.Encode(bo, g)
 	if err != nil {
 		return
 	}
+
+	err = bo.Flush()
+	if err != nil {
+		return
+	}
+
 	return
 }
 
