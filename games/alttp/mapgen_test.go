@@ -1580,7 +1580,6 @@ func (r *RoomState) IsDarkRoom() bool {
 // isAlwaysWalkable checks if the tile is always walkable on, regardless of state
 func (r *RoomState) isAlwaysWalkable(v uint8) bool {
 	return v == 0x00 || // no collision
-		v == 0x08 || // deep water
 		v == 0x09 || // shallow water
 		v == 0x22 || // manual stairs
 		v == 0x23 || v == 0x24 || // floor switches
@@ -1925,6 +1924,79 @@ func (r *RoomState) FindReachableTiles(
 			continue
 		}
 
+		if s.s == StateSwim {
+			if s.t&0x1000 == 0 {
+				panic("swimming in layer 1!")
+			}
+
+			if v == 0x02 || v == 0x03 {
+				// collision:
+				visited[s.t] = empty{}
+				continue
+			}
+
+			if v == 0x0A {
+				visited[s.t] = empty{}
+				f(s, v)
+
+				// flip to walking:
+				t := s.t & ^MapCoord(0x1000)
+				if tn, dir, ok := t.MoveBy(s.d, 1); ok {
+					r.push(ScanState{t: tn, d: dir, s: StateWalk})
+					continue
+				}
+				continue
+			}
+
+			if v == 0x1D {
+				visited[s.t] = empty{}
+				f(s, v)
+
+				// flip to walking:
+				t := s.t & ^MapCoord(0x1000)
+				if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
+					r.push(ScanState{t: tn, d: dir, s: StateWalk})
+					continue
+				}
+				continue
+			}
+
+			if v == 0x3D {
+				visited[s.t] = empty{}
+				f(s, v)
+
+				// flip to walking:
+				t := s.t & ^MapCoord(0x1000)
+				if tn, dir, ok := t.MoveBy(DirSouth, 1); ok {
+					r.push(ScanState{t: tn, d: dir, s: StateWalk})
+					continue
+				}
+				continue
+			}
+
+			// can swim over mostly everything on layer 2:
+			visited[s.t] = empty{}
+			f(s, v)
+			r.pushAllDirections(s.t, StateSwim)
+			continue
+		}
+
+		if v == 0x08 {
+			// deep water:
+			visited[s.t] = empty{}
+			f(s, v)
+
+			// flip to swimming layer and state:
+			t := s.t ^ 0x1000
+			r.push(ScanState{t: t, d: s.d, s: StateSwim})
+
+			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
+				r.push(ScanState{t: tn, d: dir, s: StateWalk})
+				continue
+			}
+			continue
+		}
+
 		if r.isAlwaysWalkable(v) || r.isMaybeWalkable(v) {
 			// no collision:
 			visited[s.t] = empty{}
@@ -1937,17 +2009,7 @@ func (r *RoomState) FindReachableTiles(
 
 			// check for water above/below us:
 			if v != 0x08 && m[t] == 0x08 {
-				r.pushAllDirections(t, StateWalk)
-			}
-			if m[t] == 0x0A {
-				// deep water ladder:
-				// flip to other layer:
-				visited[t] = empty{}
-				f(ScanState{t: t, d: s.d}, v)
-
-				if tn, dir, ok := t.MoveBy(s.d, 1); ok {
-					r.push(ScanState{t: tn, d: dir})
-				}
+				r.pushAllDirections(t, StateSwim)
 			}
 			continue
 		}
@@ -1957,13 +2019,13 @@ func (r *RoomState) FindReachableTiles(
 			visited[s.t] = empty{}
 			f(s, v)
 
-			// flip to other layer:
-			t := s.t ^ 0x1000
+			// transition to swim state on other layer:
+			t := s.t | 0x1000
 			visited[t] = empty{}
-			f(ScanState{t: t, d: s.d}, v)
+			f(ScanState{t: t, d: s.d, s: StateSwim}, v)
 
 			if tn, dir, ok := t.MoveBy(s.d, 1); ok {
-				r.push(ScanState{t: tn, d: dir})
+				r.push(ScanState{t: tn, d: dir, s: StateSwim})
 			}
 			continue
 		}
