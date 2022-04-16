@@ -40,18 +40,18 @@ func TestGenerateMap(t *testing.T) {
 		t.Skip(err)
 	}
 
-	var s *System
+	var e *System
 
 	// create the CPU-only SNES emulator:
-	s = &System{
+	e = &System{
 		Logger:    os.Stdout,
 		LoggerCPU: nil,
 	}
-	if err = s.CreateEmulator(); err != nil {
+	if err = e.CreateEmulator(); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = f.Read(s.ROM[:])
+	_, err = f.Read(e.ROM[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestGenerateMap(t *testing.T) {
 	var a *asm.Emitter
 
 	// initialize game:
-	s.CPU.Reset()
+	e.CPU.Reset()
 	//#_008029: JSR Sound_LoadIntroSongBank		// skip this
 	// this is useless zeroing of memory; don't need to run it
 	//#_00802C: JSR Startup_InitializeMemory
-	if err = s.Exec(0x00_8029); err != nil {
+	if err = e.Exec(0x00_8029); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,7 +75,7 @@ func TestGenerateMap(t *testing.T) {
 	var b01LoadAndDrawRoomSetSupertilePC uint32
 	{
 		// must execute in bank $01
-		a = asm.NewEmitter(s.HWIO.Dyn[0x01_5100&0xFFFF-0x5000:], true)
+		a = asm.NewEmitter(e.HWIO.Dyn[0x01_5100&0xFFFF-0x5000:], true)
 		a.SetBase(0x01_5100)
 
 		{
@@ -104,14 +104,14 @@ func TestGenerateMap(t *testing.T) {
 		if err = a.Finalize(); err != nil {
 			panic(err)
 		}
-		a.WriteTextTo(s.Logger)
+		a.WriteTextTo(e.Logger)
 	}
 
 	// this routine renders a supertile assuming gfx tileset and palettes already loaded:
 	b02LoadUnderworldSupertilePC := uint32(0x02_5200)
 	{
 		// emit into our custom $02:5100 routine:
-		a = asm.NewEmitter(s.HWIO.Dyn[b02LoadUnderworldSupertilePC&0xFFFF-0x5000:], true)
+		a = asm.NewEmitter(e.HWIO.Dyn[b02LoadUnderworldSupertilePC&0xFFFF-0x5000:], true)
 		a.SetBase(b02LoadUnderworldSupertilePC)
 		a.Comment("setup bank restore back to $00")
 		a.SEP(0x30)
@@ -123,7 +123,7 @@ func TestGenerateMap(t *testing.T) {
 		a.Comment("Module06_UnderworldLoad after JSR Underworld_LoadEntrance")
 		a.JMP_abs_imm16_w(0x8157)
 		a.Comment("implied RTL")
-		a.WriteTextTo(s.Logger)
+		a.WriteTextTo(e.Logger)
 	}
 
 	if false {
@@ -144,7 +144,7 @@ func TestGenerateMap(t *testing.T) {
 	var donePC uint32
 	{
 		// emit into our custom $00:5000 routine:
-		a = asm.NewEmitter(s.HWIO.Dyn[:], true)
+		a = asm.NewEmitter(e.HWIO.Dyn[:], true)
 		a.SetBase(0x00_5000)
 		a.SEP(0x30)
 
@@ -205,34 +205,67 @@ func TestGenerateMap(t *testing.T) {
 		if err = a.Finalize(); err != nil {
 			panic(err)
 		}
-		a.WriteTextTo(s.Logger)
+		a.WriteTextTo(e.Logger)
+	}
+
+	b00HandleRoomTagsPC := uint32(0x00_5300)
+	{
+		// emit into our custom $00:5300 routine:
+		a = asm.NewEmitter(e.HWIO.Dyn[b00HandleRoomTagsPC&0xFFFF-0x5000:], true)
+		a.SetBase(b00HandleRoomTagsPC)
+
+		a.SEP(0x30)
+		a.Comment("Underworld_HandleRoomTags#_01C2FD")
+		a.JSL(0x01_C2FD)
+
+		// check if submodule changed:
+		a.LDA_dp(0x11)
+		a.BEQ("exit")
+
+		a.Comment("JSL Module_MainRouting")
+		a.JSL(0x00_80B5)
+		// this code sets up the DMA transfer parameters for animated BG tiles:
+		a.Comment("NMI_PrepareSprites")
+		a.JSR_abs(0x85FC)
+		a.Comment("NMI_DoUpdates")
+		a.JSR_abs(0x89E0) // NMI_DoUpdates
+
+		a.Label("exit")
+		a.STZ_dp(0x11)
+		a.WDM(0xAA)
+
+		// finalize labels
+		if err = a.Finalize(); err != nil {
+			panic(err)
+		}
+		a.WriteTextTo(e.Logger)
 	}
 
 	{
 		// skip over music & sfx loading since we did not implement APU registers:
-		a = newEmitterAt(s, 0x02_8293, true)
+		a = newEmitterAt(e, 0x02_8293, true)
 		//#_028293: JSR Underworld_LoadSongBankIfNeeded
 		a.JMP_abs_imm16_w(0x82BC)
 		//.exit
 		//#_0282BC: SEP #$20
 		//#_0282BE: RTL
-		a.WriteTextTo(s.Logger)
+		a.WriteTextTo(e.Logger)
 	}
 
-	if true {
+	{
 		// patch out RebuildHUD:
-		a = newEmitterAt(s, 0x0D_FA88, true)
+		a = newEmitterAt(e, 0x0D_FA88, true)
 		//RebuildHUD_Keys:
 		//	#_0DFA88: STA.l $7EF36F
 		a.RTL()
-		a.WriteTextTo(s.Logger)
+		a.WriteTextTo(e.Logger)
 	}
 
 	//s.LoggerCPU = os.Stdout
 	_ = loadSupertilePC
 
 	// run the initialization code:
-	if err = s.ExecAt(0x00_5000, donePC); err != nil {
+	if err = e.ExecAt(0x00_5000, donePC); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,7 +276,7 @@ func TestGenerateMap(t *testing.T) {
 	}
 	for i := 0; i <= 0x70; i++ {
 		romaddr, _ := lorom.BusAddressToPak(0x00_990C)
-		st := Supertile(read16(s.ROM[:], romaddr+uint32(i)<<1))
+		st := Supertile(read16(e.ROM[:], romaddr+uint32(i)<<1))
 		roomsWithPitDamage[st] = true
 	}
 
@@ -254,21 +287,21 @@ func TestGenerateMap(t *testing.T) {
 	// scan underworld for certain tile types:
 	if false {
 		// poke the entrance ID into our asm code:
-		s.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x00
+		e.HWIO.Dyn[setEntranceIDPC-0x5000] = 0x00
 		// load the entrance and draw the room:
-		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
+		if err = e.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
 
 		for st := uint16(0); st < 0x128; st++ {
 			// load and draw current supertile:
-			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, st)
-			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+			write16(e.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, st)
+			if err = e.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
 
 			found := false
-			for t, v := range s.WRAM[0x12000:0x14000] {
+			for t, v := range e.WRAM[0x12000:0x14000] {
 				if v == 0x0A {
 					found = true
 					fmt.Printf("%s: %s = $0A\n", Supertile(st), MapCoord(t))
@@ -276,7 +309,7 @@ func TestGenerateMap(t *testing.T) {
 			}
 
 			if found {
-				ioutil.WriteFile(fmt.Sprintf("data/%03x.tmap", st), s.WRAM[0x12000:0x14000], 0644)
+				ioutil.WriteFile(fmt.Sprintf("data/%03x.tmap", st), e.WRAM[0x12000:0x14000], 0644)
 			}
 		}
 		return
@@ -285,18 +318,21 @@ func TestGenerateMap(t *testing.T) {
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
 	for eID := uint8(0); eID < entranceCount; eID++ {
-		fmt.Fprintf(s.Logger, "entrance $%02x\n", eID)
+		fmt.Fprintf(e.Logger, "entrance $%02x\n", eID)
 
 		// poke the entrance ID into our asm code:
-		s.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
+		//dyn := e.HWIO.Dyn
+		//e.HWIO.Reset()
+		//e.HWIO.Dyn = dyn
+		e.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		// load the entrance and draw the room:
-		if err = s.ExecAt(loadEntrancePC, donePC); err != nil {
+		if err = e.ExecAt(loadEntrancePC, donePC); err != nil {
 			t.Fatal(err)
 		}
 
 		g := &entranceGroups[eID]
 		g.EntranceID = eID
-		g.Supertile = Supertile(s.ReadWRAM16(0xA0))
+		g.Supertile = Supertile(e.ReadWRAM16(0xA0))
 
 		g.Rooms = make([]*RoomState, 0, 0x20)
 
@@ -314,8 +350,8 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Printf("    creating room %s\n", st)
 
 			// load and draw current supertile:
-			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
-			if err = s.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+			write16(e.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
+			if err = e.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
 				panic(err)
 			}
 
@@ -327,9 +363,9 @@ func TestGenerateMap(t *testing.T) {
 			wram := (&room.WRAM)[:]
 			tiles := (&room.Tiles)[:]
 
-			copy(room.VRAMTileSet[:], s.VRAM[0x4000:0x8000])
-			copy(wram, s.WRAM[:])
-			copy(tiles, s.WRAM[0x12000:0x14000])
+			copy(room.VRAMTileSet[:], e.VRAM[0x4000:0x8000])
+			copy(wram, e.WRAM[:])
+			copy(tiles, e.WRAM[0x12000:0x14000])
 
 			// make a map full of $01 Collision and carve out reachable areas:
 			for i := range room.Reachable {
@@ -381,7 +417,7 @@ func TestGenerateMap(t *testing.T) {
 				}
 				doors = append(doors, door)
 
-				fmt.Fprintf(s.Logger, "    door: %v\n", door)
+				fmt.Fprintf(e.Logger, "    door: %v\n", door)
 
 				isDoorEdge, _, _, _ := door.Pos.IsDoorEdge()
 
@@ -596,7 +632,7 @@ func TestGenerateMap(t *testing.T) {
 						}
 					} else {
 						// bad door starter tile type
-						fmt.Fprintf(s.Logger, fmt.Sprintf("unrecognized door tile at %s: $%02x\n", start, doorTileType))
+						fmt.Fprintf(e.Logger, fmt.Sprintf("unrecognized door tile at %s: $%02x\n", start, doorTileType))
 						continue
 					}
 
@@ -662,7 +698,7 @@ func TestGenerateMap(t *testing.T) {
 			for i := uint32(0); i < stairCount; i += 2 {
 				t := MapCoord(read16(wram, 0x06B0+i))
 				room.Stairs = append(room.Stairs, t)
-				fmt.Fprintf(s.Logger, "    interroom stair at %s\n", t)
+				fmt.Fprintf(e.Logger, "    interroom stair at %s\n", t)
 			}
 
 			for i := uint32(0); i < 0x20; i += 2 {
@@ -711,12 +747,12 @@ func TestGenerateMap(t *testing.T) {
 
 		{
 			// if this is the entrance, Link should be already moved to his starting position:
-			wram := (&s.WRAM)[:]
+			wram := (&e.WRAM)[:]
 			linkX := read16(wram, 0x22)
 			linkY := read16(wram, 0x20)
 			linkLayer := read16(wram, 0xEE)
 			g.EntryCoord = AbsToMapCoord(linkX, linkY, linkLayer)
-			fmt.Fprintf(s.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
+			fmt.Fprintf(e.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
 		}
 
 		{
@@ -739,7 +775,7 @@ func TestGenerateMap(t *testing.T) {
 
 			this := ep.Supertile
 
-			fmt.Fprintf(s.Logger, "  ep = %s\n", ep)
+			fmt.Fprintf(e.Logger, "  ep = %s\n", ep)
 
 			// create a room by emulation:
 			room := createRoom(this)
@@ -769,7 +805,7 @@ func TestGenerateMap(t *testing.T) {
 				})
 
 				lifo = append(lifo, ep)
-				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
+				fmt.Fprintf(e.Logger, "    %s to %s\n", name, ep)
 			}
 
 			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
@@ -1023,15 +1059,15 @@ func TestGenerateMap(t *testing.T) {
 				// TODO: clone System instances and parallelize
 
 				// loadSupertile:
-				write16(s.WRAM[:], 0xA0, uint16(room.Supertile))
-				if err = s.ExecAt(loadSupertilePC, donePC); err != nil {
+				write16(e.WRAM[:], 0xA0, uint16(room.Supertile))
+				if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
 					t.Fatal(err)
 				}
 
 				{
-					fmt.Fprintf(s.Logger, "  render %s\n", room.Supertile)
-					copy((&room.VRAMTileSet)[:], (&s.VRAM)[0x4000:0x8000])
-					copy((&room.WRAM)[:], (&s.WRAM)[:])
+					fmt.Fprintf(e.Logger, "  render %s\n", room.Supertile)
+					copy((&room.VRAMTileSet)[:], (&e.VRAM)[0x4000:0x8000])
+					copy((&room.WRAM)[:], (&e.WRAM)[:])
 
 					wg.Add(1)
 					go drawSupertile(&wg, room)
