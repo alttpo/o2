@@ -241,7 +241,7 @@ func TestGenerateMap(t *testing.T) {
 	for i := Supertile(0); i < 0x128; i++ {
 		roomsWithPitDamage[i] = false
 	}
-	for i := 0; i < 0x70; i++ {
+	for i := 0; i <= 0x70; i++ {
 		romaddr, _ := lorom.BusAddressToPak(0x00_990C)
 		st := Supertile(read16(s.ROM[:], romaddr+uint32(i)<<1))
 		roomsWithPitDamage[st] = true
