@@ -303,7 +303,7 @@ func TestGenerateMap(t *testing.T) {
 		createRoom := func(st Supertile) (room *RoomState) {
 			var ok bool
 			if room, ok = supertiles[st]; ok {
-				fmt.Printf("    reusing room %s: %p\n", st, room)
+				fmt.Printf("    reusing room %s\n", st)
 				//if eID != room.EntranceID {
 				//	panic(fmt.Errorf("conflicting entrances for room %s", st))
 				//}
@@ -315,7 +315,7 @@ func TestGenerateMap(t *testing.T) {
 				Rendered:     nil,
 				TilesVisited: make(map[MapCoord]empty, 0x2000),
 			}
-			fmt.Printf("    creating room %s: %p\n", st, room)
+			fmt.Printf("    creating room %s\n", st)
 
 			// make a map full of $01 Collision and carve out reachable areas:
 			for i := range room.Reachable {
@@ -347,7 +347,7 @@ func TestGenerateMap(t *testing.T) {
 				tpos := read16(wram[:], uint32(0x19A0+(m<<1)))
 				// stop marker:
 				if tpos == 0 {
-					fmt.Fprintf(s.Logger, "    door stop at marker\n")
+					//fmt.Fprintf(s.Logger, "    door stop at marker\n")
 					break
 				}
 
@@ -642,6 +642,45 @@ func TestGenerateMap(t *testing.T) {
 			//	fmt.Fprintf(s.Logger, "    interroom stair at %s\n", t)
 			//}
 
+			for i := uint32(0); i < 0x20; i += 2 {
+				pos := MapCoord(read16(wram, 0x0540+i) >> 1)
+				if pos == 0 {
+					break
+				}
+				fmt.Printf(
+					"    manipulable(%s): %02x, %04x\n",
+					pos,
+					i,
+					read16(wram, 0x0500+i), // MANIPPROPS
+				)
+			}
+
+			for i := uint32(0); i < 6; i++ {
+				gt := read16(wram, 0x06E0+i<<1)
+				if gt == 0 {
+					break
+				}
+
+				fmt.Printf("    chest($%04x)\n", gt)
+
+				if gt&0x8000 != 0 {
+					// locked cell door:
+					t := MapCoord((gt & 0x7FFF) >> 1)
+					if tiles[t] == 0x58+uint8(i) {
+						tiles[t+0x00] = 0x00
+						tiles[t+0x01] = 0x00
+						tiles[t+0x40] = 0x00
+						tiles[t+0x41] = 0x00
+					}
+					if tiles[t|0x1000] == 0x58+uint8(i) {
+						tiles[t|0x1000+0x00] = 0x00
+						tiles[t|0x1000+0x01] = 0x00
+						tiles[t|0x1000+0x40] = 0x00
+						tiles[t|0x1000+0x41] = 0x00
+					}
+				}
+			}
+
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
 			return
@@ -703,12 +742,12 @@ func TestGenerateMap(t *testing.T) {
 				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
 			}
 
-			fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
-			fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
-			fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
-			fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
-			fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
-			fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
+			//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
+			//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
+			//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
+			//fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
+			//fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
+			//fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
 			pushEntryPoint := func(ep EntryPoint, name string) {
@@ -1593,7 +1632,7 @@ func (r *RoomState) isAlwaysWalkable(v uint8) bool {
 }
 
 // isMaybeWalkable checks if the tile could be walked on depending on what state it's in
-func (r *RoomState) isMaybeWalkable(v uint8) bool {
+func (r *RoomState) isMaybeWalkable(t MapCoord, v uint8) bool {
 	return v&0xF0 == 0x70 || // pots/pegs/blocks
 		v == 0x62 || // bombable floor
 		v == 0x66 || v == 0x67 // crystal pegs (orange/blue):
@@ -1999,7 +2038,7 @@ func (r *RoomState) FindReachableTiles(
 			continue
 		}
 
-		if r.isAlwaysWalkable(v) || r.isMaybeWalkable(v) {
+		if r.isAlwaysWalkable(v) || r.isMaybeWalkable(s.t, v) {
 			// no collision:
 			visited[s.t] = empty{}
 			f(s, v)
