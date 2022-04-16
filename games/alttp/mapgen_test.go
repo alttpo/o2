@@ -1481,6 +1481,13 @@ func AbsToMapCoord(absX, absY, layer uint16) MapCoord {
 	return MapCoord(c)
 }
 
+func (t MapCoord) ToAbsCoord() (x uint16, y uint16) {
+	_, row, col := t.RowCol()
+	y = row<<3 + 0x1
+	x = col<<3 - 0xE
+	return
+}
+
 func (t MapCoord) MoveBy(dir Direction, increment int) (MapCoord, Direction, bool) {
 	it := int(t)
 	row := (it & 0xFC0) >> 6
@@ -3254,13 +3261,23 @@ type HWIO struct {
 
 	ppu struct {
 		incrMode      bool   // false = increment after $2118, true = increment after $2119
-		incrAmt       uint32 // 1, 32, or 128
+		incrAmt       uint16 // 1, 32, or 128
 		addrRemapping byte
-		addr          uint32
+		addr          uint16
 	}
 
 	// mapped to $5000-$7FFF
 	Dyn [0x3000]byte
+}
+
+func (h *HWIO) Reset() {
+	h.dmaregs = [8]DMARegs{}
+	h.dma = [8]DMAChannel{}
+	h.ppu.incrMode = false
+	h.ppu.incrAmt = 0
+	h.ppu.addrRemapping = 0
+	h.ppu.addr = 0
+	h.Dyn = [0x3000]byte{}
 }
 
 func (h *HWIO) Read(address uint32) (value byte) {
@@ -3368,7 +3385,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 		}
 		h.ppu.addrRemapping = (value & 0x0C) >> 2
 		if h.ppu.addrRemapping != 0 {
-			panic(fmt.Errorf("unsupported VRAM address remapping mode %d", h.ppu.addrRemapping))
+			fmt.Printf("unsupported VRAM address remapping mode %d\n", h.ppu.addrRemapping)
 		}
 		//if h.s.Logger != nil {
 		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
@@ -3378,7 +3395,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2116 {
 		// VMADDL
-		h.ppu.addr = uint32(value) | h.ppu.addr&0xFF00
+		h.ppu.addr = uint16(value) | h.ppu.addr&0xFF00
 		//if h.s.Logger != nil {
 		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
 		//	fmt.Fprintf(h.s.Logger, "VMADDL = $%04x\n", h.ppu.addr)
@@ -3387,7 +3404,7 @@ func (h *HWIO) Write(address uint32, value byte) {
 	}
 	if offs == 0x2117 {
 		// VMADDH
-		h.ppu.addr = uint32(value)<<8 | h.ppu.addr&0x00FF
+		h.ppu.addr = uint16(value)<<8 | h.ppu.addr&0x00FF
 		//if h.s.Logger != nil {
 		//	fmt.Fprintf(h.s.Logger, "PC=$%06x\n", h.s.GetPC())
 		//	fmt.Fprintf(h.s.Logger, "VMADDH = $%04x\n", h.ppu.addr)
