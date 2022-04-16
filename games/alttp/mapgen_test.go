@@ -1988,7 +1988,9 @@ func (r *RoomState) FindReachableTiles(
 
 			// flip to swimming layer and state:
 			t := s.t ^ 0x1000
-			r.push(ScanState{t: t, d: s.d, s: StateSwim})
+			if m[t] != 0x1C && m[t] != 0x0D {
+				r.push(ScanState{t: t, d: s.d, s: StateSwim})
+			}
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 				r.push(ScanState{t: tn, d: dir, s: StateWalk})
@@ -2005,11 +2007,12 @@ func (r *RoomState) FindReachableTiles(
 			// can move in any direction:
 			r.pushAllDirections(s.t, StateWalk)
 
-			t := s.t ^ 0x1000
-
-			// check for water above/below us:
-			if v != 0x08 && m[t] == 0x08 {
-				r.pushAllDirections(t, StateSwim)
+			// check for water below us:
+			t := s.t | 0x1000
+			if t != s.t && m[t] == 0x08 {
+				if v != 0x08 && v != 0x0D {
+					r.pushAllDirections(t, StateSwim)
+				}
 			}
 			continue
 		}
