@@ -311,17 +311,7 @@ func TestGenerateMap(t *testing.T) {
 				return
 			}
 
-			room = &RoomState{
-				Supertile:    st,
-				Rendered:     nil,
-				TilesVisited: make(map[MapCoord]empty, 0x2000),
-			}
 			fmt.Printf("    creating room %s\n", st)
-
-			// make a map full of $01 Collision and carve out reachable areas:
-			for i := range room.Reachable {
-				room.Reachable[i] = 0x01
-			}
 
 			// load and draw current supertile:
 			write16(s.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
@@ -329,6 +319,11 @@ func TestGenerateMap(t *testing.T) {
 				panic(err)
 			}
 
+			room = &RoomState{
+				Supertile:    st,
+				Rendered:     nil,
+				TilesVisited: make(map[MapCoord]empty, 0x2000),
+			}
 			wram := (&room.WRAM)[:]
 			tiles := (&room.Tiles)[:]
 
@@ -336,11 +331,38 @@ func TestGenerateMap(t *testing.T) {
 			copy(wram, s.WRAM[:])
 			copy(tiles, s.WRAM[0x12000:0x14000])
 
+			// make a map full of $01 Collision and carve out reachable areas:
+			for i := range room.Reachable {
+				room.Reachable[i] = 0x01
+			}
+
 			g.Rooms = append(g.Rooms, room)
 			supertiles[st] = room
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), wram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), tiles, 0644)
+
+			room.WarpExitTo = Supertile(read8(wram, 0xC000))
+			room.StairExitTo = [4]Supertile{
+				Supertile(read8(wram, uint32(0xC001))),
+				Supertile(read8(wram, uint32(0xC002))),
+				Supertile(read8(wram, uint32(0xC003))),
+				Supertile(read8(wram, uint32(0xC004))),
+			}
+			room.WarpExitLayer = MapCoord(read8(wram, uint32(0x063C))&2) << 11
+			room.StairTargetLayer = [4]MapCoord{
+				MapCoord(read8(wram, uint32(0x063D))&2) << 11,
+				MapCoord(read8(wram, uint32(0x063E))&2) << 11,
+				MapCoord(read8(wram, uint32(0x063F))&2) << 11,
+				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
+			}
+
+			//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
+			//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
+			//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
+			//fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
+			//fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
+			//fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
 
 			// process doors first:
 			doors := make([]Door, 0, 16)
@@ -629,19 +651,19 @@ func TestGenerateMap(t *testing.T) {
 				room.SwapLayers[t|0x1000+0x41] = empty{}
 			}
 
-			// we don't need this.
-			//// find interroom stair objects:
-			//stairCount := uint32(0)
-			//for _, n := range []uint32{0x0438, 0x043A, 0x047E, 0x0482, 0x0480, 0x0484, 0x04A2, 0x04A6, 0x04A4, 0x04A8} {
-			//	index := uint32(read16(wram, n))
-			//	if index > stairCount {
-			//		stairCount = index
-			//	}
-			//}
-			//for i := uint32(0); i < stairCount; i += 2 {
-			//	t := MapCoord(read16(wram, 0x06B0+i))
-			//	fmt.Fprintf(s.Logger, "    interroom stair at %s\n", t)
-			//}
+			// find interroom stair objects:
+			stairCount := uint32(0)
+			for _, n := range []uint32{0x0438, 0x043A, 0x047E, 0x0482, 0x0480, 0x0484, 0x04A2, 0x04A6, 0x04A4, 0x04A8} {
+				index := uint32(read16(wram, n))
+				if index > stairCount {
+					stairCount = index
+				}
+			}
+			for i := uint32(0); i < stairCount; i += 2 {
+				t := MapCoord(read16(wram, 0x06B0+i))
+				room.Stairs = append(room.Stairs, t)
+				fmt.Fprintf(s.Logger, "    interroom stair at %s\n", t)
+			}
 
 			for i := uint32(0); i < 0x20; i += 2 {
 				pos := MapCoord(read16(wram, 0x0540+i) >> 1)
@@ -706,7 +728,7 @@ func TestGenerateMap(t *testing.T) {
 
 		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
-		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone})
+		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone, ExitPoint{}})
 
 		// process the LIFO:
 		for len(lifo) != 0 {
@@ -722,44 +744,29 @@ func TestGenerateMap(t *testing.T) {
 			// create a room by emulation:
 			room := createRoom(this)
 
-			wram := (&room.WRAM)[:]
-
 			// check if room causes pit damage vs warp:
 			// RoomsWithPitDamage#_00990C [0x70]uint16
 			pitDamages := roomsWithPitDamage[this]
 
-			warpExitTo := Supertile(read8(wram, 0xC000))
-			stairExitTo := [4]Supertile{
-				Supertile(read8(wram, uint32(0xC001))),
-				Supertile(read8(wram, uint32(0xC002))),
-				Supertile(read8(wram, uint32(0xC003))),
-				Supertile(read8(wram, uint32(0xC004))),
-			}
-			warpExitLayer := MapCoord(read8(wram, uint32(0x063C))&2) << 11
-			stairTargetLayer := [4]MapCoord{
-				MapCoord(read8(wram, uint32(0x063D))&2) << 11,
-				MapCoord(read8(wram, uint32(0x063E))&2) << 11,
-				MapCoord(read8(wram, uint32(0x063F))&2) << 11,
-				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
-			}
-
-			//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
-			//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
-			//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
-			//fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
-			//fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
-			//fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
+			warpExitTo := room.WarpExitTo
+			stairExitTo := &room.StairExitTo
+			warpExitLayer := room.WarpExitLayer
+			stairTargetLayer := &room.StairTargetLayer
 
 			//exitSeen := make(map[Supertile]struct{}, 24)
 			pushEntryPoint := func(ep EntryPoint, name string) {
-				//if ep.Supertile == 0 {
-				//	panic("exit to 0!!")
-				//}
-
 				// for EG2:
 				if this >= 0x100 {
 					ep.Supertile |= 0x100
 				}
+
+				room.EntryPoints = append(room.EntryPoints, ep)
+				room.ExitPoints = append(room.ExitPoints, ExitPoint{
+					Supertile:    ep.Supertile,
+					Point:        ep.From.Point,
+					Direction:    ep.From.Direction,
+					WorthMarking: ep.From.WorthMarking,
+				})
 
 				lifo = append(lifo, ep)
 				fmt.Fprintf(s.Logger, "    %s to %s\n", name, ep)
@@ -769,11 +776,20 @@ func TestGenerateMap(t *testing.T) {
 
 			// flood fill to find reachable tiles:
 			tiles := &room.Tiles
+			markedPit := false
+			markedFloor := false
 			room.FindReachableTiles(
 				ep,
 				func(s ScanState, v uint8) {
 					t := s.t
 					d := s.d
+
+					exit := ExitPoint{
+						ep.Supertile,
+						t,
+						d,
+						false,
+					}
 
 					// here we found a reachable tile:
 					room.Reachable[t] = v
@@ -782,7 +798,7 @@ func TestGenerateMap(t *testing.T) {
 						// detect edge walkways:
 						if ok, edir, _, _ := t.IsEdge(); ok {
 							if sn, _, ok := this.MoveBy(edir); ok {
-								pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir}, fmt.Sprintf("%s walkway", edir))
+								pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir, exit}, fmt.Sprintf("%s walkway", edir))
 							}
 						}
 						return
@@ -796,22 +812,22 @@ func TestGenerateMap(t *testing.T) {
 						if row >= 0x3A {
 							// south:
 							if sn, sd, ok := this.MoveBy(DirSouth); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x06 << 6) | col), sd}, "south door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x06 << 6) | col), sd, exit}, "south door")
 							}
 						} else if row <= 0x06 {
 							// north:
 							if sn, sd, ok := this.MoveBy(DirNorth); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x3A << 6) | col), sd}, "north door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x3A << 6) | col), sd, exit}, "north door")
 							}
 						} else if col >= 0x3A {
 							// east:
 							if sn, sd, ok := this.MoveBy(DirEast); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x06), sd}, "east door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x06), sd, exit}, "east door")
 							}
 						} else if col <= 0x06 {
 							// west:
 							if sn, sd, ok := this.MoveBy(DirWest); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x3A), sd}, "west door")
+								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x3A), sd, exit}, "west door")
 							}
 						}
 
@@ -851,23 +867,23 @@ func TestGenerateMap(t *testing.T) {
 							if v&1 == 0 {
 								// north-south normal doorway (no teleport doorways for north-south):
 								if sn, _, ok := this.MoveBy(edir); ok {
-									pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "north-south doorway")
+									pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "north-south doorway")
 								}
 							} else {
 								// east-west doorway:
 								if v == 0x89 {
 									// teleport doorway:
 									if edir == DirWest {
-										pushEntryPoint(EntryPoint{stairExitTo[2], t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "west teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[2], t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "west teleport doorway")
 									} else if edir == DirEast {
-										pushEntryPoint(EntryPoint{stairExitTo[3], t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "east teleport doorway")
+										pushEntryPoint(EntryPoint{stairExitTo[3], t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "east teleport doorway")
 									} else {
 										panic("invalid direction approaching east-west teleport doorway")
 									}
 								} else {
 									// normal doorway:
 									if sn, _, ok := this.MoveBy(edir); ok {
-										pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir}, "east-west doorway")
+										pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "east-west doorway")
 									}
 								}
 							}
@@ -894,7 +910,7 @@ func TestGenerateMap(t *testing.T) {
 								if tgtLayer != 0 {
 									dt += 0x80
 								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite(), exit}, fmt.Sprintf("spiralStair(%s)", t))
 							} else {
 								// going down
 								if t&0x1000 != 0 {
@@ -903,7 +919,7 @@ func TestGenerateMap(t *testing.T) {
 								if tgtLayer != 0 {
 									dt -= 0x80
 								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite()}, fmt.Sprintf("spiralStair(%s)", t))
+								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite(), exit}, fmt.Sprintf("spiralStair(%s)", t))
 							}
 							return
 						} else if vn == 0x38 {
@@ -932,7 +948,7 @@ func TestGenerateMap(t *testing.T) {
 									dt += 4 << 6
 								}
 							}
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d}, fmt.Sprintf("northStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d, exit}, fmt.Sprintf("northStair(%s)", t))
 							return
 						} else if vn == 0x39 {
 							// south stairs:
@@ -959,11 +975,11 @@ func TestGenerateMap(t *testing.T) {
 									dt += 4 << 6
 								}
 							}
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d}, fmt.Sprintf("southStair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d, exit}, fmt.Sprintf("southStair(%s)", t))
 							return
 						} else if vn == 0x00 {
 							// straight stairs:
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | stairTargetLayer[v&3], d.Opposite()}, fmt.Sprintf("stair(%s)", t))
+							pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | stairTargetLayer[v&3], d.Opposite(), exit}, fmt.Sprintf("stair(%s)", t))
 							return
 						}
 						panic(fmt.Errorf("unhandled stair exit at %s %s", t, d))
@@ -974,17 +990,22 @@ func TestGenerateMap(t *testing.T) {
 					if !pitDamages {
 						if v == 0x20 {
 							// pit tile
-							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("pit(%s)", t))
+							exit.WorthMarking = !markedPit
+							markedPit = true
+							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("pit(%s)", t))
 							return
 						} else if v == 0x62 {
 							// bombable floor tile
-							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("bombableFloor(%s)", t))
+							exit.WorthMarking = !markedFloor
+							markedFloor = true
+							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("bombableFloor(%s)", t))
 							return
 						}
 					}
 					if v == 0x4B {
 						// warp floor tile
-						pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d}, fmt.Sprintf("warp(%s)", t))
+						exit.WorthMarking = t&0x40 == 0 && t&0x01 == 0
+						pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("warp(%s)", t))
 						return
 					}
 				},
@@ -1072,6 +1093,9 @@ func renderAll(entranceGroups []Entrance) {
 	redTint := image.NewUniform(color.NRGBA{255, 0, 0, 56})
 	blueTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
 
+	black := image.NewUniform(color.RGBA{0, 0, 0, 255})
+	yellow := image.NewUniform(color.RGBA{255, 255, 0, 255})
+
 	for i := range entranceGroups {
 		g := &entranceGroups[i]
 		for _, room := range g.Rooms {
@@ -1095,12 +1119,64 @@ func renderAll(entranceGroups []Entrance) {
 					draw.Src,
 				)
 
-				// green highlight spots that are reachable:
+				// highlight tiles that are reachable:
 				if true {
 					maxRange := 0x2000
 					if room.IsDarkRoom() {
 						maxRange = 0x1000
 					}
+
+					// draw supertile over pits, bombable floors, and warps:
+					for j := range room.ExitPoints {
+						ep := &room.ExitPoints[j]
+						if !ep.WorthMarking {
+							continue
+						}
+
+						_, er, ec := ep.Point.RowCol()
+						x := int(ec) << 3
+						y := int(er) << 3
+						fd0 := font.Drawer{
+							Dst:  all,
+							Src:  black,
+							Face: inconsolata.Regular8x16,
+							Dot:  fixed.Point26_6{fixed.I(stx + x + 1), fixed.I(sty + y + 1)},
+						}
+						fd1 := font.Drawer{
+							Dst:  all,
+							Src:  yellow,
+							Face: inconsolata.Regular8x16,
+							Dot:  fixed.Point26_6{fixed.I(stx + x), fixed.I(sty + y)},
+						}
+						stStr := fmt.Sprintf("%02X", uint16(ep.Supertile))
+						fd0.DrawString(stStr)
+						fd1.DrawString(stStr)
+					}
+
+					// draw supertile over stairs:
+					for j := range room.Stairs {
+						sn := room.StairExitTo[j]
+						_, er, ec := room.Stairs[j].RowCol()
+
+						x := int(ec) << 3
+						y := int(er) << 3
+						fd0 := font.Drawer{
+							Dst:  all,
+							Src:  black,
+							Face: inconsolata.Regular8x16,
+							Dot:  fixed.Point26_6{fixed.I(stx + 8 + x + 1), fixed.I(sty - 8 + y + 1 + 12)},
+						}
+						fd1 := font.Drawer{
+							Dst:  all,
+							Src:  yellow,
+							Face: inconsolata.Regular8x16,
+							Dot:  fixed.Point26_6{fixed.I(stx + 8 + x), fixed.I(sty - 8 + y + 12)},
+						}
+						stStr := fmt.Sprintf("%02X", uint16(sn))
+						fd0.DrawString(stStr)
+						fd1.DrawString(stStr)
+					}
+
 					for t := 0; t < maxRange; t++ {
 						v := room.Reachable[t]
 						if v == 0x01 {
@@ -1116,9 +1192,11 @@ func renderAll(entranceGroups []Entrance) {
 							overlay = redTint
 						}
 
+						x := int(tc) << 3
+						y := int(tr) << 3
 						draw.Draw(
 							all,
-							image.Rect(stx+int(tc)<<3, sty+int(tr)<<3, stx+int(tc)<<3+8, sty+int(tr)<<3+8),
+							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
 							overlay,
 							image.Point{},
 							draw.Over,
@@ -1566,11 +1644,19 @@ type ScanState struct {
 	s LinkState
 }
 
+type ExitPoint struct {
+	Supertile
+	Point MapCoord
+	Direction
+	WorthMarking bool
+}
+
 type EntryPoint struct {
 	Supertile
 	Point MapCoord
 	Direction
 	//LinkState
+	From ExitPoint
 }
 
 func (ep EntryPoint) String() string {
@@ -1583,7 +1669,16 @@ type RoomState struct {
 
 	Rendered image.Image
 
+	EntryPoints []EntryPoint
+	ExitPoints  []ExitPoint
+
+	WarpExitTo       Supertile
+	StairExitTo      [4]Supertile
+	WarpExitLayer    MapCoord
+	StairTargetLayer [4]MapCoord
+
 	Doors      []Door
+	Stairs     []MapCoord
 	SwapLayers map[MapCoord]empty // $06C0[size=$044E >> 1]
 
 	TilesVisited map[MapCoord]empty
