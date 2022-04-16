@@ -1112,7 +1112,7 @@ func renderAll(entranceGroups []Entrance) {
 						if lyr != 0 {
 							overlay = blueTint
 						}
-						if v == 0x20 {
+						if v == 0x20 || v == 0x62 {
 							overlay = redTint
 						}
 
