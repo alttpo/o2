@@ -776,8 +776,6 @@ func TestGenerateMap(t *testing.T) {
 
 			// flood fill to find reachable tiles:
 			tiles := &room.Tiles
-			markedPit := false
-			markedFloor := false
 			room.FindReachableTiles(
 				ep,
 				func(s ScanState, v uint8) {
@@ -990,14 +988,14 @@ func TestGenerateMap(t *testing.T) {
 					if !pitDamages {
 						if v == 0x20 {
 							// pit tile
-							exit.WorthMarking = !markedPit
-							markedPit = true
+							exit.WorthMarking = !room.markedPit
+							room.markedPit = true
 							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("pit(%s)", t))
 							return
 						} else if v == 0x62 {
 							// bombable floor tile
-							exit.WorthMarking = !markedFloor
-							markedFloor = true
+							exit.WorthMarking = !room.markedFloor
+							room.markedFloor = true
 							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("bombableFloor(%s)", t))
 							return
 						}
@@ -1688,8 +1686,10 @@ type RoomState struct {
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
 
-	lifoSpace [0x2000]ScanState
-	lifo      []ScanState
+	markedPit   bool
+	markedFloor bool
+	lifoSpace   [0x2000]ScanState
+	lifo        []ScanState
 }
 
 func (r *RoomState) push(s ScanState) {
