@@ -1067,10 +1067,12 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 
 	// condense all maps into one image:
-	renderAll(entranceGroups)
+	renderAll("all", entranceGroups, 0, 0x13)
+	renderAll("eg1", entranceGroups, 0x00, 0x10)
+	renderAll("eg2", entranceGroups, 0x10, 0x3)
 }
 
-func renderAll(entranceGroups []Entrance) {
+func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount int) {
 	var err error
 
 	const divider = 1
@@ -1078,7 +1080,7 @@ func renderAll(entranceGroups []Entrance) {
 
 	wga := sync.WaitGroup{}
 
-	all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (0x130*supertilepx)/0x10))
+	all := image.NewNRGBA(image.Rect(0, 0, 0x10*supertilepx, (rowCount*0x10*supertilepx)/0x10))
 	// clear the image and remove alpha layer
 	draw.Draw(
 		all,
@@ -1103,8 +1105,12 @@ func renderAll(entranceGroups []Entrance) {
 				continue
 			}
 
-			row := st / 0x10
+			row := st/0x10 - rowStart
 			col := st % 0x10
+			if row < 0 || row >= rowCount {
+				continue
+			}
+
 			wga.Add(1)
 			go func(room *RoomState) {
 				stx := col * supertilepx
@@ -1206,9 +1212,9 @@ func renderAll(entranceGroups []Entrance) {
 			}(room)
 		}
 	}
-
 	wga.Wait()
-	if err = exportPNG(fmt.Sprintf("data/all-%d.png", divider), all); err != nil {
+
+	if err = exportPNG(fmt.Sprintf("data/%s.png", fname), all); err != nil {
 		panic(err)
 	}
 }
