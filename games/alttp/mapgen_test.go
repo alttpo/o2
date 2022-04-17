@@ -350,16 +350,24 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Printf("    creating room %s\n", st)
 
 			// load and draw current supertile:
-			write16(e.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
-			if err = e.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+			write16(e.WRAM[:], 0xA0, uint16(st))
+			if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
 				panic(err)
 			}
 
+			//// load and draw current supertile:
+			//write16(e.HWIO.Dyn[:], b01LoadAndDrawRoomSetSupertilePC-0x01_5000, uint16(st))
+			//if err = e.ExecAt(b01LoadAndDrawRoomPC, 0); err != nil {
+			//	panic(err)
+			//}
+
 			room = &RoomState{
-				Supertile:    st,
-				Rendered:     nil,
-				TilesVisited: make(map[MapCoord]empty, 0x2000),
+				Supertile:         st,
+				Rendered:          nil,
+				TilesVisitedStar0: make(map[MapCoord]empty, 0x2000),
+				TilesVisitedStar1: make(map[MapCoord]empty, 0x2000),
 			}
+			room.TilesVisited = room.TilesVisitedStar0
 			wram := (&room.WRAM)[:]
 			tiles := (&room.Tiles)[:]
 
@@ -1043,35 +1051,50 @@ func TestGenerateMap(t *testing.T) {
 						return
 					}
 
-					if false {
+					if true {
 						if v == 0x3A || v == 0x3B {
+							// prepare emulator for execution within this supertile:
+							copy(e.WRAM[:], room.WRAM[:])
+							copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
+
 							// star tile
 							write8(e.WRAM[:], 0x10, 0x07)
 							write8(e.WRAM[:], 0x11, 0x00)
-							write8(e.WRAM[:], 0x04BA, 0)
-							write8(e.WRAM[:], 0x04C7, 0)
+							write8(e.WRAM[:], 0xB0, 0x00)
+							//write8(e.WRAM[:], 0x04BA, 0)
+							write8(e.WRAM[:], 0x04C7, 0) // enable tags
+							write8(e.WRAM[:], 0x02E4, 0) // no cutscene
 							// $AE/AF is already set after loading room
 
 							x, y := t.ToAbsCoord()
 							write16(e.WRAM[:], 0x20, y)
 							write16(e.WRAM[:], 0x22, x)
+							if AbsToMapCoord(x, y, uint16(t&0x1000)) != t {
+								panic("failed to preserve map->abs->map coordinate transform")
+							}
 
-							copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
-
-							//e.LoggerCPU = e.Logger
+							//if this == 0x07B {
+							//	e.LoggerCPU = e.Logger
+							//}
 							if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
 								panic(err)
 							}
-							//e.LoggerCPU = nil
+							e.LoggerCPU = nil
 
 							// update room state:
 							copy(room.WRAM[:], e.WRAM[:])
 							copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
 
-							// reset visited status on all tiles:
-							//room.TilesVisited = map[MapCoord]empty{}
-
-							ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap2", uint16(this)), room.Tiles[:], 0644)
+							// swap out visited maps:
+							if read8(room.WRAM[:], 0x04BC) == 0 {
+								fmt.Fprintf(e.Logger, "    star0\n")
+								room.TilesVisited = room.TilesVisitedStar0
+								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
+							} else {
+								fmt.Fprintf(e.Logger, "    star1\n")
+								room.TilesVisited = room.TilesVisitedStar1
+								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
+							}
 						}
 					}
 				},
@@ -1135,9 +1158,9 @@ func TestGenerateMap(t *testing.T) {
 	wg.Wait()
 
 	// condense all maps into one image:
-	renderAll("all", entranceGroups, 0, 0x13)
 	renderAll("eg1", entranceGroups, 0x00, 0x10)
 	renderAll("eg2", entranceGroups, 0x10, 0x3)
+	renderAll("all", entranceGroups, 0, 0x13)
 }
 
 func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount int) {
@@ -1761,8 +1784,12 @@ type RoomState struct {
 	SwapLayers map[MapCoord]empty // $06C0[size=$044E >> 1]
 
 	TilesVisited map[MapCoord]empty
-	Tiles        [0x2000]byte
-	Reachable    [0x2000]byte
+
+	TilesVisitedStar0 map[MapCoord]empty
+	TilesVisitedStar1 map[MapCoord]empty
+
+	Tiles     [0x2000]byte
+	Reachable [0x2000]byte
 
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
@@ -1847,7 +1874,6 @@ func (r *RoomState) FindReachableTiles(
 	visit func(s ScanState, v uint8),
 ) {
 	m := &r.Tiles
-	visited := r.TilesVisited
 
 	// if we ever need to wrap
 	f := visit
@@ -1861,7 +1887,7 @@ func (r *RoomState) FindReachableTiles(
 		s := r.lifo[lifoLen]
 		r.lifo = r.lifo[:lifoLen]
 
-		if _, ok := visited[s.t]; ok {
+		if _, ok := r.TilesVisited[s.t]; ok {
 			continue
 		}
 
@@ -1871,7 +1897,7 @@ func (r *RoomState) FindReachableTiles(
 			// allow 00 and 01 in pipes for TR $015 center area:
 			if v == 0x00 || v == 0x01 {
 				// continue in the same direction:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 				if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
 					r.push(ScanState{t: tn, d: dir, s: StatePipe})
@@ -1881,7 +1907,7 @@ func (r *RoomState) FindReachableTiles(
 
 			// straight:
 			if v == 0xB0 || v == 0xB1 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// check for pipe exit 3 tiles in advance:
@@ -1908,7 +1934,7 @@ func (r *RoomState) FindReachableTiles(
 
 			// west to south or north to east:
 			if v == 0xB2 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if s.d == DirWest {
@@ -1924,7 +1950,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 			// south to east or west to north:
 			if v == 0xB3 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if s.d == DirSouth {
@@ -1940,7 +1966,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 			// north to west or east to south:
 			if v == 0xB4 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if s.d == DirNorth {
@@ -1956,7 +1982,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 			// east to north or south to west:
 			if v == 0xB5 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if s.d == DirEast {
@@ -1973,7 +1999,7 @@ func (r *RoomState) FindReachableTiles(
 
 			// line exit:
 			if v == 0xB6 {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// check for 2 pit tiles beyond exit:
@@ -1996,7 +2022,7 @@ func (r *RoomState) FindReachableTiles(
 			// south, west, east junction:
 			if v == 0xB7 {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirSouth, 1); ok {
@@ -2014,7 +2040,7 @@ func (r *RoomState) FindReachableTiles(
 			// north, west, east junction:
 			if v == 0xB8 {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
@@ -2032,7 +2058,7 @@ func (r *RoomState) FindReachableTiles(
 			// north, east, south junction:
 			if v == 0xB9 {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
@@ -2050,7 +2076,7 @@ func (r *RoomState) FindReachableTiles(
 			// north, west, south junction:
 			if v == 0xBA {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
@@ -2068,7 +2094,7 @@ func (r *RoomState) FindReachableTiles(
 			// 4-way junction:
 			if v == 0xBB {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if tn, dir, ok := s.t.MoveBy(DirNorth, 1); ok {
@@ -2089,7 +2115,7 @@ func (r *RoomState) FindReachableTiles(
 			// possible exit:
 			if v == 0xBC {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// continue in the same direction:
@@ -2119,7 +2145,7 @@ func (r *RoomState) FindReachableTiles(
 			// cross-over:
 			if v == 0xBD {
 				// do not mark as visited in case we cross from the other direction later:
-				//visited[s.t] = empty{}
+				//r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// continue in the same direction:
@@ -2131,7 +2157,7 @@ func (r *RoomState) FindReachableTiles(
 
 			// pipe exit:
 			if v == 0xBE {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// continue in the same direction but not in pipe-follower state:
@@ -2151,12 +2177,12 @@ func (r *RoomState) FindReachableTiles(
 
 			if v == 0x02 || v == 0x03 {
 				// collision:
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				continue
 			}
 
 			if v == 0x0A {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// flip to walking:
@@ -2169,7 +2195,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 
 			if v == 0x1D {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// flip to walking:
@@ -2182,7 +2208,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 
 			if v == 0x3D {
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				// flip to walking:
@@ -2195,7 +2221,7 @@ func (r *RoomState) FindReachableTiles(
 			}
 
 			// can swim over mostly everything on layer 2:
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 			r.pushAllDirections(s.t, StateSwim)
 			continue
@@ -2203,7 +2229,7 @@ func (r *RoomState) FindReachableTiles(
 
 		if v == 0x08 {
 			// deep water:
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// flip to swimming layer and state:
@@ -2221,7 +2247,7 @@ func (r *RoomState) FindReachableTiles(
 
 		if r.isAlwaysWalkable(v) || r.isMaybeWalkable(s.t, v) {
 			// no collision:
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// can move in any direction:
@@ -2239,12 +2265,12 @@ func (r *RoomState) FindReachableTiles(
 
 		if v == 0x0A {
 			// deep water ladder:
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// transition to swim state on other layer:
 			t := s.t | 0x1000
-			visited[t] = empty{}
+			r.TilesVisited[t] = empty{}
 			f(ScanState{t: t, d: s.d, s: StateSwim}, v)
 
 			if tn, dir, ok := t.MoveBy(s.d, 1); ok {
@@ -2255,7 +2281,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// layer pass through:
 		if v == 0x1C {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if s.t&0x1000 == 0 {
@@ -2279,7 +2305,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// north-facing stairs:
 		if v == 0x1D {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -2289,7 +2315,7 @@ func (r *RoomState) FindReachableTiles(
 		}
 		// north-facing stairs, layer changing:
 		if v >= 0x1E && v <= 0x1F {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
@@ -2307,7 +2333,7 @@ func (r *RoomState) FindReachableTiles(
 			// don't mark as visited since it's possible we could also fall through this pit tile from above
 			// TODO: fix this to accommodate both position and direction in the visited[] check and introduce
 			// a Falling direction
-			//visited[s.t] = empty{}
+			//r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// check what's beyond the pit:
@@ -2325,7 +2351,7 @@ func (r *RoomState) FindReachableTiles(
 
 				// somaria line start:
 				if v == 0xB6 || v == 0xBC {
-					visited[t] = empty{}
+					r.TilesVisited[t] = empty{}
 					f(ScanState{t: t, d: s.d}, v)
 
 					// find corresponding B0..B1 directional line to follow:
@@ -2353,7 +2379,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2B {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// check for hookable tiles across from this ledge:
@@ -2392,7 +2418,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// interroom stair exits:
 		if v >= 0x30 && v <= 0x37 {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
@@ -2406,7 +2432,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// 38=Straight interroom stairs north/down edge (39= south/up edge):
 		if v == 0x38 || v == 0x39 {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// don't continue beyond a staircase unless it's our entry point:
@@ -2420,7 +2446,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// south-facing single-layer auto stairs:
 		if v == 0x3D {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -2430,7 +2456,7 @@ func (r *RoomState) FindReachableTiles(
 		}
 		// south-facing layer-swap auto stairs:
 		if v >= 0x3E && v <= 0x3F {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 2); ok {
@@ -2444,7 +2470,7 @@ func (r *RoomState) FindReachableTiles(
 		// spiral staircase:
 		// $5F is the layer 2 version of $5E (spiral staircase)
 		if v == 0x5E || v == 0x5F {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, m[s.t])
 
 			if tn, dir, ok := s.t.MoveBy(s.d, 1); ok {
@@ -2472,7 +2498,7 @@ func (r *RoomState) FindReachableTiles(
 					panic(fmt.Errorf("north-south door approached from perpendicular direction %s at %s", s.d, s.t))
 				}
 
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
@@ -2499,7 +2525,7 @@ func (r *RoomState) FindReachableTiles(
 					panic(fmt.Errorf("east-west door approached from perpendicular direction %s at %s", s.d, s.t))
 				}
 
-				visited[s.t] = empty{}
+				r.TilesVisited[s.t] = empty{}
 				f(s, v)
 
 				if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
@@ -2514,7 +2540,7 @@ func (r *RoomState) FindReachableTiles(
 		}
 		// east-west teleport door
 		if v == 0x89 {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
@@ -2528,7 +2554,7 @@ func (r *RoomState) FindReachableTiles(
 		}
 		// entrance door (8E = north-south?, 8F = east-west??):
 		if v == 0x8E || v == 0x8F {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if s.d == DirNone {
@@ -2554,7 +2580,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// Layer/dungeon toggle doorways:
 		if v >= 0x90 && v <= 0xAF {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if ok, edir, _, _ := s.t.IsDoorEdge(); ok && edir == s.d {
@@ -2569,7 +2595,7 @@ func (r *RoomState) FindReachableTiles(
 
 		// TR pipe entrance:
 		if v == 0xBE {
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			// find corresponding B0..B1 directional pipe to follow:
@@ -2627,7 +2653,7 @@ func (r *RoomState) FindReachableTiles(
 				continue
 			}
 
-			visited[s.t] = empty{}
+			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
 			if t, _, ok := s.t.MoveBy(s.d, 2); ok {
@@ -2637,7 +2663,7 @@ func (r *RoomState) FindReachableTiles(
 		}
 
 		// anything else is considered solid:
-		//visited[s.t] = empty{}
+		//r.TilesVisited[s.t] = empty{}
 		continue
 	}
 }
