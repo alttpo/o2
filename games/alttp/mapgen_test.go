@@ -1052,7 +1052,9 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					if true {
-						if v == 0x3A || v == 0x3B {
+						v16 := read16(room.Tiles[:], uint32(t))
+						// TODO 0x2323
+						if v16 == 0x3A3A || v16 == 0x3B3B {
 							// prepare emulator for execution within this supertile:
 							copy(e.WRAM[:], room.WRAM[:])
 							copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
@@ -1066,14 +1068,14 @@ func TestGenerateMap(t *testing.T) {
 							write8(e.WRAM[:], 0x02E4, 0) // no cutscene
 							// $AE/AF is already set after loading room
 
-							x, y := t.ToAbsCoord()
+							// set absolute x,y coordinates to the tile:
+							x, y := t.ToAbsCoord(this)
 							write16(e.WRAM[:], 0x20, y)
 							write16(e.WRAM[:], 0x22, x)
-							if AbsToMapCoord(x, y, uint16(t&0x1000)) != t {
-								panic("failed to preserve map->abs->map coordinate transform")
-							}
+							write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
 
-							//if this == 0x07B {
+							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
+							//if this == 0x058 {
 							//	e.LoggerCPU = e.Logger
 							//}
 							if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
@@ -1565,17 +1567,21 @@ func (s LinkState) String() string {
 
 func AbsToMapCoord(absX, absY, layer uint16) MapCoord {
 	// modeled after RoomTag_GetTilemapCoords#_01CDA5
-	c := ((absY+0xFFFF)&0x01F8)<<3 | ((absX+0x000E)&0x01F8)>>3
+	c := ((absY)&0x01F8)<<3 | ((absX)&0x01F8)>>3
 	if layer != 0 {
 		return MapCoord(c | 0x1000)
 	}
 	return MapCoord(c)
 }
 
-func (t MapCoord) ToAbsCoord() (x uint16, y uint16) {
+func (t MapCoord) ToAbsCoord(st Supertile) (x uint16, y uint16) {
 	_, row, col := t.RowCol()
-	y = row<<3 + 0x1
-	x = col<<3 - 0xE
+	x = col<<3 + 0x1
+	y = row<<3 - 0xE
+
+	// add absolute position from supertile:
+	y += (uint16(st) & 0xF0) << 5
+	x += (uint16(st) & 0x0F) << 9
 	return
 }
 
