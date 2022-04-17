@@ -1042,6 +1042,38 @@ func TestGenerateMap(t *testing.T) {
 						pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("warp(%s)", t))
 						return
 					}
+
+					if false {
+						if v == 0x3A || v == 0x3B {
+							// star tile
+							write8(e.WRAM[:], 0x10, 0x07)
+							write8(e.WRAM[:], 0x11, 0x00)
+							write8(e.WRAM[:], 0x04BA, 0)
+							write8(e.WRAM[:], 0x04C7, 0)
+							// $AE/AF is already set after loading room
+
+							x, y := t.ToAbsCoord()
+							write16(e.WRAM[:], 0x20, y)
+							write16(e.WRAM[:], 0x22, x)
+
+							copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
+
+							//e.LoggerCPU = e.Logger
+							if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
+								panic(err)
+							}
+							//e.LoggerCPU = nil
+
+							// update room state:
+							copy(room.WRAM[:], e.WRAM[:])
+							copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
+
+							// reset visited status on all tiles:
+							//room.TilesVisited = map[MapCoord]empty{}
+
+							ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap2", uint16(this)), room.Tiles[:], 0644)
+						}
+					}
 				},
 			)
 
