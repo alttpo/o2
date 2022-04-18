@@ -366,6 +366,8 @@ func TestGenerateMap(t *testing.T) {
 				Rendered:          nil,
 				TilesVisitedStar0: make(map[MapCoord]empty, 0x2000),
 				TilesVisitedStar1: make(map[MapCoord]empty, 0x2000),
+				TilesVisitedTag0:  make(map[MapCoord]empty, 0x2000),
+				TilesVisitedTag1:  make(map[MapCoord]empty, 0x2000),
 			}
 			room.TilesVisited = room.TilesVisitedStar0
 			wram := (&room.WRAM)[:]
@@ -770,6 +772,55 @@ func TestGenerateMap(t *testing.T) {
 			go drawSupertile(&wg, room)
 		}
 
+		handleRoomTags := func(room *RoomState, t MapCoord) bool {
+			// prepare emulator for execution within this supertile:
+			copy(e.WRAM[:], room.WRAM[:])
+			copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
+
+			// star tile
+			write8(e.WRAM[:], 0x10, 0x07)
+			write8(e.WRAM[:], 0x11, 0x00)
+			write8(e.WRAM[:], 0xB0, 0x00)
+			//write8(e.WRAM[:], 0x04BA, 0)
+			write8(e.WRAM[:], 0x04C7, 0) // enable tags
+			write8(e.WRAM[:], 0x02E4, 0) // no cutscene
+			// $AE/AF is already set after loading room
+
+			// set absolute x,y coordinates to the tile:
+			x, y := t.ToAbsCoord(room.Supertile)
+			write16(e.WRAM[:], 0x20, y)
+			write16(e.WRAM[:], 0x22, x)
+			write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
+
+			oldAE, oldAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
+			old04BC := read8(room.WRAM[:], 0x04BC)
+
+			//if this == 0x058 {
+			//	e.LoggerCPU = e.Logger
+			//}
+			if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
+				panic(err)
+			}
+			//e.LoggerCPU = nil
+
+			// update room state:
+			copy(room.WRAM[:], e.WRAM[:])
+			copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
+
+			// if $AE or $AF (room tags) are modified, then the tag was activated:
+			newAE, newAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
+			if newAE != oldAE || newAF != oldAF {
+				return true
+			}
+
+			new04BC := read8(room.WRAM[:], 0x04BC)
+			if new04BC != old04BC {
+				return true
+			}
+
+			return false
+		}
+
 		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
 		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone, ExitPoint{}})
@@ -1052,40 +1103,32 @@ func TestGenerateMap(t *testing.T) {
 					}
 
 					if true {
+						// manipulables (pots, hammer pegs, push blocks):
+						if v&0xF0 == 0x70 {
+							// find gfx tilemap position:
+							j := (uint32(v) & 0x0F) << 1
+							p := read16(room.WRAM[:], 0x0500+j)
+							fmt.Fprintf(e.Logger, "    manip(%s) %02x = %04x\n", t, v, p)
+							if p == 0 {
+								fmt.Fprintf(e.Logger, "    pushBlock(%s)\n", t)
+
+								// push block flips 0x0641
+								write8(room.WRAM[:], 0x0641, 0x01)
+								if read8(room.WRAM[:], 0xAE)|read8(room.WRAM[:], 0xAF) != 0 {
+									// handle tags if there are any after the push to see if it triggers a secret:
+									handleRoomTags(room, t)
+									// TODO: properly determine which tag was activated
+									room.TilesVisited = room.TilesVisitedTag0
+								}
+							}
+							return
+						}
+
 						v16 := read16(room.Tiles[:], uint32(t))
 						// TODO 0x2323
 						if v16 == 0x3A3A || v16 == 0x3B3B {
-							// prepare emulator for execution within this supertile:
-							copy(e.WRAM[:], room.WRAM[:])
-							copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
-
-							// star tile
-							write8(e.WRAM[:], 0x10, 0x07)
-							write8(e.WRAM[:], 0x11, 0x00)
-							write8(e.WRAM[:], 0xB0, 0x00)
-							//write8(e.WRAM[:], 0x04BA, 0)
-							write8(e.WRAM[:], 0x04C7, 0) // enable tags
-							write8(e.WRAM[:], 0x02E4, 0) // no cutscene
-							// $AE/AF is already set after loading room
-
-							// set absolute x,y coordinates to the tile:
-							x, y := t.ToAbsCoord(this)
-							write16(e.WRAM[:], 0x20, y)
-							write16(e.WRAM[:], 0x22, x)
-							write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
-
 							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
-							//if this == 0x058 {
-							//	e.LoggerCPU = e.Logger
-							//}
-							if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
-								panic(err)
-							}
-							e.LoggerCPU = nil
-
-							// update room state:
-							copy(room.WRAM[:], e.WRAM[:])
-							copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
+							handleRoomTags(room, t)
 
 							// swap out visited maps:
 							if read8(room.WRAM[:], 0x04BC) == 0 {
@@ -1097,6 +1140,7 @@ func TestGenerateMap(t *testing.T) {
 								room.TilesVisited = room.TilesVisitedStar1
 								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
 							}
+							return
 						}
 					}
 				},
@@ -1793,6 +1837,8 @@ type RoomState struct {
 
 	TilesVisitedStar0 map[MapCoord]empty
 	TilesVisitedStar1 map[MapCoord]empty
+	TilesVisitedTag0  map[MapCoord]empty
+	TilesVisitedTag1  map[MapCoord]empty
 
 	Tiles     [0x2000]byte
 	Reachable [0x2000]byte
