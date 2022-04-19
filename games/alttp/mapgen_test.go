@@ -231,22 +231,37 @@ func TestGenerateMap(t *testing.T) {
 		a.Comment("enable tags")
 		a.STZ_abs(0x04C7)
 
+		//a.Comment("Graphics_LoadChrHalfSlot#_00E43A")
+		//a.JSL(0x00_E43A)
 		a.Comment("Underworld_HandleRoomTags#_01C2FD")
 		a.JSL(0x01_C2FD)
 
 		// check if submodule changed:
 		a.LDA_dp(0x11)
-		a.BEQ("exit")
+		a.BEQ("no_submodule")
 
 		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
+
+		a.Label("no_submodule")
 		// this code sets up the DMA transfer parameters for animated BG tiles:
 		a.Comment("NMI_PrepareSprites")
 		a.JSR_abs(0x85FC)
+
+		// fake NMI:
+		//a.REP(0x30)
+		//a.PHD()
+		//a.PHB()
+		//a.LDA_imm16_w(0)
+		//a.TCD()
+		//a.PHK()
+		//a.PLB()
+		//a.SEP(0x30)
 		a.Comment("NMI_DoUpdates")
 		a.JSR_abs(0x89E0) // NMI_DoUpdates
+		//a.PLB()
+		//a.PLD()
 
-		a.Label("exit")
 		a.STZ_dp(0x11)
 		a.WDM(0xAA)
 
@@ -770,6 +785,7 @@ func TestGenerateMap(t *testing.T) {
 			for i := uint32(0); i < 16; i++ {
 				write8(room.WRAM[:], 0x0DD0+i, 0)
 			}
+
 			room.HandleRoomTags(e)
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
@@ -1140,6 +1156,7 @@ func TestGenerateMap(t *testing.T) {
 				// TODO: clone System instances and parallelize
 
 				// loadSupertile:
+				copy(e.WRAM[:], room.WRAM[:])
 				write16(e.WRAM[:], 0xA0, uint16(room.Supertile))
 				if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
 					t.Fatal(err)
@@ -2749,34 +2766,41 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 }
 
 func (room *RoomState) HandleRoomTags(e *System) bool {
+	oldAE, oldAF := read8(room.WRAM[:], 0xAE), read8(room.WRAM[:], 0xAF)
+	if oldAE == 0 && oldAF == 0 {
+		return false
+	}
+
+	old04BC := read8(room.WRAM[:], 0x04BC)
+
+	// clear out DMA transfer area:
+	for i := uint32(0x1000); i < 0x1980; i++ {
+		room.WRAM[i] = 0
+	}
+
 	// prepare emulator for execution within this supertile:
 	copy(e.WRAM[:], room.WRAM[:])
 	copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
 
-	// $AE/AF is already set after loading room
-
-	oldAE, oldAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
-	old04BC := read8(e.WRAM[:], 0x04BC)
-
-	//if this == 0x058 {
-	//	e.LoggerCPU = e.Logger
-	//}
+	if room.Supertile == 0x066 {
+		e.LoggerCPU = e.Logger
+	}
 	if err := e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
 		panic(err)
 	}
-	//e.LoggerCPU = nil
+	e.LoggerCPU = nil
 
 	// update room state:
 	copy(room.WRAM[:], e.WRAM[:])
 	copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
 
 	// if $AE or $AF (room tags) are modified, then the tag was activated:
-	newAE, newAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
+	newAE, newAF := read8(room.WRAM[:], 0xAE), read8(room.WRAM[:], 0xAF)
 	if newAE != oldAE || newAF != oldAF {
 		return true
 	}
 
-	new04BC := read8(e.WRAM[:], 0x04BC)
+	new04BC := read8(room.WRAM[:], 0x04BC)
 	if new04BC != old04BC {
 		return true
 	}
