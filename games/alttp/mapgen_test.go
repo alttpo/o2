@@ -395,6 +395,7 @@ func TestGenerateMap(t *testing.T) {
 			room = &RoomState{
 				Supertile:         st,
 				Rendered:          nil,
+				Hookshot:          make(map[MapCoord]byte, 0x2000),
 				TilesVisitedStar0: make(map[MapCoord]empty, 0x2000),
 				TilesVisitedStar1: make(map[MapCoord]empty, 0x2000),
 				TilesVisitedTag0:  make(map[MapCoord]empty, 0x2000),
@@ -1225,7 +1226,8 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 
 	greenTint := image.NewUniform(color.NRGBA{0, 255, 0, 64})
 	redTint := image.NewUniform(color.NRGBA{255, 0, 0, 56})
-	blueTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
+	cyanTint := image.NewUniform(color.NRGBA{0, 255, 255, 64})
+	blueTint := image.NewUniform(color.NRGBA{0, 0, 255, 64})
 
 	black := image.NewUniform(color.RGBA{0, 0, 0, 255})
 	yellow := image.NewUniform(color.RGBA{255, 255, 0, 255})
@@ -1321,10 +1323,11 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 							continue
 						}
 
-						lyr, tr, tc := MapCoord(t).RowCol()
+						tt := MapCoord(t)
+						lyr, tr, tc := tt.RowCol()
 						overlay := greenTint
 						if lyr != 0 {
-							overlay = blueTint
+							overlay = cyanTint
 						}
 						if v == 0x20 || v == 0x62 {
 							overlay = redTint
@@ -1332,6 +1335,23 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 
 						x := int(tc) << 3
 						y := int(tr) << 3
+						draw.Draw(
+							all,
+							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
+							overlay,
+							image.Point{},
+							draw.Over,
+						)
+					}
+
+					for t, d := range room.Hookshot {
+						_, tr, tc := t.RowCol()
+						x := int(tc) << 3
+						y := int(tr) << 3
+
+						overlay := blueTint
+						_ = d
+
 						draw.Draw(
 							all,
 							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
@@ -1839,6 +1859,7 @@ type RoomState struct {
 
 	Tiles     [0x2000]byte
 	Reachable [0x2000]byte
+	Hookshot  map[MapCoord]byte
 
 	WRAM        [0x20000]byte
 	VRAMTileSet [0x4000]byte
@@ -2721,13 +2742,18 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 	var ok bool
 	i := 0
 	pt := t
+	st := t
+	shot := false
 
 	m := &r.Tiles
+
+	// estimating 0x10 8x8 tiles horizontally/vertically as max stretch of hookshot:
+	const maxTiles = 0x10
 
 	if m[t] >= 0x28 && m[t] <= 0x2B {
 		// find opposite ledge first:
 		ledgeTile := m[t]
-		for ; i < 0x1C; i++ {
+		for ; i < maxTiles; i++ {
 			// advance 1 tile:
 			if t, _, ok = t.MoveBy(d, 1); !ok {
 				return
@@ -2742,13 +2768,12 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 		}
 	}
 
-	// estimating 0x1C 8x8 tiles horizontally/vertically as max stretch of hookshot:
-	for ; i < 0x1C; i++ {
+	for ; i < maxTiles; i++ {
 		// the previous tile technically doesn't need to be walkable but it prevents
 		// infinite loops due to not taking direction into account in the visited[] map
 		// and not marking pit tiles as visited
 		if r.isHookable(m[t]) && r.isAlwaysWalkable(m[pt]) {
-			//r.push(ScanState{t: pt, d: d})
+			shot = true
 			r.push(ScanState{t: pt, d: d})
 			break
 		}
@@ -2763,9 +2788,22 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 			return
 		}
 	}
+
+	if shot {
+		// mark range as hookshot:
+		t = st
+		for j := 0; j < i; j++ {
+			r.Hookshot[t] |= 1 << d
+
+			if t, _, ok = t.MoveBy(d, 1); !ok {
+				return
+			}
+		}
+	}
 }
 
 func (room *RoomState) HandleRoomTags(e *System) bool {
+	// if no tags present, don't check them:
 	oldAE, oldAF := read8(room.WRAM[:], 0xAE), read8(room.WRAM[:], 0xAF)
 	if oldAE == 0 && oldAF == 0 {
 		return false
@@ -2773,10 +2811,10 @@ func (room *RoomState) HandleRoomTags(e *System) bool {
 
 	old04BC := read8(room.WRAM[:], 0x04BC)
 
-	// clear out DMA transfer area:
-	for i := uint32(0x1000); i < 0x1980; i++ {
-		room.WRAM[i] = 0
-	}
+	//// clear out DMA transfer area:
+	//for i := uint32(0x1000); i < 0x1980; i++ {
+	//	room.WRAM[i] = 0
+	//}
 
 	// prepare emulator for execution within this supertile:
 	copy(e.WRAM[:], room.WRAM[:])
