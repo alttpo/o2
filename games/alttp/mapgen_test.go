@@ -218,6 +218,19 @@ func TestGenerateMap(t *testing.T) {
 		a.SetBase(b00HandleRoomTagsPC)
 
 		a.SEP(0x30)
+
+		a.Comment("Module07_Underworld")
+		a.LDA_imm8_b(0x07)
+		a.STA_dp(0x10)
+		a.STZ_dp(0x11)
+		a.STZ_dp(0xB0)
+
+		//write8(e.WRAM[:], 0x04BA, 0)
+		a.Comment("no cutscene")
+		a.STZ_abs(0x02E4)
+		a.Comment("enable tags")
+		a.STZ_abs(0x04C7)
+
 		a.Comment("Underworld_HandleRoomTags#_01C2FD")
 		a.JSL(0x01_C2FD)
 
@@ -753,6 +766,12 @@ func TestGenerateMap(t *testing.T) {
 				}
 			}
 
+			// clear all enemy health to see if this triggers something:
+			for i := uint32(0); i < 16; i++ {
+				write8(room.WRAM[:], 0x0DD0+i, 0)
+			}
+			room.HandleRoomTags(e)
+
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
 			return
@@ -1070,7 +1089,7 @@ func TestGenerateMap(t *testing.T) {
 								write8(room.WRAM[:], 0x0641, 0x01)
 								if read8(room.WRAM[:], 0xAE)|read8(room.WRAM[:], 0xAF) != 0 {
 									// handle tags if there are any after the push to see if it triggers a secret:
-									room.HandleRoomTags(e, t)
+									room.HandleRoomTags(e)
 									// TODO: properly determine which tag was activated
 									room.TilesVisited = room.TilesVisitedTag0
 								}
@@ -1082,7 +1101,14 @@ func TestGenerateMap(t *testing.T) {
 						// TODO 0x2323
 						if v16 == 0x3A3A || v16 == 0x3B3B {
 							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
-							room.HandleRoomTags(e, t)
+
+							// set absolute x,y coordinates to the tile:
+							x, y := t.ToAbsCoord(room.Supertile)
+							write16(room.WRAM[:], 0x20, y)
+							write16(room.WRAM[:], 0x22, x)
+							write16(room.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
+
+							room.HandleRoomTags(e)
 
 							// swap out visited maps:
 							if read8(room.WRAM[:], 0x04BC) == 0 {
@@ -2722,28 +2748,15 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 	}
 }
 
-func (room *RoomState) HandleRoomTags(e *System, t MapCoord) bool {
+func (room *RoomState) HandleRoomTags(e *System) bool {
 	// prepare emulator for execution within this supertile:
 	copy(e.WRAM[:], room.WRAM[:])
 	copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
 
-	// star tile
-	write8(e.WRAM[:], 0x10, 0x07)
-	write8(e.WRAM[:], 0x11, 0x00)
-	write8(e.WRAM[:], 0xB0, 0x00)
-	//write8(e.WRAM[:], 0x04BA, 0)
-	write8(e.WRAM[:], 0x04C7, 0) // enable tags
-	write8(e.WRAM[:], 0x02E4, 0) // no cutscene
 	// $AE/AF is already set after loading room
 
-	// set absolute x,y coordinates to the tile:
-	x, y := t.ToAbsCoord(room.Supertile)
-	write16(e.WRAM[:], 0x20, y)
-	write16(e.WRAM[:], 0x22, x)
-	write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
-
 	oldAE, oldAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
-	old04BC := read8(room.WRAM[:], 0x04BC)
+	old04BC := read8(e.WRAM[:], 0x04BC)
 
 	//if this == 0x058 {
 	//	e.LoggerCPU = e.Logger
@@ -2763,7 +2776,7 @@ func (room *RoomState) HandleRoomTags(e *System, t MapCoord) bool {
 		return true
 	}
 
-	new04BC := read8(room.WRAM[:], 0x04BC)
+	new04BC := read8(e.WRAM[:], 0x04BC)
 	if new04BC != old04BC {
 		return true
 	}
