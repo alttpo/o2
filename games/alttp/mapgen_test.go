@@ -31,6 +31,17 @@ func newEmitterAt(s *System, addr uint32, generateText bool) *asm.Emitter {
 	return a
 }
 
+var (
+	b02LoadUnderworldSupertilePC     uint32 = 0x02_5200
+	b01LoadAndDrawRoomPC             uint32
+	b01LoadAndDrawRoomSetSupertilePC uint32
+	b00HandleRoomTagsPC              uint32 = 0x00_5300
+	loadEntrancePC                   uint32
+	setEntranceIDPC                  uint32
+	loadSupertilePC                  uint32
+	donePC                           uint32
+)
+
 func TestGenerateMap(t *testing.T) {
 	var err error
 
@@ -71,8 +82,6 @@ func TestGenerateMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var b01LoadAndDrawRoomPC uint32
-	var b01LoadAndDrawRoomSetSupertilePC uint32
 	{
 		// must execute in bank $01
 		a = asm.NewEmitter(e.HWIO.Dyn[0x01_5100&0xFFFF-0x5000:], true)
@@ -108,7 +117,6 @@ func TestGenerateMap(t *testing.T) {
 	}
 
 	// this routine renders a supertile assuming gfx tileset and palettes already loaded:
-	b02LoadUnderworldSupertilePC := uint32(0x02_5200)
 	{
 		// emit into our custom $02:5100 routine:
 		a = asm.NewEmitter(e.HWIO.Dyn[b02LoadUnderworldSupertilePC&0xFFFF-0x5000:], true)
@@ -138,10 +146,6 @@ func TestGenerateMap(t *testing.T) {
 		// output $59 != 0 if pit detected; $A0 changed
 	}
 
-	var loadEntrancePC uint32
-	var setEntranceIDPC uint32
-	var loadSupertilePC uint32
-	var donePC uint32
 	{
 		// emit into our custom $00:5000 routine:
 		a = asm.NewEmitter(e.HWIO.Dyn[:], true)
@@ -208,7 +212,6 @@ func TestGenerateMap(t *testing.T) {
 		a.WriteTextTo(e.Logger)
 	}
 
-	b00HandleRoomTagsPC := uint32(0x00_5300)
 	{
 		// emit into our custom $00:5300 routine:
 		a = asm.NewEmitter(e.HWIO.Dyn[b00HandleRoomTagsPC&0xFFFF-0x5000:], true)
@@ -772,55 +775,6 @@ func TestGenerateMap(t *testing.T) {
 			go drawSupertile(&wg, room)
 		}
 
-		handleRoomTags := func(room *RoomState, t MapCoord) bool {
-			// prepare emulator for execution within this supertile:
-			copy(e.WRAM[:], room.WRAM[:])
-			copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
-
-			// star tile
-			write8(e.WRAM[:], 0x10, 0x07)
-			write8(e.WRAM[:], 0x11, 0x00)
-			write8(e.WRAM[:], 0xB0, 0x00)
-			//write8(e.WRAM[:], 0x04BA, 0)
-			write8(e.WRAM[:], 0x04C7, 0) // enable tags
-			write8(e.WRAM[:], 0x02E4, 0) // no cutscene
-			// $AE/AF is already set after loading room
-
-			// set absolute x,y coordinates to the tile:
-			x, y := t.ToAbsCoord(room.Supertile)
-			write16(e.WRAM[:], 0x20, y)
-			write16(e.WRAM[:], 0x22, x)
-			write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
-
-			oldAE, oldAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
-			old04BC := read8(room.WRAM[:], 0x04BC)
-
-			//if this == 0x058 {
-			//	e.LoggerCPU = e.Logger
-			//}
-			if err = e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
-				panic(err)
-			}
-			//e.LoggerCPU = nil
-
-			// update room state:
-			copy(room.WRAM[:], e.WRAM[:])
-			copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
-
-			// if $AE or $AF (room tags) are modified, then the tag was activated:
-			newAE, newAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
-			if newAE != oldAE || newAF != oldAF {
-				return true
-			}
-
-			new04BC := read8(room.WRAM[:], 0x04BC)
-			if new04BC != old04BC {
-				return true
-			}
-
-			return false
-		}
-
 		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
 		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone, ExitPoint{}})
@@ -1116,7 +1070,7 @@ func TestGenerateMap(t *testing.T) {
 								write8(room.WRAM[:], 0x0641, 0x01)
 								if read8(room.WRAM[:], 0xAE)|read8(room.WRAM[:], 0xAF) != 0 {
 									// handle tags if there are any after the push to see if it triggers a secret:
-									handleRoomTags(room, t)
+									room.HandleRoomTags(e, t)
 									// TODO: properly determine which tag was activated
 									room.TilesVisited = room.TilesVisitedTag0
 								}
@@ -1128,7 +1082,7 @@ func TestGenerateMap(t *testing.T) {
 						// TODO 0x2323
 						if v16 == 0x3A3A || v16 == 0x3B3B {
 							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
-							handleRoomTags(room, t)
+							room.HandleRoomTags(e, t)
 
 							// swap out visited maps:
 							if read8(room.WRAM[:], 0x04BC) == 0 {
@@ -2766,6 +2720,55 @@ func (r *RoomState) scanHookshot(t MapCoord, d Direction) {
 			return
 		}
 	}
+}
+
+func (room *RoomState) HandleRoomTags(e *System, t MapCoord) bool {
+	// prepare emulator for execution within this supertile:
+	copy(e.WRAM[:], room.WRAM[:])
+	copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
+
+	// star tile
+	write8(e.WRAM[:], 0x10, 0x07)
+	write8(e.WRAM[:], 0x11, 0x00)
+	write8(e.WRAM[:], 0xB0, 0x00)
+	//write8(e.WRAM[:], 0x04BA, 0)
+	write8(e.WRAM[:], 0x04C7, 0) // enable tags
+	write8(e.WRAM[:], 0x02E4, 0) // no cutscene
+	// $AE/AF is already set after loading room
+
+	// set absolute x,y coordinates to the tile:
+	x, y := t.ToAbsCoord(room.Supertile)
+	write16(e.WRAM[:], 0x20, y)
+	write16(e.WRAM[:], 0x22, x)
+	write16(e.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
+
+	oldAE, oldAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
+	old04BC := read8(room.WRAM[:], 0x04BC)
+
+	//if this == 0x058 {
+	//	e.LoggerCPU = e.Logger
+	//}
+	if err := e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
+		panic(err)
+	}
+	//e.LoggerCPU = nil
+
+	// update room state:
+	copy(room.WRAM[:], e.WRAM[:])
+	copy(room.Tiles[:], e.WRAM[0x12000:0x14000])
+
+	// if $AE or $AF (room tags) are modified, then the tag was activated:
+	newAE, newAF := read8(e.WRAM[:], 0xAE), read8(e.WRAM[:], 0xAF)
+	if newAE != oldAE || newAF != oldAF {
+		return true
+	}
+
+	new04BC := read8(room.WRAM[:], 0x04BC)
+	if new04BC != old04BC {
+		return true
+	}
+
+	return false
 }
 
 type Entrance struct {
