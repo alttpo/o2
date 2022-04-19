@@ -1964,7 +1964,9 @@ func (r *RoomState) canHookThru(v uint8) bool {
 		v == 0x40 || // thick grass
 		v == 0x4B || // warp
 		v == 0x60 || // rupee tile
-		(v >= 0x68 && v <= 0x6B) // conveyors
+		(v >= 0x68 && v <= 0x6B) || // conveyors
+		v == 0xB6 || // somaria start
+		v == 0xBC // somaria start
 }
 
 // isHookable determines if the tile can be attached to with a hookshot
@@ -2484,8 +2486,9 @@ func (r *RoomState) FindReachableTiles(
 
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2B {
-			// ledge much be approached from the correct direction:
-			if (v - 0x28) != byte(s.d.Opposite()) {
+			// ledge much not be approached from its perpendicular direction:
+			ledgeDir := Direction(v - 0x28)
+			if ledgeDir != s.d && ledgeDir != s.d.Opposite() {
 				continue
 			}
 
