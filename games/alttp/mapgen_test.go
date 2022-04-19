@@ -1910,19 +1910,43 @@ func (r *RoomState) push(s ScanState) {
 }
 
 func (r *RoomState) pushAllDirections(t MapCoord, s LinkState) {
+	mn, ms, mw, me := false, false, false, false
 	// can move in any direction:
 	if tn, dir, ok := t.MoveBy(DirNorth, 1); ok {
+		mn = true
 		r.push(ScanState{t: tn, d: dir, s: s})
 	}
 	if tn, dir, ok := t.MoveBy(DirWest, 1); ok {
+		mw = true
 		r.push(ScanState{t: tn, d: dir, s: s})
 	}
 	if tn, dir, ok := t.MoveBy(DirEast, 1); ok {
+		me = true
 		r.push(ScanState{t: tn, d: dir, s: s})
 	}
 	if tn, dir, ok := t.MoveBy(DirSouth, 1); ok {
+		ms = true
 		r.push(ScanState{t: tn, d: dir, s: s})
 	}
+
+	// check diagonals at pits; cannot squeeze between solid areas though:
+	if mn && mw && r.canDiagonal(r.Tiles[t-0x40]) && r.canDiagonal(r.Tiles[t-0x01]) {
+		r.push(ScanState{t: t - 0x41, d: DirNorth, s: s})
+	}
+	if mn && me && r.canDiagonal(r.Tiles[t-0x40]) && r.canDiagonal(r.Tiles[t+0x01]) {
+		r.push(ScanState{t: t - 0x3F, d: DirNorth, s: s})
+	}
+	if ms && mw && r.canDiagonal(r.Tiles[t+0x40]) && r.canDiagonal(r.Tiles[t-0x01]) {
+		r.push(ScanState{t: t + 0x3F, d: DirSouth, s: s})
+	}
+	if ms && me && r.canDiagonal(r.Tiles[t+0x40]) && r.canDiagonal(r.Tiles[t+0x01]) {
+		r.push(ScanState{t: t + 0x41, d: DirSouth, s: s})
+	}
+}
+
+func (r *RoomState) canDiagonal(v byte) bool {
+	return v == 0x20 || // pit
+		(v&0xF0 == 0xB0) // somaria/pipe
 }
 
 func (r *RoomState) IsDarkRoom() bool {
@@ -3127,7 +3151,7 @@ func cgramToPalette(cgram []uint16) color.Palette {
 		b := (bgr15 & 0x7C00) >> 10
 		g := (bgr15 & 0x03E0) >> 5
 		r := bgr15 & 0x001F
-		if true {
+		if false {
 			pal[i] = color.NRGBA{
 				R: gammaRamp[r],
 				G: gammaRamp[g],
