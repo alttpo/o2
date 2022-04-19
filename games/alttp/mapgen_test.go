@@ -240,6 +240,7 @@ func TestGenerateMap(t *testing.T) {
 		a.LDA_dp(0x11)
 		a.BEQ("no_submodule")
 
+		a.Label("continue_submodule")
 		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
 
@@ -261,6 +262,8 @@ func TestGenerateMap(t *testing.T) {
 		a.JSR_abs(0x89E0) // NMI_DoUpdates
 		//a.PLB()
 		//a.PLD()
+		a.LDA_dp(0x11)
+		a.BNE("continue_submodule")
 
 		a.STZ_dp(0x11)
 		a.WDM(0xAA)
@@ -500,6 +503,19 @@ func TestGenerateMap(t *testing.T) {
 							if tiles[t] >= 0xF0 {
 								tiles[t] = 0x00
 							}
+						}
+					}
+					continue
+				}
+
+				if door.Type == 0x30 {
+					// exploding wall:
+					pos := int(door.Pos)
+					fmt.Printf("    exploding wall %s\n", door.Pos)
+					for c := 0; c < 11; c++ {
+						for r := 0; r < 12; r++ {
+							tiles[pos+(r<<6)-c] = 0
+							tiles[pos+(r<<6)+1+c] = 0
 						}
 					}
 					continue
@@ -1115,7 +1131,6 @@ func TestGenerateMap(t *testing.T) {
 						}
 
 						v16 := read16(room.Tiles[:], uint32(t))
-						// TODO 0x2323
 						if v16 == 0x3A3A || v16 == 0x3B3B {
 							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
 
@@ -1136,6 +1151,26 @@ func TestGenerateMap(t *testing.T) {
 								fmt.Fprintf(e.Logger, "    star1\n")
 								room.TilesVisited = room.TilesVisitedStar1
 								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
+							}
+							return
+						}
+
+						// floor or pressure switch:
+						if v16 == 0x2323 || v16 == 0x2424 {
+							fmt.Fprintf(e.Logger, "    switch(%s)\n", t)
+
+							// set absolute x,y coordinates to the tile:
+							x, y := t.ToAbsCoord(room.Supertile)
+							write16(room.WRAM[:], 0x20, y)
+							write16(room.WRAM[:], 0x22, x)
+							write16(room.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
+
+							if room.HandleRoomTags(e) {
+								// reset current room visited state:
+								for i := range room.TilesVisited {
+									delete(room.TilesVisited, i)
+								}
+								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
 							}
 							return
 						}
@@ -2811,16 +2846,11 @@ func (room *RoomState) HandleRoomTags(e *System) bool {
 
 	old04BC := read8(room.WRAM[:], 0x04BC)
 
-	//// clear out DMA transfer area:
-	//for i := uint32(0x1000); i < 0x1980; i++ {
-	//	room.WRAM[i] = 0
-	//}
-
 	// prepare emulator for execution within this supertile:
 	copy(e.WRAM[:], room.WRAM[:])
 	copy(e.WRAM[0x12000:0x14000], room.Tiles[:])
 
-	if room.Supertile == 0x066 {
+	if room.Supertile == 0x07C {
 		e.LoggerCPU = e.Logger
 	}
 	if err := e.ExecAt(b00HandleRoomTagsPC, 0); err != nil {
