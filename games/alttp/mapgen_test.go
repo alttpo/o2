@@ -3113,6 +3113,13 @@ func exportPNG(name string, g image.Image) (err error) {
 	return
 }
 
+var gammaRamp = [...]uint8{
+	0x00, 0x01, 0x03, 0x06, 0x0a, 0x0f, 0x15, 0x1c,
+	0x24, 0x2d, 0x37, 0x42, 0x4e, 0x5b, 0x69, 0x78,
+	0x88, 0x90, 0x98, 0xa0, 0xa8, 0xb0, 0xb8, 0xc0,
+	0xc8, 0xd0, 0xd8, 0xe0, 0xe8, 0xf0, 0xf8, 0xff,
+}
+
 func cgramToPalette(cgram []uint16) color.Palette {
 	pal := make(color.Palette, 256)
 	for i, bgr15 := range cgram {
@@ -3120,11 +3127,20 @@ func cgramToPalette(cgram []uint16) color.Palette {
 		b := (bgr15 & 0x7C00) >> 10
 		g := (bgr15 & 0x03E0) >> 5
 		r := bgr15 & 0x001F
-		pal[i] = color.NRGBA{
-			R: uint8(r<<3 | r>>2),
-			G: uint8(g<<3 | g>>2),
-			B: uint8(b<<3 | b>>2),
-			A: 0xff,
+		if true {
+			pal[i] = color.NRGBA{
+				R: gammaRamp[r],
+				G: gammaRamp[g],
+				B: gammaRamp[b],
+				A: 0xff,
+			}
+		} else {
+			pal[i] = color.NRGBA{
+				R: uint8(r<<3 | r>>2),
+				G: uint8(g<<3 | g>>2),
+				B: uint8(b<<3 | b>>2),
+				A: 0xff,
+			}
 		}
 	}
 	return pal
