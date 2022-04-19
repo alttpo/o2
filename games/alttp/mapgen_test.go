@@ -2484,6 +2484,11 @@ func (r *RoomState) FindReachableTiles(
 
 		// ledge tiles:
 		if v >= 0x28 && v <= 0x2B {
+			// ledge much be approached from the correct direction:
+			if (v - 0x28) != byte(s.d.Opposite()) {
+				continue
+			}
+
 			r.TilesVisited[s.t] = empty{}
 			f(s, v)
 
