@@ -41,6 +41,7 @@ var (
 	loadEntrancePC                   uint32
 	setEntranceIDPC                  uint32
 	loadSupertilePC                  uint32
+	runMainRoutingPC                 uint32
 	donePC                           uint32
 )
 
@@ -183,6 +184,7 @@ func TestGenerateMap(t *testing.T) {
 		a.STA_abs(0x010E)
 
 		// loads a dungeon given an entrance ID:
+		runMainRoutingPC = a.Label("runMainRouting")
 		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
 		a.BRA("updateVRAM")
@@ -800,12 +802,25 @@ func TestGenerateMap(t *testing.T) {
 				}
 			}
 
-			// clear all enemy health to see if this triggers something:
-			for i := uint32(0); i < 16; i++ {
-				write8(room.WRAM[:], 0x0DD0+i, 0)
+			if false {
+				// clear all enemy health to see if this triggers something:
+				for i := uint32(0); i < 16; i++ {
+					write8(room.WRAM[:], 0x0DD0+i, 0)
+				}
+				room.HandleRoomTags(e)
 			}
-
-			room.HandleRoomTags(e)
+			if true {
+				// Change room overlay:
+				write8(room.WRAM[:], 0x10, 0x07)
+				write8(room.WRAM[:], 0x11, 0x03)
+				write8(room.WRAM[:], 0xB0, 0x00)
+				copy(e.WRAM[:], room.WRAM[:])
+				if err = e.ExecAt(runMainRoutingPC, 0); err != nil {
+					panic(err)
+				}
+				// only extract the tilemap changes:
+				copy(room.WRAM[0x12000:0x14000], e.WRAM[0x12000:0x14000])
+			}
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
@@ -1110,7 +1125,8 @@ func TestGenerateMap(t *testing.T) {
 						return
 					}
 
-					if true {
+					// handle manipulables, floor switches, and star tiles:
+					if false {
 						// manipulables (pots, hammer pegs, push blocks):
 						if v&0xF0 == 0x70 {
 							// find gfx tilemap position:
@@ -1297,6 +1313,7 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 				)
 
 				// highlight tiles that are reachable:
+				const drawPitOverlays = true
 				if drawOverlays {
 					maxRange := 0x2000
 					if room.IsDarkRoom() {
@@ -1393,6 +1410,35 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 							all,
 							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
 							overlay,
+							image.Point{},
+							draw.Over,
+						)
+					}
+				} else if drawPitOverlays {
+					// only draw red pit overlays:
+					maxRange := 0x2000
+					if room.IsDarkRoom() {
+						maxRange = 0x1000
+					}
+
+					for t := 0; t < maxRange; t++ {
+						v := room.Reachable[t]
+						if v == 0x01 {
+							continue
+						}
+
+						tt := MapCoord(t)
+						_, tr, tc := tt.RowCol()
+						if v != 0x20 {
+							continue
+						}
+
+						x := int(tc) << 3
+						y := int(tr) << 3
+						draw.Draw(
+							all,
+							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
+							redTint,
 							image.Point{},
 							draw.Over,
 						)
