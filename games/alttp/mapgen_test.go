@@ -957,6 +957,11 @@ func TestGenerateMap(t *testing.T) {
 		for _, st := range entranceRooms[eID] {
 			createRoom(Supertile(st))
 		}
+	}
+
+	for eID := range entranceGroups {
+		fmt.Fprintf(e.Logger, "entrance $%02x\n", eID)
+		g := &entranceGroups[eID]
 
 		// render all supertiles found:
 		if len(g.Rooms) >= 1 {
@@ -977,9 +982,11 @@ func TestGenerateMap(t *testing.T) {
 					copy((&e.WRAM)[:], (&room.WRAM)[:])
 					e.HWIO.ResetDMA()
 					e.HWIO.ResetPPU()
+					e.HWIO.DisableDMA = true
 					if err = e.ExecAtFor(runMainRoutingPC, 0x10_0000); err != nil {
 						fmt.Fprintf(e.Logger, "%v\n", err)
 					}
+					e.HWIO.DisableDMA = false
 					e.CPU.Reset()
 					e.HWIO.ResetDMA()
 					e.HWIO.ResetPPU()
@@ -1063,6 +1070,7 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 
 	black := image.NewUniform(color.RGBA{0, 0, 0, 255})
 	yellow := image.NewUniform(color.RGBA{255, 255, 0, 255})
+	red := image.NewUniform(color.NRGBA{255, 0, 0, 255})
 
 	for i := range entranceGroups {
 		g := &entranceGroups[i]
@@ -1214,9 +1222,9 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 						draw.Draw(
 							all,
 							image.Rect(stx+x, sty+y, stx+x+8, sty+y+8),
-							redTint,
+							red,
 							image.Point{},
-							draw.Over,
+							draw.Src,
 						)
 					}
 				}
