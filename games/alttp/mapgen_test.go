@@ -32,6 +32,7 @@ func newEmitterAt(s *System, addr uint32, generateText bool) *asm.Emitter {
 }
 
 const drawOverlays = false
+const drawPitOverlays = true
 
 var (
 	b02LoadUnderworldSupertilePC     uint32 = 0x02_5200
@@ -1100,7 +1101,6 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 				)
 
 				// highlight tiles that are reachable:
-				const drawPitOverlays = true
 				if drawOverlays {
 					maxRange := 0x2000
 					if room.IsDarkRoom() {
