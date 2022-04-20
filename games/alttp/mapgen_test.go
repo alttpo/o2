@@ -3570,13 +3570,14 @@ type HWIO struct {
 	dmaregs [8]DMARegs
 	dma     [8]DMAChannel
 
+	DisableDMA bool
+
 	ppu struct {
 		incrMode      bool   // false = increment after $2118, true = increment after $2119
 		incrAmt       uint16 // 1, 32, or 128
 		addrRemapping byte
 		addr          uint16
 	}
-
 	// mapped to $5000-$7FFF
 	Dyn [0x3000]byte
 }
@@ -3619,13 +3620,15 @@ func (h *HWIO) Write(address uint32, value byte) {
 		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA start\n", offs, hdmaen)
 		//}
 		// execute DMA transfers from channels 0..7 in order:
-		for c := range h.dma {
-			if hdmaen&(1<<c) == 0 {
-				continue
-			}
+		if !h.DisableDMA {
+			for c := range h.dma {
+				if hdmaen&(1<<c) == 0 {
+					continue
+				}
 
-			// channel enabled:
-			h.dma[c].Transfer(&h.dmaregs[c], c, h)
+				// channel enabled:
+				h.dma[c].Transfer(&h.dmaregs[c], c, h)
+			}
 		}
 		//if h.s.Logger != nil {
 		//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x DMA end\n", offs, hdmaen)
