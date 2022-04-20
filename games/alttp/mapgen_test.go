@@ -31,6 +31,8 @@ func newEmitterAt(s *System, addr uint32, generateText bool) *asm.Emitter {
 	return a
 }
 
+const drawOverlays = false
+
 var (
 	b02LoadUnderworldSupertilePC     uint32 = 0x02_5200
 	b01LoadAndDrawRoomPC             uint32
@@ -420,7 +422,7 @@ func TestGenerateMap(t *testing.T) {
 			g.Rooms = append(g.Rooms, room)
 			supertiles[st] = room
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), wram, 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), wram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), tiles, 0644)
 
 			room.WarpExitTo = Supertile(read8(wram, 0xC000))
@@ -1189,19 +1191,19 @@ func TestGenerateMap(t *testing.T) {
 					continue
 				}
 
-				// TODO: clone System instances and parallelize
-
-				// loadSupertile:
-				copy(e.WRAM[:], room.WRAM[:])
-				write16(e.WRAM[:], 0xA0, uint16(room.Supertile))
-				if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
-					t.Fatal(err)
+				if false {
+					// loadSupertile:
+					copy(e.WRAM[:], room.WRAM[:])
+					write16(e.WRAM[:], 0xA0, uint16(room.Supertile))
+					if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
+						t.Fatal(err)
+					}
+					copy((&room.VRAMTileSet)[:], (&e.VRAM)[0x4000:0x8000])
+					copy((&room.WRAM)[:], (&e.WRAM)[:])
 				}
 
 				{
 					fmt.Fprintf(e.Logger, "  render %s\n", room.Supertile)
-					copy((&room.VRAMTileSet)[:], (&e.VRAM)[0x4000:0x8000])
-					copy((&room.WRAM)[:], (&e.WRAM)[:])
 
 					wg.Add(1)
 					go drawSupertile(&wg, room)
@@ -1295,7 +1297,7 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 				)
 
 				// highlight tiles that are reachable:
-				if true {
+				if drawOverlays {
 					maxRange := 0x2000
 					if room.IsDarkRoom() {
 						maxRange = 0x1000
