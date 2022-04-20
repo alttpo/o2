@@ -184,7 +184,6 @@ func TestGenerateMap(t *testing.T) {
 		a.STA_abs(0x010E)
 
 		// loads a dungeon given an entrance ID:
-		runMainRoutingPC = a.Label("runMainRouting")
 		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
 		a.BRA("updateVRAM")
@@ -244,7 +243,7 @@ func TestGenerateMap(t *testing.T) {
 		a.LDA_dp(0x11)
 		a.BEQ("no_submodule")
 
-		a.Label("continue_submodule")
+		runMainRoutingPC = a.Label("continue_submodule")
 		a.Comment("JSL Module_MainRouting")
 		a.JSL(0x00_80B5)
 
@@ -359,9 +358,6 @@ func TestGenerateMap(t *testing.T) {
 		fmt.Fprintf(e.Logger, "entrance $%02x\n", eID)
 
 		// poke the entrance ID into our asm code:
-		//dyn := e.HWIO.Dyn
-		//e.HWIO.Reset()
-		//e.HWIO.Dyn = dyn
 		e.HWIO.Dyn[setEntranceIDPC-0x5000] = eID
 		// load the entrance and draw the room:
 		if err = e.ExecAt(loadEntrancePC, donePC); err != nil {
@@ -809,18 +805,6 @@ func TestGenerateMap(t *testing.T) {
 				}
 				room.HandleRoomTags(e)
 			}
-			if true {
-				// Change room overlay:
-				write8(room.WRAM[:], 0x10, 0x07)
-				write8(room.WRAM[:], 0x11, 0x03)
-				write8(room.WRAM[:], 0xB0, 0x00)
-				copy(e.WRAM[:], room.WRAM[:])
-				if err = e.ExecAt(runMainRoutingPC, 0); err != nil {
-					panic(err)
-				}
-				// only extract the tilemap changes:
-				copy(room.WRAM[0x12000:0x14000], e.WRAM[0x12000:0x14000])
-			}
 
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
@@ -1207,10 +1191,30 @@ func TestGenerateMap(t *testing.T) {
 					continue
 				}
 
+				if true {
+					// Change room overlay:
+					fmt.Fprintf(e.Logger, "apply room overlay:\n")
+					write8((&room.WRAM)[:], 0x10, 0x07)
+					write8((&room.WRAM)[:], 0x11, 0x03)
+					write8((&room.WRAM)[:], 0xB0, 0x00)
+					copy((&e.WRAM)[:], (&room.WRAM)[:])
+					e.HWIO.ResetDMA()
+					e.HWIO.ResetPPU()
+					if err = e.ExecAtFor(runMainRoutingPC, 0x10_0000); err != nil {
+						fmt.Fprintf(e.Logger, "%v\n", err)
+					}
+					e.CPU.Reset()
+					e.HWIO.ResetDMA()
+					e.HWIO.ResetPPU()
+					// only extract the tilemap changes:
+					copy((&room.WRAM)[0x12000:0x14000], (&e.WRAM)[0x12000:0x14000])
+					copy((&room.Tiles)[:], (&e.WRAM)[0x12000:0x14000])
+				}
+
 				if false {
 					// loadSupertile:
-					copy(e.WRAM[:], room.WRAM[:])
-					write16(e.WRAM[:], 0xA0, uint16(room.Supertile))
+					copy((&e.WRAM)[:], (&room.WRAM)[:])
+					write16((&e.WRAM)[:], 0xA0, uint16(room.Supertile))
 					if err = e.ExecAt(loadSupertilePC, donePC); err != nil {
 						t.Fatal(err)
 					}
@@ -3491,6 +3495,21 @@ func (s *System) ExecAt(startPC, donePC uint32) (err error) {
 	return s.Exec(donePC)
 }
 
+func (s *System) ExecAtFor(startPC uint32, maxCycles uint64) (err error) {
+	var stopPC uint32
+	var expectedPC uint32
+	var cycles uint64
+
+	s.SetPC(startPC)
+
+	if stopPC, expectedPC, cycles = s.RunUntil(0, maxCycles); stopPC != expectedPC {
+		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x; took %d cycles", expectedPC, stopPC, cycles)
+		return
+	}
+
+	return
+}
+
 func (s *System) Exec(donePC uint32) (err error) {
 	var stopPC uint32
 	var expectedPC uint32
@@ -3582,18 +3601,20 @@ func (c *DMAChannel) Transfer(regs *DMARegs, ch int, h *HWIO) {
 					break copyloop
 				}
 				break
-			case 2:
-				panic("mode 2!!!")
-			case 3:
-				panic("mode 3!!!")
-			case 4:
-				panic("mode 4!!!")
-			case 5:
-				panic("mode 5!!!")
-			case 6:
-				panic("mode 6!!!")
-			case 7:
-				panic("mode 7!!!")
+			//case 2:
+			//	panic("mode 2!!!")
+			//case 3:
+			//	panic("mode 3!!!")
+			//case 4:
+			//	panic("mode 4!!!")
+			//case 5:
+			//	panic("mode 5!!!")
+			//case 6:
+			//	panic("mode 6!!!")
+			//case 7:
+			//	panic("mode 7!!!")
+			default:
+				break copyloop
 			}
 		}
 	}
@@ -3620,14 +3641,20 @@ type HWIO struct {
 	Dyn [0x3000]byte
 }
 
-func (h *HWIO) Reset() {
+func (h *HWIO) ResetDynRAM() {
+	h.Dyn = [0x3000]byte{}
+}
+
+func (h *HWIO) ResetDMA() {
 	h.dmaregs = [8]DMARegs{}
 	h.dma = [8]DMAChannel{}
+}
+
+func (h *HWIO) ResetPPU() {
 	h.ppu.incrMode = false
 	h.ppu.incrAmt = 0
 	h.ppu.addrRemapping = 0
 	h.ppu.addr = 0
-	h.Dyn = [0x3000]byte{}
 }
 
 func (h *HWIO) Read(address uint32) (value byte) {
@@ -3784,9 +3811,9 @@ func (h *HWIO) Write(address uint32, value byte) {
 		return
 	}
 
-	if h.s.Logger != nil {
-		fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
-	}
+	//if h.s.Logger != nil {
+	//	fmt.Fprintf(h.s.Logger, "hwio[$%04x] <- $%02x\n", offs, value)
+	//}
 }
 
 func (h *HWIO) Shutdown() {
