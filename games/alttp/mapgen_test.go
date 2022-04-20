@@ -546,8 +546,9 @@ func TestGenerateMap(t *testing.T) {
 			tiles := (&room.Tiles)[:]
 
 			copy(room.VRAMTileSet[:], e.VRAM[0x4000:0x8000])
-			copy(wram, e.WRAM[:])
-			copy(tiles, e.WRAM[0x12000:0x14000])
+			copy(wram, (&e.WRAM)[:])
+			copy(tiles, (&e.WRAM)[0x12000:0x14000])
+			copy((&room.TilesInit)[:], (&e.WRAM)[0x12000:0x14000])
 
 			g.Rooms = append(g.Rooms, room)
 			supertiles[st] = room
@@ -981,6 +982,10 @@ func TestGenerateMap(t *testing.T) {
 					write8((&room.WRAM)[:], 0x11, 0x03)
 					write8((&room.WRAM)[:], 0xB0, 0x00)
 					copy((&e.WRAM)[:], (&room.WRAM)[:])
+					// reset all tiles to get only new pits:
+					for i := range room.Tiles {
+						e.WRAM[0x12000+i] = 0x01
+					}
 					e.HWIO.ResetDMA()
 					e.HWIO.ResetPPU()
 					e.HWIO.DisableDMA = true
@@ -1724,6 +1729,7 @@ type RoomState struct {
 	TilesVisitedTag0  map[MapCoord]empty
 	TilesVisitedTag1  map[MapCoord]empty
 
+	TilesInit [0x2000]byte
 	Tiles     [0x2000]byte
 	Reachable [0x2000]byte
 	Hookshot  map[MapCoord]byte
