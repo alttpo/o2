@@ -1238,6 +1238,16 @@ func TestGenerateMap(t *testing.T) {
 
 	wg.Wait()
 
+	fmt.Printf("rooms := map[uint8][]uint16{\n")
+	for _, g := range entranceGroups {
+		sts := make([]uint16, 0, 0x100)
+		for _, r := range g.Rooms {
+			sts = append(sts, uint16(r.Supertile))
+		}
+		fmt.Printf("\t%#v: %#v,\n", g.EntranceID, sts)
+	}
+	fmt.Printf("}\n")
+
 	// condense all maps into one image:
 	renderAll("eg1", entranceGroups, 0x00, 0x10)
 	renderAll("eg2", entranceGroups, 0x10, 0x3)
