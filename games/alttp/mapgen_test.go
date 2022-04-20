@@ -352,6 +352,142 @@ func TestGenerateMap(t *testing.T) {
 		return
 	}
 
+	entranceRooms := map[uint8][]uint16{
+		0x00: {0x104},
+		0x01: {},
+		0x02: {0x12, 0x2, 0x11, 0x21, 0x22, 0x32, 0x42},
+		0x03: {0x60, 0x50, 0x1, 0x72, 0x82, 0x81, 0x71, 0x70, 0x80, 0x52, 0x62, 0x61, 0x51, 0x41},
+		0x04: {},
+		0x05: {},
+		0x06: {0xf0, 0xf1},
+		0x07: {},
+		0x08: {0xc9, 0xb9, 0xa9, 0xaa, 0xa8, 0xba, 0xb8, 0x99, 0xda, 0xd9, 0xd8, 0xc8, 0x89},
+		0x09: {0x84, 0x74, 0x73, 0x83, 0x75, 0x85},
+		0x0a: {},
+		0x0b: {},
+		0x0c: {0x63, 0x53, 0x43, 0x33},
+		0x0d: {0xf2, 0xf3},
+		0x0e: {},
+		0x0f: {0xf4, 0xf5},
+		0x10: {},
+		0x11: {0xe3},
+		0x12: {0xe2},
+		0x13: {0xf8, 0xe8},
+		0x14: {},
+		0x15: {0x23, 0x24, 0x14, 0x4, 0xb5, 0xc5, 0xc4, 0xb4, 0xa4, 0xd5, 0x13, 0x15, 0xb6, 0xc6, 0xd6, 0xc7, 0xb7},
+		0x16: {0xfb, 0xeb},
+		0x17: {},
+		0x18: {},
+		0x19: {},
+		0x1a: {0xfd, 0xed},
+		0x1b: {},
+		0x1c: {0xfe},
+		0x1d: {0xee},
+		0x1e: {0xff, 0xef},
+		0x1f: {0xdf},
+		0x20: {},
+		0x21: {0xf9, 0xfa},
+		0x22: {0xea},
+		0x23: {},
+		0x24: {0xe0, 0xd0, 0xc0, 0xb0, 0x40, 0x30, 0x20},
+		0x25: {0x28, 0x38, 0x37, 0x36, 0x26, 0x76, 0x66, 0x16, 0x6, 0x35, 0x34, 0x54, 0x46},
+		0x26: {0x4a, 0x9, 0x3a, 0xa, 0x4b, 0x3b, 0x2b, 0x2a, 0x1a, 0x6a, 0x5a, 0x19, 0x1b, 0xb},
+		0x27: {0x98, 0xd2, 0xc2, 0xc1, 0xb1, 0xb2, 0xa2, 0x93, 0x92, 0x91, 0xa0, 0x90, 0xb3, 0xa3, 0xa1, 0xc3, 0xd1, 0x97},
+		0x28: {0x56, 0x57},
+		0x29: {},
+		0x2a: {0x58, 0x67, 0x68},
+		0x2b: {0x59, 0x49, 0x39, 0x29},
+		0x2c: {0xe1},
+		0x2d: {0xe, 0x1e, 0x3e, 0x4e, 0x6e, 0x5e, 0x7e, 0x9e, 0xbe, 0xce, 0xbf, 0x4f, 0x9f, 0xaf, 0xae, 0x8e, 0x7f, 0x5f, 0x3f, 0x1f, 0x2e},
+		0x2e: {0xe6, 0xe7},
+		0x2f: {},
+		0x30: {0xe4, 0xe5},
+		0x31: {},
+		0x32: {0x55},
+		0x33: {0x77, 0x31, 0x27, 0x17, 0xa7, 0x7, 0x87},
+		0x34: {0xdb, 0xcb, 0xcc, 0xbc, 0xac, 0xbb, 0xab, 0x64, 0x65, 0x45, 0x44, 0xdc},
+		0x35: {},
+		0x36: {0x10},
+		0x37: {0xc, 0x8c, 0x1c, 0x8b, 0x7b, 0x9b, 0x7d, 0x7c, 0x9c, 0x9d, 0x8d, 0x6b, 0x5b, 0x5c, 0x5d, 0x6d, 0x6c, 0xa5, 0x95, 0x96, 0x3d, 0x4d, 0xa6, 0x4c, 0x1d, 0xd},
+		0x38: {0x8, 0x18},
+		0x39: {0x2f},
+		0x3a: {0x3c, 0x2c},
+		0x3b: {},
+		0x3c: {0x100},
+		0x3d: {0x11e},
+		0x3e: {0x101},
+		0x3f: {},
+		0x40: {0x102},
+		0x41: {0x117},
+		0x42: {0x103},
+		0x43: {},
+		0x44: {},
+		0x45: {0x105},
+		0x46: {0x11f},
+		0x47: {0x106},
+		0x48: {},
+		0x49: {0x107},
+		0x4a: {},
+		0x4b: {0x108},
+		0x4c: {0x109},
+		0x4d: {0x10a},
+		0x4e: {0x10b},
+		0x4f: {0x10c},
+		0x50: {},
+		0x51: {0x11b},
+		0x52: {},
+		0x53: {0x11c},
+		0x54: {},
+		0x55: {},
+		0x56: {0x120},
+		0x57: {0x110},
+		0x58: {0x112},
+		0x59: {0x111},
+		0x5a: {},
+		0x5b: {0x113},
+		0x5c: {0x114},
+		0x5d: {0x115},
+		0x5e: {},
+		0x5f: {0x10d},
+		0x60: {0x10f},
+		0x61: {0x119, 0x11d},
+		0x62: {},
+		0x63: {0x116},
+		0x64: {0x121},
+		0x65: {0x122},
+		0x66: {},
+		0x67: {0x118},
+		0x68: {0x11a},
+		0x69: {0x10e},
+		0x6a: {},
+		0x6b: {},
+		0x6c: {0x123},
+		0x6d: {0x124},
+		0x6e: {},
+		0x6f: {0x125},
+		0x70: {},
+		0x71: {0x126},
+		0x72: {},
+		0x73: {},
+		0x74: {},
+		0x75: {},
+		0x76: {},
+		0x77: {},
+		0x78: {},
+		0x79: {},
+		0x7a: {},
+		0x7b: {0x0},
+		0x7c: {},
+		0x7d: {},
+		0x7e: {},
+		0x7f: {},
+		0x80: {},
+		0x81: {},
+		0x82: {0x3},
+		0x83: {0x127},
+		0x84: {},
+	}
+
 	// iterate over entrances:
 	wg := sync.WaitGroup{}
 	for eID := uint8(0); eID < entranceCount; eID++ {
@@ -412,388 +548,385 @@ func TestGenerateMap(t *testing.T) {
 			copy(wram, e.WRAM[:])
 			copy(tiles, e.WRAM[0x12000:0x14000])
 
-			// make a map full of $01 Collision and carve out reachable areas:
-			for i := range room.Reachable {
-				room.Reachable[i] = 0x01
-			}
-
 			g.Rooms = append(g.Rooms, room)
 			supertiles[st] = room
 
 			//ioutil.WriteFile(fmt.Sprintf("data/%03X.wram", uint16(st)), wram, 0644)
 			ioutil.WriteFile(fmt.Sprintf("data/%03X.tmap", uint16(st)), tiles, 0644)
 
-			room.WarpExitTo = Supertile(read8(wram, 0xC000))
-			room.StairExitTo = [4]Supertile{
-				Supertile(read8(wram, uint32(0xC001))),
-				Supertile(read8(wram, uint32(0xC002))),
-				Supertile(read8(wram, uint32(0xC003))),
-				Supertile(read8(wram, uint32(0xC004))),
-			}
-			room.WarpExitLayer = MapCoord(read8(wram, uint32(0x063C))&2) << 11
-			room.StairTargetLayer = [4]MapCoord{
-				MapCoord(read8(wram, uint32(0x063D))&2) << 11,
-				MapCoord(read8(wram, uint32(0x063E))&2) << 11,
-				MapCoord(read8(wram, uint32(0x063F))&2) << 11,
-				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
-			}
-
-			//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
-			//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
-			//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
-			//fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
-			//fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
-			//fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
-
-			// process doors first:
-			doors := make([]Door, 0, 16)
-			for m := 0; m < 16; m++ {
-				tpos := read16(wram[:], uint32(0x19A0+(m<<1)))
-				// stop marker:
-				if tpos == 0 {
-					//fmt.Fprintf(s.Logger, "    door stop at marker\n")
-					break
+			if false {
+				room.WarpExitTo = Supertile(read8(wram, 0xC000))
+				room.StairExitTo = [4]Supertile{
+					Supertile(read8(wram, uint32(0xC001))),
+					Supertile(read8(wram, uint32(0xC002))),
+					Supertile(read8(wram, uint32(0xC003))),
+					Supertile(read8(wram, uint32(0xC004))),
+				}
+				room.WarpExitLayer = MapCoord(read8(wram, uint32(0x063C))&2) << 11
+				room.StairTargetLayer = [4]MapCoord{
+					MapCoord(read8(wram, uint32(0x063D))&2) << 11,
+					MapCoord(read8(wram, uint32(0x063E))&2) << 11,
+					MapCoord(read8(wram, uint32(0x063F))&2) << 11,
+					MapCoord(read8(wram, uint32(0x0640))&2) << 11,
 				}
 
-				door := Door{
-					Pos:  MapCoord(tpos >> 1),
-					Type: DoorType(read16(wram[:], uint32(0x1980+(m<<1)))),
-					Dir:  Direction(read16(wram[:], uint32(0x19C0+(m<<1)))),
-				}
-				doors = append(doors, door)
+				//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
+				//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
+				//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
+				//fmt.Fprintf(s.Logger, "    STAIR2TO = %s\n", Supertile(read8(wram, 0xC003)))
+				//fmt.Fprintf(s.Logger, "    STAIR3TO = %s\n", Supertile(read8(wram, 0xC004)))
+				//fmt.Fprintf(s.Logger, "    DARK     = %v\n", room.IsDarkRoom())
 
-				fmt.Fprintf(e.Logger, "    door: %v\n", door)
-
-				isDoorEdge, _, _, _ := door.Pos.IsDoorEdge()
-
-				{
-					// open up doors that are in front of interroom stairwells:
-					var stair MapCoord
-
-					switch door.Dir {
-					case DirNorth:
-						stair = door.Pos + 0x01
-						break
-					case DirSouth:
-						stair = door.Pos + 0xC1
-						break
-					case DirEast:
-						stair = door.Pos + 0x43
-						break
-					case DirWest:
-						stair = door.Pos + 0x40
+				// process doors first:
+				doors := make([]Door, 0, 16)
+				for m := 0; m < 16; m++ {
+					tpos := read16(wram[:], uint32(0x19A0+(m<<1)))
+					// stop marker:
+					if tpos == 0 {
+						//fmt.Fprintf(s.Logger, "    door stop at marker\n")
 						break
 					}
 
-					v := tiles[stair]
-					if v >= 0x30 && v <= 0x39 {
-						tiles[door.Pos+0x41+0x00] = 0x00
-						tiles[door.Pos+0x41+0x01] = 0x00
-						tiles[door.Pos+0x41+0x40] = 0x00
-						tiles[door.Pos+0x41+0x41] = 0x00
+					door := Door{
+						Pos:  MapCoord(tpos >> 1),
+						Type: DoorType(read16(wram[:], uint32(0x1980+(m<<1)))),
+						Dir:  Direction(read16(wram[:], uint32(0x19C0+(m<<1)))),
 					}
-				}
+					doors = append(doors, door)
 
-				if door.Type.IsExit() {
-					lyr, row, col := door.Pos.RowCol()
-					// patch up the door tiles to prevent reachability from exiting:
-					for y := uint16(0); y < 4; y++ {
-						for x := uint16(0); x < 4; x++ {
-							t := lyr | (row+y)<<6 | (col + x)
-							if tiles[t] >= 0xF0 {
-								tiles[t] = 0x00
+					fmt.Fprintf(e.Logger, "    door: %v\n", door)
+
+					isDoorEdge, _, _, _ := door.Pos.IsDoorEdge()
+
+					{
+						// open up doors that are in front of interroom stairwells:
+						var stair MapCoord
+
+						switch door.Dir {
+						case DirNorth:
+							stair = door.Pos + 0x01
+							break
+						case DirSouth:
+							stair = door.Pos + 0xC1
+							break
+						case DirEast:
+							stair = door.Pos + 0x43
+							break
+						case DirWest:
+							stair = door.Pos + 0x40
+							break
+						}
+
+						v := tiles[stair]
+						if v >= 0x30 && v <= 0x39 {
+							tiles[door.Pos+0x41+0x00] = 0x00
+							tiles[door.Pos+0x41+0x01] = 0x00
+							tiles[door.Pos+0x41+0x40] = 0x00
+							tiles[door.Pos+0x41+0x41] = 0x00
+						}
+					}
+
+					if door.Type.IsExit() {
+						lyr, row, col := door.Pos.RowCol()
+						// patch up the door tiles to prevent reachability from exiting:
+						for y := uint16(0); y < 4; y++ {
+							for x := uint16(0); x < 4; x++ {
+								t := lyr | (row+y)<<6 | (col + x)
+								if tiles[t] >= 0xF0 {
+									tiles[t] = 0x00
+								}
 							}
 						}
-					}
-					continue
-				}
-
-				if door.Type == 0x30 {
-					// exploding wall:
-					pos := int(door.Pos)
-					fmt.Printf("    exploding wall %s\n", door.Pos)
-					for c := 0; c < 11; c++ {
-						for r := 0; r < 12; r++ {
-							tiles[pos+(r<<6)-c] = 0
-							tiles[pos+(r<<6)+1+c] = 0
-						}
-					}
-					continue
-				}
-
-				if isDoorEdge {
-					// blow open edge doorways:
-					var (
-						start        MapCoord
-						tn           MapCoord
-						doorTileType uint8
-						doorwayTile  uint8
-						adj          int
-					)
-
-					var ok bool
-					lyr, _, _ := door.Pos.RowCol()
-
-					switch door.Dir {
-					case DirNorth:
-						start = door.Pos + 0x81
-						doorwayTile = 0x80 | uint8(lyr>>10)
-						adj = 1
-						break
-					case DirSouth:
-						start = door.Pos + 0x41
-						doorwayTile = 0x80 | uint8(lyr>>10)
-						adj = 1
-						break
-					case DirEast:
-						start = door.Pos + 0x42
-						doorwayTile = 0x81 | uint8(lyr>>10)
-						adj = 0x40
-						break
-					case DirWest:
-						start = door.Pos + 0x42
-						doorwayTile = 0x81 | uint8(lyr>>10)
-						adj = 0x40
-						break
-					}
-
-					doorTileType = tiles[start]
-					if doorTileType < 0xF0 {
-						// don't blow this doorway; it's custom:
 						continue
 					}
 
-					tn = start
-					canBlow := func(v uint8) bool {
-						if v == 0x01 || v == 0x00 {
-							return true
+					if door.Type == 0x30 {
+						// exploding wall:
+						pos := int(door.Pos)
+						fmt.Printf("    exploding wall %s\n", door.Pos)
+						for c := 0; c < 11; c++ {
+							for r := 0; r < 12; r++ {
+								tiles[pos+(r<<6)-c] = 0
+								tiles[pos+(r<<6)+1+c] = 0
+							}
 						}
-						if v == doorTileType {
-							return true
-						}
-						if v >= 0x28 && v <= 0x2B {
-							return true
-						}
-						if v == 0x10 {
-							// slope?? found in sanctuary $002
-							return true
-						}
-						return false
+						continue
 					}
-					for i := 0; i < 12; i++ {
-						v := tiles[tn]
-						if canBlow(v) {
-							fmt.Printf("    blow open %s\n", tn)
-							tiles[tn] = doorwayTile
-							fmt.Printf("    blow open %s\n", MapCoord(int(tn)+adj))
-							tiles[int(tn)+adj] = doorwayTile
-						} else {
-							panic(fmt.Errorf("something blocking the doorway at %s: $%02x", tn, v))
+
+					if isDoorEdge {
+						// blow open edge doorways:
+						var (
+							start        MapCoord
+							tn           MapCoord
+							doorTileType uint8
+							doorwayTile  uint8
+							adj          int
+						)
+
+						var ok bool
+						lyr, _, _ := door.Pos.RowCol()
+
+						switch door.Dir {
+						case DirNorth:
+							start = door.Pos + 0x81
+							doorwayTile = 0x80 | uint8(lyr>>10)
+							adj = 1
+							break
+						case DirSouth:
+							start = door.Pos + 0x41
+							doorwayTile = 0x80 | uint8(lyr>>10)
+							adj = 1
+							break
+						case DirEast:
+							start = door.Pos + 0x42
+							doorwayTile = 0x81 | uint8(lyr>>10)
+							adj = 0x40
+							break
+						case DirWest:
+							start = door.Pos + 0x42
+							doorwayTile = 0x81 | uint8(lyr>>10)
+							adj = 0x40
 							break
 						}
 
-						tn, _, ok = tn.MoveBy(door.Dir, 1)
-						if !ok {
-							break
-						}
-					}
-					continue
-				}
-
-				//if !isDoorEdge
-				{
-					var (
-						start        MapCoord
-						tn           MapCoord
-						doorTileType uint8
-						maxCount     int
-						count        int
-						doorwayTile  uint8
-						adj          int
-					)
-
-					var ok bool
-					lyr, _, _ := door.Pos.RowCol()
-
-					switch door.Dir {
-					case DirNorth:
-						start = door.Pos + 0x81
-						maxCount = 12
-						doorwayTile = 0x80 | uint8(lyr>>10)
-						adj = 1
-						break
-					case DirSouth:
-						start = door.Pos + 0x41
-						maxCount = 12
-						doorwayTile = 0x80 | uint8(lyr>>10)
-						adj = 1
-						break
-					case DirEast:
-						start = door.Pos + 0x42
-						maxCount = 10
-						doorwayTile = 0x81 | uint8(lyr>>10)
-						adj = 0x40
-						break
-					case DirWest:
-						start = door.Pos + 0x42
-						maxCount = 10
-						doorwayTile = 0x81 | uint8(lyr>>10)
-						adj = 0x40
-						break
-					}
-
-					var mustStop func(uint8) bool
-
-					doorTileType = tiles[start]
-					if doorTileType >= 0x80 && doorTileType <= 0x8D {
-						mustStop = func(v uint8) bool {
-							if v == 0x01 {
-								return false
-							}
-							if v >= 0x28 && v <= 0x2B {
-								return false
-							}
-							if v == doorwayTile {
-								return false
-							}
-							if v >= 0xF0 {
-								return false
-							}
-							return true
-						}
-					} else if doorTileType >= 0xF0 {
-						oppositeDoorType := uint8(0)
-						if doorTileType >= 0xF8 {
-							oppositeDoorType = doorTileType - 8
-						} else if doorTileType >= 0xF0 {
-							oppositeDoorType = doorTileType + 8
+						doorTileType = tiles[start]
+						if doorTileType < 0xF0 {
+							// don't blow this doorway; it's custom:
+							continue
 						}
 
-						mustStop = func(v uint8) bool {
-							if v == 0x01 {
-								return false
-							}
-							if v == doorwayTile {
-								return false
-							}
-							if v == oppositeDoorType {
-								return false
+						tn = start
+						canBlow := func(v uint8) bool {
+							if v == 0x01 || v == 0x00 {
+								return true
 							}
 							if v == doorTileType {
-								return false
+								return true
 							}
 							if v >= 0x28 && v <= 0x2B {
-								// ledge tiles can be found in doorway in fairy cave $008:
-								return false
+								return true
 							}
-							return true
+							if v == 0x10 {
+								// slope?? found in sanctuary $002
+								return true
+							}
+							return false
 						}
-					} else {
-						// bad door starter tile type
-						fmt.Fprintf(e.Logger, fmt.Sprintf("unrecognized door tile at %s: $%02x\n", start, doorTileType))
+						for i := 0; i < 12; i++ {
+							v := tiles[tn]
+							if canBlow(v) {
+								fmt.Printf("    blow open %s\n", tn)
+								tiles[tn] = doorwayTile
+								fmt.Printf("    blow open %s\n", MapCoord(int(tn)+adj))
+								tiles[int(tn)+adj] = doorwayTile
+							} else {
+								panic(fmt.Errorf("something blocking the doorway at %s: $%02x", tn, v))
+								break
+							}
+
+							tn, _, ok = tn.MoveBy(door.Dir, 1)
+							if !ok {
+								break
+							}
+						}
 						continue
 					}
 
-					// check many tiles behind door for opposite door tile:
-					i := 0
-					tn = start
-					for ; i < maxCount; i++ {
-						v := tiles[tn]
-						if mustStop(v) {
+					//if !isDoorEdge
+					{
+						var (
+							start        MapCoord
+							tn           MapCoord
+							doorTileType uint8
+							maxCount     int
+							count        int
+							doorwayTile  uint8
+							adj          int
+						)
+
+						var ok bool
+						lyr, _, _ := door.Pos.RowCol()
+
+						switch door.Dir {
+						case DirNorth:
+							start = door.Pos + 0x81
+							maxCount = 12
+							doorwayTile = 0x80 | uint8(lyr>>10)
+							adj = 1
+							break
+						case DirSouth:
+							start = door.Pos + 0x41
+							maxCount = 12
+							doorwayTile = 0x80 | uint8(lyr>>10)
+							adj = 1
+							break
+						case DirEast:
+							start = door.Pos + 0x42
+							maxCount = 10
+							doorwayTile = 0x81 | uint8(lyr>>10)
+							adj = 0x40
+							break
+						case DirWest:
+							start = door.Pos + 0x42
+							maxCount = 10
+							doorwayTile = 0x81 | uint8(lyr>>10)
+							adj = 0x40
 							break
 						}
-						tn, _, ok = tn.MoveBy(door.Dir, 1)
-						if !ok {
-							break
+
+						var mustStop func(uint8) bool
+
+						doorTileType = tiles[start]
+						if doorTileType >= 0x80 && doorTileType <= 0x8D {
+							mustStop = func(v uint8) bool {
+								if v == 0x01 {
+									return false
+								}
+								if v >= 0x28 && v <= 0x2B {
+									return false
+								}
+								if v == doorwayTile {
+									return false
+								}
+								if v >= 0xF0 {
+									return false
+								}
+								return true
+							}
+						} else if doorTileType >= 0xF0 {
+							oppositeDoorType := uint8(0)
+							if doorTileType >= 0xF8 {
+								oppositeDoorType = doorTileType - 8
+							} else if doorTileType >= 0xF0 {
+								oppositeDoorType = doorTileType + 8
+							}
+
+							mustStop = func(v uint8) bool {
+								if v == 0x01 {
+									return false
+								}
+								if v == doorwayTile {
+									return false
+								}
+								if v == oppositeDoorType {
+									return false
+								}
+								if v == doorTileType {
+									return false
+								}
+								if v >= 0x28 && v <= 0x2B {
+									// ledge tiles can be found in doorway in fairy cave $008:
+									return false
+								}
+								return true
+							}
+						} else {
+							// bad door starter tile type
+							fmt.Fprintf(e.Logger, fmt.Sprintf("unrecognized door tile at %s: $%02x\n", start, doorTileType))
+							continue
+						}
+
+						// check many tiles behind door for opposite door tile:
+						i := 0
+						tn = start
+						for ; i < maxCount; i++ {
+							v := tiles[tn]
+							if mustStop(v) {
+								break
+							}
+							tn, _, ok = tn.MoveBy(door.Dir, 1)
+							if !ok {
+								break
+							}
+						}
+						count = i
+
+						// blow open the doorway:
+						tn = start
+						for i := 0; i < count; i++ {
+							v := tiles[tn]
+							if mustStop(v) {
+								break
+							}
+
+							//fmt.Printf("    blow open %s\n", tn)
+							tiles[tn] = doorwayTile
+							//fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
+							tiles[int(tn)+adj] = doorwayTile
+							tn, _, _ = tn.MoveBy(door.Dir, 1)
 						}
 					}
-					count = i
+				}
+				room.Doors = doors
 
-					// blow open the doorway:
-					tn = start
-					for i := 0; i < count; i++ {
-						v := tiles[tn]
-						if mustStop(v) {
-							break
+				// find layer-swap tiles in doorways:
+				swapCount := read16(wram, 0x044E)
+				room.SwapLayers = make(map[MapCoord]empty, swapCount*4)
+				for i := uint16(0); i < swapCount; i += 2 {
+					t := MapCoord(read16(wram, uint32(0x06C0+i)))
+
+					// mark the 2x2 tile as a layer-swap:
+					room.SwapLayers[t+0x00] = empty{}
+					room.SwapLayers[t+0x01] = empty{}
+					room.SwapLayers[t+0x40] = empty{}
+					room.SwapLayers[t+0x41] = empty{}
+					// have to put it on both layers? ew
+					room.SwapLayers[t|0x1000+0x00] = empty{}
+					room.SwapLayers[t|0x1000+0x01] = empty{}
+					room.SwapLayers[t|0x1000+0x40] = empty{}
+					room.SwapLayers[t|0x1000+0x41] = empty{}
+				}
+
+				// find interroom stair objects:
+				stairCount := uint32(0)
+				for _, n := range []uint32{0x0438, 0x043A, 0x047E, 0x0482, 0x0480, 0x0484, 0x04A2, 0x04A6, 0x04A4, 0x04A8} {
+					index := uint32(read16(wram, n))
+					if index > stairCount {
+						stairCount = index
+					}
+				}
+				for i := uint32(0); i < stairCount; i += 2 {
+					t := MapCoord(read16(wram, 0x06B0+i))
+					room.Stairs = append(room.Stairs, t)
+					fmt.Fprintf(e.Logger, "    interroom stair at %s\n", t)
+				}
+
+				for i := uint32(0); i < 0x20; i += 2 {
+					pos := MapCoord(read16(wram, 0x0540+i) >> 1)
+					if pos == 0 {
+						break
+					}
+					fmt.Printf(
+						"    manipulable(%s): %02x, %04x\n",
+						pos,
+						i,
+						read16(wram, 0x0500+i), // MANIPPROPS
+					)
+				}
+
+				for i := uint32(0); i < 6; i++ {
+					gt := read16(wram, 0x06E0+i<<1)
+					if gt == 0 {
+						break
+					}
+
+					fmt.Printf("    chest($%04x)\n", gt)
+
+					if gt&0x8000 != 0 {
+						// locked cell door:
+						t := MapCoord((gt & 0x7FFF) >> 1)
+						if tiles[t] == 0x58+uint8(i) {
+							tiles[t+0x00] = 0x00
+							tiles[t+0x01] = 0x00
+							tiles[t+0x40] = 0x00
+							tiles[t+0x41] = 0x00
 						}
-
-						//fmt.Printf("    blow open %s\n", tn)
-						tiles[tn] = doorwayTile
-						//fmt.Printf("    blow open %s\n", mapCoord(int(tn)+adj))
-						tiles[int(tn)+adj] = doorwayTile
-						tn, _, _ = tn.MoveBy(door.Dir, 1)
-					}
-				}
-			}
-			room.Doors = doors
-
-			// find layer-swap tiles in doorways:
-			swapCount := read16(wram, 0x044E)
-			room.SwapLayers = make(map[MapCoord]empty, swapCount*4)
-			for i := uint16(0); i < swapCount; i += 2 {
-				t := MapCoord(read16(wram, uint32(0x06C0+i)))
-
-				// mark the 2x2 tile as a layer-swap:
-				room.SwapLayers[t+0x00] = empty{}
-				room.SwapLayers[t+0x01] = empty{}
-				room.SwapLayers[t+0x40] = empty{}
-				room.SwapLayers[t+0x41] = empty{}
-				// have to put it on both layers? ew
-				room.SwapLayers[t|0x1000+0x00] = empty{}
-				room.SwapLayers[t|0x1000+0x01] = empty{}
-				room.SwapLayers[t|0x1000+0x40] = empty{}
-				room.SwapLayers[t|0x1000+0x41] = empty{}
-			}
-
-			// find interroom stair objects:
-			stairCount := uint32(0)
-			for _, n := range []uint32{0x0438, 0x043A, 0x047E, 0x0482, 0x0480, 0x0484, 0x04A2, 0x04A6, 0x04A4, 0x04A8} {
-				index := uint32(read16(wram, n))
-				if index > stairCount {
-					stairCount = index
-				}
-			}
-			for i := uint32(0); i < stairCount; i += 2 {
-				t := MapCoord(read16(wram, 0x06B0+i))
-				room.Stairs = append(room.Stairs, t)
-				fmt.Fprintf(e.Logger, "    interroom stair at %s\n", t)
-			}
-
-			for i := uint32(0); i < 0x20; i += 2 {
-				pos := MapCoord(read16(wram, 0x0540+i) >> 1)
-				if pos == 0 {
-					break
-				}
-				fmt.Printf(
-					"    manipulable(%s): %02x, %04x\n",
-					pos,
-					i,
-					read16(wram, 0x0500+i), // MANIPPROPS
-				)
-			}
-
-			for i := uint32(0); i < 6; i++ {
-				gt := read16(wram, 0x06E0+i<<1)
-				if gt == 0 {
-					break
-				}
-
-				fmt.Printf("    chest($%04x)\n", gt)
-
-				if gt&0x8000 != 0 {
-					// locked cell door:
-					t := MapCoord((gt & 0x7FFF) >> 1)
-					if tiles[t] == 0x58+uint8(i) {
-						tiles[t+0x00] = 0x00
-						tiles[t+0x01] = 0x00
-						tiles[t+0x40] = 0x00
-						tiles[t+0x41] = 0x00
-					}
-					if tiles[t|0x1000] == 0x58+uint8(i) {
-						tiles[t|0x1000+0x00] = 0x00
-						tiles[t|0x1000+0x01] = 0x00
-						tiles[t|0x1000+0x40] = 0x00
-						tiles[t|0x1000+0x41] = 0x00
+						if tiles[t|0x1000] == 0x58+uint8(i) {
+							tiles[t|0x1000+0x00] = 0x00
+							tiles[t|0x1000+0x01] = 0x00
+							tiles[t|0x1000+0x40] = 0x00
+							tiles[t|0x1000+0x41] = 0x00
+						}
 					}
 				}
 			}
@@ -821,379 +954,23 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(e.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
 		}
 
-		{
-			room := createRoom(g.Supertile)
-			// render the entrance supertile in the background:
-			wg.Add(1)
-			go drawSupertile(&wg, room)
-		}
-
-		// build a stack (LIFO) of supertile entry points to visit:
-		lifo := make([]EntryPoint, 0, 0x100)
-		lifo = append(lifo, EntryPoint{g.Supertile, g.EntryCoord, DirNone, ExitPoint{}})
-
-		// process the LIFO:
-		for len(lifo) != 0 {
-			// pop off the stack:
-			lifoEnd := len(lifo) - 1
-			ep := lifo[lifoEnd]
-			lifo = lifo[0:lifoEnd]
-
-			this := ep.Supertile
-
-			fmt.Fprintf(e.Logger, "  ep = %s\n", ep)
-
-			// create a room by emulation:
-			room := createRoom(this)
-
-			// check if room causes pit damage vs warp:
-			// RoomsWithPitDamage#_00990C [0x70]uint16
-			pitDamages := roomsWithPitDamage[this]
-
-			warpExitTo := room.WarpExitTo
-			stairExitTo := &room.StairExitTo
-			warpExitLayer := room.WarpExitLayer
-			stairTargetLayer := &room.StairTargetLayer
-
-			//exitSeen := make(map[Supertile]struct{}, 24)
-			pushEntryPoint := func(ep EntryPoint, name string) {
-				// for EG2:
-				if this >= 0x100 {
-					ep.Supertile |= 0x100
-				}
-
-				room.EntryPoints = append(room.EntryPoints, ep)
-				room.ExitPoints = append(room.ExitPoints, ExitPoint{
-					Supertile:    ep.Supertile,
-					Point:        ep.From.Point,
-					Direction:    ep.From.Direction,
-					WorthMarking: ep.From.WorthMarking,
-				})
-
-				lifo = append(lifo, ep)
-				fmt.Fprintf(e.Logger, "    %s to %s\n", name, ep)
-			}
-
-			// dont need to read interroom stair list from $06B0; just link stair tile number to STAIRnTO exit
-
-			// flood fill to find reachable tiles:
-			tiles := &room.Tiles
-			room.FindReachableTiles(
-				ep,
-				func(s ScanState, v uint8) {
-					t := s.t
-					d := s.d
-
-					exit := ExitPoint{
-						ep.Supertile,
-						t,
-						d,
-						false,
-					}
-
-					// here we found a reachable tile:
-					room.Reachable[t] = v
-
-					if v == 0x00 {
-						// detect edge walkways:
-						if ok, edir, _, _ := t.IsEdge(); ok {
-							if sn, _, ok := this.MoveBy(edir); ok {
-								pushEntryPoint(EntryPoint{sn, t.OppositeEdge(), edir, exit}, fmt.Sprintf("%s walkway", edir))
-							}
-						}
-						return
-					}
-
-					// door objects:
-					if v >= 0xF0 {
-						//fmt.Printf("    door tile $%02x at %s\n", v, t)
-						// dungeon exits are already patched out, so this should be a normal door
-						lyr, row, col := t.RowCol()
-						if row >= 0x3A {
-							// south:
-							if sn, sd, ok := this.MoveBy(DirSouth); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x06 << 6) | col), sd, exit}, "south door")
-							}
-						} else if row <= 0x06 {
-							// north:
-							if sn, sd, ok := this.MoveBy(DirNorth); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (0x3A << 6) | col), sd, exit}, "north door")
-							}
-						} else if col >= 0x3A {
-							// east:
-							if sn, sd, ok := this.MoveBy(DirEast); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x06), sd, exit}, "east door")
-							}
-						} else if col <= 0x06 {
-							// west:
-							if sn, sd, ok := this.MoveBy(DirWest); ok {
-								pushEntryPoint(EntryPoint{sn, MapCoord(lyr | (row << 6) | 0x3A), sd, exit}, "west door")
-							}
-						}
-
-						return
-					}
-
-					// interroom doorways:
-					if (v >= 0x80 && v <= 0x8D) || (v >= 0x90 && v <= 97) {
-						if ok, edir, _, _ := t.IsDoorEdge(); ok && edir == d {
-							// at or beyond the door edge zones:
-							swapLayers := MapCoord(0)
-
-							{
-								// search the doorway for layer-swaps:
-								tn := t
-								for i := 0; i < 8; i++ {
-									vd := tiles[tn]
-									room.Reachable[tn] = vd
-									if vd >= 0x90 && vd <= 0x9F {
-										swapLayers = 0x1000
-									}
-									if vd >= 0xA8 && vd <= 0xAF {
-										swapLayers = 0x1000
-									}
-									if _, ok := room.SwapLayers[tn]; ok {
-										swapLayers = 0x1000
-									}
-
-									// advance into the doorway:
-									tn, _, ok = tn.MoveBy(edir, 1)
-									if !ok {
-										break
-									}
-								}
-							}
-
-							if v&1 == 0 {
-								// north-south normal doorway (no teleport doorways for north-south):
-								if sn, _, ok := this.MoveBy(edir); ok {
-									pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "north-south doorway")
-								}
-							} else {
-								// east-west doorway:
-								if v == 0x89 {
-									// teleport doorway:
-									if edir == DirWest {
-										pushEntryPoint(EntryPoint{stairExitTo[2], t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "west teleport doorway")
-									} else if edir == DirEast {
-										pushEntryPoint(EntryPoint{stairExitTo[3], t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "east teleport doorway")
-									} else {
-										panic("invalid direction approaching east-west teleport doorway")
-									}
-								} else {
-									// normal doorway:
-									if sn, _, ok := this.MoveBy(edir); ok {
-										pushEntryPoint(EntryPoint{sn, t.OnEdge(edir.Opposite()) ^ swapLayers, edir, exit}, "east-west doorway")
-									}
-								}
-							}
-						}
-						return
-					}
-
-					if v >= 0x30 && v < 0x38 {
-						var vn uint8
-						vn = tiles[t-0x40]
-						if vn == 0x80 || vn == 0x26 {
-							vn = tiles[t+0x40]
-						}
-
-						if vn == 0x5E || vn == 0x5F {
-							// spiral staircase
-							tgtLayer := stairTargetLayer[v&3]
-							dt := t
-							if v&4 == 0 {
-								// going up
-								if t&0x1000 != 0 {
-									dt += 0x80
-								}
-								if tgtLayer != 0 {
-									dt += 0x80
-								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite(), exit}, fmt.Sprintf("spiralStair(%s)", t))
-							} else {
-								// going down
-								if t&0x1000 != 0 {
-									dt -= 0x80
-								}
-								if tgtLayer != 0 {
-									dt -= 0x80
-								}
-								pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d.Opposite(), exit}, fmt.Sprintf("spiralStair(%s)", t))
-							}
-							return
-						} else if vn == 0x38 {
-							// north stairs:
-							tgtLayer := stairTargetLayer[v&3]
-							dt := t.Col() + 0xFC0 - 2<<6
-							if v&4 == 0 {
-								// going up
-								if t&0x1000 != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt -= 4 << 6
-								}
-								if tgtLayer != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt -= 4 << 6
-								}
-							} else {
-								// going down
-								// module #$07 submodule #$12 is going down north stairs (e.g. $042)
-								if t&0x1000 != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt += 4 << 6
-								}
-								if tgtLayer != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt += 4 << 6
-								}
-							}
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d, exit}, fmt.Sprintf("northStair(%s)", t))
-							return
-						} else if vn == 0x39 {
-							// south stairs:
-							tgtLayer := stairTargetLayer[v&3]
-							dt := t.Col() + 2<<6
-							if v&4 == 0 {
-								// going up
-								if t&0x1000 != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt -= 4 << 6
-								}
-								if tgtLayer != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt -= 4 << 6
-								}
-							} else {
-								// going down
-								if t&0x1000 != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt += 4 << 6
-								}
-								if tgtLayer != 0 {
-									// 32 pixels = 4 8x8 tiles
-									dt += 4 << 6
-								}
-							}
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], dt&0x0FFF | tgtLayer, d, exit}, fmt.Sprintf("southStair(%s)", t))
-							return
-						} else if vn == 0x00 {
-							// straight stairs:
-							pushEntryPoint(EntryPoint{stairExitTo[v&3], t&0x0FFF | stairTargetLayer[v&3], d.Opposite(), exit}, fmt.Sprintf("stair(%s)", t))
-							return
-						}
-						panic(fmt.Errorf("unhandled stair exit at %s %s", t, d))
-						return
-					}
-
-					// pit exits:
-					if !pitDamages {
-						if v == 0x20 {
-							// pit tile
-							exit.WorthMarking = !room.markedPit
-							room.markedPit = true
-							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("pit(%s)", t))
-							return
-						} else if v == 0x62 {
-							// bombable floor tile
-							exit.WorthMarking = !room.markedFloor
-							room.markedFloor = true
-							pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("bombableFloor(%s)", t))
-							return
-						}
-					}
-					if v == 0x4B {
-						// warp floor tile
-						exit.WorthMarking = t&0x40 == 0 && t&0x01 == 0
-						pushEntryPoint(EntryPoint{warpExitTo, t&0x0FFF | warpExitLayer, d, exit}, fmt.Sprintf("warp(%s)", t))
-						return
-					}
-
-					// handle manipulables, floor switches, and star tiles:
-					if false {
-						// manipulables (pots, hammer pegs, push blocks):
-						if v&0xF0 == 0x70 {
-							// find gfx tilemap position:
-							j := (uint32(v) & 0x0F) << 1
-							p := read16(room.WRAM[:], 0x0500+j)
-							fmt.Fprintf(e.Logger, "    manip(%s) %02x = %04x\n", t, v, p)
-							if p == 0 {
-								fmt.Fprintf(e.Logger, "    pushBlock(%s)\n", t)
-
-								// push block flips 0x0641
-								write8(room.WRAM[:], 0x0641, 0x01)
-								if read8(room.WRAM[:], 0xAE)|read8(room.WRAM[:], 0xAF) != 0 {
-									// handle tags if there are any after the push to see if it triggers a secret:
-									room.HandleRoomTags(e)
-									// TODO: properly determine which tag was activated
-									room.TilesVisited = room.TilesVisitedTag0
-								}
-							}
-							return
-						}
-
-						v16 := read16(room.Tiles[:], uint32(t))
-						if v16 == 0x3A3A || v16 == 0x3B3B {
-							fmt.Fprintf(e.Logger, "    star(%s)\n", t)
-
-							// set absolute x,y coordinates to the tile:
-							x, y := t.ToAbsCoord(room.Supertile)
-							write16(room.WRAM[:], 0x20, y)
-							write16(room.WRAM[:], 0x22, x)
-							write16(room.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
-
-							room.HandleRoomTags(e)
-
-							// swap out visited maps:
-							if read8(room.WRAM[:], 0x04BC) == 0 {
-								fmt.Fprintf(e.Logger, "    star0\n")
-								room.TilesVisited = room.TilesVisitedStar0
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
-							} else {
-								fmt.Fprintf(e.Logger, "    star1\n")
-								room.TilesVisited = room.TilesVisitedStar1
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
-							}
-							return
-						}
-
-						// floor or pressure switch:
-						if v16 == 0x2323 || v16 == 0x2424 {
-							fmt.Fprintf(e.Logger, "    switch(%s)\n", t)
-
-							// set absolute x,y coordinates to the tile:
-							x, y := t.ToAbsCoord(room.Supertile)
-							write16(room.WRAM[:], 0x20, y)
-							write16(room.WRAM[:], 0x22, x)
-							write16(room.WRAM[:], 0xEE, (uint16(t)&0x1000)>>10)
-
-							if room.HandleRoomTags(e) {
-								// reset current room visited state:
-								for i := range room.TilesVisited {
-									delete(room.TilesVisited, i)
-								}
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
-							}
-							return
-						}
-					}
-				},
-			)
-
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.rch", uint16(this)), room.Reachable[:], 0644)
+		for _, st := range entranceRooms[eID] {
+			createRoom(Supertile(st))
 		}
 
 		// render all supertiles found:
 		if len(g.Rooms) >= 1 {
 			for _, room := range g.Rooms {
-				if room.Supertile == g.Supertile {
-					// entrance supertile is already rendered
-					continue
-				}
+				//if room.Supertile == g.Supertile {
+				//	// entrance supertile is already rendered
+				//	continue
+				//}
+
+				fmt.Fprintf(e.Logger, "  render %s\n", room.Supertile)
 
 				if true {
 					// Change room overlay:
-					fmt.Fprintf(e.Logger, "apply room overlay:\n")
+					fmt.Fprintf(e.Logger, "  apply room overlay\n")
 					write8((&room.WRAM)[:], 0x10, 0x07)
 					write8((&room.WRAM)[:], 0x11, 0x03)
 					write8((&room.WRAM)[:], 0xB0, 0x00)
@@ -1223,8 +1000,6 @@ func TestGenerateMap(t *testing.T) {
 				}
 
 				{
-					fmt.Fprintf(e.Logger, "  render %s\n", room.Supertile)
-
 					wg.Add(1)
 					go drawSupertile(&wg, room)
 
@@ -1426,16 +1201,13 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 					}
 
 					for t := 0; t < maxRange; t++ {
-						v := room.Reachable[t]
-						if v == 0x01 {
+						v := room.Tiles[t]
+						if v != 0x20 {
 							continue
 						}
 
 						tt := MapCoord(t)
 						_, tr, tc := tt.RowCol()
-						if v != 0x20 {
-							continue
-						}
 
 						x := int(tc) << 3
 						y := int(tr) << 3
