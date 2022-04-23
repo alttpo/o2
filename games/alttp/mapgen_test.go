@@ -440,6 +440,8 @@ func TestGenerateMap(t *testing.T) {
 				MapCoord(read8(wram, uint32(0x0640))&2) << 11,
 			}
 
+			fmt.Fprintf(e.Logger, "    TAG1 = %02x\n", read8(wram, 0xAE))
+			fmt.Fprintf(e.Logger, "    TAG2 = %02x\n", read8(wram, 0xAF))
 			//fmt.Fprintf(s.Logger, "    WARPTO   = %s\n", Supertile(read8(wram, 0xC000)))
 			//fmt.Fprintf(s.Logger, "    STAIR0TO = %s\n", Supertile(read8(wram, 0xC001)))
 			//fmt.Fprintf(s.Logger, "    STAIR1TO = %s\n", Supertile(read8(wram, 0xC002)))
@@ -767,10 +769,15 @@ func TestGenerateMap(t *testing.T) {
 					break
 				}
 				fmt.Printf(
-					"    manipulable(%s): %02x, %04x\n",
+					"    manipulable(%s): %02x, %04x @%04x -> %04x%04x,%04x%04x\n",
 					pos,
 					i,
 					read16(wram, 0x0500+i), // MANIPPROPS
+					read16(wram, 0x0520+i), // MANIPOBJX
+					read16(wram, 0x0560+i), // MANIPRTNW
+					read16(wram, 0x05A0+i), // MANIPRTNE
+					read16(wram, 0x0580+i), // MANIPRTSW
+					read16(wram, 0x05C0+i), // MANIPRTSE
 				)
 			}
 
