@@ -31,7 +31,7 @@ func newEmitterAt(s *System, addr uint32, generateText bool) *asm.Emitter {
 	return a
 }
 
-const drawOverlays = false
+const drawOverlays = true
 
 var (
 	b02LoadUnderworldSupertilePC     uint32 = 0x02_5200
@@ -807,7 +807,7 @@ func TestGenerateMap(t *testing.T) {
 
 			room.HandleRoomTags(e)
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap", uint16(st)), (&room.Tiles)[:], 0644)
 
 			return
 		}
@@ -822,12 +822,7 @@ func TestGenerateMap(t *testing.T) {
 			fmt.Fprintf(e.Logger, "  link coord = {%04x, %04x, %04x}\n", linkX, linkY, linkLayer)
 		}
 
-		{
-			room := createRoom(g.Supertile)
-			// render the entrance supertile in the background:
-			wg.Add(1)
-			go drawSupertile(&wg, room)
-		}
+		createRoom(g.Supertile)
 
 		// build a stack (LIFO) of supertile entry points to visit:
 		lifo := make([]EntryPoint, 0, 0x100)
@@ -1148,11 +1143,11 @@ func TestGenerateMap(t *testing.T) {
 							if read8(room.WRAM[:], 0x04BC) == 0 {
 								fmt.Fprintf(e.Logger, "    star0\n")
 								room.TilesVisited = room.TilesVisitedStar0
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
+								//ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
 							} else {
 								fmt.Fprintf(e.Logger, "    star1\n")
 								room.TilesVisited = room.TilesVisitedStar1
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
+								//ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap1", uint16(this)), room.Tiles[:], 0644)
 							}
 							return
 						}
@@ -1172,7 +1167,7 @@ func TestGenerateMap(t *testing.T) {
 								for i := range room.TilesVisited {
 									delete(room.TilesVisited, i)
 								}
-								ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
+								//ioutil.WriteFile(fmt.Sprintf("data/%03X.cmap0", uint16(this)), room.Tiles[:], 0644)
 							}
 							return
 						}
@@ -1180,17 +1175,12 @@ func TestGenerateMap(t *testing.T) {
 				},
 			)
 
-			ioutil.WriteFile(fmt.Sprintf("data/%03X.rch", uint16(this)), room.Reachable[:], 0644)
+			//ioutil.WriteFile(fmt.Sprintf("data/%03X.rch", uint16(this)), room.Reachable[:], 0644)
 		}
 
 		// render all supertiles found:
 		if len(g.Rooms) >= 1 {
 			for _, room := range g.Rooms {
-				if room.Supertile == g.Supertile {
-					// entrance supertile is already rendered
-					continue
-				}
-
 				if false {
 					// loadSupertile:
 					copy(e.WRAM[:], room.WRAM[:])
@@ -1408,6 +1398,21 @@ func renderAll(fname string, entranceGroups []Entrance, rowStart int, rowCount i
 						)
 					}
 				}
+
+				// draw supertile number in top-left:
+				stStr := fmt.Sprintf("%03X", uint16(room.Supertile))
+				(&font.Drawer{
+					Dst:  all,
+					Src:  image.NewUniform(color.RGBA{0, 0, 0, 255}),
+					Face: inconsolata.Bold8x16,
+					Dot:  fixed.Point26_6{fixed.I(stx + 5), fixed.I(sty + 5 + 12)},
+				}).DrawString(stStr)
+				(&font.Drawer{
+					Dst:  all,
+					Src:  image.NewUniform(color.RGBA{255, 255, 255, 255}),
+					Face: inconsolata.Bold8x16,
+					Dot:  fixed.Point26_6{fixed.I(stx + 4), fixed.I(sty + 4 + 12)},
+				}).DrawString(stStr)
 
 				wga.Done()
 			}(room)
@@ -2931,7 +2936,7 @@ type Entrance struct {
 }
 
 func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
-	var err error
+	//var err error
 	defer wg.Done()
 
 	// gfx output is:
@@ -3095,27 +3100,12 @@ func drawSupertile(wg *sync.WaitGroup, room *RoomState) {
 			)
 		}
 
-		// draw supertile number in top-left:
-		stStr := fmt.Sprintf("%03X", uint16(room.Supertile))
-		(&font.Drawer{
-			Dst:  g,
-			Src:  image.NewUniform(color.RGBA{0, 0, 0, 255}),
-			Face: inconsolata.Bold8x16,
-			Dot:  fixed.Point26_6{fixed.I(5), fixed.I(5 + 12)},
-		}).DrawString(stStr)
-		(&font.Drawer{
-			Dst:  g,
-			Src:  image.NewUniform(color.RGBA{255, 255, 255, 255}),
-			Face: inconsolata.Bold8x16,
-			Dot:  fixed.Point26_6{fixed.I(4), fixed.I(4 + 12)},
-		}).DrawString(stStr)
-
 		// store full underworld rendering for inclusion into EG map:
 		room.Rendered = g
 
-		if err = exportPNG(fmt.Sprintf("data/%03X.png", uint16(room.Supertile)), g); err != nil {
-			panic(err)
-		}
+		//if err = exportPNG(fmt.Sprintf("data/%03X.png", uint16(room.Supertile)), g); err != nil {
+		//	panic(err)
+		//}
 	}
 }
 
