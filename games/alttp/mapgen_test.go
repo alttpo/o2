@@ -548,7 +548,7 @@ func TestGenerateMap(t *testing.T) {
 						adj = 1
 						break
 					case DirEast:
-						start = door.Pos + 0x42
+						start = door.Pos + 0x41
 						doorwayTile = 0x81 | uint8(lyr>>10)
 						adj = 0x40
 						break
