@@ -16,6 +16,7 @@ builds:
     ignore: # M1 builds fail currently
       - goos: darwin
         goarch: arm64
+      - goos: linux
 archives:
   - replacements:
       darwin: MacOS

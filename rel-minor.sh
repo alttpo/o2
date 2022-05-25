@@ -1,5 +1,5 @@
 #!/bin/bash
-latesttag=$(git tag --sort=-taggerdate)
+latesttag=$(git tag --sort=-taggerdate | grep '^v')
 tag=${latesttag:1}
 
 IFS='.'
