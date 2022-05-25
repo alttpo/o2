@@ -20,9 +20,10 @@ func (m *multiWriteCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) 
 	for i := range m.reqs {
 		wr := &m.reqs[i]
 		req.Requests[i] = &WriteMemoryRequest{
-			RequestAddress:       wr.Address,
-			RequestAddressSpace:  AddressSpace_FxPakPro,
-			RequestMemoryMapping: MemoryMapping_Unknown,
+			RequestAddress:      wr.Address,
+			RequestAddressSpace: AddressSpace_FxPakPro,
+			// TODO: undo this hard-coding of LoROM mapping but since we only have ALTTP game right now it's ok
+			RequestMemoryMapping: MemoryMapping_LoROM,
 			Data:                 wr.Data,
 		}
 	}
