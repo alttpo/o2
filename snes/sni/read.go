@@ -20,9 +20,10 @@ func (m *multiReadCommand) Execute(queue snes.Queue, keepAlive snes.KeepAlive) (
 	for i := range m.reqs {
 		sr := &m.reqs[i]
 		req.Requests[i] = &ReadMemoryRequest{
-			RequestAddress:       sr.Address,
-			RequestAddressSpace:  AddressSpace_FxPakPro,
-			RequestMemoryMapping: MemoryMapping_Unknown,
+			RequestAddress:      sr.Address,
+			RequestAddressSpace: AddressSpace_FxPakPro,
+			// TODO: undo this hard-coding of LoROM mapping but since we only have ALTTP game right now it's ok
+			RequestMemoryMapping: MemoryMapping_LoROM,
 			Size:                 uint32(sr.Size),
 		}
 	}
