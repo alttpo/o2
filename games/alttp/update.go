@@ -23,14 +23,6 @@ func (g *Game) updateWRAM() {
 	defer g.updateLock.Unlock()
 	g.updateLock.Lock()
 
-	if g.updateStage > 0 {
-		// escape mechanism for long-running updates:
-		if time.Now().Sub(g.lastUpdateTime) > time.Second {
-			g.updateStage = 0
-		}
-		return
-	}
-
 	// select target SRAM routine:
 	var targetSNES uint32
 	if g.nextUpdateA {

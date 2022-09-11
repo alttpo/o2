@@ -278,7 +278,13 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		// handle update routine check:
 		g.updateLock.Lock()
 		if g.updateStage > 0 {
-			if rsp.Address == g.lastUpdateTarget {
+			// escape mechanism for long-running updates:
+			if time.Now().Sub(g.lastUpdateTime) > time.Second {
+				g.updateStage = 0
+				g.nextUpdateA = !g.nextUpdateA
+				g.lastUpdateTarget = 0xFFFFFF
+				g.lastUpdateFrame ^= 0xFF
+			} else if rsp.Address == g.lastUpdateTarget {
 				ins0 := rsp.Data[0]
 				updateFrameCounter := rsp.Data[1]
 				log.Printf("alttp: update: check: $%06x [$%02x,$%02x] ?= [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
