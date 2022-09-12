@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/mapping/lorom"
+	"github.com/alttpo/snes/timing"
 	"log"
 	"o2/games"
 	"o2/snes"
@@ -22,6 +23,13 @@ func (g *Game) updateWRAM() {
 
 	defer g.updateLock.Unlock()
 	g.updateLock.Lock()
+
+	if g.updateStage > 0 {
+		return
+	}
+	if time.Now().Sub(g.cooldownTime) < timing.Frame*30 {
+		return
+	}
 
 	// select target SRAM routine:
 	var targetSNES uint32
@@ -97,16 +105,20 @@ func (g *Game) updateWRAM() {
 }
 
 func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool) {
+	// don't update during non-zero submodules in main gameplay modules:
+	module := g.wramU8(0x10)
+	if module == 0x07 || module == 0x09 || module == 0x0b {
+		// good module, check submodule:
+		if g.wramU8(0x11) != 0 {
+			return false
+		}
+	} else {
+		// bad module:
+		return false
+	}
 	// don't update if Link is currently frozen:
 	if g.wramU8(0x02e4) != 0 {
 		return false
-	}
-	// don't update during non-zero submodules in main gameplay modules:
-	if g.wramU8(0x11) != 0 {
-		module := g.wramU8(0x10)
-		if module == 0x07 || module == 0x09 || module == 0x0b {
-			return false
-		}
 	}
 
 	a.SetBase(targetSNES)
@@ -121,34 +133,22 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.STA_long(targetSNES)
 	a.SEP(0x30)
 
-	a.Comment("don't update if Link is frozen:")
-	a.LDA_abs(0x02E4)
-	a.BEQ("moduleCheck")
-	a.Label("syncExit")
-	a.RTS()
-
 	a.Label("moduleCheck")
 	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
-
-	//    LDA  $11  : BEQ cont              //    if (u8[$11] == $00) goto cont;
-	//                                      //    else u8[$11] is non-zero:
-	//    LDA  $10  : CMP #$07  : BEQ bail  //    if (u8[$10] == $07) goto bail;
-	//                CMP #$09  : BEQ bail  //    if (u8[$10] == $09) goto bail;
-	//                CMP #$0B  : BNE cont  //    if (u8[$10] != $0B) goto cont;
-	//
-	//bail:                                 // bail:
-	//    RTS                               //    return;
-	//cont:                                 // cont:
-
-	a.LDA_dp(0x11)
-	a.BEQ("syncStart")
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x07)
-	a.BEQ("syncExit")
+	a.BEQ("submoduleCheck")
 	a.CMP_imm8_b(0x09)
-	a.BEQ("syncExit")
+	a.BEQ("submoduleCheck")
 	a.CMP_imm8_b(0x0B)
-	a.BNE("syncStart")
+	a.BNE("syncExit")
+	a.Label("submoduleCheck")
+	a.LDA_dp(0x11)
+	a.BNE("syncExit")
+	a.Comment("don't update if Link is frozen:")
+	a.LDA_abs(0x02E4)
+	a.BEQ("syncStart")
+	a.Label("syncExit")
 	a.RTS()
 	a.Label("syncStart")
 

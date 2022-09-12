@@ -3,6 +3,7 @@ package alttp
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/alttpo/snes/timing"
 	"log"
 	"o2/snes"
 	"strings"
@@ -263,6 +264,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 	// assume module is invalid until we read it:
 	moduleStaging := -1
+	submoduleStaging := -1
+
 	now := time.Now()
 	for _, rsp := range rsps {
 		// check WRAM reads:
@@ -272,6 +275,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 				moduleStaging = int(rsp.Data[0x10-start])
 				g.lastModuleRead = now
 			}
+			if start <= 0x11 && 0x11 <= end {
+				submoduleStaging = int(rsp.Data[0x11-start])
+			}
 		}
 		// ignore SRAM for staging.
 
@@ -279,11 +285,13 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		g.updateLock.Lock()
 		if g.updateStage > 0 {
 			// escape mechanism for long-running updates:
-			if time.Now().Sub(g.lastUpdateTime) > time.Second {
+			if now.Sub(g.lastUpdateTime) > timing.Frame*30 {
+				log.Printf("alttp: wait time elapsed with no confirmation of asm execution; aborting\n")
 				g.updateStage = 0
 				g.nextUpdateA = !g.nextUpdateA
 				g.lastUpdateTarget = 0xFFFFFF
 				g.lastUpdateFrame ^= 0xFF
+				g.cooldownTime = now
 			} else if rsp.Address == g.lastUpdateTarget {
 				ins0 := rsp.Data[0]
 				updateFrameCounter := rsp.Data[1]
@@ -303,6 +311,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 						g.nextUpdateA = !g.nextUpdateA
 						g.lastUpdateTarget = 0xFFFFFF
 						g.lastUpdateFrame ^= 0xFF
+						g.cooldownTime = now
 					}
 				} else {
 					// check again:
@@ -332,11 +341,22 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	if moduleStaging == -1 {
 		return q
 	}
+	if submoduleStaging == -1 {
+		return q
+	}
 
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
 		if now.Sub(g.lastSyncLog) >= time.Second {
 			log.Printf("alttp: syncing disabled; cannot sync during game module $%02x", moduleStaging)
+			g.lastSyncLog = now
+		}
+		g.syncing = false
+		return q
+	}
+	if submoduleStaging > 0 {
+		if now.Sub(g.lastSyncLog) >= time.Second {
+			log.Printf("alttp: syncing disabled; cannot sync during game submodule $%02x", submoduleStaging)
 			g.lastSyncLog = now
 		}
 		g.syncing = false
