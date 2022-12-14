@@ -347,17 +347,15 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
-		if now.Sub(g.lastSyncLog) >= time.Second {
+		if g.syncing {
 			log.Printf("alttp: syncing disabled; cannot sync during game module $%02x", moduleStaging)
-			g.lastSyncLog = now
 		}
 		g.syncing = false
 		return q
 	}
 	if submoduleStaging > 0 {
-		if now.Sub(g.lastSyncLog) >= time.Second {
+		if g.syncing {
 			log.Printf("alttp: syncing disabled; cannot sync during game submodule $%02x", submoduleStaging)
-			g.lastSyncLog = now
 		}
 		g.syncing = false
 		return q

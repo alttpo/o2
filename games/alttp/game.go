@@ -82,7 +82,6 @@ type Game struct {
 	notFirstFrame bool
 
 	syncing        bool
-	lastSyncLog    time.Time
 	lastStaleLog   time.Time
 	lastModuleRead time.Time
 
