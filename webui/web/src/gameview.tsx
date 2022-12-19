@@ -9,8 +9,14 @@ const gameViews: { [gameName: string]: GameViewComponent } = {
 };
 
 function GameView({ch, vm}: GameViewProps) {
-    if (!vm.game.gameName) {
-        return <div/>;
+    if (!vm.snes.isConnected) {
+        return <h2>Not connected to a SNES device!</h2>;
+    }
+    if (!vm.server.isConnected) {
+        return <h2>Not connected to the game server!</h2>;
+    }
+    if (!vm.game.isCreated) {
+        return <h2>No game ROM selected!</h2>;
     }
 
     // route to specific game view based on `gameName`:
