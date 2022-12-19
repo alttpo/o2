@@ -224,6 +224,21 @@ func (g *Game) isReadSRAM(rsp snes.Response) (start, end uint32, ok bool) {
 	return
 }
 
+func (g *Game) extractWRAMByte(rsp snes.Response, addr uint32) (val uint8, ok bool) {
+	// not in WRAM?
+	if rsp.Address < 0xF50000 || rsp.Address >= 0xF70000 {
+		return 0, false
+	}
+
+	// check if address in read range:
+	i := addr - rsp.Address
+	if i >= uint32(len(rsp.Data)) {
+		return 0, false
+	}
+
+	return rsp.Data[i], true
+}
+
 func (g *Game) enqueueSRAMRead(q []snes.Read, extra interface{}) []snes.Read {
 	// read the SRAM copy for underworld and overworld:
 	q = g.readEnqueue(q, 0xF5F000, 0xFE, extra) // [$F000..$F0FD]
@@ -269,15 +284,12 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	now := time.Now()
 	for _, rsp := range rsps {
 		// check WRAM reads:
-		if start, end, ok := g.isReadWRAM(rsp); ok {
+		if val, ok := g.extractWRAMByte(rsp, 0xF50010); ok {
 			// did we read the module number?
-			if start <= 0x10 && 0x10 <= end {
-				moduleStaging = int(rsp.Data[0x10-start])
-				g.lastModuleRead = now
-			}
-			if start <= 0x11 && 0x11 <= end {
-				submoduleStaging = int(rsp.Data[0x11-start])
-			}
+			moduleStaging = int(val)
+		}
+		if val, ok := g.extractWRAMByte(rsp, 0xF50011); ok {
+			submoduleStaging = int(val)
 		}
 		// ignore SRAM for staging.
 
@@ -327,15 +339,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		if rsp.Extra == 0 {
 			q = g.readEnqueue(q, rsp.Address, rsp.Size, rsp.Extra)
 		}
-	}
-
-	// make sure last Module [$0010] read isn't too stale:
-	if staleness := now.Sub(g.lastModuleRead); staleness >= time.Second {
-		if now.Sub(g.lastStaleLog) >= time.Second {
-			log.Printf("alttp: last module read is stale; duration = %v\n", staleness)
-			g.lastStaleLog = now
-		}
-		return q
 	}
 
 	if moduleStaging == -1 {
