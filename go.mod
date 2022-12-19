@@ -3,7 +3,7 @@ module o2
 go 1.17
 
 require (
-	github.com/alttpo/snes v0.0.0-20220502000153-7285cd88ae04
+	github.com/alttpo/snes v0.0.0-20221219142608-8caabfba1165
 	github.com/getlantern/systray v1.3.2
 	github.com/gobwas/ws v1.1.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
@@ -15,7 +15,6 @@ require (
 
 require (
 	github.com/creack/goselect v0.1.2 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/getlantern/context v0.0.0-20220418194847-3d5e7a086201 // indirect
 	github.com/getlantern/errors v1.0.1 // indirect
 	github.com/getlantern/golog v0.0.0-20211223150227-d4d95a44d873 // indirect
