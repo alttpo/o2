@@ -1,7 +1,6 @@
 package snes
 
 import (
-	"fmt"
 	"log"
 	"time"
 )
@@ -36,12 +35,12 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 	// FIXME: no great way I can figure out how to avoid panic on closed channel send below.
 	defer func() {
 		if recover() != nil {
-			err = fmt.Errorf("%s: device connection is closed", b.name)
+			err = &TerminalError{ErrDeviceDisconnected}
 		}
 	}()
 
 	if b.cqClosed {
-		err = fmt.Errorf("%s: device connection is closed", b.name)
+		err = &TerminalError{ErrDeviceDisconnected}
 		return
 	}
 
@@ -133,7 +132,7 @@ channelLoop:
 
 		// wrap the error if it is a terminal case:
 		if err != nil && q.IsTerminalError(err) {
-			err = ErrDeviceDisconnected{err}
+			err = &TerminalError{err}
 			terminal = true
 		}
 		if pair.Completion != nil {

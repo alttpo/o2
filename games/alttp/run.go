@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/alttpo/snes/timing"
 	"log"
@@ -58,6 +59,12 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 	err := sequence.EnqueueTo(q)
 	if err != nil {
 		log.Printf("alttp: readSubmit: enqueue: %s\n", err)
+		var termErr *snes.TerminalError
+		if errors.As(err, &termErr) {
+			log.Println("alttp: readSubmit: terminal error encountered; disconnecting from queue")
+			_ = termErr
+			g.queue = nil
+		}
 		return
 	}
 	//log.Printf("alttp: readSubmit: enqueue complete\n")

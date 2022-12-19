@@ -1,12 +1,20 @@
 package snes
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
-type ErrDeviceDisconnected struct {
+var ErrDeviceDisconnected = errors.New("device disconnected")
+
+type TerminalError struct {
 	wrapped error
 }
 
-func (e ErrDeviceDisconnected) Unwrap() error { return e.wrapped }
-func (e ErrDeviceDisconnected) Error() string {
-	return fmt.Sprintf("snes device disconnected: %v", e.wrapped)
+func (e *TerminalError) Unwrap() error { return e.wrapped }
+func (e *TerminalError) Error() string {
+	if e.wrapped == nil {
+		return "snes device terminal error"
+	}
+	return fmt.Sprintf("snes device terminal error: %v", e.wrapped)
 }

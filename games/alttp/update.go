@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"errors"
 	"fmt"
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/mapping/lorom"
@@ -100,6 +101,12 @@ func (g *Game) updateWRAM() {
 	).EnqueueTo(q)
 	if err != nil {
 		log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
+		var termErr *snes.TerminalError
+		if errors.As(err, &termErr) {
+			log.Println("alttp: update: terminal error encountered; disconnecting from queue")
+			_ = termErr
+			g.queue = nil
+		}
 		return
 	}
 }
