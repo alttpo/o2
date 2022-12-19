@@ -130,6 +130,21 @@ const App = () => {
                             <ServerView ch={ch.current} vm={vm}/>
                         </div>
 
+                        <div class="content" style="width: 100%; display: flex">
+                            <div style="flex: 1 0 0%">
+                                <span>SNES:&nbsp;</span>{vm.snes?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            </div>
+                            <div style="flex: 1 0 0%">
+                                <span>Server:&nbsp;</span>{vm.server?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            </div>
+                            <div style="flex: 1 0 0%">
+                                <span>ROM:&nbsp;</span>{vm.game?.isCreated ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            </div>
+                            <div style="flex: 0 0 15%">
+                                <a href="/log.txt" style="float: right">Download Logs</a>
+                            </div>
+                        </div>
+
                         <hr/>
 
                         {vm.game?.isCreated && (
@@ -141,14 +156,6 @@ const App = () => {
                 </section>
                 <ReactHint autoPosition events/>
             </div>
-            <footer>
-                <section class="rounded darken padded-lr squeeze">
-                    <span>{vm.status}</span>
-                    <span style="float:right">
-                        <a href="/log.txt">Download Logs</a>
-                    </span>
-                </section>
-            </footer>
         </Fragment>
     );
 }
