@@ -352,6 +352,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
 		log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
 	}
+	g.lastModule = moduleStaging
+	g.lastSubModule = submoduleStaging
 
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
