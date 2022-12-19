@@ -495,6 +495,9 @@ func (g *Game) initSync() {
 		g.NewSyncableBitU8(0x422, &g.SyncItems, [8]string{}, nil)
 		// bow:
 		g.NewSyncableBitU8(0x42A, &g.SyncItems, [8]string{}, nil)
+
+		// crystals counter:
+		g.NewSyncableMaxU8(0x471, &g.SyncItems, nil, nil)
 	}
 
 	// sync wram[$0400] for current dungeon supertile door state:
