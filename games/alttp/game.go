@@ -81,7 +81,9 @@ type Game struct {
 	sram          [0x10000]byte
 	notFirstFrame bool
 
-	syncing bool
+	syncing       bool
+	lastModule    int
+	lastSubModule int
 
 	syncableItems    map[uint16]games.SyncStrategy
 	syncableItemsMin uint16

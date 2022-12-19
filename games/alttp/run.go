@@ -348,24 +348,29 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		return q
 	}
 
+	// log module changes regardless of syncing:
+	if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
+		log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
+	}
+
 	// validate new reads in staging area before copying to wram/sram:
 	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
 		if g.syncing {
-			log.Printf("alttp: syncing disabled; cannot sync during game module $%02x", moduleStaging)
+			log.Printf("alttp: syncing disabled during module [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		}
 		g.syncing = false
 		return q
 	}
 	if submoduleStaging > 0 {
 		if g.syncing {
-			log.Printf("alttp: syncing disabled; cannot sync during game submodule $%02x", submoduleStaging)
+			log.Printf("alttp: syncing disabled during submodule [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		}
 		g.syncing = false
 		return q
 	}
 
 	if !g.syncing {
-		log.Println("alttp: syncing enabled")
+		log.Printf("alttp: syncing enabled during module [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		g.syncing = true
 	}
 
@@ -381,8 +386,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 			copy(g.sram[start:end], rsp.Data)
 		}
 	}
-
-	//log.Printf("alttp: read %d responses\n", len(rsps))
 
 	// assign local variables from WRAM:
 	local := g.LocalPlayer()
@@ -438,7 +441,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 			dungName = dungeonNames[dungeon]
 		}
 		log.Printf(
-			"alttp: local: dungeon $%#04x -> $%#04x ; %s\n",
+			"alttp: local: dungeon $%04x -> $%04x ; %s\n",
 			local.Dungeon,
 			dungeon,
 			dungName,
