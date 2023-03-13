@@ -1,6 +1,6 @@
 module o2
 
-go 1.17
+go 1.19
 
 require (
 	github.com/alttpo/snes v0.0.0-20221219142608-8caabfba1165
