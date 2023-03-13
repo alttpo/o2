@@ -489,13 +489,15 @@ func (g *Game) initSync() {
 		g.NewSyncableMaxU8(0x41A, &g.SyncItems, nil, nil)
 
 		// Progressive item counters:
-		// shield
-		g.NewSyncableMaxU8(0x416, &g.SyncItems, nil, nil)
-		// sword and shield:
+		// sword:
+		g.NewSyncableMaxU8(0x417, &g.SyncItems, nil, nil)
+		// shield:
 		g.NewSyncableBitU8(0x422, &g.SyncItems, [8]string{}, nil)
-		// bow:
-		g.NewSyncableBitU8(0x42A, &g.SyncItems, [8]string{}, nil)
+		// mail / armor:
+		g.NewSyncableBitU8(0x46E, &g.SyncItems, [8]string{}, nil)
 
+		// pendants counter:
+		g.NewSyncableMaxU8(0x429, &g.SyncItems, nil, nil)
 		// crystals counter:
 		g.NewSyncableMaxU8(0x471, &g.SyncItems, nil, nil)
 	}
