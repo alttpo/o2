@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/aybabtme/uniplot/histogram"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
+	"os"
 	"time"
 )
 
@@ -243,6 +246,12 @@ func main() {
 		//{Address: 0xF5C6E0, Size: 0x20},
 	}
 
+	timesArr := [32768]float64{}
+	times := timesArr[:0]
+	t := 0
+
+	sb := bytes.Buffer{}
+
 	fmt.Printf("\u001B[2J")
 	for {
 		tStart := time.Now()
@@ -253,12 +262,20 @@ func main() {
 		}
 
 		delta := tEnd.Sub(tStart).Nanoseconds()
-		fmt.Printf("\033[H\033[0m\033[2K%10d | ####: -----------------------------------------------\n", delta)
+		if len(times) < 32768 {
+			times = append(times, float64(delta))
+		} else {
+			times[t] = float64(delta)
+			t = (t + 1) & 32767
+		}
+
+		fmt.Fprint(&sb, "\u001B[?25l\033[H\033[2K\033[39m\033[1;95H####: -----------------------------------------------\n")
 		line := [16 * (3 + 4 + 5)]byte{}
 		for n := 0; n < 0x2A; n++ {
 			j := 0
 			a := n << 4
 
+			changed := false
 			dimmed := false
 			for i := 0; i < 16; i++ {
 				const hextable = "0123456789abcdef"
@@ -277,24 +294,27 @@ func main() {
 
 				if buf[0xD0+i] == 0 {
 					// disabled sprite:
-					if !dimmed {
+					if !dimmed || !changed {
 						line[j+0] = 033
 						line[j+1] = '['
-						line[j+2] = '2'
-						line[j+3] = 'm'
-						j += 4
+						line[j+2] = '3'
+						line[j+3] = '1'
+						line[j+4] = 'm'
+						j += 5
 						dimmed = true
+						changed = true
 					}
 				} else {
 					// enabled sprite:
-					if dimmed {
+					if dimmed || !changed {
 						line[j+0] = 033
 						line[j+1] = '['
-						line[j+2] = '2'
-						line[j+3] = '2'
+						line[j+2] = '3'
+						line[j+3] = '4'
 						line[j+4] = 'm'
 						j += 5
 						dimmed = false
+						changed = true
 					}
 				}
 				line[j+0] = hextable[b>>4]
@@ -302,12 +322,22 @@ func main() {
 				j += 2
 			}
 
-			fmt.Printf(
-				"\033[0m%10d | %04x:%s\n",
-				delta,
+			fmt.Fprintf(
+				&sb,
+				"\033[%d;95H\u001B[1K\033[39m%04x:%s\n",
+				n+2,
 				0xD00+n<<4,
 				line[:j],
 			)
 		}
+
+		fmt.Fprint(&sb, "\033[H\033[39m")
+		h := histogram.Hist(0x2A, times)
+		histogram.Fprintf(&sb, h, histogram.Linear(40), func(v float64) string {
+			return fmt.Sprintf("% 11dns", time.Duration(v).Nanoseconds())
+		})
+
+		sb.WriteTo(os.Stdout)
+		sb.Truncate(0)
 	}
 }

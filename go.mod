@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/alttpo/snes v0.0.0-20221219142608-8caabfba1165
+	github.com/aybabtme/uniplot v0.0.0-20151203143629-039c559e5e7e
 	github.com/getlantern/systray v1.3.2
 	github.com/gobwas/ws v1.1.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
