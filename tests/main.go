@@ -267,7 +267,7 @@ type mgetRead struct {
 	Response []byte
 }
 
-func mget(f serial.Port, grps []mgetReadGroup, rsp []byte) (err error) {
+func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err error) {
 	sb := [64]byte{}
 	sb[0] = byte('U')
 	sb[1] = byte('S')
@@ -286,6 +286,9 @@ func mget(f serial.Port, grps []mgetReadGroup, rsp []byte) (err error) {
 		// number of reads:
 		nReads := len(grps[i].Reads)
 		sb[j] = byte(nReads)
+		if waitForNMI {
+			sb[j] |= 0x80
+		}
 		j++
 
 		if expected := j + 1 + (nReads * 3); expected >= 64 {
@@ -516,15 +519,9 @@ func main() {
 	fmt.Printf("\u001B[2J")
 	for {
 		tStart := time.Now()
-		// wait for NMI:
-		err = nmiWait(f)
-		if err != nil {
-			panic(err)
-		}
-
 		if true {
 			_ = mgetReadGroups
-			err = mget(f, mgetReadGroups, buf[:])
+			err = mget(f, mgetReadGroups, true, buf[:])
 		} else {
 			_ = vgetReads
 			err = vget(f, vgetReads, buf[:])
