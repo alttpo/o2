@@ -60,7 +60,7 @@ const (
 	FlagCLRX
 	FlagSETX
 	FlagSTREAM_BURST
-	_
+	FlagWAIT_FOR_NMI
 	FlagNORESP
 	FlagDATA64B
 )
@@ -120,7 +120,7 @@ func nmiWait(f serial.Port) (err error) {
 	sb[3] = byte('A')
 	sb[4] = byte(OpNMI_WAIT)
 	sb[5] = byte(SpaceSNES)
-	sb[6] = byte(0)
+	sb[6] = byte(FlagWAIT_FOR_NMI)
 
 	// send the command:
 	err = sendSerial(f, sb[:])
@@ -276,6 +276,9 @@ func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err
 	sb[4] = byte(OpMGET)
 	sb[5] = byte(SpaceSNES)
 	sb[6] = byte(FlagDATA64B | FlagNORESP)
+	if waitForNMI {
+		sb[6] |= byte(FlagWAIT_FOR_NMI)
+	}
 
 	total := 0
 	j := 7
@@ -286,9 +289,6 @@ func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err
 		// number of reads:
 		nReads := len(grps[i].Reads)
 		sb[j] = byte(nReads)
-		if waitForNMI {
-			sb[j] |= 0x80
-		}
 		j++
 
 		if expected := j + 1 + (nReads * 3); expected >= 64 {
@@ -363,8 +363,13 @@ func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err
 	return nil
 }
 
+const hextable = "0123456789abcdef"
+const timingHist = false
+
 func main() {
 	var err error
+
+	initConsole()
 
 	var ports []*enumerator.PortDetails
 
@@ -445,12 +450,17 @@ func main() {
 		{
 			Bank: 0xF5,
 			Reads: []mgetRead{
+				//{Offset: 0x0C9A, Size: 0xCF2 - 0xC9A},
+				//{Offset: 0x0B58, Size: 0xBF0 - 0xB58},
+				{Offset: 0x0BC0, Size: 0x010},
+				{Offset: 0x0CAA, Size: 0x010},
 				// main chunk of SPR[0-F] properties:
 				{Offset: 0x0D00, Size: 0x100},
 				{Offset: 0x0E00, Size: 0x100},
-				{Offset: 0x0F00, Size: 0x0A5},
+				{Offset: 0x0F00, Size: 0x0A2},
 				// 0FA2..0FA4 = free memory!
-				{Offset: 0x0BC0, Size: 0x010}, // slot
+				// top bit of CPU stack:
+				//{Offset: 0x01D0, Size: 0x100 - 0x037},
 				// o2 memory fetches:
 				{Offset: 0x0100, Size: 0x036},
 				{Offset: 0x02E0, Size: 0x008},
@@ -458,7 +468,7 @@ func main() {
 				{Offset: 0x1980, Size: 0x06A},
 				{Offset: 0xF340, Size: 0x100},
 				// Link's palette:
-				//{Offset: 0xC6E0, Size: 0x20},
+				{Offset: 0xC6E0, Size: 0x20},
 			},
 		},
 	}
@@ -469,7 +479,18 @@ func main() {
 
 	sb := bytes.Buffer{}
 	offs := [...]uint16{
-		0x0BC0,
+		//0x0B58,
+		//0x0B6B,
+		//0x0B89,
+		//0x0BA0,
+		//0x0BB0,
+		0x0BC0, // enemy slot in underworld
+		//0x0BE0,
+		//0x0C9A,
+		0x0CAA, // flags
+		//0x0CBA,
+		//0x0CD2,
+		//0x0CE2,
 		0x0D00,
 		0x0D10,
 		0x0D20,
@@ -502,7 +523,7 @@ func main() {
 		0x0ED0,
 		0x0EE0,
 		0x0EF0,
-		0x0F00,
+		0x0F00, // = #$01 if disabled off screen
 		0x0F10,
 		0x0F20,
 		0x0F30,
@@ -515,6 +536,7 @@ func main() {
 	}
 
 	wram := [0x10000]byte{}
+	line := [4096]byte{}
 
 	fmt.Printf("\u001B[2J")
 	for {
@@ -540,80 +562,97 @@ func main() {
 			)
 		}
 
-		delta := tEnd.Sub(tStart).Nanoseconds()
-		if len(times) < 32768 {
-			times = append(times, float64(delta))
-		} else {
-			times[t] = float64(delta)
-			t = (t + 1) & 32767
+		if timingHist {
+			delta := tEnd.Sub(tStart).Nanoseconds()
+			if len(times) < 32768 {
+				times = append(times, float64(delta))
+			} else {
+				times[t] = float64(delta)
+				t = (t + 1) & 32767
+			}
 		}
 
-		fmt.Fprint(&sb, "\u001B[2J\u001B[?25l\033[39m\033[1;95H####: -----------------------------------------------\n")
-		line := [16 * (3 + 5 + 5)]byte{}
-		for n := 0; n < len(offs); n++ {
+		{
 			j := 0
-			a := offs[n]
+			fmt.Fprint(&sb, "\u001B[2J\u001B[?25l\033[39m\033[1;1H  ")
+			for n := 0; n < len(offs); n++ {
+				a := offs[n]
+				line[j+0] = ' '
+				line[j+1] = hextable[(a>>8)&0xF]
+				line[j+2] = hextable[(a>>4)&0xF]
+				j += 3
+			}
+			line[j] = '\n'
+			j++
+			sb.Write(line[:j])
+		}
+		for i := uint16(0); i < 16; i++ {
+			j := 0
 
-			changed := false
-			dimmed := false
-			for i := uint16(0); i < 16; i++ {
-				const hextable = "0123456789abcdef"
+			if wram[0x0DD0+i] == 0 {
+				// disabled sprite:
+				line[j+0] = 033
+				line[j+1] = '['
+				line[j+2] = '3'
+				line[j+3] = '1'
+				line[j+4] = 'm'
+				j += 5
+			} else {
+				// enabled sprite:
+				line[j+0] = 033
+				line[j+1] = '['
+				line[j+2] = '3'
+				line[j+3] = '4'
+				line[j+4] = 'm'
+				j += 5
+			}
+
+			for n := 0; n < len(offs); n++ {
+				a := offs[n]
 				b := wram[a+i]
-				if b == 0 {
-					line[j+0] = ' '
-					line[j+1] = ' '
-					line[j+2] = ' '
-					j += 3
-					continue
-				}
 
 				line[j+0] = ' '
 				j++
 
-				if wram[0x0DD0+i] == 0 {
-					// disabled sprite:
-					if !dimmed || !changed {
-						line[j+0] = 033
-						line[j+1] = '['
-						line[j+2] = '3'
-						line[j+3] = '1'
-						line[j+4] = 'm'
-						j += 5
-						dimmed = true
-						changed = true
-					}
+				if b == 0 {
+					line[j+0] = ' '
+					line[j+1] = ' '
 				} else {
-					// enabled sprite:
-					if dimmed || !changed {
-						line[j+0] = 033
-						line[j+1] = '['
-						line[j+2] = '3'
-						line[j+3] = '4'
-						line[j+4] = 'm'
-						j += 5
-						dimmed = false
-						changed = true
-					}
+					line[j+0] = hextable[b>>4]
+					line[j+1] = hextable[b&15]
 				}
-				line[j+0] = hextable[b>>4]
-				line[j+1] = hextable[b&15]
 				j += 2
 			}
 
 			fmt.Fprintf(
 				&sb,
-				"\033[%d;95H\033[39m%04x:%s",
-				n+2,
-				offs[n],
+				"\033[39m%01x:%s\n",
+				i,
 				line[:j],
 			)
 		}
 
-		fmt.Fprint(&sb, "\033[H\033[39m")
-		h := histogram.PowerHist(1.125, times)
-		histogram.Fprintf(&sb, h, histogram.Linear(40), func(v float64) string {
-			return fmt.Sprintf("% 11dns", time.Duration(v).Nanoseconds())
-		})
+		if timingHist {
+			fmt.Fprint(&sb, "\033[H\033[39m")
+			h := histogram.PowerHist(1.125, times)
+			histogram.Fprintf(&sb, h, histogram.Linear(40), func(v float64) string {
+				return fmt.Sprintf("% 11dns", time.Duration(v).Nanoseconds())
+			})
+		}
+
+		// dump a bit of CPU stack:
+		if false {
+			j := 0
+			for n := 0x1FF; n >= 0x1D0; n-- {
+				b := wram[n]
+				line[j+0] = hextable[b>>4]
+				line[j+1] = hextable[b&15]
+				line[j+2] = ' '
+				j += 3
+			}
+			fmt.Fprint(&sb, "\033[55H")
+			sb.Write(line[:j])
+		}
 
 		sb.WriteTo(os.Stdout)
 		sb.Truncate(0)
