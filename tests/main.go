@@ -515,13 +515,13 @@ func main() {
 
 	fmt.Printf("\u001B[2J")
 	for {
+		tStart := time.Now()
 		// wait for NMI:
 		err = nmiWait(f)
 		if err != nil {
 			panic(err)
 		}
 
-		tStart := time.Now()
 		if true {
 			_ = mgetReadGroups
 			err = mget(f, mgetReadGroups, buf[:])
