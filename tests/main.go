@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/aybabtme/uniplot/histogram"
 	"go.bug.st/serial"
@@ -326,6 +327,109 @@ func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err
 			grps[i].Reads[k].Response = rsp[o : o+size]
 			o += size
 		}
+	}
+
+	return nil
+}
+
+func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
+	sb := [512]byte{}
+	sb[0] = byte('U')
+	sb[1] = byte('S')
+	sb[2] = byte('B')
+	sb[3] = byte('A')
+	sb[4] = byte(OpIOVM_UPLOAD)
+	sb[5] = byte(SpaceSNES)
+	sb[6] = byte(0)
+
+	if copy(sb[7:], prgm) < len(prgm) {
+		err = fmt.Errorf("program too big to fit in USBA command")
+		return
+	}
+
+	// send the IOVM_UPLOAD request:
+	err = sendSerial(f, sb[:])
+	if err != nil {
+		return
+	}
+
+	// get the response:
+	err = recvSerial(f, sb[:], 512)
+	if err != nil {
+		return
+	}
+	if sb[0] != 'U' || sb[1] != 'S' || sb[2] != 'B' || sb[3] != 'A' {
+		err = fmt.Errorf("iovmUpload: bad response")
+		return
+	}
+
+	ec := sb[5]
+	if ec != 0 {
+		err = fmt.Errorf("iovmUpload: error %d", ec)
+		return
+	}
+
+	// IOVM_EXEC must now always return this many bytes of data:
+	size = binary.LittleEndian.Uint32(sb[252:256])
+
+	return
+}
+
+func iovmExecute(f serial.Port, rsp []byte) (err error) {
+	sb := [512]byte{}
+	sb[0] = byte('U')
+	sb[1] = byte('S')
+	sb[2] = byte('B')
+	sb[3] = byte('A')
+	sb[4] = byte(OpIOVM_EXEC)
+	sb[5] = byte(SpaceSNES)
+	sb[6] = byte(0)
+
+	// send the IOVM_EXEC request:
+	err = sendSerial(f, sb[:])
+	if err != nil {
+		return err
+	}
+
+	// get the response:
+	err = recvSerial(f, sb[:], 512)
+	if err != nil {
+		return
+	}
+	if sb[0] != 'U' || sb[1] != 'S' || sb[2] != 'B' || sb[3] != 'A' {
+		return fmt.Errorf("iovmExecute: bad response")
+	}
+
+	ec := sb[5]
+	if ec != 0 {
+		return fmt.Errorf("iovmExecute: error %d", ec)
+	}
+
+	// IOVM_EXEC must now always return this many bytes of data:
+	size := binary.LittleEndian.Uint32(sb[252:256])
+	if size > uint32(len(rsp)) {
+		return fmt.Errorf("iovmExecute: rsp buffer too small %d to fit whole response size of %d", len(rsp), size)
+	}
+
+	// read full 512-byte packets and copy into rsp:
+	packets := size / 512
+	for i := uint32(0); i < packets; i++ {
+		err = recvSerial(f, sb[:], 512)
+		if err != nil {
+			return
+		}
+		copy(rsp, sb[:])
+		rsp = rsp[512:]
+	}
+
+	// read any remainder (padded to 512 bytes):
+	remainder := size & 511
+	if remainder > 0 {
+		err = recvSerial(f, sb[:], 512)
+		if err != nil {
+			return
+		}
+		copy(rsp, sb[:remainder])
 	}
 
 	return nil
