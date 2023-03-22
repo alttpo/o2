@@ -375,7 +375,7 @@ func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
 	return
 }
 
-func iovmExecute(f serial.Port, rsp []byte) (err error) {
+func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 	sb := [512]byte{}
 	sb[0] = byte('U')
 	sb[1] = byte('S')
@@ -384,6 +384,9 @@ func iovmExecute(f serial.Port, rsp []byte) (err error) {
 	sb[4] = byte(OpIOVM_EXEC)
 	sb[5] = byte(SpaceSNES)
 	sb[6] = byte(0)
+	if waitForNMI {
+		sb[6] |= byte(FlagWAIT_FOR_NMI)
+	}
 
 	// send the IOVM_EXEC request:
 	err = sendSerial(f, sb[:])
@@ -549,6 +552,46 @@ func main() {
 		},
 	}
 
+	// IOVM instruction byte format:
+	//
+	//   x x x x x xxx
+	//  [t i r v - ooo] {data[...]}
+	//
+	//    o = opcode (0..7)
+	//    v = advance target address after read/write
+	//    r = repeat mode
+	//    i = immediate data mode (or invert mode)
+	//    t = target (0 = SRAM, 1 = SNESCMD)
+	//    - = reserved
+	// 0=SETADDR
+	// 1=WHILE_NEQ
+	// 2=READ
+	// 3=WRITE
+	prgm := make([]byte, 0, 512-7)
+	// TODO: add implicit WHILE_NEQ for WAIT_FOR_NMI
+	for _, g := range mgetReadGroups[0].Reads {
+		prgm = append(
+			prgm,
+			0b0100_0000, // SETADDR SRAM
+			byte(g.Offset&0xFF),
+			byte(g.Offset>>8),
+			0xF5,
+			0b0011_0001, // READ SRAM, repeat, advance
+			byte(g.Size&0xFF),
+		)
+	}
+	// END
+	prgm = append(prgm, 0)
+
+	// upload the IOVM procedure:
+	var readSize uint32
+	readSize, err = iovmUpload(f, prgm)
+	if err != nil {
+		panic(err)
+	}
+
+	_ = readSize
+
 	timesArr := [32768]float64{}
 	times := timesArr[:0]
 	t := 0
@@ -618,11 +661,15 @@ func main() {
 	for {
 		tStart := time.Now()
 		if true {
-			_ = mgetReadGroups
-			err = mget(f, mgetReadGroups, true, buf[:])
+			err = iovmExecute(f, true, buf[:])
 		} else {
-			_ = vgetReads
-			err = vget(f, vgetReads, buf[:])
+			if true {
+				_ = mgetReadGroups
+				err = mget(f, mgetReadGroups, true, buf[:])
+			} else {
+				_ = vgetReads
+				err = vget(f, vgetReads, buf[:])
+			}
 		}
 		tEnd := time.Now()
 		if err != nil {
