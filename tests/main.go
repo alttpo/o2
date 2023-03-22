@@ -33,12 +33,13 @@ const (
 
 	OpRESPONSE
 
-	OpMGET
-
 	OpSRAM_ENABLE
 	OpSRAM_WRITE
 
-	OpNMI_WAIT
+	OpIOVM_UPLOAD
+	OpIOVM_EXEC
+
+	OpMGET
 )
 
 type space uint8
@@ -110,39 +111,6 @@ func recvSerial(f serial.Port, rsp []byte, expected int) error {
 		o += n
 	}
 	return nil
-}
-
-func nmiWait(f serial.Port) (err error) {
-	sb := [512]byte{}
-	sb[0] = byte('U')
-	sb[1] = byte('S')
-	sb[2] = byte('B')
-	sb[3] = byte('A')
-	sb[4] = byte(OpNMI_WAIT)
-	sb[5] = byte(SpaceSNES)
-	sb[6] = byte(FlagWAIT_FOR_NMI)
-
-	// send the command:
-	err = sendSerial(f, sb[:])
-	if err != nil {
-		return
-	}
-
-	err = recvSerial(f, sb[:], 512)
-	if err != nil {
-		return
-	}
-
-	if sb[0] != 'U' || sb[1] != 'S' || sb[2] != 'B' || sb[3] != 'A' {
-		return fmt.Errorf("nmiWait: bad response")
-	}
-
-	ec := sb[5]
-	if ec != 0 {
-		return fmt.Errorf("nmiWait: error %d", ec)
-	}
-
-	return
 }
 
 func sramEnable(f serial.Port, enabled bool) (err error) {
@@ -391,6 +359,10 @@ func main() {
 			selected = port
 			break
 		}
+	}
+
+	if selected == nil {
+		panic(fmt.Errorf("no fx pak pro found"))
 	}
 
 	var f serial.Port
