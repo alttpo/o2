@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"github.com/aybabtme/uniplot/histogram"
 	"go.bug.st/serial"
@@ -375,7 +376,7 @@ func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
 	return
 }
 
-func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
+func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (size uint32, err error) {
 	sb := [512]byte{}
 	sb[0] = byte('U')
 	sb[1] = byte('S')
@@ -391,7 +392,7 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 	// send the IOVM_EXEC request:
 	err = sendSerial(f, sb[:])
 	if err != nil {
-		return err
+		return
 	}
 
 	// get the response:
@@ -411,7 +412,7 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 	}
 
 	// IOVM_EXEC must now always return this many bytes of data:
-	size := binary.BigEndian.Uint32(sb[252:256])
+	size = binary.BigEndian.Uint32(sb[252:256])
 	if size > uint32(len(rsp)) {
 		err = fmt.Errorf("iovmExecute: rsp buffer too small %d to fit whole response size of %d", len(rsp), size)
 		return
@@ -436,7 +437,7 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 		if err != nil {
 			return
 		}
-		copy(r, sb[:remainder])
+		copy(r[:remainder], sb[:remainder])
 	}
 
 	return
@@ -590,14 +591,11 @@ func main() {
 	prgm = append(prgm, 0)
 
 	// upload the IOVM procedure:
-	var readSize uint32
-	readSize, err = iovmUpload(f, prgm)
+	var expectedSize uint32
+	expectedSize, err = iovmUpload(f, prgm)
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Printf("iovm_upload emit size: %d\n", readSize)
-	_ = readSize
 
 	timesArr := [32768]float64{}
 	times := timesArr[:0]
@@ -664,11 +662,11 @@ func main() {
 	wram := [0x10000]byte{}
 	line := [4096]byte{}
 
-	//fmt.Printf("\u001B[2J")
 	for {
+		var readSize uint32
 		tStart := time.Now()
 		if true {
-			err = iovmExecute(f, true, buf[:])
+			readSize, err = iovmExecute(f, true, buf[:])
 		} else {
 			if true {
 				_ = mgetReadGroups
@@ -683,15 +681,35 @@ func main() {
 			panic(err)
 		}
 
-		//continue
+		if true {
+			fmt.Fprint(&sb, "\u001B[3J\u001B[?25l\033[39m\033[1;1H")
+			fmt.Fprintf(&sb, "iovm_upload expected emit_size=%d, actual emit_size=%d\n", expectedSize, readSize)
+			hex.Dumper(&sb).Write(buf[0:readSize])
+			sb.WriteTo(os.Stdout)
+			sb.Truncate(0)
+			continue
+		}
 
-		// copy data from buf to wram
-		for i := range mgetReadGroups[0].Reads {
-			read := &mgetReadGroups[0].Reads[i]
-			copy(
-				wram[read.Offset:read.Offset+read.Size],
-				read.Response,
-			)
+		if true {
+			// copy data from buf to wram
+			o := uint32(0)
+			for i := range mgetReadGroups[0].Reads {
+				read := &mgetReadGroups[0].Reads[i]
+				copy(
+					wram[read.Offset:read.Offset+read.Size],
+					buf[o:o+uint32(read.Size)],
+				)
+				o += uint32(read.Size)
+			}
+		} else {
+			// copy data from buf to wram
+			for i := range mgetReadGroups[0].Reads {
+				read := &mgetReadGroups[0].Reads[i]
+				copy(
+					wram[read.Offset:read.Offset+read.Size],
+					read.Response,
+				)
+			}
 		}
 
 		if timingHist {
@@ -706,7 +724,7 @@ func main() {
 
 		{
 			j := 0
-			fmt.Fprint(&sb, "\u001B[2J\u001B[?25l\033[39m\033[1;1H  ")
+			fmt.Fprint(&sb, "\u001B[3J\u001B[?25l\033[39m\033[1;1H  ")
 			for n := 0; n < len(offs); n++ {
 				a := offs[n]
 				line[j+0] = ' '
