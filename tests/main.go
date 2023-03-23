@@ -370,7 +370,7 @@ func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
 	}
 
 	// IOVM_EXEC must now always return this many bytes of data:
-	size = binary.LittleEndian.Uint32(sb[252:256])
+	size = binary.BigEndian.Uint32(sb[252:256])
 
 	return
 }
@@ -400,29 +400,33 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 		return
 	}
 	if sb[0] != 'U' || sb[1] != 'S' || sb[2] != 'B' || sb[3] != 'A' {
-		return fmt.Errorf("iovmExecute: bad response")
+		err = fmt.Errorf("iovmExecute: bad response")
+		return
 	}
 
 	ec := sb[5]
 	if ec != 0 {
-		return fmt.Errorf("iovmExecute: error %d", ec)
+		err = fmt.Errorf("iovmExecute: error %d", ec)
+		return
 	}
 
 	// IOVM_EXEC must now always return this many bytes of data:
-	size := binary.LittleEndian.Uint32(sb[252:256])
+	size := binary.BigEndian.Uint32(sb[252:256])
 	if size > uint32(len(rsp)) {
-		return fmt.Errorf("iovmExecute: rsp buffer too small %d to fit whole response size of %d", len(rsp), size)
+		err = fmt.Errorf("iovmExecute: rsp buffer too small %d to fit whole response size of %d", len(rsp), size)
+		return
 	}
 
 	// read full 512-byte packets and copy into rsp:
+	r := rsp
 	packets := size / 512
 	for i := uint32(0); i < packets; i++ {
 		err = recvSerial(f, sb[:], 512)
 		if err != nil {
 			return
 		}
-		copy(rsp, sb[:])
-		rsp = rsp[512:]
+		copy(r, sb[:])
+		r = r[512:]
 	}
 
 	// read any remainder (padded to 512 bytes):
@@ -432,10 +436,10 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (err error) {
 		if err != nil {
 			return
 		}
-		copy(rsp, sb[:remainder])
+		copy(r, sb[:remainder])
 	}
 
-	return nil
+	return
 }
 
 const hextable = "0123456789abcdef"
@@ -484,6 +488,8 @@ func main() {
 	}
 	defer f.Close()
 
+	f.SetReadTimeout(time.Second)
+
 	err = f.SetDTR(true)
 	if err != nil {
 		panic(err)
@@ -495,7 +501,7 @@ func main() {
 		panic(err)
 	}
 
-	buf := [2040]byte{}
+	buf := [8192]byte{}
 
 	vgetReads := [8]vgetRead{
 		// sprite props before $7E0D00:
@@ -576,7 +582,7 @@ func main() {
 			byte(g.Offset&0xFF),
 			byte(g.Offset>>8),
 			0xF5,
-			0b0011_0001, // READ SRAM, repeat, advance
+			0b0011_0010, // READ SRAM, repeat, advance
 			byte(g.Size&0xFF),
 		)
 	}
@@ -590,6 +596,7 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Printf("iovm_upload emit size: %d\n", readSize)
 	_ = readSize
 
 	timesArr := [32768]float64{}
@@ -657,7 +664,7 @@ func main() {
 	wram := [0x10000]byte{}
 	line := [4096]byte{}
 
-	fmt.Printf("\u001B[2J")
+	//fmt.Printf("\u001B[2J")
 	for {
 		tStart := time.Now()
 		if true {
@@ -675,6 +682,8 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+
+		//continue
 
 		// copy data from buf to wram
 		for i := range mgetReadGroups[0].Reads {
