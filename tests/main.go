@@ -578,16 +578,43 @@ func main() {
 
 	proc := make([]byte, 0, 512-7)
 
-	// TODO: add implicit WHILE_NEQ for WAIT_FOR_NMI
-	proc = append(
-		proc,
+	// a simple wait_for_nmi procedure:
+	proc = append(proc,
+		// SETADDR SNESCMD
+		0b0001_0001,
+		0x01,
+		0x2C,
+		// WRITE SNESCMD
+		0b0001_0100,
+		0x05, // length
+		0x00, // 2C00: (STZ) $2C00
+		0x2C,
+		0x6C, // 2C03: JMP ($FFEA)
+		0xEA,
+		0xFF,
+		// SETADDR SNESCMD
+		0b0001_0001,
+		0x00,
+		0x2C,
+		// WRITE SNESCMD
+		0b0001_0100,
+		0x01, // length
+		0x9C, // 2C00: STZ
+		// SETADDR SNESCMD
+		0b0001_0001,
+		0x00,
+		0x2C,
+		// WHILE_NEQ SNESCMD
+		0b0001_0101,
+		0x00,
+	)
+	proc = append(proc,
 		// SETBANK SRAM
 		0b0000_0010,
 		0xF5,
 	)
 	for _, g := range mgetReadGroups[0].Reads {
-		proc = append(
-			proc,
+		proc = append(proc,
 			// SETOFFS SRAM
 			0b0000_0001,
 			byte(g.Offset&0xFF),
@@ -597,6 +624,16 @@ func main() {
 			byte(g.Size&0xFF),
 		)
 	}
+	proc = append(proc,
+		// SETOFFS SNESCMD
+		0b0001_0001,
+		0xFF,
+		0x2D,
+		// WRITE SNESCMD
+		0b0001_0100,
+		0x01,
+		0xFF,
+	)
 	// END
 	proc = append(proc, 0)
 
@@ -678,7 +715,7 @@ func main() {
 		var readSize uint32
 		tStart := time.Now()
 		if true {
-			readSize, err = iovmExecute(f, true, buf[:])
+			readSize, err = iovmExecute(f, false, buf[:])
 		} else {
 			if true {
 				_ = mgetReadGroups
@@ -695,7 +732,7 @@ func main() {
 
 		sb.Truncate(0)
 		sb.WriteString("\033[3J")
-		if true {
+		if false {
 			fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H")
 			fmt.Fprintf(&sb, "iovm_upload expected emit_size=%d, actual emit_size=%d\n", expectedSize, readSize)
 			hex.Dumper(&sb).Write(buf[0:readSize])
@@ -724,7 +761,7 @@ func main() {
 			}
 		}
 
-		const timingHist = false
+		const timingHist = true
 
 		if timingHist {
 			delta := tEnd.Sub(tStart).Nanoseconds()
@@ -800,7 +837,7 @@ func main() {
 
 		if timingHist {
 			fmt.Fprint(&sb, "\033[H\033[39m")
-			h := histogram.PowerHist(1.0625, times)
+			h := histogram.PowerHist(1.03125, times)
 			histogram.Fprintf(&sb, h, histogram.Linear(40), func(v float64) string {
 				return fmt.Sprintf("% 11dns", time.Duration(v).Nanoseconds())
 			})
