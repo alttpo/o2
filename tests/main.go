@@ -333,7 +333,7 @@ func mget(f serial.Port, grps []mgetReadGroup, waitForNMI bool, rsp []byte) (err
 	return nil
 }
 
-func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
+func iovmUpload(f serial.Port, proc []byte) (size uint32, err error) {
 	sb := [512]byte{}
 	sb[0] = byte('U')
 	sb[1] = byte('S')
@@ -343,8 +343,8 @@ func iovmUpload(f serial.Port, prgm []byte) (size uint32, err error) {
 	sb[5] = byte(SpaceSNES)
 	sb[6] = byte(0)
 
-	if copy(sb[7:], prgm) < len(prgm) {
-		err = fmt.Errorf("program too big to fit in USBA command")
+	if copy(sb[7:], proc) < len(proc) {
+		err = fmt.Errorf("procedure too big to fit in USBA command")
 		return
 	}
 
@@ -444,7 +444,6 @@ func iovmExecute(f serial.Port, waitForNMI bool, rsp []byte) (size uint32, err e
 }
 
 const hextable = "0123456789abcdef"
-const timingHist = false
 
 func main() {
 	var err error
@@ -561,38 +560,51 @@ func main() {
 
 	// IOVM instruction byte format:
 	//
-	//   x x x x x xxx
-	//  [t i r v - ooo] {data[...]}
+	//    76 54 3210
+	//   [-- tt oooo]
 	//
-	//    o = opcode (0..7)
-	//    v = advance target address after read/write
-	//    r = repeat mode
-	//    i = immediate data mode (or invert mode)
-	//    t = target (0 = SRAM, 1 = SNESCMD)
-	//    - = reserved
-	// 0=SETADDR
-	// 1=WHILE_NEQ
-	// 2=READ
-	// 3=WRITE
-	prgm := make([]byte, 0, 512-7)
+	//     o = opcode
+	//     t = target
+	//     - = reserved for future extension
+	//
+	//
+	// 0=END
+	// 1=SETOFFS
+	// 2=SETBANK
+	// 3=READ
+	// 4=WRITE
+	// 5=WHILE_NEQ
+	// 6=WHILE_EQ
+
+	proc := make([]byte, 0, 512-7)
+
 	// TODO: add implicit WHILE_NEQ for WAIT_FOR_NMI
+	proc = append(
+		proc,
+		// SETBANK SRAM
+		0b0000_0010,
+		0xF5,
+	)
 	for _, g := range mgetReadGroups[0].Reads {
-		prgm = append(
-			prgm,
-			0b0100_0000, // SETADDR SRAM
+		proc = append(
+			proc,
+			// SETOFFS SRAM
+			0b0000_0001,
 			byte(g.Offset&0xFF),
 			byte(g.Offset>>8),
-			0xF5,
-			0b0011_0010, // READ SRAM, repeat, advance
+			// READ SRAM
+			0b0000_0011,
 			byte(g.Size&0xFF),
 		)
 	}
 	// END
-	prgm = append(prgm, 0)
+	proc = append(proc, 0)
+
+	hex.Dumper(os.Stdout).Write(proc)
 
 	// upload the IOVM procedure:
 	var expectedSize uint32
-	expectedSize, err = iovmUpload(f, prgm)
+	expectedSize, err = iovmUpload(f, proc)
 	if err != nil {
 		panic(err)
 	}
@@ -681,13 +693,13 @@ func main() {
 			panic(err)
 		}
 
+		sb.Truncate(0)
+		sb.WriteString("\033[3J")
 		if true {
-			fmt.Fprint(&sb, "\u001B[3J\u001B[?25l\033[39m\033[1;1H")
+			fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H")
 			fmt.Fprintf(&sb, "iovm_upload expected emit_size=%d, actual emit_size=%d\n", expectedSize, readSize)
 			hex.Dumper(&sb).Write(buf[0:readSize])
-			sb.WriteTo(os.Stdout)
-			sb.Truncate(0)
-			continue
+			os.Stdout.WriteString("\n")
 		}
 
 		if true {
@@ -712,6 +724,8 @@ func main() {
 			}
 		}
 
+		const timingHist = false
+
 		if timingHist {
 			delta := tEnd.Sub(tStart).Nanoseconds()
 			if len(times) < 32768 {
@@ -722,69 +736,71 @@ func main() {
 			}
 		}
 
-		{
-			j := 0
-			fmt.Fprint(&sb, "\u001B[3J\u001B[?25l\033[39m\033[1;1H  ")
-			for n := 0; n < len(offs); n++ {
-				a := offs[n]
-				line[j+0] = ' '
-				line[j+1] = hextable[(a>>8)&0xF]
-				line[j+2] = hextable[(a>>4)&0xF]
-				j += 3
-			}
-			line[j] = '\n'
-			j++
-			sb.Write(line[:j])
-		}
-		for i := uint16(0); i < 16; i++ {
-			j := 0
-
-			if wram[0x0DD0+i] == 0 {
-				// disabled sprite:
-				line[j+0] = 033
-				line[j+1] = '['
-				line[j+2] = '3'
-				line[j+3] = '1'
-				line[j+4] = 'm'
-				j += 5
-			} else {
-				// enabled sprite:
-				line[j+0] = 033
-				line[j+1] = '['
-				line[j+2] = '3'
-				line[j+3] = '4'
-				line[j+4] = 'm'
-				j += 5
-			}
-
-			for n := 0; n < len(offs); n++ {
-				a := offs[n]
-				b := wram[a+i]
-
-				line[j+0] = ' '
-				j++
-
-				if b == 0 {
+		if false {
+			{
+				j := 0
+				fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H  ")
+				for n := 0; n < len(offs); n++ {
+					a := offs[n]
 					line[j+0] = ' '
-					line[j+1] = ' '
-				} else {
-					line[j+0] = hextable[b>>4]
-					line[j+1] = hextable[b&15]
+					line[j+1] = hextable[(a>>8)&0xF]
+					line[j+2] = hextable[(a>>4)&0xF]
+					j += 3
 				}
-				j += 2
+				line[j] = '\n'
+				j++
+				sb.Write(line[:j])
 			}
+			for i := uint16(0); i < 16; i++ {
+				j := 0
 
-			fmt.Fprintf(
-				&sb,
-				"\033[39m%01x:%s\n",
-				i,
-				line[:j],
-			)
+				if wram[0x0DD0+i] == 0 {
+					// disabled sprite:
+					line[j+0] = 033
+					line[j+1] = '['
+					line[j+2] = '3'
+					line[j+3] = '1'
+					line[j+4] = 'm'
+					j += 5
+				} else {
+					// enabled sprite:
+					line[j+0] = 033
+					line[j+1] = '['
+					line[j+2] = '3'
+					line[j+3] = '4'
+					line[j+4] = 'm'
+					j += 5
+				}
+
+				for n := 0; n < len(offs); n++ {
+					a := offs[n]
+					b := wram[a+i]
+
+					line[j+0] = ' '
+					j++
+
+					if b == 0 {
+						line[j+0] = ' '
+						line[j+1] = ' '
+					} else {
+						line[j+0] = hextable[b>>4]
+						line[j+1] = hextable[b&15]
+					}
+					j += 2
+				}
+
+				fmt.Fprintf(
+					&sb,
+					"\033[39m%01x:%s\n",
+					i,
+					line[:j],
+				)
+			}
 		}
 
 		if timingHist {
 			fmt.Fprint(&sb, "\033[H\033[39m")
-			h := histogram.PowerHist(1.125, times)
+			h := histogram.PowerHist(1.0625, times)
 			histogram.Fprintf(&sb, h, histogram.Linear(40), func(v float64) string {
 				return fmt.Sprintf("% 11dns", time.Duration(v).Nanoseconds())
 			})
@@ -805,6 +821,5 @@ func main() {
 		}
 
 		sb.WriteTo(os.Stdout)
-		sb.Truncate(0)
 	}
 }
