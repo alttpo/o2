@@ -560,77 +560,69 @@ func main() {
 
 	// IOVM instruction byte format:
 	//
-	//    76 54 3210
-	//   [-- tt oooo]
+	//    76 54 3 210
+	//   [-- tt n ooo]
 	//
 	//     o = opcode
+	//
 	//     t = target
 	//     - = reserved for future extension
 	//
 	//
 	// 0=END
-	// 1=SETOFFS
-	// 2=SETBANK
-	// 3=READ
-	// 4=WRITE
-	// 5=WHILE_NEQ
-	// 6=WHILE_EQ
+	// 1=SETADDR
+	// 2=SETOFFS
+	// 3=SETBANK
+	// 4=READ
+	// 5=WRITE
+	// 6=WHILE_NEQ
 
 	proc := make([]byte, 0, 512-7)
 
 	// a simple wait_for_nmi procedure:
-	proc = append(proc,
-		// SETADDR SNESCMD
-		0b0001_0001,
-		0x01,
-		0x2C,
-		// WRITE SNESCMD
-		0b0001_0100,
-		0x05, // length
-		0x00, // 2C00: (STZ) $2C00
-		0x2C,
-		0x6C, // 2C03: JMP ($FFEA)
-		0xEA,
-		0xFF,
-		// SETADDR SNESCMD
-		0b0001_0001,
-		0x00,
-		0x2C,
-		// WRITE SNESCMD
-		0b0001_0100,
-		0x01, // length
-		0x9C, // 2C00: STZ
-		// SETADDR SNESCMD
-		0b0001_0001,
-		0x00,
-		0x2C,
-		// WHILE_NEQ SNESCMD
-		0b0001_0101,
-		0x00,
-	)
+	if true {
+		proc = append(proc,
+			// SETOFFS SNESCMD = $2C00
+			0b0001_0_010,
+			0x00,
+			0x2C,
+			// WRITE SNESCMD (n=1; no advance)
+			0b0001_1_101,
+			0x06, // length
+			0x9C, // 2C00: STZ $2C00
+			0x00,
+			0x2C,
+			0x6C, // 2C03: JMP ($FFEA)
+			0xEA,
+			0xFF,
+			// WHILE_NEQ SNESCMD; while (cmd[$2C00] != 0);
+			0b0001_0_110,
+			0x00,
+		)
+	}
 	proc = append(proc,
 		// SETBANK SRAM
-		0b0000_0010,
+		0b0000_0_011,
 		0xF5,
 	)
 	for _, g := range mgetReadGroups[0].Reads {
 		proc = append(proc,
 			// SETOFFS SRAM
-			0b0000_0001,
+			0b0000_0_010,
 			byte(g.Offset&0xFF),
 			byte(g.Offset>>8),
 			// READ SRAM
-			0b0000_0011,
+			0b0000_0_100,
 			byte(g.Size&0xFF),
 		)
 	}
 	proc = append(proc,
 		// SETOFFS SNESCMD
-		0b0001_0001,
+		0b0001_0_010,
 		0xFF,
 		0x2D,
 		// WRITE SNESCMD
-		0b0001_0100,
+		0b0001_0_101,
 		0x01,
 		0xFF,
 	)
@@ -731,12 +723,12 @@ func main() {
 		}
 
 		sb.Truncate(0)
-		sb.WriteString("\033[3J")
-		if false {
+		sb.WriteString("\033[2J\033[3J")
+		if true {
 			fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H")
 			fmt.Fprintf(&sb, "iovm_upload expected emit_size=%d, actual emit_size=%d\n", expectedSize, readSize)
 			hex.Dumper(&sb).Write(buf[0:readSize])
-			os.Stdout.WriteString("\n")
+			sb.WriteString("\n")
 		}
 
 		if true {
@@ -761,7 +753,7 @@ func main() {
 			}
 		}
 
-		const timingHist = true
+		const timingHist = false
 
 		if timingHist {
 			delta := tEnd.Sub(tStart).Nanoseconds()
