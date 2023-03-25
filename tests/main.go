@@ -724,7 +724,7 @@ func main() {
 
 		sb.Truncate(0)
 		sb.WriteString("\033[2J\033[3J")
-		if true {
+		if false {
 			fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H")
 			fmt.Fprintf(&sb, "iovm_upload expected emit_size=%d, actual emit_size=%d\n", expectedSize, readSize)
 			hex.Dumper(&sb).Write(buf[0:readSize])
@@ -765,7 +765,7 @@ func main() {
 			}
 		}
 
-		if false {
+		if true {
 			{
 				j := 0
 				fmt.Fprint(&sb, "\033[?25l\033[39m\033[1;1H  ")
