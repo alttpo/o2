@@ -53,7 +53,7 @@ func (g *Game) sendPackets() {
 		if m != nil {
 			if g.isVTRandomizer() {
 				// VT randomizer:
-				if err := g.SerializeSRAM(local, m, 0x340, 0x43A); err != nil {
+				if err := g.SerializeSRAM(local, m, 0x340, 0x472); err != nil {
 					panic(err)
 				}
 
