@@ -305,7 +305,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		if g.updateStage > 0 {
 			// escape mechanism for long-running updates:
 			if now.Sub(g.lastUpdateTime) > timing.Frame*600 {
-				log.Printf("alttp: wait time elapsed with no confirmation of asm execution; aborting\n")
+				log.Printf("alttp: update: wait time elapsed with no confirmation of asm execution; aborting\n")
 				g.updateStage = 0
 				g.nextUpdateA = !g.nextUpdateA
 				g.lastUpdateTarget = 0xFFFFFF

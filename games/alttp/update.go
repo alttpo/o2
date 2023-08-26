@@ -88,9 +88,11 @@ func (g *Game) updateWRAM() {
 
 			if g.updateStage != 1 {
 				log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+				return
 			}
 
 			g.updateStage = 2
+			g.lastUpdateTime = time.Now()
 
 			q := make([]snes.Read, 0, 8)
 			q = g.enqueueUpdateCheckRead(q)
