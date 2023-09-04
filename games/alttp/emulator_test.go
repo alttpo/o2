@@ -35,7 +35,7 @@ func CreateTestEmulator(t *testing.T, romTitle string) (system *emulator.System,
 
 	// run the initialization code to set up SRAM:
 	system.CPU.Reset()
-	if !system.RunUntil(0x00_8033, 0x1_000) {
+	if !system.RunUntil(0x00_8034, 0x1_000) {
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", 0x00_8033, system.CPU.PC)
 		return
 	}

@@ -50,7 +50,7 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	a.AssumeSEP(0x30)
 	a.LDA_imm8_b(0x81)
 	a.STA_abs(0x4200)
-	a.BRA_imm8(0x56 - 0x34 - 2)
+	//a.BRA_imm8(0x56 - 0x34 - 2)
 	if err = a.Finalize(); err != nil {
 		return
 	}

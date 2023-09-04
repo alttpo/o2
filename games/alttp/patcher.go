@@ -91,13 +91,13 @@ func (p *Patcher) Patch() (err error) {
 	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
 	a := asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(expected802F))), true)
 	a.SetBase(0x00802F)
-	if code802F[0] == 0x22 {
-		a.JSL(initHook)
-	} else {
+	if code802F[0] == 0x5c {
 		// NOTE: FastROM randomizer replaces JSL with JML to its init and then JMLs back to $8034.
 		// doing a JML to our own init and appending the randomizer's copy of 802F code to our init
 		// will still JML back to $808034 and everything should work as intended:
 		a.JML(initHook)
+	} else {
+		a.JSL(initHook)
 	}
 	a.NOP()
 	if err := a.Finalize(); err != nil {
