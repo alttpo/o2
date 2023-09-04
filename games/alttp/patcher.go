@@ -62,7 +62,7 @@ func (p *Patcher) Patch() (err error) {
 		return
 	}
 
-	// this is what code at 802F should look like:
+	// this is what code at 802F should look like in vanilla ROMs:
 	expected802F := []byte{
 		// CODE_00802F:	A9 81       LDA #$81   ;\ Enable NMI, Auto-Joypad read enable.
 		// CODE_008031:	8D 00 42    STA $4200  ;/
@@ -71,9 +71,10 @@ func (p *Patcher) Patch() (err error) {
 	}
 
 	if !bytes.Equal(code802F, expected802F) {
-		// let's at least check that it's a JSL followed by a NOP:
-		if code802F[0] != 0x22 || code802F[4] != 0xEA {
-			// it's not vanilla code nor is it a JSL / NOP combo:
+		// let's at least check that it's a JSL/JML followed by a NOP:
+		// JSL = 0x22, JML = 0x5c
+		if (code802F[0] != 0x22 && code802F[0] != 0x5c) || code802F[4] != 0xEA {
+			// it's not vanilla code nor is it a JSL/JML + NOP combo:
 			return fmt.Errorf("unexpected code at $00:802F: %s", hex.Dump(code802F))
 		}
 	}
@@ -90,7 +91,14 @@ func (p *Patcher) Patch() (err error) {
 	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
 	a := asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(expected802F))), true)
 	a.SetBase(0x00802F)
-	a.JSL(initHook)
+	if code802F[0] == 0x22 {
+		a.JSL(initHook)
+	} else {
+		// NOTE: FastROM randomizer replaces JSL with JML to its init and then JMLs back to $8034.
+		// doing a JML to our own init and appending the randomizer's copy of 802F code to our init
+		// will still JML back to $808034 and everything should work as intended:
+		a.JML(initHook)
+	}
 	a.NOP()
 	if err := a.Finalize(); err != nil {
 		return err
@@ -169,6 +177,7 @@ func (p *Patcher) Patch() (err error) {
 	// append the original 802F code to our custom init hook:
 	a.EmitBytes(code802F)
 	// follow by `RTL`
+	// NOTE: in FastROM randomizer, this will never be reached because its 802F code JMLs back to 8034:
 	a.RTL()
 	if err := a.Finalize(); err != nil {
 		return err

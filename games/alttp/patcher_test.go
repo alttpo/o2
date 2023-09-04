@@ -6,6 +6,7 @@ import (
 	"github.com/alttpo/snes/mapping/lorom"
 	"log"
 	"o2/snes"
+	"os"
 	"testing"
 )
 
@@ -93,5 +94,39 @@ func TestPatcher_Patch(t *testing.T) {
 	p := NewPatcher(rom)
 	if err = p.Patch(); err != nil {
 		t.Errorf("Patch() error = %v", err)
+	}
+}
+
+func TestPatcher_FastROMRandomizer(t *testing.T) {
+	fileName := "alttpr - NoGlitches-standard-ganon_ry08z8Q5y5.sfc"
+	fileNamePatched := "alttpr - NoGlitches-standard-ganon_ry08z8Q5y5.o2.sfc"
+
+	var err error
+
+	// read the ROM contents:
+	var fileContents []byte
+	fileContents, err = os.ReadFile(fileName)
+	if err != nil {
+		t.Skip("could not load randomized ROM to test with")
+		return
+	}
+
+	// create a ROM struct out of it and parse the header:
+	var rom *snes.ROM
+	rom, err = snes.NewROM(fileName, fileContents)
+	if err != nil {
+		t.Errorf("snes.NewROM() error = %v", err)
+	}
+
+	// patch the ROM:
+	p := NewPatcher(rom)
+	if err = p.Patch(); err != nil {
+		t.Errorf("Patch() error = %v", err)
+	}
+
+	// write out the patched ROM file:
+	err = os.WriteFile(fileNamePatched, rom.Contents, 0644)
+	if err != nil {
+		t.Logf("error writing patched ROM: %v", err)
 	}
 }
