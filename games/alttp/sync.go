@@ -32,7 +32,7 @@ const (
 	IS1FluteActive uint8 = 1 << iota
 	IS1FluteInactive
 	IS1Shovel
-	_
+	IS1MushroomPast
 	IS1MagicPowder
 	IS1Mushroom
 	IS1RedBoomerang
@@ -230,6 +230,8 @@ func (g *Game) initSync() {
 	if g.isVTRandomizer() {
 		// Randomizer item flags:
 		invSwap1 := g.NewSyncableVTItemBitsU8(0x38C, &g.SyncItems, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {
+			newBits := updated & ^initial
+
 			// mushroom/powder:
 			if initial&IS1MagicPowder == 0 && updated&IS1MagicPowder != 0 {
 				// set powder in inventory:
@@ -247,40 +249,44 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF344)
 			}
 
-			// shovel/flute:
-			if initial&IS1FluteActive == 0 && updated&IS1FluteActive != 0 {
+			const fluteMask = IS1FluteInactive | IS1FluteActive
+
+			// shovel/flute: ; $01 = Shovel | $02 = Inactive Flute | $03 = Active Flute
+			if initial&fluteMask != IS1FluteActive && newBits&fluteMask == IS1FluteActive {
 				// flute (activated):
 				a.Comment("set Flute (active) in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE_imm8(6)
-				a.LDA_imm8_b(3)
+				a.CMP_imm8_b(1) // is shovel?
+				a.BEQ_imm8(6)   // yes, dont override
+				a.LDA_imm8_b(3) // flute (active)
 				a.STA_long(0x7EF34C)
-			} else if initial&IS1FluteInactive == 0 && updated&IS1FluteInactive != 0 {
-				// flute (activated):
+			} else if initial&fluteMask == 0 && newBits&fluteMask == IS1FluteInactive {
+				// flute (inactive):
 				a.Comment("set Flute (inactive) in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE_imm8(6)
-				a.LDA_imm8_b(2)
+				a.CMP_imm8_b(1) // is shovel?
+				a.BEQ_imm8(6)   // yes, dont override
+				a.LDA_imm8_b(2) // flue (inactive)
 				a.STA_long(0x7EF34C)
-			} else if initial&IS1Shovel == 0 && updated&IS1Shovel != 0 {
-				// flute (activated):
+			} else if initial&IS1Shovel == 0 && newBits&IS1Shovel != 0 {
+				// shovel:
 				a.Comment("set Shovel in inventory:")
 				a.LDA_long(0x7EF34C)
-				a.BNE_imm8(6)
-				a.LDA_imm8_b(1)
+				a.BNE_imm8(6)   // only set if nothing in inventory:
+				a.LDA_imm8_b(1) // shovel
 				a.STA_long(0x7EF34C)
 			}
 
 			// red/blue boomerang:
 			if initial&IS1RedBoomerang == 0 && updated&IS1RedBoomerang != 0 {
-				// set powder in inventory:
+				// set red boomerang in inventory:
 				a.Comment("set Red Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
 				a.BNE_imm8(6)
 				a.LDA_imm8_b(2)
 				a.STA_long(0x7EF341)
 			} else if initial&IS1BlueBoomerang == 0 && updated&IS1BlueBoomerang != 0 {
-				// set mushroom in inventory:
+				// set blue boomerang in inventory:
 				a.Comment("set Blue Boomerang in inventory:")
 				a.LDA_long(0x7EF341)
 				a.BNE_imm8(6)
@@ -290,13 +296,36 @@ func (g *Game) initSync() {
 		})
 		invSwap1.GenerateAsm = func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
-			// make flute (inactive) and flute (activated) mutually exclusive:
-			a.LDA_long(longAddr)
-			if newBits&0b00000011 != 0 {
-				a.AND_imm8_b(0b11111100)
+
+			const fluteMask = IS1FluteInactive | IS1FluteActive
+
+			nonFluteNewBits := newBits & ^fluteMask
+			orBits := nonFluteNewBits
+			modifyMask := uint8(0xFF)
+
+			modificationNeeded := nonFluteNewBits != 0
+
+			// transition flute only from inactive/missing to active:
+			if initial&fluteMask != IS1FluteActive && newBits&fluteMask == IS1FluteActive {
+				modificationNeeded = true
+				modifyMask = ^fluteMask
+				// turn on active flute:
+				orBits |= IS1FluteActive
+			} else if initial&fluteMask == 0 && newBits&fluteMask == IS1FluteInactive {
+				modificationNeeded = true
+				modifyMask = ^fluteMask
+				// turn on inactive flute:
+				orBits |= IS1FluteInactive
 			}
-			a.ORA_imm8_b(newBits)
-			a.STA_long(longAddr)
+
+			if modificationNeeded {
+				a.LDA_long(longAddr)
+				if modifyMask != 0xFF {
+					a.AND_imm8_b(modifyMask)
+				}
+				a.ORA_imm8_b(orBits)
+				a.STA_long(longAddr)
+			}
 		}
 
 		g.NewSyncableVTItemBitsU8(0x38E, &g.SyncItems, func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated uint8) {

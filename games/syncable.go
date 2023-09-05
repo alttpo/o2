@@ -203,13 +203,13 @@ func (s *SyncableBitU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	failLabel := fmt.Sprintf("fail%06x", longAddr)
 	nextLabel := fmt.Sprintf("next%06x", longAddr)
-	a.LDA_long(longAddr)
-	a.CMP_imm8_b(initial)
-	a.BNE(failLabel)
 
 	if s.GenerateAsm != nil {
 		s.GenerateAsm(s, a, initial, updated, newBits)
 	} else {
+		a.LDA_long(longAddr)
+		a.CMP_imm8_b(initial)
+		a.BNE(failLabel)
 		a.ORA_imm8_b(newBits)
 		a.STA_long(longAddr)
 	}

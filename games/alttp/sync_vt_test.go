@@ -46,17 +46,17 @@ func TestAsm_VT_Items(t *testing.T) {
 			wantNotification: "got Magic Powder from remote",
 		},
 		{
-			name: "VT flute active",
+			name: "VT flute (active) from nothing",
 			sram: []sramTest{
 				{
 					offset:        0x38C,
 					localValue:    0,
-					remoteValue:   0x1,
-					expectedValue: 0x1,
+					remoteValue:   IS1FluteActive,
+					expectedValue: IS1FluteActive,
 				},
 				{
 					offset:        0x34C,
-					expectedValue: 3,
+					expectedValue: 3, // flute (active)
 				},
 			},
 			wantUpdated:      true,
@@ -67,120 +67,139 @@ func TestAsm_VT_Items(t *testing.T) {
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0x4,
-					remoteValue:   0x1,
-					expectedValue: 0x5,
+					localValue:    IS1Shovel,
+					remoteValue:   IS1FluteActive,
+					expectedValue: IS1Shovel | IS1FluteActive,
 				},
 				{
 					offset:        0x34C,
 					localValue:    1,
-					expectedValue: 1,
+					expectedValue: 1, // shovel
 				},
 			},
 			wantUpdated:      true,
 			wantNotification: "got Flute (active) from remote",
 		},
 		{
-			name: "VT flute (activated) from flute",
+			name: "VT flute (active) from flute (inactive)",
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0x2,
-					remoteValue:   0x1,
-					expectedValue: 0x1,
+					localValue:    IS1FluteInactive,
+					remoteValue:   IS1FluteActive,
+					expectedValue: IS1FluteActive,
 				},
 				{
 					offset:        0x34C,
 					localValue:    2,
-					expectedValue: 2,
+					expectedValue: 3, // flute (active)
 				},
 			},
 			wantUpdated:      true,
 			wantNotification: "got Flute (active) from remote",
 		},
 		{
-			name: "VT flute",
+			name: "VT flute (inactive) from nothing",
 			sram: []sramTest{
 				{
 					offset:        0x38C,
 					localValue:    0,
-					remoteValue:   0x2,
-					expectedValue: 0x2,
+					remoteValue:   IS1FluteInactive,
+					expectedValue: IS1FluteInactive,
 				},
 				{
 					offset:        0x34C,
-					expectedValue: 2,
+					expectedValue: 2, // flute (inactive)
 				},
 			},
 			wantUpdated:      true,
 			wantNotification: "got Flute (inactive) from remote",
 		},
 		{
-			name: "VT flute from shovel",
+			name: "VT flute (inactive) from shovel",
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0x4,
-					remoteValue:   0x2,
-					expectedValue: 0x6,
+					localValue:    IS1Shovel,
+					remoteValue:   IS1FluteInactive,
+					expectedValue: IS1Shovel | IS1FluteInactive,
 				},
 				{
 					offset:        0x34C,
 					localValue:    1,
-					expectedValue: 1,
+					expectedValue: 1, // shovel
 				},
 			},
 			wantUpdated:      true,
 			wantNotification: "got Flute (inactive) from remote",
 		},
 		{
-			name: "VT shovel",
+			name: "VT flute (inactive) from flute (active)",
 			sram: []sramTest{
 				{
 					offset:        0x38C,
-					localValue:    0,
-					remoteValue:   0x4,
-					expectedValue: 0x4,
-				},
-				{
-					offset:        0x34C,
-					expectedValue: 1,
-				},
-			},
-			wantUpdated:      true,
-			wantNotification: "got Shovel from remote",
-		},
-		{
-			name: "VT shovel from flute",
-			sram: []sramTest{
-				{
-					offset:        0x38C,
-					localValue:    0x2,
-					remoteValue:   0x4,
-					expectedValue: 0x6,
-				},
-				{
-					offset:        0x34C,
-					localValue:    2,
-					expectedValue: 2,
-				},
-			},
-			wantUpdated:      true,
-			wantNotification: "got Shovel from remote",
-		},
-		{
-			name: "VT shovel from flute (activated)",
-			sram: []sramTest{
-				{
-					offset:        0x38C,
-					localValue:    0x1,
-					remoteValue:   0x4,
-					expectedValue: 0x5,
+					localValue:    IS1FluteActive,
+					remoteValue:   IS1FluteInactive,
+					expectedValue: IS1FluteActive,
 				},
 				{
 					offset:        0x34C,
 					localValue:    3,
-					expectedValue: 3,
+					expectedValue: 3, // flute (active)
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Flute (inactive) from remote",
+		},
+		{
+			name: "VT shovel from nothing",
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    0,
+					remoteValue:   IS1Shovel,
+					expectedValue: IS1Shovel,
+				},
+				{
+					offset:        0x34C,
+					localValue:    0,
+					expectedValue: 1, // shovel
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Shovel from remote",
+		},
+		{
+			name: "VT shovel from flute (inactive)",
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    IS1FluteInactive,
+					remoteValue:   IS1Shovel,
+					expectedValue: IS1FluteInactive | IS1Shovel,
+				},
+				{
+					offset:        0x34C,
+					localValue:    2,
+					expectedValue: 2, // flute (inactive)
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Shovel from remote",
+		},
+		{
+			name: "VT shovel from flute (active)",
+			sram: []sramTest{
+				{
+					offset:        0x38C,
+					localValue:    IS1FluteActive,
+					remoteValue:   IS1Shovel,
+					expectedValue: IS1Shovel | IS1FluteActive,
+				},
+				{
+					offset:        0x34C,
+					localValue:    3,
+					expectedValue: 3, // flute (active)
 				},
 			},
 			wantUpdated:      true,
