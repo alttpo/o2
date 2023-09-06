@@ -373,6 +373,157 @@ func TestAsm_VT_Items(t *testing.T) {
 			wantUpdated:      true,
 			wantNotification: "got Silver Bow from remote",
 		},
+		{
+			name: "VT blue shield from nothing",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    0,
+					remoteValue:   0,
+					expectedValue: 1,
+				},
+				{
+					offset:        0x422,
+					localValue:    0,
+					remoteValue:   1,
+					expectedValue: 1,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Blue Shield from remote",
+		},
+		{
+			name: "VT blue shield from red shield",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    2,
+					remoteValue:   1,
+					expectedValue: 2,
+				},
+				{
+					offset:        0x422,
+					localValue:    2,
+					remoteValue:   1,
+					expectedValue: 2,
+				},
+			},
+			wantUpdated: false,
+		},
+		{
+			name: "VT red shield from nothing",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    0,
+					remoteValue:   0,
+					expectedValue: 2,
+				},
+				{
+					offset:        0x422,
+					localValue:    0,
+					remoteValue:   2,
+					expectedValue: 2,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Red Shield from remote",
+		},
+		{
+			name: "VT red shield from blue shield (desync)",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    1,
+					remoteValue:   1,
+					expectedValue: 2,
+				},
+				{
+					offset:        0x422,
+					localValue:    1,
+					remoteValue:   2,
+					expectedValue: 2,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Red Shield from remote",
+		},
+		{
+			name: "VT red shield from blue shield",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    1,
+					remoteValue:   2,
+					expectedValue: 2,
+				},
+				{
+					offset:        0x422,
+					localValue:    1,
+					remoteValue:   2,
+					expectedValue: 2,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Red Shield from remote",
+		},
+		{
+			name: "VT mirror shield from nothing",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    0,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+				{
+					offset:        0x422,
+					localValue:    0,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Mirror Shield from remote",
+		},
+		{
+			name: "VT mirror shield from blue shield",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    1,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+				{
+					offset:        0x422,
+					localValue:    1,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Mirror Shield from remote",
+		},
+		{
+			name: "VT mirror shield from red shield",
+			sram: []sramTest{
+				{
+					offset:        0x35A,
+					localValue:    2,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+				{
+					offset:        0x422,
+					localValue:    2,
+					remoteValue:   3,
+					expectedValue: 3,
+				},
+			},
+			wantUpdated:      true,
+			wantNotification: "got Mirror Shield from remote",
+		},
 	}
 
 	// convert legacy tests to frame tests:

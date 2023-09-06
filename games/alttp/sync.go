@@ -119,6 +119,10 @@ func (g *Game) initSync() {
 
 	g.NewSyncableVanillaItemU8(0x35A, &g.SyncItems,
 		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			// don't decompress gfx twice:
+			if _, ok := g.generated[0x35A]; ok {
+				return
+			}
 			a.Comment("decompress shield gfx:")
 			a.JSL(g.romFunctions[fnDecompGfxShield])
 			a.Comment("update shield palette:")
@@ -514,16 +518,46 @@ func (g *Game) initSync() {
 		// NPC flags:
 		g.NewSyncableMaxU8(0x410, &g.SyncProgress, nil, nil)
 		g.NewSyncableMaxU8(0x411, &g.SyncProgress, nil, nil)
-		// coat for festive
+		// programmable items:
+		// TODO: these should be U16
 		g.NewSyncableMaxU8(0x41A, &g.SyncItems, nil, nil)
+		g.NewSyncableMaxU8(0x41C, &g.SyncItems, nil, nil)
+		g.NewSyncableMaxU8(0x41E, &g.SyncItems, nil, nil)
 
 		// Progressive item counters:
 		// sword:
 		g.NewSyncableMaxU8(0x417, &g.SyncItems, nil, nil)
 		// shield:
-		g.NewSyncableBitU8(0x422, &g.SyncItems, [8]string{}, nil)
+		g.NewSyncableMaxU8(0x422, &g.SyncItems, nil, func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
+			if updated <= initial {
+				return
+			}
+
+			shieldNames := vanillaItemNames[0x35A]
+			shieldName := "progressive shield update"
+			if int(updated)-1 < len(shieldNames) {
+				shieldName = shieldNames[int(updated)-1]
+				a.Comment(fmt.Sprintf("progressive upgrade shield to %s:", shieldName))
+			} else {
+				a.Comment("progressive upgrade shield:")
+			}
+
+			//a.LDA_long(0x7ef422) // redundant to previous sta.l instruction
+			a.STA_long(0x7ef35a)
+
+			// don't decompress gfx twice:
+			if _, ok := g.generated[0x35A]; ok {
+				return
+			}
+			s.Notification = fmt.Sprintf("got %s from %s", shieldName, s.PlayerWithMaxValue.Name())
+
+			a.Comment("decompress shield gfx:")
+			a.JSL(g.romFunctions[fnDecompGfxShield])
+			a.Comment("update shield palette:")
+			a.JSL(g.romFunctions[fnUpdatePaletteShield])
+		})
 		// mail / armor:
-		g.NewSyncableBitU8(0x46E, &g.SyncItems, [8]string{}, nil)
+		g.NewSyncableMaxU8(0x46E, &g.SyncItems, nil, nil)
 
 		// pendants counter:
 		g.NewSyncableMaxU8(0x429, &g.SyncItems, nil, nil)

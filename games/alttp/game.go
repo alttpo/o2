@@ -67,6 +67,7 @@ type Game struct {
 	lastUpdateFrame  uint8
 	lastUpdateTime   time.Time
 	updateGenerators []games.SyncStrategy
+	generated        map[uint16]struct{}
 	cooldownTime     time.Time
 
 	customAsmLock sync.Mutex

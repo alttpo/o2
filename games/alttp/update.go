@@ -217,6 +217,11 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
+	if g.generated == nil {
+		g.generated = make(map[uint16]struct{})
+	} else {
+		clear(g.generated)
+	}
 	if g.updateGenerators == nil {
 		g.updateGenerators = make([]games.SyncStrategy, 0, 20)
 	} else {
@@ -249,6 +254,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// don't emit the routine if it pushes us over the code size limit:
 			if ta.Len()+a.Len()+10 <= 255 {
 				g.updateGenerators = append(g.updateGenerators, item)
+				g.generated[offs] = struct{}{}
 				a.Append(ta)
 				updated = true
 			}

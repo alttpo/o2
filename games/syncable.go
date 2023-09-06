@@ -482,7 +482,8 @@ type SyncableMaxU8 struct {
 	GenerateAsm SyncableMaxU8GenerateAsm
 	OnUpdated   SyncableMaxU8OnUpdated
 
-	Notification string
+	Notification       string
+	PlayerWithMaxValue SyncablePlayer
 }
 
 func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableMaxU8OnUpdated) *SyncableMaxU8 {
@@ -551,6 +552,7 @@ func (s *SyncableMaxU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	// notify local player of new item received:
 	s.Notification = ""
+	s.PlayerWithMaxValue = maxP
 	if s.ValueNames != nil {
 		i := int(maxV) - 1
 		if i >= 0 && i < len(s.ValueNames) {
@@ -568,13 +570,13 @@ func (s *SyncableMaxU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	failLabel := fmt.Sprintf("fail%06x", longAddr)
 	nextLabel := fmt.Sprintf("next%06x", longAddr)
-	a.LDA_long(longAddr)
-	a.CMP_imm8_b(initial)
-	a.BNE(failLabel)
 
 	if s.GenerateAsm != nil {
 		s.GenerateAsm(s, a, initial, maxV)
 	} else {
+		a.LDA_long(longAddr)
+		a.CMP_imm8_b(initial)
+		a.BNE(failLabel)
 		a.LDA_imm8_b(maxV)
 		a.STA_long(longAddr)
 	}
