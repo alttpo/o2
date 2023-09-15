@@ -527,6 +527,8 @@ func (g *Game) initSync() {
 		// Progressive item counters:
 		// sword:
 		g.NewSyncableMaxU8(0x417, &g.SyncItems, nil, nil)
+		// goal item counter:
+		g.NewSyncableMaxU8(0x418, &g.SyncItems, nil, nil)
 		// shield:
 		g.NewSyncableMaxU8(0x422, &g.SyncItems, nil, func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
 			if updated <= initial {
@@ -560,9 +562,24 @@ func (g *Game) initSync() {
 		g.NewSyncableMaxU8(0x46E, &g.SyncItems, nil, nil)
 
 		// pendants counter:
-		g.NewSyncableMaxU8(0x429, &g.SyncItems, nil, nil)
+		g.NewSyncableMaxU8(0x429, &g.SyncProgress, nil, nil)
 		// crystals counter:
-		g.NewSyncableMaxU8(0x471, &g.SyncItems, nil, nil)
+		g.NewSyncableMaxU8(0x476, &g.SyncProgress, nil, nil)
+
+		// dungeons completed:
+		g.NewSyncableBitU16(0x472, &g.SyncProgress, [16]string{}, nil)
+
+		// dungeon location checks: 0x4c0..0x4cd
+		for d := 0; d < 0xe; d++ {
+			g.NewSyncableMaxU8(uint16(0x4c0+d), &g.SyncProgress, nil, func(s *games.SyncableMaxU8, asm *asm.Emitter, initial, updated uint8) {
+				s.Notification = fmt.Sprintf(
+					"synced %s location checks = %d from %s",
+					dungeonNames[s.Offset-0x4c0],
+					updated,
+					s.PlayerWithMaxValue.Name(),
+				)
+			})
+		}
 	}
 
 	// sync wram[$0400] for current dungeon supertile door state:
