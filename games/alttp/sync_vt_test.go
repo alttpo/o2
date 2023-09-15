@@ -559,7 +559,7 @@ func TestAsm_VT_Items(t *testing.T) {
 				fr.wantNotifications = nil
 			}
 			test := testCase{
-				name:      fmt.Sprintf("%02x,%02x %s", variant.module, variant.submodule, legacy.name),
+				name:      fmt.Sprintf("VT %02x,%02x %s", variant.module, variant.submodule, legacy.name),
 				module:    variant.module,
 				subModule: variant.submodule,
 				frames:    []frame{fr},
@@ -607,7 +607,7 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 
 			for _, variant := range moduleVariants {
 				test := testCase{
-					name:      fmt.Sprintf("%02x,%02x %04x bit %d", variant.module, variant.submodule, wramOffs, i),
+					name:      fmt.Sprintf("VT %02x,%02x %04x bit %d", variant.module, variant.submodule, wramOffs, i),
 					module:    variant.module,
 					subModule: variant.submodule,
 					frames: []frame{
@@ -652,5 +652,25 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 		tt.system = system
 		tt.g = g
 		t.Run(tt.name, tt.runFrameTest)
+	}
+}
+
+func TestGame_VTListSyncables(t *testing.T) {
+	// create system emulator and test ROM:
+	// ROM title must start with "VT " to indicate randomizer
+	system, rom, err := CreateTestEmulator(t, "VT test")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
+		syncable, ok := g.syncableItems[offs]
+		if !ok {
+			continue
+		}
+
+		t.Logf("%04x: %d\n", offs, syncable.Size())
 	}
 }

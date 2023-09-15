@@ -848,3 +848,22 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 		t.Run(tt.name, tt.runFrameTest)
 	}
 }
+
+func TestGame_Vanilla_ListSyncables(t *testing.T) {
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
+		syncable, ok := g.syncableItems[offs]
+		if !ok {
+			continue
+		}
+
+		t.Logf("%04x: %d\n", offs, syncable.Size())
+	}
+}
