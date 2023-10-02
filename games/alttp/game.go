@@ -67,7 +67,7 @@ type Game struct {
 	lastUpdateFrame  uint8
 	lastUpdateTime   time.Time
 	updateGenerators []games.SyncStrategy
-	generated        map[uint16]struct{}
+	generated        map[uint32]struct{}
 	cooldownTime     time.Time
 
 	customAsmLock sync.Mutex
@@ -86,13 +86,9 @@ type Game struct {
 	lastModule    int
 	lastSubModule int
 
-	syncableItems    map[uint16]games.SyncStrategy
-	syncableItemsMin uint16
-	syncableItemsMax uint16
-
-	syncableBitU16    map[uint16]*games.SyncableBitU16
-	syncableBitU16Min uint16
-	syncableBitU16Max uint16
+	syncable        map[uint32]games.SyncStrategy
+	syncableOffsMin uint32
+	syncableOffsMax uint32
 
 	underworld [0x128]syncableUnderworld
 	overworld  [0xC0]syncableOverworld

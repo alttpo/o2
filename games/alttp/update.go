@@ -218,7 +218,7 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	updated := false
 	if g.generated == nil {
-		g.generated = make(map[uint16]struct{})
+		g.generated = make(map[uint32]struct{})
 	} else {
 		clear(g.generated)
 	}
@@ -228,32 +228,32 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		g.updateGenerators = g.updateGenerators[:0]
 	}
 
-	tmp := make([]byte, 0x100)
+	tmp := [0x100]byte{}
+
+	// group up all 16-bit updates first, then reset back to 8-bit and do those updates:
 
 	// generate update ASM code for any 8-bit values:
-	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
-		var item games.SyncStrategy
+	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+		var s games.SyncStrategy
 		var ok bool
-		item, ok = g.syncableItems[offs]
-		if !ok {
-			continue
-		}
 
-		if item.Size() != 1 {
-			a.Comment(fmt.Sprintf("TODO: ignoring non-1 size syncableItem[%#04x]", offs))
+		if s, ok = g.syncable[offs]; !ok {
 			continue
 		}
-		if !item.IsEnabled() {
+		if !s.IsEnabled() {
+			continue
+		}
+		if s.Size() != 1 {
 			continue
 		}
 
 		// clone the assembler to a temporary:
-		newEmitter := func() *asm.Emitter { return a.Clone(tmp) }
+		newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
 		// generate the update asm routine in the temporary assembler:
-		if u, ta := item.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
+		if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 			// don't emit the routine if it pushes us over the code size limit:
 			if ta.Len()+a.Len()+10 <= 255 {
-				g.updateGenerators = append(g.updateGenerators, item)
+				g.updateGenerators = append(g.updateGenerators, s)
 				g.generated[offs] = struct{}{}
 				a.Append(ta)
 				updated = true
@@ -263,7 +263,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 	if g.SyncSmallKeys {
 		// clone the assembler to a temporary:
-		ta := a.Clone(tmp)
+		ta := a.Clone(tmp[:])
 		// generate the update asm routine in the temporary assembler:
 		u := g.doSyncSmallKeys(ta)
 		if u {
@@ -284,7 +284,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 
 			// clone the assembler to a temporary:
-			newEmitter := func() *asm.Emitter { return a.Clone(tmp) }
+			newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
 			// generate the update asm routine in the temporary assembler:
 			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 				// don't emit the routine if it pushes us over the code size limit:
@@ -300,7 +300,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	{
 		updated16 := false
 		// clone to a temporary assembler for 16-bit mode:
-		a16 := a.Clone(tmp)
+		a16 := a.Clone(tmp[:])
 		// switch to 16-bit mode:
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
@@ -377,7 +377,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
-		tmp2 := make([]byte, 0x200)
+		tmp2 := [0x100]byte{}
 		// sync all the underworld supertile state:
 		if g.SyncUnderworld {
 			for i := range g.underworld {
@@ -387,7 +387,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				}
 
 				// clone the assembler to a temporary:
-				newEmitter := func() *asm.Emitter { return a16.Clone(tmp2) }
+				newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 				// generate the update asm routine in the temporary assembler:
 				if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 					// don't emit the routine if it pushes us over the code size limit:
@@ -401,19 +401,22 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// sync any other u16 data:
-		for offs := g.syncableBitU16Min; offs <= g.syncableBitU16Max; offs++ {
-			var s *games.SyncableBitU16
+		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+			var s games.SyncStrategy
 			var ok bool
-			s, ok = g.syncableBitU16[offs]
-			if !ok {
+
+			if s, ok = g.syncable[offs]; !ok {
 				continue
 			}
 			if !s.IsEnabled() {
 				continue
 			}
+			if s.Size() != 2 {
+				continue
+			}
 
 			// clone the assembler to a temporary:
-			newEmitter := func() *asm.Emitter { return a16.Clone(tmp2) }
+			newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 			// generate the update asm routine in the temporary assembler:
 			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
 				// don't emit the routine if it pushes us over the code size limit:
@@ -428,8 +431,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// append to the current assembler:
 		if updated16 {
 			// switch back to 8-bit mode:
-			a16.Comment("switch back to 8-bit mode:")
-			a16.SEP(0x30)
+			//a16.Comment("switch back to 8-bit mode:")
+			//a16.SEP(0x30)
 			if a.Len()+a16.Len()+10 <= 255 {
 				// commit the changes to the parent assembler:
 				a.Append(a16)

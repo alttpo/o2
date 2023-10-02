@@ -53,13 +53,9 @@ const (
 
 func (g *Game) initSync() {
 	// reset map:
-	g.syncableItems = make(map[uint16]games.SyncStrategy)
-	g.syncableItemsMin = 0xFFFF
-	g.syncableItemsMax = 0x0000
-
-	g.syncableBitU16 = make(map[uint16]*games.SyncableBitU16)
-	g.syncableBitU16Min = 0xFFFF
-	g.syncableBitU16Max = 0x0000
+	g.syncable = make(map[uint32]games.SyncStrategy)
+	g.syncableOffsMin = 0x1FFFF
+	g.syncableOffsMax = 0x00000
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
@@ -120,7 +116,7 @@ func (g *Game) initSync() {
 	g.NewSyncableVanillaItemU8(0x35A, &g.SyncItems,
 		func(s *games.SyncableMaxU8, a *asm.Emitter, initial, updated uint8) {
 			// don't decompress gfx twice:
-			if _, ok := g.generated[0x35A]; ok {
+			if _, ok := g.generated[0xF35A]; ok {
 				return
 			}
 			a.Comment("decompress shield gfx:")
@@ -548,7 +544,7 @@ func (g *Game) initSync() {
 			a.STA_long(0x7ef35a)
 
 			// don't decompress gfx twice:
-			if _, ok := g.generated[0x35A]; ok {
+			if _, ok := g.generated[0xF35A]; ok {
 				return
 			}
 			s.Notification = fmt.Sprintf("got %s from %s", shieldName, s.PlayerWithMaxValue.Name())
@@ -582,37 +578,30 @@ func (g *Game) initSync() {
 		}
 	}
 
-	// sync wram[$0400] for current dungeon supertile door state:
-	g.syncableBitU16[0x0400] = games.NewSyncableBitU16(
-		g,
-		0x0400,
-		&g.SyncUnderworld,
-		[16]string{},
-		// open the local door(s):
-		func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
+	{
+		// sync wram[$0400] for current dungeon supertile door state:
+		doorSync := games.NewSyncableBitU16(g, games.WRAM, 0x0400, &g.SyncUnderworld, [16]string{}, func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
 			a.Comment("open door based on wram[$0400] bits")
 			g.openDoor(a, initial, updated)
-		},
-	)
-	g.syncableBitU16[0x0400].MemoryKind = games.WRAM
-	// filter out players not in local player's current dungeon supertile:
-	g.syncableBitU16[0x0400].PlayerPredicate = func(sp games.SyncablePlayer) bool {
-		p := sp.(*Player)
-		// player must be in dungeon module:
-		if !p.IsDungeon() {
-			return false
+		})
+		// filter out players not in local player's current dungeon supertile:
+		doorSync.PlayerPredicate = func(sp games.SyncablePlayer) bool {
+			p := sp.(*Player)
+			// player must be in dungeon module:
+			if !p.IsDungeon() {
+				return false
+			}
+			if p.SubModule != 0 {
+				return false
+			}
+			// player must have same dungeon supertile as local:
+			if p.DungeonRoom != g.local.DungeonRoom {
+				return false
+			}
+			return true
 		}
-		if p.SubModule != 0 {
-			return false
-		}
-		// player must have same dungeon supertile as local:
-		if p.DungeonRoom != g.local.DungeonRoom {
-			return false
-		}
-		return true
+		g.NewSyncable(games.WRAM, 0x0400, doorSync)
 	}
-	g.syncableBitU16Min = 0x0400
-	g.syncableBitU16Max = 0x0400
 
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {

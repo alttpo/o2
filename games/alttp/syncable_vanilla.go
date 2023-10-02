@@ -22,7 +22,7 @@ func (g *Game) NewSyncableVanillaBow(offset uint16, enabled *bool) *SyncableVani
 		Offset:       uint32(offset),
 		IsEnabledPtr: enabled,
 	}
-	g.NewSyncable(offset, s)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 

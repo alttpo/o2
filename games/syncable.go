@@ -88,9 +88,9 @@ func PlayerPredicateIdentity(_ SyncablePlayer) bool { return true }
 type SyncableBitU8 struct {
 	SyncableGame
 
-	Offset uint32
-	MemoryKind
-	SyncMask uint8
+	Offset     uint32
+	MemoryKind MemoryKind
+	SyncMask   uint8
 
 	IsEnabledPtr *bool
 	BitNames     [8]string
@@ -104,11 +104,11 @@ type SyncableBitU8 struct {
 	Notification string
 }
 
-func NewSyncableBitU8(g SyncableGame, offset uint32, enabled *bool, names [8]string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
+func NewSyncableBitU8(g SyncableGame, memoryKind MemoryKind, offset uint32, enabled *bool, names [8]string, onUpdated SyncableBitU8OnUpdated) *SyncableBitU8 {
 	s := &SyncableBitU8{
 		SyncableGame: g,
 		Offset:       offset,
-		MemoryKind:   SRAM,
+		MemoryKind:   memoryKind,
 		IsEnabledPtr: enabled,
 		BitNames:     names,
 		OnUpdated:    onUpdated,
@@ -289,11 +289,11 @@ type SyncableBitU16 struct {
 	Notification string
 }
 
-func NewSyncableBitU16(g SyncableGame, offset uint32, enabled *bool, names [16]string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
+func NewSyncableBitU16(g SyncableGame, memoryKind MemoryKind, offset uint32, enabled *bool, names [16]string, onUpdated SyncableBitU16OnUpdated) *SyncableBitU16 {
 	s := &SyncableBitU16{
 		SyncableGame:    g,
 		Offset:          offset,
-		MemoryKind:      SRAM,
+		MemoryKind:      memoryKind,
 		IsEnabledPtr:    enabled,
 		BitNames:        names,
 		SyncMask:        0xFFFF,
@@ -486,11 +486,11 @@ type SyncableMaxU8 struct {
 	PlayerWithMaxValue SyncablePlayer
 }
 
-func NewSyncableMaxU8(g SyncableGame, offset uint32, enabled *bool, names []string, onUpdated SyncableMaxU8OnUpdated) *SyncableMaxU8 {
+func NewSyncableMaxU8(g SyncableGame, memoryKind MemoryKind, offset uint32, enabled *bool, names []string, onUpdated SyncableMaxU8OnUpdated) *SyncableMaxU8 {
 	s := &SyncableMaxU8{
 		SyncableGame: g,
 		Offset:       offset,
-		MemoryKind:   SRAM,
+		MemoryKind:   memoryKind,
 		IsEnabledPtr: enabled,
 		ValueNames:   names,
 		AbsMax:       255,
@@ -652,11 +652,11 @@ type SyncableCustomU8 struct {
 	Notification string
 }
 
-func NewSyncableCustomU8(g SyncableGame, offset uint32, enabled *bool, generateUpdate SyncableCustomU8Update) *SyncableCustomU8 {
+func NewSyncableCustomU8(g SyncableGame, memoryKind MemoryKind, offset uint32, enabled *bool, generateUpdate SyncableCustomU8Update) *SyncableCustomU8 {
 	s := &SyncableCustomU8{
 		SyncableGame:         g,
 		Offset:               offset,
-		MemoryKind:           SRAM,
+		MemoryKind:           memoryKind,
 		IsEnabledPtr:         enabled,
 		CustomGenerateUpdate: generateUpdate,
 	}

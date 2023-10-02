@@ -17,7 +17,12 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 
 	tests := make([]testCase, 0, len(vanillaItemNames))
 
-	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
+	for wramOffs := g.syncableOffsMin; wramOffs <= g.syncableOffsMax; wramOffs++ {
+		if wramOffs < 0xF000 {
+			continue
+		}
+
+		offs := uint16(wramOffs - 0xF000)
 		if offs >= 0x35C && offs <= 0x35F {
 			// skip bottles since they have special logic:
 			continue
@@ -29,7 +34,6 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 		}
 		verbNames, ok := vanillaItemVerbs[offs]
 
-		wramOffs := 0xF000 + offs
 		for i, itemName := range itemNames {
 			module := uint8(0x07)
 			subModule := uint8(0x00)
@@ -110,17 +114,17 @@ func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
 
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
-	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
+	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 		if offs >= 0x35C && offs <= 0x35F {
 			// skip bottles since they have special logic:
 			continue
 		}
 
-		itemNames, ok := vanillaItemBitNames[offs]
+		itemNames, ok := vanillaItemBitNames[uint16(offs)]
 		if !ok {
 			continue
 		}
-		verbs := vanillaItemBitVerbs[offs]
+		verbs := vanillaItemBitVerbs[uint16(offs)]
 
 		wramOffs := 0xF000 + offs
 
@@ -199,7 +203,7 @@ func TestLocal_Vanilla_Bottles(t *testing.T) {
 	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
 		bottleItemNames := vanillaBottleItemNames[1:]
 
-		wramOffs := 0xF000 + offs
+		wramOffs := uint32(0xF000 + offs)
 
 		// positive tests:
 		for i := range bottleItemNames {
@@ -267,7 +271,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 			continue
 		}
 
-		wramOffs := 0xF000 + room<<1
+		wramOffs := uint32(0xF000 + room<<1)
 
 		u := &g.underworld[room]
 		for bit := 0; bit < 8; bit++ {
@@ -357,7 +361,7 @@ func TestLocal_Vanilla_OverworldRooms(t *testing.T) {
 			continue
 		}
 
-		wramOffs := 0xF280 + area
+		wramOffs := uint32(0xF280 + area)
 
 		u := &g.overworld[area]
 		for bit := 0; bit < 8; bit++ {

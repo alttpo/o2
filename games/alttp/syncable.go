@@ -17,107 +17,74 @@ func bin8_4(v uint8) string {
 	return fmt.Sprintf("0b%04b_%04b", v>>4&0xF, v&0xF)
 }
 
-func (g *Game) NewSyncable(offset uint16, s games.SyncStrategy) games.SyncStrategy {
-	g.syncableItems[offset] = s
-	if offset < g.syncableItemsMin {
-		g.syncableItemsMin = offset
+func (g *Game) NewSyncable(memoryKind games.MemoryKind, offset uint16, s games.SyncStrategy) games.SyncStrategy {
+	offs := uint32(offset)
+	switch memoryKind {
+	case games.SRAM:
+		offs += 0xF000
+		break
+	case games.WRAM:
+		break
 	}
-	if offset > g.syncableItemsMax {
-		g.syncableItemsMax = offset
+	g.syncable[offs] = s
+	if offs < g.syncableOffsMin {
+		g.syncableOffsMin = offs
+	}
+	if offs > g.syncableOffsMax {
+		g.syncableOffsMax = offs
 	}
 	return s
 }
 
 func (g *Game) NewSyncableBitU8(offset uint16, enabled *bool, names [8]string, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
-	s := games.NewSyncableBitU8(
-		g,
-		uint32(offset),
-		enabled,
-		names,
-		onUpdated,
-	)
-	g.NewSyncable(offset, s)
+	s := games.NewSyncableBitU8(g, games.SRAM, uint32(offset), enabled, names, onUpdated)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableMaxU8(offset uint16, enabled *bool, names []string, onUpdated games.SyncableMaxU8OnUpdated) *games.SyncableMaxU8 {
-	s := games.NewSyncableMaxU8(
-		g,
-		uint32(offset),
-		enabled,
-		names,
-		onUpdated,
-	)
-	g.NewSyncable(offset, s)
+	s := games.NewSyncableMaxU8(g, games.SRAM, uint32(offset), enabled, names, onUpdated)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableCustomU8(offset uint16, enabled *bool, generateUpdate games.SyncableCustomU8Update) *games.SyncableCustomU8 {
-	s := games.NewSyncableCustomU8(
-		g,
-		uint32(offset),
-		enabled,
-		generateUpdate,
-	)
-	g.NewSyncable(offset, s)
+	s := games.NewSyncableCustomU8(g, games.SRAM, uint32(offset), enabled, generateUpdate)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableBitU16(offset uint16, enabled *bool, names [16]string, onUpdated games.SyncableBitU16OnUpdated) *games.SyncableBitU16 {
-	s := games.NewSyncableBitU16(
-		g,
-		uint32(offset),
-		enabled,
-		names,
-		onUpdated,
-	)
-	g.NewSyncable(offset, s)
+	s := games.NewSyncableBitU16(g, games.SRAM, uint32(offset), enabled, names, onUpdated)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableVanillaItemBitsU8(offset uint16, enabled *bool, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
-	s := games.NewSyncableBitU8(
-		g,
-		uint32(offset),
-		enabled,
-		vanillaItemBitNames[offset],
-		onUpdated,
-	)
+	s := games.NewSyncableBitU8(g, games.SRAM, uint32(offset), enabled, vanillaItemBitNames[offset], onUpdated)
 	if verbs, ok := vanillaItemBitVerbs[offset]; ok {
 		copyNonEmpties(s.Verbs[:], verbs[:])
 	}
-	g.NewSyncable(offset, s)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableVanillaItemU8(offset uint16, enabled *bool, onUpdated games.SyncableMaxU8OnUpdated) *games.SyncableMaxU8 {
-	s := games.NewSyncableMaxU8(
-		g,
-		uint32(offset),
-		enabled,
-		vanillaItemNames[offset],
-		onUpdated,
-	)
+	s := games.NewSyncableMaxU8(g, games.SRAM, uint32(offset), enabled, vanillaItemNames[offset], onUpdated)
 	s.Verbs = make([]string, len(s.ValueNames))
 	if verbs, ok := vanillaItemVerbs[offset]; ok {
 		copyNonEmpties(s.Verbs[:], verbs[:])
 	}
-	g.NewSyncable(offset, s)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
 func (g *Game) NewSyncableVTItemBitsU8(offset uint16, enabled *bool, onUpdated games.SyncableBitU8OnUpdated) *games.SyncableBitU8 {
-	s := games.NewSyncableBitU8(
-		g,
-		uint32(offset),
-		enabled,
-		vtItemBitNames[offset],
-		onUpdated,
-	)
+	s := games.NewSyncableBitU8(g, games.SRAM, uint32(offset), enabled, vtItemBitNames[offset], onUpdated)
 	if verbs, ok := vtItemBitVerbs[offset]; ok {
 		copyNonEmpties(s.Verbs[:], verbs[:])
 	}
-	g.NewSyncable(offset, s)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 
@@ -138,7 +105,7 @@ func (g *Game) NewSyncableBottle(offset uint16, enabled *bool) *syncableBottle {
 		isEnabled: enabled,
 		names:     vanillaBottleItemNames,
 	}
-	g.NewSyncable(offset, s)
+	g.NewSyncable(games.SRAM, offset, s)
 	return s
 }
 

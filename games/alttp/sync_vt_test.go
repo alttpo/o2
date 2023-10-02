@@ -539,11 +539,11 @@ func TestAsm_VT_Items(t *testing.T) {
 				wantNotifications: nil,
 			}
 			for i, s := range legacy.sram {
-				fr.preGenLocal[i].offset = 0xF000 + s.offset
+				fr.preGenLocal[i].offset = uint32(0xF000 + s.offset)
 				fr.preGenLocal[i].value = s.localValue
-				fr.preGenRemote[i].offset = 0xF000 + s.offset
+				fr.preGenRemote[i].offset = uint32(0xF000 + s.offset)
 				fr.preGenRemote[i].value = s.remoteValue
-				fr.postAsmLocal[i].offset = 0xF000 + s.offset
+				fr.postAsmLocal[i].offset = uint32(0xF000 + s.offset)
 				if variant.allowed {
 					fr.postAsmLocal[i].value = s.expectedValue
 				} else {
@@ -603,7 +603,7 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 				expectedNotifications = []string{fmt.Sprintf("got %s from remote", bitName)}
 			}
 
-			wramOffs := 0xF000 + offs
+			wramOffs := uint32(0xF000 + offs)
 
 			for _, variant := range moduleVariants {
 				test := testCase{
@@ -655,6 +655,69 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 	}
 }
 
+func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
+	tests := make([]testCase, 0, len(vtItemBitNames)*8)
+
+	for d := 0; d < 0xe; d++ {
+		var expectedNotifications []string
+		expectedNotifications = []string{fmt.Sprintf(
+			"synced %s location checks = %d from %s",
+			dungeonNames[d],
+			1,
+			"remote",
+		)}
+
+		wramOffs := uint32(0xF4C0 + d)
+
+		for _, variant := range moduleVariants {
+			test := testCase{
+				name:      fmt.Sprintf("VT %02x,%02x %04x", variant.module, variant.submodule, wramOffs),
+				module:    variant.module,
+				subModule: variant.submodule,
+				frames: []frame{
+					{
+						preGenLocal: []wramSetValue{
+							{wramOffs, 0},
+						},
+						preGenRemote: []wramSetValue{
+							{wramOffs, 1},
+						},
+						wantAsm: true,
+						postAsmLocal: []wramTestValue{
+							{wramOffs, 1},
+						},
+						wantNotifications: expectedNotifications,
+					},
+				},
+			}
+			if !variant.allowed {
+				test.frames[0].wantAsm = false
+				test.frames[0].wantNotifications = nil
+				test.frames[0].postAsmLocal[0].value = test.frames[0].preGenLocal[0].value
+			}
+			tests = append(tests, test)
+		}
+	}
+
+	// create system emulator and test ROM:
+	// ROM title must start with "VT " to indicate randomizer
+	system, rom, err := CreateTestEmulator(t, "VT test")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		t.Run(tt.name, tt.runFrameTest)
+	}
+}
+
 func TestGame_VTListSyncables(t *testing.T) {
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
@@ -665,8 +728,8 @@ func TestGame_VTListSyncables(t *testing.T) {
 	}
 
 	g := CreateTestGame(rom, system)
-	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
-		syncable, ok := g.syncableItems[offs]
+	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+		syncable, ok := g.syncable[offs]
 		if !ok {
 			continue
 		}

@@ -398,11 +398,11 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 				wantNotifications: nil,
 			}
 			for i, s := range legacy.sram {
-				fr.preGenLocal[i].offset = 0xF000 + s.offset
+				fr.preGenLocal[i].offset = uint32(0xF000 + s.offset)
 				fr.preGenLocal[i].value = s.localValue
-				fr.preGenRemote[i].offset = 0xF000 + s.offset
+				fr.preGenRemote[i].offset = uint32(0xF000 + s.offset)
 				fr.preGenRemote[i].value = s.remoteValue
-				fr.postAsmLocal[i].offset = 0xF000 + s.offset
+				fr.postAsmLocal[i].offset = uint32(0xF000 + s.offset)
 				if variant.allowed {
 					fr.postAsmLocal[i].value = s.expectedValue
 				} else {
@@ -447,7 +447,8 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 	tests := make([]testCase, 0, len(vanillaItemNames))
 
-	for offs := uint16(0x341); offs <= 0x3C7; offs++ {
+	for wramOffs := uint32(0xF341); wramOffs <= 0xF3C7; wramOffs++ {
+		offs := uint16(wramOffs - 0xF000)
 		if offs >= 0x35C && offs <= 0x35F {
 			// skip bottles since they have special logic:
 			continue
@@ -458,7 +459,6 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 			continue
 		}
 
-		wramOffs := 0xF000 + offs
 		for i, itemName := range itemNames {
 			for _, variant := range moduleVariants {
 				// basic sync in:
@@ -547,7 +547,8 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
-	for offs := uint16(0x341); offs <= 0x37B; offs++ {
+	for wramOffs := uint32(0xF341); wramOffs <= 0xF37B; wramOffs++ {
+		offs := uint16(wramOffs - 0xF000)
 		if offs >= 0x35C && offs <= 0x35F {
 			// skip bottles since they have special logic:
 			continue
@@ -557,8 +558,6 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 		if !ok {
 			continue
 		}
-
-		wramOffs := 0xF000 + offs
 
 		for i, itemName := range itemNames {
 			if itemName == "" {
@@ -651,10 +650,8 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
-	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
+	for wramOffs := uint32(0xF35C); wramOffs <= 0xF35F; wramOffs++ {
 		bottleItemNames := vanillaBottleItemNames[1:]
-
-		wramOffs := 0xF000 + offs
 
 		// positive tests:
 		for i := range bottleItemNames {
@@ -751,7 +748,7 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 			continue
 		}
 
-		wramOffs := 0xF000 + room<<1
+		wramOffs := uint32(0xF000 + room<<1)
 
 		tests = append(tests, testCase{
 			name:      fmt.Sprintf("Room %03x: %s", room, name),
@@ -858,8 +855,8 @@ func TestGame_Vanilla_ListSyncables(t *testing.T) {
 	}
 
 	g := CreateTestGame(rom, system)
-	for offs := g.syncableItemsMin; offs <= g.syncableItemsMax; offs++ {
-		syncable, ok := g.syncableItems[offs]
+	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+		syncable, ok := g.syncable[offs]
 		if !ok {
 			continue
 		}

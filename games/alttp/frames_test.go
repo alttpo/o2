@@ -74,13 +74,13 @@ type frame struct {
 
 type wramSetValue struct {
 	// offset is relative to $7E0000, e.g. $F340 for bow
-	offset uint16
+	offset uint32
 	value  uint8
 }
 
 type wramTestValue struct {
 	// offset is relative to $7E0000, e.g. $F340 for bow
-	offset uint16
+	offset uint32
 	value  uint8
 }
 
