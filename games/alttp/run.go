@@ -109,26 +109,35 @@ func (g *Game) run() {
 
 		// wait for network message from server:
 		case msg := <-g.client.Read():
-			if msg == nil {
-				// disconnected?
-				for i := range g.players {
-					p := &g.players[i]
-					// reset Ttl for all players to make them inactive:
-					g.DecTTL(p, 255)
-					p.IndexF = -1
+			for {
+				if msg == nil {
+					// disconnected?
+					for i := range g.players {
+						p := &g.players[i]
+						// reset Ttl for all players to make them inactive:
+						g.DecTTL(p, 255)
+						p.IndexF = -1
+					}
+					if g.shouldUpdatePlayersList {
+						g.updatePlayersList()
+					}
+					break
 				}
-				if g.shouldUpdatePlayersList {
-					g.updatePlayersList()
+				if !g.IsRunning() {
+					return
 				}
-				break
-			}
-			if !g.IsRunning() {
-				return
-			}
 
-			err := g.handleNetMessage(msg)
-			if err != nil {
-				break
+				err := g.handleNetMessage(msg)
+				if err != nil {
+					break
+				}
+
+				// clear up the queue:
+				if len(g.client.Read()) > 0 {
+					msg = <-g.client.Read()
+				} else {
+					break
+				}
 			}
 			break
 
