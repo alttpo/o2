@@ -136,7 +136,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 		a.LDA_imm8_b(uint8(lw.Value))
 		a.LDX_imm8_b(uint8(ww.Value))
-		a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber, dungeonNames[dungeonNumber]))
+		a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber<<1, dungeonNames[dungeonNumber]))
 		a.LDY_abs(0x040C)
 		a.CPY_imm8_b(uint8(dungeonNumber << 1))
 		a.BNE(fmt.Sprintf("cmp%04x", offs))
@@ -153,6 +153,19 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		a.TXA()
 		a.Label(fmt.Sprintf("sta%04x", offs))
 		a.STA_long(0x7E0000 + uint32(offs))
+
+		a.Comment("sync sewer keys with HC keys:")
+		if offs == smallKeyFirst {
+			// got new sewer key, update HC:
+			a.CPY_imm8_b(0x00)
+			a.BNE(fmt.Sprintf("end%04x", offs))
+			a.STA_long(0x7E0000 + uint32(smallKeyFirst) + 1)
+		} else if offs == smallKeyFirst+1 {
+			// got new HC key, update sewer:
+			a.CPY_imm8_b(0x01)
+			a.BNE(fmt.Sprintf("end%04x", offs))
+			a.STA_long(0x7E0000 + uint32(smallKeyFirst))
+		}
 		a.Label(fmt.Sprintf("end%04x", offs))
 
 		updated = true
