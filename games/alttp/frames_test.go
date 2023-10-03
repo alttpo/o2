@@ -7,6 +7,7 @@ import (
 	"o2/interfaces"
 	"o2/snes"
 	"testing"
+	"time"
 )
 
 type moduleVariant struct {
@@ -346,5 +347,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 				}
 			}
 		}
+
+		// advance server time by 1 frame (ideal):
+		g.lastServerRecvTime = g.lastServerRecvTime.Add(17 * time.Millisecond)
+		g.lastServerTime = g.lastServerTime.Add(17 * time.Millisecond)
 	}
 }
