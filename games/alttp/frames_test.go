@@ -9,11 +9,13 @@ import (
 	"testing"
 )
 
-var moduleVariants = []struct {
+type moduleVariant struct {
 	module    uint8
 	submodule uint8
 	allowed   bool
-}{
+}
+
+var moduleVariants = []moduleVariant{
 	{
 		module:    0x07,
 		submodule: 0x00,

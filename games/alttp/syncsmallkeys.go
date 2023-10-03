@@ -133,14 +133,27 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name())
 		a.Comment(notification + ":")
 		g.PushNotification(notification)
-		a.LDA_imm8_b(uint8(ww.Value))
-		a.STA_long(0x7E0000 + uint32(offs))
 
-		a.Comment("update current dungeon small keys")
+		a.LDA_imm8_b(uint8(lw.Value))
+		a.LDX_imm8_b(uint8(ww.Value))
+		a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber, dungeonNames[dungeonNumber]))
 		a.LDY_abs(0x040C)
 		a.CPY_imm8_b(uint8(dungeonNumber << 1))
-		a.BNE_imm8(0x04)
+		a.BNE(fmt.Sprintf("cmp%04x", offs))
+
+		a.CMP_long(0x7EF36F)
+		a.BNE(fmt.Sprintf("end%04x", offs))
+		a.TXA()
 		a.STA_long(0x7EF36F)
+		a.BRA(fmt.Sprintf("sta%04x", offs))
+
+		a.Label(fmt.Sprintf("cmp%04x", offs))
+		a.CMP_long(0x7E0000 + uint32(offs))
+		a.BNE(fmt.Sprintf("end%04x", offs))
+		a.TXA()
+		a.Label(fmt.Sprintf("sta%04x", offs))
+		a.STA_long(0x7E0000 + uint32(offs))
+		a.Label(fmt.Sprintf("end%04x", offs))
 
 		updated = true
 	}
