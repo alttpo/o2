@@ -60,8 +60,10 @@ type testCase struct {
 
 type frame struct {
 	// values set before ASM generation:
-	preGenLocal  []wramSetValue
-	preGenRemote []wramSetValue
+	preGenLocal        []wramSetValue
+	preGenRemote       []wramSetValue
+	preGenLocalUpdate  func(local *Player)
+	preGenRemoteUpdate func(remote *Player)
 	// do we want ASM generated?
 	wantAsm bool
 	// values set after ASM generation but before ASM execution:
@@ -208,10 +210,20 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	system.WRAM[0x11] = tt.subModule
 	g.wram[0x11] = tt.subModule
 
+	// reset local player:
+	for _, w := range g.local.WRAM {
+		w.Timestamp = 0
+		w.IsWriting = false
+		w.Value = 0
+		w.ValueUsed = 0
+		w.ValueExpected = 0
+	}
+
 	// reset remote player:
 	g.players[1].IndexF = 1
 	g.players[1].Ttl = 255
 	g.players[1].NameF = "remote"
+	g.players[1].WRAM = make(WRAMReadable)
 	for j := range g.players[1].SRAM {
 		g.players[1].SRAM[j] = 0
 	}
@@ -239,6 +251,13 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 				continue
 			}
 			g.players[1].SRAM[set.offset-0xF000] = set.value
+		}
+
+		if u := frame.preGenLocalUpdate; u != nil {
+			u(g.local)
+		}
+		if u := frame.preGenRemoteUpdate; u != nil {
+			u(&g.players[1])
 		}
 
 		// since Queue is nil, this method will not call generateSRAMRoutine:

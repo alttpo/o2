@@ -25,6 +25,11 @@ func (g *Game) initSmallKeysSync() {
 	}
 }
 
+func timestampFromTime(t time.Time) uint32 {
+	// convert to milliseconds
+	return uint32(t.UnixNano() / 1e6)
+}
+
 // readWRAM called when WRAM is read from SNES:
 func (g *Game) readWRAM() {
 	local := g.local
@@ -35,7 +40,7 @@ func (g *Game) readWRAM() {
 	}
 
 	now := g.ServerSNESTimestamp()
-	nowTs := uint32(now.UnixNano() / 1e6) // convert to milliseconds
+	nowTs := timestampFromTime(now)
 
 	// read in all WRAM syncables:
 	for offs, w := range local.WRAM {
