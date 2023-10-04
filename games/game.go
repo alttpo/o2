@@ -2,7 +2,6 @@ package games
 
 import (
 	"encoding/json"
-	"o2/client"
 	"o2/interfaces"
 	"o2/snes"
 )
@@ -19,7 +18,7 @@ type Game interface {
 	ConfigurationModel() interface{}
 
 	ProvideQueue(queue snes.Queue)
-	ProvideClient(client *client.Client)
+	ProvideClient(client Client)
 	ProvideViewModelContainer(container interfaces.ViewModelContainer)
 
 	Notify(key string, value interface{})

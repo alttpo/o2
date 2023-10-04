@@ -10,6 +10,7 @@ import (
 	"o2/client/protocol01"
 	"o2/client/protocol02"
 	"o2/client/protocol03"
+	"o2/games"
 	"time"
 )
 
@@ -17,7 +18,7 @@ import (
 const protocol = 0x03
 
 type gameMessage interface {
-	SendToClient(c *client.Client)
+	SendToClient(c games.Client)
 }
 
 type gameBroadcastMessage struct {
@@ -26,7 +27,7 @@ type gameBroadcastMessage struct {
 	g *Game
 }
 
-func (m *gameBroadcastMessage) SendToClient(c *client.Client) {
+func (m *gameBroadcastMessage) SendToClient(c games.Client) {
 	g := m.g
 
 	if protocol == 0x03 {
@@ -68,7 +69,7 @@ type gameJoinMessage struct {
 	g *Game
 }
 
-func (m *gameJoinMessage) SendToClient(c *client.Client) {
+func (m *gameJoinMessage) SendToClient(c games.Client) {
 	g := m.g
 
 	if protocol == 0x03 {
@@ -130,7 +131,7 @@ type gameEchoMessage struct {
 	g *Game
 }
 
-func (m *gameEchoMessage) SendToClient(c *client.Client) {
+func (m *gameEchoMessage) SendToClient(c games.Client) {
 	g := m.g
 
 	if protocol == 0x03 {

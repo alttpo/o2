@@ -3,7 +3,6 @@ package alttp
 import (
 	"encoding/json"
 	"log"
-	"o2/client"
 	"o2/engine"
 	"o2/games"
 	"o2/interfaces"
@@ -24,7 +23,7 @@ type Game struct {
 	// queue can be nil at any time
 	queue snes.Queue
 	// client can be nil at any time
-	client *client.Client
+	client games.Client
 	// configurationSystem will only be nil until provided
 	configurationSystem interfaces.ConfigurationSystem
 	// viewModels can be nil at any time
@@ -216,7 +215,7 @@ func (g *Game) ProvideQueue(queue snes.Queue) {
 
 	g.FirstFrame()
 }
-func (g *Game) ProvideClient(client *client.Client) {
+func (g *Game) ProvideClient(client games.Client) {
 	g.client = client
 }
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
