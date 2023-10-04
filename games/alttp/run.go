@@ -74,9 +74,6 @@ const debugSprites = false
 
 // run in a separate goroutine
 func (g *Game) run() {
-	// for more consistent response times from fx pak pro, adjust firmware.im3 to patch bInterval from 2ms to 1ms.
-	// 0x1EA5D = 01 (was 02)
-
 	q := make([]snes.Read, 0, 8)
 	q = g.enqueueWRAMReads(q)
 	// must always read module number LAST to validate the prior reads:
@@ -261,6 +258,8 @@ func (g *Game) enqueueSRAMRead(q []snes.Read, extra interface{}) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F0FE, 0xFE, extra) // [$F0FE..$F1FB]
 	q = g.readEnqueue(q, 0xF5F1FC, 0x54, extra) // [$F1FC..$F24F]
 	q = g.readEnqueue(q, 0xF5F280, 0xC0, extra) // [$F280..$F33F]
+	// Link's palette:
+	q = g.readEnqueue(q, 0xF5C6E0, 0x20, 0)
 	return q
 }
 
@@ -271,12 +270,11 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF50100, 0x36, 0) // [$0100..$0135]
 	q = g.readEnqueue(q, 0xF502E0, 0x08, 0) // [$02E0..$02E7]
 	q = g.readEnqueue(q, 0xF50400, 0x20, 0) // [$0400..$041F]
-	// $1980..19E9 for reading underworld door state
+	// $1980..19E9 for reading underworld door state (19A0)
 	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
 	q = g.readEnqueue(q, 0xF5F340, 0xFF, 0) // [$F340..$F43E]
-	// Link's palette:
-	q = g.readEnqueue(q, 0xF5C6E0, 0x20, 0)
+	q = g.readEnqueue(q, 0xF5F43F, 0xC1, 0) // [$F43E..$F4FF]
 	return q
 }
 
