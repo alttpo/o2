@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"fmt"
+	"o2/games"
 	"testing"
 )
 
@@ -715,6 +716,183 @@ func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
 		tt.system = system
 		tt.g = g
 		t.Run(tt.name, tt.runFrameTest)
+	}
+}
+
+func TestGame_VTGenericSyncables(t *testing.T) {
+	// create system emulator and test ROM:
+	// ROM title must start with "VT " to indicate randomizer
+	system, rom, err := CreateTestEmulator(t, "VT test")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// find all Syncables without custom asm generation and verify basic behaviors
+	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+		offs := offs
+		s, ok := g.syncable[offs]
+		if !ok {
+			continue
+		}
+
+		switch sy := s.(type) {
+		case *games.SyncableMaxU8:
+			if sy.GenerateAsm != nil {
+				t.Run(
+					fmt.Sprintf("maxU8[$%04x]", offs),
+					func(t *testing.T) {
+						t.Skip("has custom GenerateAsm; skipping")
+					},
+				)
+				continue
+			}
+
+			for _, variant := range moduleVariants {
+				tt := testCase{
+					name:      fmt.Sprintf("maxU8[$%04x] %02x,%02x", offs, variant.module, variant.submodule),
+					system:    system,
+					g:         g,
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{offs, 2},
+							},
+							preGenRemote: []wramSetValue{
+								{offs, 3},
+							},
+							// verify:
+							postAsmLocal: []wramTestValue{
+								{offs, 3},
+							},
+							wantAsm: true,
+							// ignore notifications
+							wantNotifications: nil,
+						},
+					},
+				}
+
+				if !variant.allowed {
+					// change expectations:
+					tt.frames[0].wantAsm = false
+					tt.frames[0].postAsmLocal[0].value = tt.frames[0].preGenLocal[0].value
+				}
+
+				t.Run(tt.name, tt.runFrameTest)
+			}
+
+			break
+		case *games.SyncableBitU8:
+			if sy.GenerateAsm != nil {
+				t.Run(
+					fmt.Sprintf("bitU8[$%04x]", offs),
+					func(t *testing.T) {
+						t.Skip("has custom GenerateAsm; skipping")
+					},
+				)
+				continue
+			}
+
+			for _, variant := range moduleVariants {
+				tt := testCase{
+					name:      fmt.Sprintf("bitU8[$%04x] %02x,%02x", offs, variant.module, variant.submodule),
+					system:    system,
+					g:         g,
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{offs, 2},
+							},
+							preGenRemote: []wramSetValue{
+								{offs, 3},
+							},
+							// verify:
+							postAsmLocal: []wramTestValue{
+								{offs, 3},
+							},
+							wantAsm: true,
+							// ignore notifications
+							wantNotifications: nil,
+						},
+					},
+				}
+
+				if !variant.allowed {
+					// change expectations:
+					tt.frames[0].wantAsm = false
+					tt.frames[0].postAsmLocal[0].value = tt.frames[0].preGenLocal[0].value
+				}
+
+				t.Run(tt.name, tt.runFrameTest)
+			}
+			break
+		case *games.SyncableBitU16:
+			if sy.GenerateAsm != nil {
+				t.Run(
+					fmt.Sprintf("bitU16[$%04x]", offs),
+					func(t *testing.T) {
+						t.Skip("has custom GenerateAsm; skipping")
+					},
+				)
+				continue
+			}
+			if sy.OnUpdated != nil {
+				t.Run(
+					fmt.Sprintf("bitU16[$%04x]", offs),
+					func(t *testing.T) {
+						t.Skip("has custom OnUpdated; skipping")
+					},
+				)
+				continue
+			}
+
+			for _, variant := range moduleVariants {
+				tt := testCase{
+					name:      fmt.Sprintf("bitU16[$%04x] %02x,%02x", offs, variant.module, variant.submodule),
+					system:    system,
+					g:         g,
+					module:    variant.module,
+					subModule: variant.submodule,
+					frames: []frame{
+						{
+							preGenLocal: []wramSetValue{
+								{offs + 1, 2},
+								{offs, 0},
+							},
+							preGenRemote: []wramSetValue{
+								{offs + 1, 3},
+								{offs, 0},
+							},
+							// verify:
+							postAsmLocal: []wramTestValue{
+								{offs + 1, 3},
+								{offs, 0},
+							},
+							wantAsm: true,
+							// ignore notifications
+							wantNotifications: nil,
+						},
+					},
+				}
+
+				if !variant.allowed {
+					// change expectations:
+					tt.frames[0].wantAsm = false
+					tt.frames[0].postAsmLocal[0].value = tt.frames[0].preGenLocal[0].value
+					tt.frames[0].postAsmLocal[1].value = tt.frames[0].preGenLocal[1].value
+				}
+
+				t.Run(tt.name, tt.runFrameTest)
+			}
+
+			break
+		}
 	}
 }
 
