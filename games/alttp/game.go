@@ -66,7 +66,7 @@ type Game struct {
 	lastUpdateTarget uint32
 	lastUpdateFrame  uint8
 	lastUpdateTime   time.Time
-	updateGenerators []games.SyncStrategy
+	updateGenerators []games.AsmExecConfirmer
 	generated        map[uint32]struct{}
 	cooldownTime     time.Time
 

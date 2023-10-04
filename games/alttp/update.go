@@ -225,7 +225,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		clear(g.generated)
 	}
 	if g.updateGenerators == nil {
-		g.updateGenerators = make([]games.SyncStrategy, 0, 20)
+		g.updateGenerators = make([]games.AsmExecConfirmer, 0, 20)
 	} else {
 		g.updateGenerators = g.updateGenerators[:0]
 	}

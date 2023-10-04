@@ -23,15 +23,19 @@ type SyncableGame interface {
 	PushNotification(notification string)
 }
 
+type AsmExecConfirmer interface {
+	// ConfirmAsmExecuted is called when generated ASM code is confirmed to have executed:
+	ConfirmAsmExecuted(index uint32, value uint8)
+}
+
 type SyncStrategy interface {
+	AsmExecConfirmer
+
 	Size() uint
 	IsEnabled() bool
 
 	// GenerateUpdate returns true if asm instructions were emitted to the given asm.Emitter and returns false otherwise
 	GenerateUpdate(newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter)
-
-	// ConfirmAsmExecuted is called when generated ASM code is confirmed to have executed:
-	ConfirmAsmExecuted(index uint32, value uint8)
 
 	// LocalCheck compares previous frame and current frame WRAM to identify local picked up items:
 	LocalCheck(wramCurrent, wramPrevious []byte) (notifications []NotificationStatement)
