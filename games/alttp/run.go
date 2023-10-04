@@ -362,6 +362,24 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		return q
 	}
 
+	// copy the read data into our view of memory:
+	for _, rsp := range rsps {
+		// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+		if start, end, ok := g.isReadWRAM(rsp); ok {
+			// copy in new data:
+			copy(g.wram[start:end], rsp.Data)
+		}
+		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
+		if start, end, ok := g.isReadSRAM(rsp); ok {
+			copy(g.sram[start:end], rsp.Data)
+		}
+	}
+
+	// assign local variables from WRAM:
+	local := g.LocalPlayer()
+
+	g.SetTTL(local, 255)
+
 	// log module changes regardless of syncing:
 	if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
 		log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
@@ -389,24 +407,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		log.Printf("alttp: syncing enabled during module [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		g.syncing = true
 	}
-
-	// copy the read data into our view of memory:
-	for _, rsp := range rsps {
-		// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-		if start, end, ok := g.isReadWRAM(rsp); ok {
-			// copy in new data:
-			copy(g.wram[start:end], rsp.Data)
-		}
-		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
-		if start, end, ok := g.isReadSRAM(rsp); ok {
-			copy(g.sram[start:end], rsp.Data)
-		}
-	}
-
-	// assign local variables from WRAM:
-	local := g.LocalPlayer()
-
-	g.SetTTL(local, 255)
 
 	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
 	if local.Module != newModule || local.SubModule != newSubModule {

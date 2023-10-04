@@ -209,9 +209,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 	// default module/submodule:
 	system.WRAM[0x10] = tt.module
-	g.wram[0x10] = tt.module
 	system.WRAM[0x11] = tt.subModule
-	g.wram[0x11] = tt.subModule
 
 	// reset local player:
 	for _, w := range g.local.WRAM {
@@ -282,6 +280,15 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		}
 		g.readMainComplete(rsps)
 
+		// verify system.WRAM was read into g.wram:
+		for j := range frame.preGenLocal {
+			set := &frame.preGenLocal[j]
+
+			if system.WRAM[set.offset] != g.wram[set.offset] {
+				t.Errorf("readMainComplete failed to read expected value")
+			}
+		}
+
 		// generate ASM code:
 		var code [0x200]byte
 		a := asm.NewEmitter(code[:], true)
@@ -296,7 +303,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			set := &frame.preAsmLocal[j]
 
 			system.WRAM[set.offset] = set.value
-			g.wram[set.offset] = set.value
 
 			if set.offset >= 0xF000 {
 				g.local.SRAM[set.offset-0xF000] = set.value
@@ -317,10 +323,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			return
 		}
 
-		// copy SRAM shadow in WRAM into local player copy:
-		copy(g.local.SRAM[:], system.WRAM[0xF000:0x1_0000])
-		copy(g.wram[:], system.WRAM[:])
-
 		// verify values:
 		for _, check := range frame.postAsmLocal {
 			if actual, expected := system.WRAM[check.offset], check.value; actual != expected {
@@ -336,12 +338,15 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			}
 		}
 
-		if len(notifications) != len(frame.wantNotifications) {
-			t.Errorf("notifications = %#v, expected %#v", notifications, frame.wantNotifications)
-		} else if len(notifications) > 0 {
-			for i := range notifications {
-				if notifications[i] != frame.wantNotifications[i] {
-					t.Errorf("notification[%d] = '%s', expected '%s'", i, notifications[i], frame.wantNotifications[i])
+		// ignore notifications if nil
+		if frame.wantNotifications != nil {
+			if len(notifications) != len(frame.wantNotifications) {
+				t.Errorf("notifications = %#v, expected %#v", notifications, frame.wantNotifications)
+			} else if len(notifications) > 0 {
+				for i := range notifications {
+					if notifications[i] != frame.wantNotifications[i] {
+						t.Errorf("notification[%d] = '%s', expected '%s'", i, notifications[i], frame.wantNotifications[i])
+					}
 				}
 			}
 		}
