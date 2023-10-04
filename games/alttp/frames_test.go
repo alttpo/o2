@@ -263,26 +263,24 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			u(&g.players[1])
 		}
 
-		// since Queue is nil, this method will not call generateSRAMRoutine:
-		g.readMainComplete([]snes.Response{
-			// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-			{Address: 0xF50010, Size: 0xF0, Data: system.WRAM[0x10 : 0x10+0xF0]},
-			{Address: 0xF50100, Size: 0x36, Data: system.WRAM[0x0100 : 0x0100+0x36]}, // [$0100..$0135]
-			{Address: 0xF502E0, Size: 0x08, Data: system.WRAM[0x02E0 : 0x02E0+0x08]}, // [$02E0..$02E7]
-			{Address: 0xF50400, Size: 0x20, Data: system.WRAM[0x0400 : 0x0400+0x20]}, // [$0400..$041F]
-			// $1980..19E9 for reading underworld door state
-			{Address: 0xF51980, Size: 0x6A, Data: system.WRAM[0x1980 : 0x1980+0x6A]}, // [$1980..$19E9]
-			// ALTTP's SRAM copy in WRAM:
-			{Address: 0xF5F340, Size: 0xFF, Data: system.WRAM[0xF340 : 0xF340+0xFF]}, // [$F340..$F43E]
-			// Link's palette:
-			{Address: 0xF5C6E0, Size: 0x20, Data: system.WRAM[0xC6E0 : 0xC6E0+0x20]},
-
-			// read the SRAM copy for underworld and overworld:
-			{Address: 0xF5F000, Size: 0xFE, Data: system.WRAM[0xF000 : 0xF000+0xFE]}, // [$F000..$F0FD]
-			{Address: 0xF5F0FE, Size: 0xFE, Data: system.WRAM[0xF0FE : 0xF0FE+0xFE]}, // [$F0FE..$F1FB]
-			{Address: 0xF5F1FC, Size: 0x54, Data: system.WRAM[0xF1FC : 0xF1FC+0x54]}, // [$F1FC..$F24F]
-			{Address: 0xF5F280, Size: 0xC0, Data: system.WRAM[0xF280 : 0xF280+0xC0]}, // [$F280..$F33F]
-		})
+		// use enqueueSRAMRead and enqueueWRAMReads and enqueueMainRead to perform the SNES reads:
+		q := make([]snes.Read, 0, 20)
+		q = g.enqueueSRAMRead(q, 0)
+		q = g.enqueueWRAMReads(q)
+		q = g.enqueueMainRead(q, 0)
+		rsps := make([]snes.Response, 0, len(q))
+		for i := range q {
+			address := q[i].Address
+			offs := address - 0xF50000
+			rsps = append(rsps, snes.Response{
+				IsWrite: false,
+				Address: address,
+				Size:    q[i].Size,
+				Data:    system.WRAM[offs : offs+uint32(q[i].Size)],
+				Extra:   nil,
+			})
+		}
+		g.readMainComplete(rsps)
 
 		// generate ASM code:
 		var code [0x200]byte
