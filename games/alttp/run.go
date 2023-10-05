@@ -385,24 +385,29 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	g.lastModule = moduleStaging
 	g.lastSubModule = submoduleStaging
 
-	// validate new reads in staging area before copying to wram/sram:
-	if moduleStaging <= 0x06 || moduleStaging >= 0x1B {
-		if g.syncing {
-			log.Printf("alttp: syncing disabled during module [$%02x,$%02x]", moduleStaging, submoduleStaging)
+	doSync := true
+	if moduleStaging == 0x07 || moduleStaging == 0x09 || moduleStaging == 0x0b {
+		// good module, check submodule:
+		if g.wramU8(0x11) != 0 {
+			doSync = false
 		}
-		g.syncing = false
-		return q
+	} else if moduleStaging == 0x0e {
+		// menu/interface module is ok:
+	} else {
+		// bad module:
+		doSync = false
 	}
-	if submoduleStaging > 0 {
+
+	if !doSync {
 		if g.syncing {
-			log.Printf("alttp: syncing disabled during submodule [$%02x,$%02x]", moduleStaging, submoduleStaging)
+			log.Printf("alttp: DISABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		}
 		g.syncing = false
 		return q
 	}
 
 	if !g.syncing {
-		log.Printf("alttp: syncing enabled during module [$%02x,$%02x]", moduleStaging, submoduleStaging)
+		log.Printf("alttp:  ENABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		g.syncing = true
 	}
 
