@@ -106,7 +106,8 @@ func (g *Game) run() {
 
 		// wait for network message from server:
 		case msg := <-g.client.Read():
-			for {
+			count := len(g.client.Read()) + 1
+			for count > 0 {
 				if msg == nil {
 					// disconnected?
 					for i := range g.players {
@@ -130,7 +131,8 @@ func (g *Game) run() {
 				}
 
 				// clear up the queue:
-				if len(g.client.Read()) > 0 {
+				count--
+				if count > 0 {
 					msg = <-g.client.Read()
 				} else {
 					break
