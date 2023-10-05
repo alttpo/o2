@@ -195,7 +195,7 @@ func (c *UDPClient) readLoop() {
 	}()
 
 	// we only need a single receive buffer:
-	b := make([]byte, 1500)
+	b := make([]byte, 65536)
 
 	for c.isConnected {
 		// wait for a packet from UDP socket:
