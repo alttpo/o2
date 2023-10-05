@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const chanSize = 8
+const chanSize = 1
 
 type BaseQueue struct {
 	// driver name
