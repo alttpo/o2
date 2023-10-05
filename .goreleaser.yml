@@ -14,8 +14,8 @@ builds:
       - linux
       - darwin
     ignore: # M1 builds fail currently
-      - goos: darwin
-        goarch: arm64
+      #- goos: darwin
+      #  goarch: arm64
       - goos: linux
 archives:
   - name_template: >-
