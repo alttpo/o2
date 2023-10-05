@@ -114,6 +114,9 @@ func NewWebServer(listenAddr string) *WebServer {
 	// serve static content from go-bindata:
 	s.mux.Handle("/", MaxAge(http.FileServer(http.FS(dist.Content))))
 
+	// DEBUG pprof:
+	//s.mux.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+
 	// handle the broadcast channel:
 	go s.handleBroadcast()
 
