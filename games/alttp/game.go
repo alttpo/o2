@@ -29,6 +29,9 @@ type Game struct {
 	// viewModels can be nil at any time
 	viewModels interfaces.ViewModelContainer
 
+	priorityReadsMu sync.Mutex
+	priorityReads   [3][]snes.Read
+
 	deserTable []DeserializeFunc
 
 	// Notifications publishes notifications about game events intended for the player to see
@@ -135,7 +138,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		rom:                rom,
 		running:            false,
 		stopped:            make(chan struct{}),
-		readComplete:       make(chan []snes.Response),
+		readComplete:       make(chan []snes.Response, 8),
 		romFunctions:       make(map[romFunction]uint32),
 		lastUpdateTarget:   0xFFFFFF,
 		lastServerSentTime: time.Now(),
@@ -334,6 +337,8 @@ func (g *Game) Start() {
 		// notify that the game is stopped:
 		close(g.stopped)
 	}()
+
+	go g.sendReads()
 }
 
 func (g *Game) Stopped() <-chan struct{} {

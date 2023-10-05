@@ -98,7 +98,7 @@ func (g *Game) updateWRAM() {
 			q = g.enqueueUpdateCheckRead(q)
 			// must always read module number LAST to validate the prior reads:
 			q = g.enqueueMainRead(q)
-			g.readSubmit(q)
+			g.fillPriorityReads(0, q)
 		},
 	).EnqueueTo(q)
 	if err != nil {

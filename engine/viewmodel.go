@@ -465,9 +465,13 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	vm.setStatus("Connected to SNES")
 }
 
+func (vm *ViewModel) SNESDisconnect() {
+	vm.dev.Close()
+}
+
 func (vm *ViewModel) SNESDisconnected() {
-	defer vm.devLock.Unlock()
 	vm.devLock.Lock()
+	defer vm.devLock.Unlock()
 
 	if vm.dev == nil {
 		if vm.game != nil {
@@ -483,15 +487,11 @@ func (vm *ViewModel) SNESDisconnected() {
 	}()
 
 	// enqueue the close operation:
-	snesClosed := make(chan error)
+	snesClosed := vm.dev.Closed()
 	lastDev := vm.driverDevice
 	log.Printf("viewmodel: snesdisconnected: closing driver='%s', device='%s'\n", lastDev.NamedDriver.Name, lastDev.Device.GetId())
 	err := vm.dev.Enqueue(snes.CommandWithCompletion{
 		Command: &snes.CloseCommand{},
-		Completion: func(cmd snes.Command, err error) {
-			snesClosed <- err
-			close(snesClosed)
-		},
 	})
 
 	vm.dev = nil
@@ -508,10 +508,7 @@ func (vm *ViewModel) SNESDisconnected() {
 	}
 
 	// wait until snes is closed:
-	err = <-snesClosed
-	if err != nil {
-		log.Println(err)
-	}
+	<-snesClosed
 	log.Printf("viewmodel: snesdisconnected: closed device '%s'\n", lastDev.Device.GetDisplayName())
 
 	lastDev = snes.NamedDriverDevicePair{}

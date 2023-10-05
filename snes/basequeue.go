@@ -94,6 +94,7 @@ channelLoop:
 		if _, ok := cmd.(*CloseCommand); ok {
 			log.Printf("%s: processing CloseCommand\n", b.name)
 			terminal = true
+			break
 		}
 
 		{
@@ -134,9 +135,10 @@ channelLoop:
 		if err != nil && q.IsTerminalError(err) {
 			err = &TerminalError{err}
 			terminal = true
+			break
 		}
 		if pair.Completion != nil {
-			go pair.Completion(cmd, err)
+			pair.Completion(cmd, err)
 		} else if err != nil {
 			log.Println(err)
 		}

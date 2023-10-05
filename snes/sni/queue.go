@@ -1,13 +1,16 @@
 package sni
 
 import (
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"o2/snes"
 )
 
 type Queue struct {
 	snes.BaseQueue
 
-	closed chan struct{}
+	closed   chan struct{}
+	isClosed bool
 
 	uri              string
 	memoryClient     DeviceMemoryClient
@@ -15,6 +18,14 @@ type Queue struct {
 }
 
 func (q *Queue) IsTerminalError(err error) bool {
+	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.Unknown {
+			return true
+		}
+		if st.Code() == codes.Internal {
+			return true
+		}
+	}
 	return false
 }
 
@@ -23,8 +34,13 @@ func (q *Queue) Closed() <-chan struct{} {
 }
 
 func (q *Queue) Close() (err error) {
+	if q.isClosed {
+		return
+	}
+
 	// make sure closed channel is closed:
-	defer close(q.closed)
+	close(q.closed)
+	q.isClosed = true
 
 	return
 }

@@ -289,7 +289,7 @@ func (c *DisconnectCommandExecutor) Execute(_ interfaces.CommandArgs) error {
 }
 
 func (v *SNESViewModel) Disconnect() error {
-	v.c.SNESDisconnected()
+	v.c.SNESDisconnect()
 
 	return nil
 }

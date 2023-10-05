@@ -72,13 +72,51 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 
 const debugSprites = false
 
+func (g *Game) sendReads() {
+	// every 8 msec prepare to send a batch of read requests:
+	t := time.NewTicker(time.Millisecond * 8)
+
+sendloop:
+	for {
+		select {
+		case <-t.C:
+			// submit and clear the highest priority read:
+			g.priorityReadsMu.Lock()
+			for p := range g.priorityReads {
+				reads := g.priorityReads[p]
+				if len(reads) == 0 {
+					continue
+				}
+
+				g.readSubmit(reads)
+				g.priorityReads[p] = g.priorityReads[p][:0]
+				break
+			}
+			g.priorityReadsMu.Unlock()
+			break
+		case <-g.stopped:
+			break sendloop
+		}
+	}
+}
+
+func (g *Game) fillPriorityReads(p int, reads []snes.Read) {
+	if p >= len(g.priorityReads) || p < 0 {
+		panic("bad priority value")
+	}
+
+	g.priorityReadsMu.Lock()
+	g.priorityReads[p] = reads
+	g.priorityReadsMu.Unlock()
+}
+
 // run in a separate goroutine
 func (g *Game) run() {
 	q := make([]snes.Read, 0, 8)
 	q = g.enqueueWRAMReads(q)
 	// must always read module number LAST to validate the prior reads:
 	q = g.enqueueMainRead(q)
-	g.readSubmit(q)
+	g.fillPriorityReads(2, q)
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
 	slowbeat := time.NewTicker(500 * time.Millisecond)
@@ -98,10 +136,8 @@ func (g *Game) run() {
 			}
 
 			// process the last read data:
-			q := g.readMainComplete(rsps)
 			g.lastReadCompleted = time.Now()
-
-			g.readSubmit(q)
+			g.readMainComplete(rsps)
 			break
 
 		// wait for network message from server:
@@ -144,7 +180,7 @@ func (g *Game) run() {
 					q = g.enqueueWRAMReads(q)
 					// must always read module number LAST to validate the prior reads:
 					q = g.enqueueMainRead(q)
-					g.readSubmit(q)
+					g.fillPriorityReads(2, q)
 				} else {
 					q := make([]snes.Read, 0, 8)
 					q = g.enqueueSRAMRead(q)
@@ -158,7 +194,7 @@ func (g *Game) run() {
 
 					// must always read module number LAST to validate the prior reads:
 					q = g.enqueueMainRead(q)
-					g.readSubmit(q)
+					g.fillPriorityReads(1, q)
 				}
 			}
 
@@ -278,7 +314,7 @@ func (g *Game) enqueueMainRead(q []snes.Read) []snes.Read {
 }
 
 // called when all reads are completed:
-func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
+func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.stateLock.Lock()
 	defer g.stateLock.Unlock()
 
@@ -346,18 +382,20 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 		// check for update completeness:
 		q = g.enqueueUpdateCheckRead(q)
 		q = g.enqueueMainRead(q)
-		return q
+		g.fillPriorityReads(0, q)
+		return
 	}
 
 	// do all the WRAM reads:
 	q = g.enqueueWRAMReads(q)
 	q = g.enqueueMainRead(q)
+	g.fillPriorityReads(2, q)
 
 	if moduleStaging == -1 {
-		return q
+		return
 	}
 	if submoduleStaging == -1 {
-		return q
+		return
 	}
 
 	// copy the read data into our view of memory:
@@ -403,7 +441,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 			log.Printf("alttp: DISABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
 		}
 		g.syncing = false
-		return q
+		return
 	}
 
 	if !g.syncing {
@@ -523,12 +561,12 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 
 	// did game frame change?
 	if g.wram[0x1A] == g.lastGameFrame {
-		return q
+		return
 	}
 
 	g.frameAdvanced()
 
-	return q
+	return
 }
 
 func (g *Game) wramU8(addr uint32) uint8 {
