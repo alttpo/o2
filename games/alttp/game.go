@@ -135,7 +135,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		rom:                rom,
 		running:            false,
 		stopped:            make(chan struct{}),
-		readComplete:       make(chan []snes.Response, 1),
+		readComplete:       make(chan []snes.Response),
 		romFunctions:       make(map[romFunction]uint32),
 		lastUpdateTarget:   0xFFFFFF,
 		lastServerSentTime: time.Now(),

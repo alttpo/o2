@@ -8,7 +8,7 @@ require (
 	github.com/gobwas/ws v1.3.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	go.bug.st/serial v1.6.1
-	golang.org/x/sys v0.12.0
+	golang.org/x/sys v0.13.0
 	google.golang.org/grpc v1.58.2
 	google.golang.org/protobuf v1.31.0
 )
