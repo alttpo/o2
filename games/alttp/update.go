@@ -116,7 +116,7 @@ func (g *Game) updateWRAM() {
 func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool) {
 	// don't update during non-zero submodules in main gameplay modules:
 	module := g.wramU8(0x10)
-	if module == 0x07 || module == 0x09 || module == 0x0b {
+	if module == 0x07 || module == 0x09 || module == 0x0b || module == 0x0e {
 		// good module, check submodule:
 		if g.wramU8(0x11) != 0 {
 			return false
@@ -143,13 +143,15 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	a.SEP(0x30)
 
 	a.Label("moduleCheck")
-	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
+	a.Comment("only sync during 00 submodule for modules 07,09,0B,0E:")
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x07)
 	a.BEQ("submoduleCheck")
 	a.CMP_imm8_b(0x09)
 	a.BEQ("submoduleCheck")
 	a.CMP_imm8_b(0x0B)
+	a.BEQ("submoduleCheck")
+	a.CMP_imm8_b(0x0E)
 	a.BNE("syncExit")
 	a.Label("submoduleCheck")
 	a.LDA_dp(0x11)

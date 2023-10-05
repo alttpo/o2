@@ -1,1 +1,1 @@
-goreleaser --snapshot --skip-publish --rm-dist
+CGO_ENABLED=1 goreleaser --snapshot --clean

@@ -125,7 +125,7 @@ func (s *SyncableBitU8) Size() uint      { return 1 }
 func (s *SyncableBitU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *SyncableBitU8) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
@@ -311,7 +311,7 @@ func (s *SyncableBitU16) Size() uint      { return 2 }
 func (s *SyncableBitU16) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *SyncableBitU16) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
@@ -507,7 +507,7 @@ func (s *SyncableMaxU8) Size() uint      { return 1 }
 func (s *SyncableMaxU8) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *SyncableMaxU8) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
@@ -674,7 +674,7 @@ func (s *SyncableCustomU8) GenerateUpdate(newEmitter func() *asm.Emitter, index 
 }
 
 func (s *SyncableCustomU8) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 

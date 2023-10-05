@@ -113,7 +113,7 @@ func (s *syncableBottle) Size() uint      { return 1 }
 func (s *syncableBottle) IsEnabled() bool { return *s.isEnabled }
 
 func (s *syncableBottle) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
@@ -274,7 +274,7 @@ func (s *syncableUnderworld) Size() uint      { return 2 }
 func (s *syncableUnderworld) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *syncableUnderworld) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
@@ -521,7 +521,7 @@ func (s *syncableOverworld) Size() uint      { return 1 }
 func (s *syncableOverworld) IsEnabled() bool { return *s.IsEnabledPtr }
 
 func (s *syncableOverworld) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 

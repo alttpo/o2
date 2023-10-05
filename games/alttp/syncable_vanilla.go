@@ -84,7 +84,7 @@ func (s *SyncableVanillaBow) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 }
 
 func (s *SyncableVanillaBow) ConfirmAsmExecuted(index uint32, value uint8) {
-	if value == 0x00 {
+	if value != 0x01 {
 		return
 	}
 
