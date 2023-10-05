@@ -28,7 +28,7 @@ func (g *Game) updateWRAM() {
 	if g.updateStage > 0 {
 		return
 	}
-	if time.Now().Sub(g.cooldownTime) < timing.Frame*30 {
+	if time.Now().Sub(g.cooldownTime) < timing.Frame*2 {
 		return
 	}
 
@@ -97,7 +97,7 @@ func (g *Game) updateWRAM() {
 			q := make([]snes.Read, 0, 8)
 			q = g.enqueueUpdateCheckRead(q)
 			// must always read module number LAST to validate the prior reads:
-			q = g.enqueueMainRead(q, nil)
+			q = g.enqueueMainRead(q)
 			g.readSubmit(q)
 		},
 	).EnqueueTo(q)

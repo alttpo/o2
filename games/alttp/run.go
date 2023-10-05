@@ -17,8 +17,8 @@ func (g *Game) readEnqueue(q []snes.Read, addr uint32, size uint8, extra interfa
 		Size:    size,
 		Extra:   extra,
 		Completion: func(rsp snes.Response) {
-			defer g.readResponseLock.Unlock()
 			g.readResponseLock.Lock()
+			defer g.readResponseLock.Unlock()
 			// append to response queue:
 			g.readResponse = append(g.readResponse, rsp)
 		},
@@ -77,7 +77,7 @@ func (g *Game) run() {
 	q := make([]snes.Read, 0, 8)
 	q = g.enqueueWRAMReads(q)
 	// must always read module number LAST to validate the prior reads:
-	q = g.enqueueMainRead(q, 0)
+	q = g.enqueueMainRead(q)
 	g.readSubmit(q)
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
@@ -143,11 +143,11 @@ func (g *Game) run() {
 					q := make([]snes.Read, 0, 8)
 					q = g.enqueueWRAMReads(q)
 					// must always read module number LAST to validate the prior reads:
-					q = g.enqueueMainRead(q, 0)
+					q = g.enqueueMainRead(q)
 					g.readSubmit(q)
 				} else {
 					q := make([]snes.Read, 0, 8)
-					q = g.enqueueSRAMRead(q, 1)
+					q = g.enqueueSRAMRead(q)
 
 					if debugSprites {
 						// DEBUG read sprite WRAM:
@@ -157,7 +157,7 @@ func (g *Game) run() {
 					}
 
 					// must always read module number LAST to validate the prior reads:
-					q = g.enqueueMainRead(q, nil)
+					q = g.enqueueMainRead(q)
 					g.readSubmit(q)
 				}
 			}
@@ -243,14 +243,12 @@ func (g *Game) extractWRAMByte(rsp snes.Response, addr uint32) (val uint8, ok bo
 	return rsp.Data[i], true
 }
 
-func (g *Game) enqueueSRAMRead(q []snes.Read, extra interface{}) []snes.Read {
+func (g *Game) enqueueSRAMRead(q []snes.Read) []snes.Read {
 	// read the SRAM copy for underworld and overworld:
-	q = g.readEnqueue(q, 0xF5F000, 0xFE, extra) // [$F000..$F0FD]
-	q = g.readEnqueue(q, 0xF5F0FE, 0xFE, extra) // [$F0FE..$F1FB]
-	q = g.readEnqueue(q, 0xF5F1FC, 0x54, extra) // [$F1FC..$F24F]
-	q = g.readEnqueue(q, 0xF5F280, 0xC0, extra) // [$F280..$F33F]
-	// Link's palette:
-	q = g.readEnqueue(q, 0xF5C6E0, 0x20, 0)
+	q = g.readEnqueue(q, 0xF5F000, 0xFE, nil) // [$F000..$F0FD]
+	q = g.readEnqueue(q, 0xF5F0FE, 0xFE, nil) // [$F0FE..$F1FB]
+	q = g.readEnqueue(q, 0xF5F1FC, 0x54, nil) // [$F1FC..$F24F]
+	q = g.readEnqueue(q, 0xF5F280, 0xC0, nil) // [$F280..$F33F]
 	return q
 }
 
@@ -258,20 +256,24 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	// FX Pak Pro allows batches of 8 VGET requests to be submitted at a time:
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-	q = g.readEnqueue(q, 0xF50100, 0x36, 0) // [$0100..$0135]
-	q = g.readEnqueue(q, 0xF502E0, 0x08, 0) // [$02E0..$02E7]
-	q = g.readEnqueue(q, 0xF50400, 0x20, 0) // [$0400..$041F]
+	q = g.readEnqueue(q, 0xF50100, 0x36, nil) // [$0100..$0135]
+	q = g.readEnqueue(q, 0xF502E0, 0x08, nil) // [$02E0..$02E7]
+	q = g.readEnqueue(q, 0xF50400, 0x20, nil) // [$0400..$041F]
 	// $1980..19E9 for reading underworld door state (19A0)
-	q = g.readEnqueue(q, 0xF51980, 0x6A, 0) // [$1980..$19E9]
+	q = g.readEnqueue(q, 0xF51980, 0x6A, nil) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
-	q = g.readEnqueue(q, 0xF5F340, 0xFF, 0) // [$F340..$F43E]
-	q = g.readEnqueue(q, 0xF5F43F, 0xC1, 0) // [$F43E..$F4FF]
+	q = g.readEnqueue(q, 0xF5F340, 0xFF, nil) // [$F340..$F43E]
+	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
+
+	// Link's palette:
+	q = g.readEnqueue(q, 0xF5C6E0, 0x20, nil)
+
 	return q
 }
 
-func (g *Game) enqueueMainRead(q []snes.Read, extra interface{}) []snes.Read {
+func (g *Game) enqueueMainRead(q []snes.Read) []snes.Read {
 	// NOTE: order matters! must read the module number LAST to make sure all reads prior are valid.
-	q = g.readEnqueue(q, 0xF50010, 0xF0, extra) // [$0010..$00FF]
+	q = g.readEnqueue(q, 0xF50010, 0xF0, nil) // [$0010..$00FF]
 	return q
 }
 
@@ -286,6 +288,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 	moduleStaging := -1
 	submoduleStaging := -1
 
+	needUpdateCheck := false
 	now := time.Now()
 	for _, rsp := range rsps {
 		// check WRAM reads:
@@ -310,6 +313,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 				g.lastUpdateFrame ^= 0xFF
 				g.cooldownTime = now
 			} else if rsp.Address == g.lastUpdateTarget {
+				// check the "update" read:
 				ins0 := rsp.Data[0]
 				updateFrameCounter := rsp.Data[1]
 				log.Printf("alttp: update: check: $%06x [$%02x,$%02x] ?= [$60,$%02x]\n", rsp.Address, ins0, updateFrameCounter, g.lastUpdateFrame)
@@ -331,20 +335,23 @@ func (g *Game) readMainComplete(rsps []snes.Response) []snes.Read {
 						g.cooldownTime = now
 					}
 				} else {
-					// check again:
-					q = g.enqueueUpdateCheckRead(q)
-					// TODO: this may or may not be redundant
-					q = g.enqueueMainRead(q, nil)
+					needUpdateCheck = true
 				}
 			}
 		}
 		g.updateLock.Unlock()
-
-		// 0 indicates to re-enqueue the read every time:
-		if rsp.Extra == 0 {
-			q = g.readEnqueue(q, rsp.Address, rsp.Size, rsp.Extra)
-		}
 	}
+
+	if needUpdateCheck {
+		// check for update completeness:
+		q = g.enqueueUpdateCheckRead(q)
+		q = g.enqueueMainRead(q)
+		return q
+	}
+
+	// do all the WRAM reads:
+	q = g.enqueueWRAMReads(q)
+	q = g.enqueueMainRead(q)
 
 	if moduleStaging == -1 {
 		return q

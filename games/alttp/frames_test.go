@@ -263,9 +263,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		// use enqueueSRAMRead and enqueueWRAMReads and enqueueMainRead to perform the SNES reads:
 		q := make([]snes.Read, 0, 20)
-		q = g.enqueueSRAMRead(q, 0)
+		q = g.enqueueSRAMRead(q)
 		q = g.enqueueWRAMReads(q)
-		q = g.enqueueMainRead(q, 0)
+		q = g.enqueueMainRead(q)
 		rsps := make([]snes.Response, 0, len(q))
 		for i := range q {
 			address := q[i].Address
