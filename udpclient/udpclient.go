@@ -190,6 +190,10 @@ func (c *UDPClient) readLoop() {
 	c.log("%s: readLoop started\n", c.name)
 
 	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("udpclient: readLoop: paniced with %v\n", err)
+		}
+
 		c.Disconnect()
 		c.log("%s: disconnected; readLoop exited\n", c.name)
 	}()
@@ -220,6 +224,10 @@ func (c *UDPClient) writeLoop() {
 	c.log("%s: writeLoop started\n", c.name)
 
 	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("udpclient: writeLoop: paniced with %v\n", err)
+		}
+
 		c.Disconnect()
 		c.log("%s: disconnected; writeLoop exited\n", c.name)
 	}()
