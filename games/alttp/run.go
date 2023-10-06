@@ -86,20 +86,26 @@ sendloop:
 	for {
 		select {
 		case <-t.C:
+			var reads []snes.Read
+
 			// submit and clear the highest priority read:
 			g.priorityReadsMu.Lock()
 			for p := range g.priorityReads {
-				reads := g.priorityReads[p]
+				reads = g.priorityReads[p]
 				if len(reads) == 0 {
 					continue
 				}
 
-				g.readSubmit(reads)
-				// TODO: try assigning nil instead
-				g.priorityReads[p] = g.priorityReads[p][:0]
+				g.priorityReads[p] = nil
+				// we have `reads` assigned and need to submit it to the queue:
 				break
 			}
 			g.priorityReadsMu.Unlock()
+
+			if reads != nil {
+				// NOTE: very important to not do this while under g.priorityReadsMu.Lock():
+				g.readSubmit(reads)
+			}
 			break
 		case <-g.stopped:
 			break sendloop
