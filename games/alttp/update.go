@@ -236,7 +236,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		g.updateGenerators = g.updateGenerators[:0]
 	}
 
-	tmp := [0x100]byte{}
+	tmp := [0x400]byte{}
 
 	// group up all 16-bit updates first, then reset back to 8-bit and do those updates:
 
@@ -313,7 +313,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
 
-		tmp2 := [0x100]byte{}
+		tmp2 := [0x400]byte{}
 
 		// sync u16 data:
 		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
