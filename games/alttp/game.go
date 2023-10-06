@@ -331,11 +331,17 @@ func (g *Game) Start() {
 	g.NotifyView()
 
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("alttp: run goroutine: paniced with %v\n", err)
+			}
+
+			// notify that the game is stopped:
+			close(g.stopped)
+		}()
+
 		// run the game loop:
 		g.run()
-
-		// notify that the game is stopped:
-		close(g.stopped)
 	}()
 
 	go g.sendReads()

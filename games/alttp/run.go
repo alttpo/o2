@@ -73,6 +73,12 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 const debugSprites = false
 
 func (g *Game) sendReads() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("alttp: sendReads: paniced with %v\n", err)
+		}
+	}()
+
 	// every 8 msec prepare to send a batch of read requests:
 	t := time.NewTicker(time.Millisecond * 8)
 
@@ -89,6 +95,7 @@ sendloop:
 				}
 
 				g.readSubmit(reads)
+				// TODO: try assigning nil instead
 				g.priorityReads[p] = g.priorityReads[p][:0]
 				break
 			}
