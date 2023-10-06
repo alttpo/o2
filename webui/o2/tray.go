@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"github.com/getlantern/systray"
+	"log"
 	"o2/webui/o2/icon"
 )
 
@@ -33,6 +34,12 @@ func trayStart() {
 
 	// Menu item click handler:
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("trayStart: paniced with %v\n", err)
+			}
+		}()
+
 		for {
 			select {
 			case <-mOpenWeb.ClickedCh:

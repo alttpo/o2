@@ -72,6 +72,12 @@ func init() {
 }
 
 func main() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("main: paniced with %v\n", err)
+		}
+	}()
+
 	var err error
 
 	// Parse env vars:
@@ -99,6 +105,12 @@ func main() {
 
 	// start the web server:
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("main: webserver.Serve() paniced with %v\n", err)
+			}
+		}()
+
 		log.Fatal(webServer.Serve())
 	}()
 

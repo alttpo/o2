@@ -8,7 +8,6 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -202,6 +201,10 @@ type CommandRequest struct {
 func (k *Socket) readHandler() {
 	// the reader is in control of the lifetime of the socket:
 	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Socket: readHandler: paniced with %v\n", err)
+		}
+
 		log.Printf("Closing websocket connection to %s\n", k.conn.RemoteAddr())
 		_ = k.conn.Close()
 
@@ -281,7 +284,7 @@ func (k *Socket) readHandler() {
 				goto discard
 			}
 
-			data, err := ioutil.ReadAll(r)
+			data, err := io.ReadAll(r)
 			if err != nil {
 				log.Println(fmt.Errorf("error reading binary command payload: %w", err))
 				goto discard
@@ -338,6 +341,12 @@ func readTinyString(buf io.Reader) (value string, err error) {
 }
 
 func (k *Socket) writeHandler() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Socket: writeHandler: paniced with %v\n", err)
+		}
+	}()
+
 	var (
 		w       = wsutil.NewWriter(k.conn, ws.StateServerSide, ws.OpText)
 		encoder = json.NewEncoder(w)
