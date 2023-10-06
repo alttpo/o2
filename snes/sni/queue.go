@@ -3,6 +3,7 @@ package sni
 import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"log"
 	"o2/snes"
 )
 
@@ -20,9 +21,11 @@ type Queue struct {
 func (q *Queue) IsTerminalError(err error) bool {
 	if st, ok := status.FromError(err); ok {
 		if st.Code() == codes.Unknown {
+			log.Printf("sni: terminal error from grpc status %v, %v: %v\n", st.Code(), st.Message(), err)
 			return true
 		}
 		if st.Code() == codes.Internal {
+			log.Printf("sni: terminal error from grpc status %v, %v: %v\n", st.Code(), st.Message(), err)
 			return true
 		}
 	}

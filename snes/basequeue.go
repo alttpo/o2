@@ -34,7 +34,8 @@ func (b *BaseQueue) BaseInit(name string, queue Queue) {
 func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 	// FIXME: no great way I can figure out how to avoid panic on closed channel send below.
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			log.Printf("snes: basequeue: paniced with %v\n", r)
 			err = &TerminalError{ErrDeviceDisconnected}
 		}
 	}()
@@ -94,7 +95,6 @@ channelLoop:
 		if _, ok := cmd.(*CloseCommand); ok {
 			log.Printf("%s: processing CloseCommand\n", b.name)
 			terminal = true
-			break
 		}
 
 		{
@@ -105,8 +105,15 @@ channelLoop:
 			keepAlive := make(chan struct{}, 16)
 			started := time.Now()
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Printf("snes: basequeue: handleQueue: cmd.Execute paniced with %v\n", err)
+					}
+
+					close(done)
+				}()
+
 				err = cmd.Execute(q, keepAlive)
-				close(done)
 			}()
 
 			timeout := time.NewTimer(timeoutDuration)
@@ -133,9 +140,9 @@ channelLoop:
 
 		// wrap the error if it is a terminal case:
 		if err != nil && q.IsTerminalError(err) {
+			log.Printf("snes: basequeue: handleQueue: terminal error: %v\n", err)
 			err = &TerminalError{err}
 			terminal = true
-			break
 		}
 		if pair.Completion != nil {
 			pair.Completion(cmd, err)
