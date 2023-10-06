@@ -334,6 +334,12 @@ func (vm *ViewModel) tryCreateGame() bool {
 	}
 
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("tryCreateGame: paniced with %v\n", err)
+			}
+		}()
+
 		// wait until the game is stopped:
 		<-vm.game.Stopped()
 		vm.game = nil
@@ -455,6 +461,12 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	}
 
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("tryCreateGame: paniced with %v\n", err)
+			}
+		}()
+
 		// wait for the SNES to be closed:
 		<-vm.dev.Closed()
 		log.Printf("viewmodel: snesconnected: closed: driver='%s', device='%s'\n", pair.NamedDriver.Name, pair.Device.GetId())
@@ -466,6 +478,7 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 }
 
 func (vm *ViewModel) SNESDisconnect() {
+	log.Printf("viewmodel: snes disconnect\n")
 	vm.dev.Close()
 }
 
