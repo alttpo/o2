@@ -15,6 +15,7 @@ import (
 	"o2/snes"
 	"o2/webui/dist"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -202,7 +203,7 @@ func (k *Socket) readHandler() {
 	// the reader is in control of the lifetime of the socket:
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("Socket: readHandler: paniced with %v\n", err)
+			log.Printf("Socket: readHandler: paniced with %v\n%s\n", err, string(debug.Stack()))
 		}
 
 		log.Printf("Closing websocket connection to %s\n", k.conn.RemoteAddr())
@@ -343,7 +344,7 @@ func readTinyString(buf io.Reader) (value string, err error) {
 func (k *Socket) writeHandler() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("Socket: writeHandler: paniced with %v\n", err)
+			log.Printf("Socket: writeHandler: paniced with %v\n%s\n", err, string(debug.Stack()))
 		}
 	}()
 

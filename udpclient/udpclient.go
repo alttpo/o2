@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -191,7 +192,7 @@ func (c *UDPClient) readLoop() {
 
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("udpclient: readLoop: paniced with %v\n", err)
+			log.Printf("udpclient: readLoop: paniced with %v\n%s\n", err, string(debug.Stack()))
 		}
 
 		c.Disconnect()
@@ -225,7 +226,7 @@ func (c *UDPClient) writeLoop() {
 
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("udpclient: writeLoop: paniced with %v\n", err)
+			log.Printf("udpclient: writeLoop: paniced with %v\n%s\n", err, string(debug.Stack()))
 		}
 
 		c.Disconnect()

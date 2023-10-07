@@ -8,6 +8,7 @@ import (
 	"github.com/getlantern/systray"
 	"log"
 	"o2/webui/o2/icon"
+	"runtime/debug"
 )
 
 func createSystray() {
@@ -36,7 +37,7 @@ func trayStart() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("trayStart: paniced with %v\n", err)
+				log.Printf("trayStart: paniced with %v\n%s\n", err, string(debug.Stack()))
 			}
 		}()
 
