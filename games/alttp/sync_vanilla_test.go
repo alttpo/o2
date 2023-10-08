@@ -995,7 +995,7 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 			// normal decrement from remote:
 			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 2, 2, 1, 1))
 			// both local and remote decremented:
-			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 1))
+			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 0))
 		}
 		for _, variant := range moduleVariants {
 			// normal increment from remote:
@@ -1003,7 +1003,7 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 			// normal decrement from remote:
 			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 2, 1, 1))
 			// both local and remote decremented:
-			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 1))
+			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 0))
 		}
 	}
 
