@@ -23,7 +23,9 @@ func (g *Game) NotifyView() {
 	g.PlayerColor = g.local.PlayerColor
 
 	// notify view of changes:
-	g.viewModels.NotifyView("game", g)
+	if g.viewModels != nil {
+		g.viewModels.NotifyView("game", g)
+	}
 }
 
 func (g *Game) ClearNotificationHistory() {

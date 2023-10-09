@@ -224,6 +224,9 @@ func (g *Game) ProvideClient(client games.Client) {
 }
 func (g *Game) ProvideViewModelContainer(container interfaces.ViewModelContainer) {
 	g.viewModels = container
+	if g.viewModels != nil {
+		g.viewModels.NotifyView("game", g)
+	}
 }
 func (g *Game) ProvideConfigurationSystem(configurationSystem interfaces.ConfigurationSystem) {
 	g.configurationSystem = configurationSystem
