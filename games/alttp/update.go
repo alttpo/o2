@@ -22,13 +22,13 @@ func (g *Game) updateWRAM() {
 		return
 	}
 
-	defer g.updateLock.Unlock()
 	g.updateLock.Lock()
-
 	if g.updateStage > 0 {
+		g.updateLock.Unlock()
 		return
 	}
 	if time.Now().Sub(g.cooldownTime) < timing.Frame*2 {
+		g.updateLock.Unlock()
 		return
 	}
 
@@ -45,6 +45,7 @@ func (g *Game) updateWRAM() {
 	a := asm.NewEmitter(make([]byte, 0x200), true)
 	updated := g.generateSRAMRoutine(a, targetSNES)
 	if !updated {
+		g.updateLock.Unlock()
 		return
 	}
 
@@ -60,6 +61,8 @@ func (g *Game) updateWRAM() {
 	g.lastUpdateTarget = target
 	g.lastUpdateFrame = g.lastGameFrame
 	g.lastUpdateTime = time.Now()
+
+	g.updateLock.Unlock()
 
 	// write generated asm routine to SRAM:
 	var targetJSR uint32
@@ -83,8 +86,8 @@ func (g *Game) updateWRAM() {
 		func(cmd snes.Command, err error) {
 			log.Println("alttp: update: write completed")
 
-			defer g.updateLock.Unlock()
 			g.updateLock.Lock()
+			defer g.updateLock.Unlock()
 
 			if g.updateStage != 1 {
 				log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)

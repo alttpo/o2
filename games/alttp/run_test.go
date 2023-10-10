@@ -129,6 +129,92 @@ func (t *testServer) Run(ctx context.Context) (err error) {
 	return
 }
 
+type testReadCommand []snes.Read
+
+func (c testReadCommand) Execute(q snes.Queue, keepAlive snes.KeepAlive) error {
+	tq := q.(*testQueue)
+	for _, rd := range c {
+		if rd.Address < 0xF5_0000 {
+			panic("unsupported address for read in testQueue!")
+		}
+
+		d := make([]byte, rd.Size)
+		copy(d, tq.E.WRAM[rd.Address-0xF5_0000:])
+		if rd.Completion != nil {
+			rd.Completion(snes.Response{
+				IsWrite: false,
+				Address: rd.Address,
+				Size:    rd.Size,
+				Data:    d,
+				Extra:   rd.Extra,
+			})
+		}
+	}
+	return nil
+}
+
+type testWriteCommand []snes.Write
+
+func (c testWriteCommand) Execute(q snes.Queue, keepAlive snes.KeepAlive) error {
+	tq := q.(*testQueue)
+	for _, wr := range c {
+		if wr.Address < 0xE0_0000 || wr.Address >= 0xF5_0000 {
+			panic("unsupported address for write in testQueue!")
+		}
+
+		copy(tq.E.SRAM[wr.Address-0xE0_0000:], wr.Data[0:wr.Size])
+		if wr.Completion != nil {
+			wr.Completion(snes.Response{
+				IsWrite: true,
+				Address: wr.Address,
+				Size:    wr.Size,
+				Data:    wr.Data,
+				Extra:   wr.Extra,
+			})
+		}
+	}
+	return nil
+}
+
+type testQueue struct {
+	E *emulator.System
+}
+
+func (t *testQueue) Close() error { return nil }
+
+func (t *testQueue) Closed() <-chan struct{} { return nil }
+
+func (t *testQueue) Enqueue(cmd snes.CommandWithCompletion) error {
+	// directly execute the command:
+	err := cmd.Command.Execute(t, nil)
+	if cmd.Completion != nil {
+		cmd.Completion(cmd.Command, err)
+	}
+	return nil
+}
+
+func (t *testQueue) MakeReadCommands(reqs []snes.Read, batchComplete snes.Completion) snes.CommandSequence {
+	return snes.CommandSequence{
+		snes.CommandWithCompletion{
+			Command:    testReadCommand(reqs),
+			Completion: batchComplete,
+		},
+	}
+}
+
+func (t *testQueue) MakeWriteCommands(reqs []snes.Write, batchComplete snes.Completion) snes.CommandSequence {
+	return snes.CommandSequence{
+		snes.CommandWithCompletion{
+			Command:    testWriteCommand(reqs),
+			Completion: batchComplete,
+		},
+	}
+}
+
+func (t *testQueue) IsTerminalError(err error) bool {
+	return false
+}
+
 func TestRun(t *testing.T) {
 	g1, c1, e1 := createTestGame(t)
 	g2, c2, e2 := createTestGame(t)
@@ -143,19 +229,21 @@ func TestRun(t *testing.T) {
 		}
 	}()
 
-	// set module to $07:
+	// set module to $07, dungeon to $00:
 	e1.WRAM[0x10] = 0x07
 	e2.WRAM[0x10] = 0x07
-	for i := 0; i < 60; i++ {
-		// run a single frame:
-		gameRunFrame(g1, e1)
-		gameRunFrame(g2, e2)
+	e1.WRAM[0x040C] = 0
+	e2.WRAM[0x040C] = 0
+	// run a single frame:
+	gameRunFrame(g1, e1)
+	gameRunFrame(g2, e2)
+	// current dungeon key counter:
+	e1.WRAM[0xF36F] = 1
+	gameRunFrame(g1, e1)
+	gameRunFrame(g2, e2)
 
-		// advance frame counters:
-		log.Printf("frame advance")
-		e1.WRAM[0x1a]++
-		e2.WRAM[0x1a]++
-	}
+	gameRunFrame(g1, e1)
+	gameRunFrame(g2, e2)
 
 	_, _ = c1, c2
 	_, _ = e1, e2
@@ -177,6 +265,7 @@ func createTestGame(t *testing.T) (g *Game, c *testClient, e *emulator.System) {
 		Wr: make(chan []byte, 100),
 	}
 	g.ProvideClient(c)
+	g.ProvideQueue(&testQueue{E: e})
 
 	// request our player index:
 	m := g.makeJoinMessage()
@@ -212,4 +301,7 @@ func gameRunFrame(g *Game, e *emulator.System) {
 		})
 	}
 	g.readMainComplete(rsps)
+
+	// advance frame counter:
+	e.WRAM[0x1a]++
 }
