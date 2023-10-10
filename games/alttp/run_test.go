@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"context"
+	"fmt"
 	"github.com/alttpo/snes/emulator"
 	"google.golang.org/protobuf/proto"
 	"io"
@@ -37,6 +38,11 @@ func (t *testClient) Read() <-chan []byte {
 
 type testServer struct {
 	Clients []*testClient
+	Now     time.Time
+}
+
+func (t *testServer) AdvanceTime(duration time.Duration) {
+	t.Now = t.Now.Add(duration)
 }
 
 func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
@@ -65,7 +71,7 @@ func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
 	}
 
 	gm.PlayerIndex = uint32(i)
-	gm.ServerTime = time.Now().UnixNano()
+	gm.ServerTime = t.Now.UnixNano()
 
 	if gm.GetJoinGroup() != nil || gm.GetEcho() != nil || gm.GetBroadcastSector() != nil {
 		pkt := client.MakePacket(protocol)
@@ -271,10 +277,17 @@ func createTestGame(t *testing.T, playerName string) (g *Game, c *testClient, e 
 	g.sendPlayerName()
 	g.sendEcho()
 
+	// initialize reads:
+	g.priorityReads[0] = nil
+	g.priorityReads[1] = g.enqueueMainRead(g.enqueueSRAMRead(nil))
+	g.priorityReads[2] = g.enqueueMainRead(g.enqueueWRAMReads(nil))
+
 	return
 }
 
-func gameRunFrame(g *Game, e *emulator.System) {
+func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
+	log.Printf("%s ----------------------------------\n", g.LocalPlayer().Name())
+
 	// process any incoming network messages:
 	for len(g.client.Read()) > 0 {
 		msg := <-g.client.Read()
@@ -285,25 +298,49 @@ func gameRunFrame(g *Game, e *emulator.System) {
 
 	// do all WRAM + SRAM(shadow) reads:
 	q := make([]snes.Read, 0, 20)
-	q = g.enqueueSRAMRead(q)
-	q = g.enqueueWRAMReads(q)
-	q = g.enqueueMainRead(q)
+	for j := range g.priorityReads {
+		reads := g.priorityReads[j]
+		if reads == nil {
+			continue
+		}
+
+		q = append(q, reads...)
+		g.priorityReads[j] = nil
+	}
 	rsps := make([]snes.Response, 0, len(q))
 	for i := range q {
 		address := q[i].Address
-		offs := address - 0xF50000
-		rsps = append(rsps, snes.Response{
-			IsWrite: false,
-			Address: address,
-			Size:    q[i].Size,
-			Data:    e.WRAM[offs : offs+uint32(q[i].Size)],
-			Extra:   nil,
-		})
+		if address >= 0xF50000 {
+			offs := address - 0xF50000
+			rsps = append(rsps, snes.Response{
+				IsWrite: false,
+				Address: address,
+				Size:    q[i].Size,
+				Data:    e.WRAM[offs : offs+uint32(q[i].Size)],
+				Extra:   nil,
+			})
+		} else if address >= 0xE00000 {
+			offs := address - 0xE00000
+			rsps = append(rsps, snes.Response{
+				IsWrite: false,
+				Address: address,
+				Size:    q[i].Size,
+				Data:    e.SRAM[offs : offs+uint32(q[i].Size)],
+				Extra:   nil,
+			})
+		} else {
+			panic(fmt.Errorf("unexpected read address %06x", address))
+		}
 	}
 	g.readMainComplete(rsps)
 
-	// advance frame counter:
-	e.WRAM[0x1a]++
+	// emulate a main loop iteration:
+	e.CPU.Reset()
+	e.SetPC(testROMMainGameLoop)
+	if !e.RunUntil(testROMBreakPoint, 0x1_000) {
+		t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, e.CPU.PC)
+		return
+	}
 }
 
 func TestRun(t *testing.T) {
@@ -311,10 +348,16 @@ func TestRun(t *testing.T) {
 	g2, c2, e2 := createTestGame(t, "g2")
 
 	// create a server and run it:
-	s := &testServer{Clients: []*testClient{c1, c2}}
+	s := &testServer{
+		Clients: []*testClient{c1, c2},
+		Now:     time.Now(),
+	}
+
+	const duration = time.Millisecond * 17
 
 	// handle join group messages for each client:
 	s.HandleAllClients()
+	s.AdvanceTime(duration)
 
 	// set module to $07, dungeon to $00:
 	e1.WRAM[0x10] = 0x07
@@ -322,18 +365,32 @@ func TestRun(t *testing.T) {
 	e1.WRAM[0x040C] = 0
 	e2.WRAM[0x040C] = 0
 	// run a single frame:
-	gameRunFrame(g1, e1)
+	gameRunFrame(t, g1, e1)
 	s.HandleAllClients()
-	gameRunFrame(g2, e2)
+	gameRunFrame(t, g2, e2)
 	s.HandleAllClients()
+	s.AdvanceTime(duration)
 
 	// inc current dungeon key counter:
 	e1.WRAM[0xF36F] = 1
-	gameRunFrame(g1, e1)
+	gameRunFrame(t, g1, e1)
 	s.HandleAllClients()
-	gameRunFrame(g2, e2)
+	// receives updated key count; issues update to emu:
+	gameRunFrame(t, g2, e2)
 	s.HandleAllClients()
+	s.AdvanceTime(duration)
 
-	_, _ = c1, c2
-	_, _ = e1, e2
+	gameRunFrame(t, g1, e1)
+	s.HandleAllClients()
+	gameRunFrame(t, g2, e2)
+	s.HandleAllClients()
+	s.AdvanceTime(duration)
+
+	//
+	gameRunFrame(t, g1, e1)
+	s.HandleAllClients()
+	gameRunFrame(t, g2, e2)
+	s.HandleAllClients()
+	s.AdvanceTime(duration)
+
 }
