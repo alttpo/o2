@@ -39,6 +39,83 @@ type testServer struct {
 	Clients []*testClient
 }
 
+func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
+	c := t.Clients[i]
+
+	var protocolVersion uint8
+	{
+		var r io.Reader
+		r, err = client.ParseHeader(b, &protocolVersion)
+		if err != nil {
+			return
+		}
+		b, err = io.ReadAll(r)
+		if err != nil {
+			return
+		}
+	}
+	if protocolVersion != protocol {
+		return
+	}
+
+	gm := protocol03.GroupMessage{}
+	err = proto.Unmarshal(b, &gm)
+	if err != nil {
+		return
+	}
+
+	gm.PlayerIndex = uint32(i)
+	gm.ServerTime = time.Now().UnixNano()
+
+	if gm.GetJoinGroup() != nil || gm.GetEcho() != nil || gm.GetBroadcastSector() != nil {
+		pkt := client.MakePacket(protocol)
+		var rspBytes []byte
+		rspBytes, err = proto.Marshal(&gm)
+		if err != nil {
+			return
+		}
+
+		pkt.Write(rspBytes)
+
+		pname := ""
+		var pvalue any
+		if gm.GetJoinGroup() != nil {
+			pname = "joinGroup"
+			pvalue = gm.GetJoinGroup()
+		} else if gm.GetEcho() != nil {
+			pname = "echo"
+			pvalue = gm.GetEcho()
+		} else if gm.GetBroadcastSector() != nil {
+			pname = "broadcastSector"
+			pvalue = gm.GetBroadcastSector()
+		}
+		log.Printf("server: c[%d] %s: %v\n", i, pname, pvalue)
+
+		c.Rd <- pkt.Bytes()
+	} else if ba := gm.GetBroadcastAll(); ba != nil {
+
+		pkt := client.MakePacket(protocol)
+		var rspBytes []byte
+		rspBytes, err = proto.Marshal(&gm)
+		if err != nil {
+			return
+		}
+
+		pkt.Write(rspBytes)
+		for j := range t.Clients {
+			if j == i {
+				continue
+			}
+
+			log.Printf("server: c[%d] -> c[%d] broadcastAll: %v\n", i, j, ba)
+			t.Clients[j].Rd <- pkt.Bytes()
+		}
+	}
+	// TODO: proper handling of GetBroadcastSector()
+
+	return
+}
+
 func (t *testServer) Run(ctx context.Context) (err error) {
 	cases := make([]reflect.SelectCase, 0, len(t.Clients)+1)
 	for _, c := range t.Clients {
@@ -64,69 +141,23 @@ func (t *testServer) Run(ctx context.Context) (err error) {
 			break
 		}
 
-		// otherwise it was a client's Wr (to server, aka us) channel:
-		c := t.Clients[i]
-		b := rcv.Bytes()
-
-		var protocolVersion uint8
-		{
-			var r io.Reader
-			r, err = client.ParseHeader(b, &protocolVersion)
-			if err != nil {
-				return
-			}
-			b, err = io.ReadAll(r)
-			if err != nil {
-				return
-			}
+		if err = t.HandleMessageFromClient(i, rcv.Bytes()); err != nil {
+			panic(err)
 		}
-		if protocolVersion != protocol {
-			return
-		}
-
-		gm := protocol03.GroupMessage{}
-		err = proto.Unmarshal(b, &gm)
-		if err != nil {
-			return
-		}
-
-		gm.PlayerIndex = uint32(i)
-		gm.ServerTime = time.Now().UnixNano()
-
-		if gm.GetJoinGroup() != nil || gm.GetEcho() != nil || gm.GetBroadcastSector() != nil {
-			pkt := client.MakePacket(protocol)
-			var rspBytes []byte
-			rspBytes, err = proto.Marshal(&gm)
-			if err != nil {
-				return
-			}
-
-			pkt.Write(rspBytes)
-			log.Printf("server: joinGroup -> c[%d]\n", i)
-			c.Rd <- pkt.Bytes()
-		} else if ba := gm.GetBroadcastAll(); ba != nil {
-
-			pkt := client.MakePacket(protocol)
-			var rspBytes []byte
-			rspBytes, err = proto.Marshal(&gm)
-			if err != nil {
-				return
-			}
-
-			pkt.Write(rspBytes)
-			for j := range t.Clients {
-				if j == i {
-					continue
-				}
-
-				log.Printf("server: broadcastAll c[%d] -> c[%d]\n", i, j)
-				t.Clients[j].Rd <- pkt.Bytes()
-			}
-		}
-		// TODO: proper handling of GetBroadcastSector()
 	}
 
 	return
+}
+
+func (t *testServer) HandleAllClients() {
+	for i := range t.Clients {
+		for len(t.Clients[i].Wr) > 0 {
+			b := <-t.Clients[i].Wr
+			if err := t.HandleMessageFromClient(i, b); err != nil {
+				panic(err)
+			}
+		}
+	}
 }
 
 type testReadCommand []snes.Read
@@ -215,41 +246,7 @@ func (t *testQueue) IsTerminalError(err error) bool {
 	return false
 }
 
-func TestRun(t *testing.T) {
-	g1, c1, e1 := createTestGame(t)
-	g2, c2, e2 := createTestGame(t)
-
-	// create a server and run it:
-	s := &testServer{Clients: []*testClient{c1, c2}}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		if err := s.Run(ctx); err != nil {
-			t.Error(err)
-		}
-	}()
-
-	// set module to $07, dungeon to $00:
-	e1.WRAM[0x10] = 0x07
-	e2.WRAM[0x10] = 0x07
-	e1.WRAM[0x040C] = 0
-	e2.WRAM[0x040C] = 0
-	// run a single frame:
-	gameRunFrame(g1, e1)
-	gameRunFrame(g2, e2)
-	// current dungeon key counter:
-	e1.WRAM[0xF36F] = 1
-	gameRunFrame(g1, e1)
-	gameRunFrame(g2, e2)
-
-	gameRunFrame(g1, e1)
-	gameRunFrame(g2, e2)
-
-	_, _ = c1, c2
-	_, _ = e1, e2
-}
-
-func createTestGame(t *testing.T) (g *Game, c *testClient, e *emulator.System) {
+func createTestGame(t *testing.T, playerName string) (g *Game, c *testClient, e *emulator.System) {
 	var err error
 	var rom *snes.ROM
 
@@ -260,6 +257,7 @@ func createTestGame(t *testing.T) (g *Game, c *testClient, e *emulator.System) {
 	}
 
 	g = CreateTestGame(rom, e)
+	g.local.NameF = playerName
 	c = &testClient{
 		Rd: make(chan []byte, 100),
 		Wr: make(chan []byte, 100),
@@ -270,6 +268,8 @@ func createTestGame(t *testing.T) (g *Game, c *testClient, e *emulator.System) {
 	// request our player index:
 	m := g.makeJoinMessage()
 	g.send(m)
+	g.sendPlayerName()
+	g.sendEcho()
 
 	return
 }
@@ -304,4 +304,36 @@ func gameRunFrame(g *Game, e *emulator.System) {
 
 	// advance frame counter:
 	e.WRAM[0x1a]++
+}
+
+func TestRun(t *testing.T) {
+	g1, c1, e1 := createTestGame(t, "g1")
+	g2, c2, e2 := createTestGame(t, "g2")
+
+	// create a server and run it:
+	s := &testServer{Clients: []*testClient{c1, c2}}
+
+	// handle join group messages for each client:
+	s.HandleAllClients()
+
+	// set module to $07, dungeon to $00:
+	e1.WRAM[0x10] = 0x07
+	e2.WRAM[0x10] = 0x07
+	e1.WRAM[0x040C] = 0
+	e2.WRAM[0x040C] = 0
+	// run a single frame:
+	gameRunFrame(g1, e1)
+	s.HandleAllClients()
+	gameRunFrame(g2, e2)
+	s.HandleAllClients()
+
+	// inc current dungeon key counter:
+	e1.WRAM[0xF36F] = 1
+	gameRunFrame(g1, e1)
+	s.HandleAllClients()
+	gameRunFrame(g2, e2)
+	s.HandleAllClients()
+
+	_, _ = c1, c2
+	_, _ = e1, e2
 }

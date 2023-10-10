@@ -233,27 +233,32 @@ func (g *Game) run() {
 				break
 			}
 
-			// send an echo to the server to measure roundtrip time:
-			g.lastServerSentTime = time.Now()
-			g.send(&gameEchoMessage{g: g})
+			g.sendEcho()
 
-			// broadcast player name:
-			m := g.makeBroadcastMessage()
-			if m == nil {
-				break
-			}
-			m.WriteByte(0x0C)
-			var name [20]byte
-			n := copy(name[:], g.LocalPlayer().Name())
-			for ; n < 20; n++ {
-				name[n] = ' '
-			}
-			m.Write(name[:])
-			g.send(m)
+			g.sendPlayerName()
 
 			break
 		}
 	}
+}
+
+func (g *Game) sendEcho() {
+	// send an echo to the server to measure roundtrip time:
+	g.lastServerSentTime = time.Now()
+	g.send(&gameEchoMessage{g: g})
+}
+
+func (g *Game) sendPlayerName() {
+	// broadcast player name:
+	m := g.makeBroadcastMessage()
+	m.WriteByte(0x0C)
+	var name [20]byte
+	n := copy(name[:], g.LocalPlayer().Name())
+	for ; n < 20; n++ {
+		name[n] = ' '
+	}
+	m.Write(name[:])
+	g.send(m)
 }
 
 func (g *Game) isReadWRAM(rsp snes.Response) (start, end uint32, ok bool) {
