@@ -252,35 +252,35 @@ func (t *testQueue) IsTerminalError(err error) bool {
 	return false
 }
 
-func createTestGame(t *testing.T, playerName string) (g *Game, c *testClient, e *emulator.System) {
+func createTestGameSync(t *testing.T, playerName string) (gs gameSync) {
 	var err error
 	var rom *snes.ROM
 
 	// ROM title must start with "VT " to indicate randomizer
-	e, rom, err = CreateTestEmulator(t, "VT test")
+	gs.e, rom, err = CreateTestEmulator(t, "VT test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	g = CreateTestGame(rom, e)
-	g.local.NameF = playerName
-	c = &testClient{
+	gs.g = CreateTestGame(rom, gs.e)
+	gs.g.local.NameF = playerName
+	gs.c = &testClient{
 		Rd: make(chan []byte, 100),
 		Wr: make(chan []byte, 100),
 	}
-	g.ProvideClient(c)
-	g.ProvideQueue(&testQueue{E: e})
+	gs.g.ProvideClient(gs.c)
+	gs.g.ProvideQueue(&testQueue{E: gs.e})
 
 	// request our player index:
-	m := g.makeJoinMessage()
-	g.send(m)
-	g.sendPlayerName()
-	g.sendEcho()
+	m := gs.g.makeJoinMessage()
+	gs.g.send(m)
+	gs.g.sendPlayerName()
+	gs.g.sendEcho()
 
 	// initialize reads:
-	g.priorityReads[0] = nil
-	g.priorityReads[1] = g.enqueueMainRead(g.enqueueSRAMRead(nil))
-	g.priorityReads[2] = g.enqueueMainRead(g.enqueueWRAMReads(nil))
+	gs.g.priorityReads[0] = nil
+	gs.g.priorityReads[1] = gs.g.enqueueMainRead(gs.g.enqueueSRAMRead(nil))
+	gs.g.priorityReads[2] = gs.g.enqueueMainRead(gs.g.enqueueWRAMReads(nil))
 
 	return
 }
@@ -343,54 +343,107 @@ func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
 	}
 }
 
-func TestRun(t *testing.T) {
-	g1, c1, e1 := createTestGame(t, "g1")
-	g2, c2, e2 := createTestGame(t, "g2")
+type gameSync struct {
+	e *emulator.System
+	g *Game
+	c *testClient
+}
 
-	// create a server and run it:
-	s := &testServer{
-		Clients: []*testClient{c1, c2},
+type gameSyncTestUpdateFunc func(t *testing.T, gs [2]gameSync)
+
+type gameSyncTestFrame struct {
+	preFrame  gameSyncTestUpdateFunc
+	postFrame gameSyncTestUpdateFunc
+}
+
+type gameSyncTestCase struct {
+	t  *testing.T
+	gs [2]gameSync
+	s  *testServer
+	f  []gameSyncTestFrame
+}
+
+func newGameSyncTestCase(t *testing.T, f []gameSyncTestFrame) (tc *gameSyncTestCase) {
+	tc = &gameSyncTestCase{
+		t: t,
+		gs: [2]gameSync{
+			// create two independent clients and their respective emulators:
+			createTestGameSync(t, "g1"),
+			createTestGameSync(t, "g2"),
+		},
+		f: f,
+	}
+
+	// create a mock server to facilitate network comms between the clients:
+	tc.s = &testServer{
+		Clients: []*testClient{tc.gs[0].c, tc.gs[1].c},
 		Now:     time.Now(),
 	}
 
+	return
+}
+
+func (tc *gameSyncTestCase) runGameSyncTest() {
 	const duration = time.Millisecond * 17
 
 	// handle join group messages for each client:
-	s.HandleAllClients()
-	s.AdvanceTime(duration)
+	tc.s.HandleAllClients()
+	tc.s.AdvanceTime(duration)
 
-	// set module to $07, dungeon to $00:
-	e1.WRAM[0x10] = 0x07
-	e2.WRAM[0x10] = 0x07
-	e1.WRAM[0x040C] = 0
-	e2.WRAM[0x040C] = 0
-	// run a single frame:
-	gameRunFrame(t, g1, e1)
-	s.HandleAllClients()
-	gameRunFrame(t, g2, e2)
-	s.HandleAllClients()
-	s.AdvanceTime(duration)
+	// execute test frames:
+	for _, f := range tc.f {
+		// pre-frame setup and/or test assumption verification:
+		if f.preFrame != nil {
+			f.preFrame(tc.t, tc.gs)
+		}
 
-	// inc current dungeon key counter:
-	e1.WRAM[0xF36F] = 1
-	gameRunFrame(t, g1, e1)
-	s.HandleAllClients()
-	// receives updated key count; issues update to emu:
-	gameRunFrame(t, g2, e2)
-	s.HandleAllClients()
-	s.AdvanceTime(duration)
+		// run a single frame for each client:
+		for i := range tc.gs {
+			gameRunFrame(tc.t, tc.gs[i].g, tc.gs[i].e)
+			tc.s.HandleAllClients()
+		}
 
-	gameRunFrame(t, g1, e1)
-	s.HandleAllClients()
-	gameRunFrame(t, g2, e2)
-	s.HandleAllClients()
-	s.AdvanceTime(duration)
+		// post-frame test validation:
+		if f.postFrame != nil {
+			f.postFrame(tc.t, tc.gs)
+		}
 
-	//
-	gameRunFrame(t, g1, e1)
-	s.HandleAllClients()
-	gameRunFrame(t, g2, e2)
-	s.HandleAllClients()
-	s.AdvanceTime(duration)
+		// advance server time:
+		tc.s.AdvanceTime(duration)
+	}
+}
 
+func TestGameSync_SmallKeysIdeal(t *testing.T) {
+	newGameSyncTestCase(t, []gameSyncTestFrame{
+		{
+			preFrame: func(t *testing.T, gs [2]gameSync) {
+				// set both modules to $07, dungeons to $00:
+				gs[0].e.WRAM[0x10] = 0x07
+				gs[1].e.WRAM[0x10] = 0x07
+				gs[0].e.WRAM[0x040C] = 0
+				gs[1].e.WRAM[0x040C] = 0
+			},
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+
+			},
+		},
+		{
+			preFrame: func(t *testing.T, gs [2]gameSync) {
+				// inc current dungeon key counter:
+				gs[0].e.WRAM[0xF36F] = 1
+			},
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+				// verify g2 updated its emu:
+				t.Logf("%v\n", gs[1].e.WRAM[0xF36F])
+			},
+		},
+		{
+			preFrame: func(t *testing.T, gs [2]gameSync) {
+			},
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+				// verify g2 confirmed last update:
+				t.Logf("%v\n", gs[1].e.WRAM[0xF36F])
+			},
+		},
+	}).runGameSyncTest()
 }
