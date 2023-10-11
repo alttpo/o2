@@ -310,6 +310,7 @@ func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 		w, ok := p.WRAM[offs]
 		if !ok {
 			w = &SyncableWRAM{
+				Offset:    uint32(offs),
 				Name:      fmt.Sprintf("wram[$%04x]", offs),
 				Size:      2,
 				Timestamp: timestamp,

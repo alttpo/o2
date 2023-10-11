@@ -16,6 +16,7 @@ func (g *Game) initSmallKeysSync() {
 
 	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
 		local.WRAM[offs] = &SyncableWRAM{
+			Offset:    uint32(offs),
 			Name:      fmt.Sprintf("%s small keys", dungeonNames[offs-smallKeyFirst]),
 			Size:      1,
 			Timestamp: 0,
@@ -80,7 +81,7 @@ func (g *Game) readWRAM() {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
-			log.Printf("alttp: wram[$%04x] -> %04x @ %08x (%v)   ; %s\n", offs, w.Value, w.Timestamp, now.UTC().Format("15:04:05.999999999Z"), w.Name)
+			log.Printf("alttp: local: wram[$%04x] -> %04x @ ts=%08x (%v)   ; %s\n", offs, w.Value, w.Timestamp, now.UTC().Format("15:04:05.999999Z"), w.Name)
 		}
 	}
 }
@@ -127,7 +128,7 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		lw.IsWriting = true
 		lw.PendingTimestamp = ww.Timestamp
 		lw.ValueExpected = ww.Value
-		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name())
+		log.Printf("alttp: wram[$%04x] <- %02x @ ts=%08x from player '%s'\n", offs, ww.Value, ww.Timestamp, winner.Name())
 
 		dungeonNumber := offs - smallKeyFirst
 		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name())
@@ -135,12 +136,13 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		g.PushNotification(notification)
 
 		a.LDA_imm8_b(uint8(ww.Value))
-		a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber<<1, dungeonNames[dungeonNumber]))
 		a.LDY_abs(0x040C)
 		if offs < smallKeyFirst+2 {
+			a.Comment(fmt.Sprintf("check if current dungeon is %02x %s or %02x %s", 0, dungeonNames[0], 2, dungeonNames[1]))
 			a.CPY_imm8_b(0x04)
 			a.BCS(fmt.Sprintf("cmp%04x", offs))
 		} else {
+			a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber<<1, dungeonNames[dungeonNumber]))
 			a.CPY_imm8_b(uint8(dungeonNumber << 1))
 			a.BNE(fmt.Sprintf("cmp%04x", offs))
 		}

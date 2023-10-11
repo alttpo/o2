@@ -18,23 +18,27 @@ func (m Module) IsDungeon() bool {
 }
 
 type SyncableWRAM struct {
-	Name      string
-	Size      uint8
-	Timestamp uint32
+	Offset uint32
+	Name   string
+	Size   uint8
+
 	Value     uint16
-	IsWriting bool
+	Timestamp uint32
 
 	// for tracking post-update confirmation:
-	PendingTimestamp uint32
+	IsWriting        bool
 	ValueExpected    uint16
+	PendingTimestamp uint32
 }
 
 func (s *SyncableWRAM) ConfirmAsmExecuted(index uint32, value uint8) {
 	s.IsWriting = false
 	if value != 1 {
+		log.Printf("alttp: wram[%04x] %s update failed (check = %02x, expected 01)", s.Offset, s.Name, value)
 		return
 	}
 
+	log.Printf("alttp: wram[%04x] %s update successful from ts=%08x,val=%04x to ts=%08x,val=%04x", s.Offset, s.Name, s.Timestamp, s.Value, s.PendingTimestamp, s.ValueExpected)
 	s.Timestamp = s.PendingTimestamp
 	s.Value = s.ValueExpected
 }

@@ -63,6 +63,7 @@ func (g *Game) initSync() {
 	// WRAM offsets for small keys, crystal switches, etc:
 	g.initSmallKeysSync()
 	g.local.WRAM[0x0400] = &SyncableWRAM{
+		Offset:    0x0400,
 		Name:      "current dungeon supertile state",
 		Size:      2,
 		Timestamp: 0,
