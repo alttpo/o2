@@ -16,6 +16,7 @@ func (g *Game) initSmallKeysSync() {
 
 	for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
 		local.WRAM[offs] = &SyncableWRAM{
+			g:         g,
 			Offset:    uint32(offs),
 			Name:      fmt.Sprintf("%s small keys", dungeonNames[offs-smallKeyFirst]),
 			Size:      1,
@@ -128,12 +129,11 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		lw.IsWriting = true
 		lw.PendingTimestamp = ww.Timestamp
 		lw.ValueExpected = ww.Value
+		lw.UpdatedFromPlayer = winner
 		log.Printf("alttp: wram[$%04x] <- %02x @ ts=%08x from player '%s'\n", offs, ww.Value, ww.Timestamp, winner.Name())
 
 		dungeonNumber := offs - smallKeyFirst
-		notification := fmt.Sprintf("update %s to %d from %s", lw.Name, ww.Value, winner.Name())
-		a.Comment(notification + ":")
-		g.PushNotification(notification)
+		a.Comment(fmt.Sprintf("update %s to %d from %s:", lw.Name, ww.Value, winner.Name()))
 
 		a.LDA_imm8_b(uint8(ww.Value))
 		a.LDY_abs(0x040C)

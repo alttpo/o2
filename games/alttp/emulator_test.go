@@ -7,10 +7,9 @@ import (
 	"log"
 	"o2/snes"
 	"o2/util"
-	"testing"
 )
 
-func CreateTestEmulator(t *testing.T, romTitle string) (system *emulator.System, rom *snes.ROM, err error) {
+func CreateTestEmulator(romTitle string) (system *emulator.System, rom *snes.ROM, err error) {
 	// create the CPU-only SNES emulator:
 	system = &emulator.System{
 		Logger: &util.CommitLogger{Committer: func(p []byte) {

@@ -571,7 +571,7 @@ func TestAsm_VT_Items(t *testing.T) {
 
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	system, rom, err := CreateTestEmulator(t, "VT test")
+	system, rom, err := CreateTestEmulator("VT test")
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -639,7 +639,7 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	system, rom, err := CreateTestEmulator(t, "VT test")
+	system, rom, err := CreateTestEmulator("VT test")
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -702,7 +702,7 @@ func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
 
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	system, rom, err := CreateTestEmulator(t, "VT test")
+	system, rom, err := CreateTestEmulator("VT test")
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -722,7 +722,7 @@ func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
 func TestGame_VTGenericSyncables(t *testing.T) {
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	system, rom, err := CreateTestEmulator(t, "VT test")
+	system, rom, err := CreateTestEmulator("VT test")
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -899,7 +899,7 @@ func TestGame_VTGenericSyncables(t *testing.T) {
 func TestGame_VTListSyncables(t *testing.T) {
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
-	system, rom, err := CreateTestEmulator(t, "VT test")
+	system, rom, err := CreateTestEmulator("VT test")
 	if err != nil {
 		t.Fatal(err)
 		return

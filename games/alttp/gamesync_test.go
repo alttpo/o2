@@ -9,6 +9,7 @@ import (
 	"log"
 	"o2/client"
 	"o2/client/protocol03"
+	"o2/interfaces"
 	"o2/snes"
 	"reflect"
 	"testing"
@@ -252,14 +253,13 @@ func (t *testQueue) IsTerminalError(err error) bool {
 	return false
 }
 
-func createTestGameSync(t *testing.T, playerName string) (gs gameSync) {
-	var err error
+func createTestGameSync(playerName string) (gs gameSync, err error) {
 	var rom *snes.ROM
 
 	// ROM title must start with "VT " to indicate randomizer
-	gs.e, rom, err = CreateTestEmulator(t, "VT test")
+	gs.e, rom, err = CreateTestEmulator("VT test")
 	if err != nil {
-		t.Fatal(err)
+		return
 	}
 
 	gs.g = CreateTestGame(rom, gs.e)
@@ -285,9 +285,7 @@ func createTestGameSync(t *testing.T, playerName string) (gs gameSync) {
 	return
 }
 
-func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
-	log.Printf("%s ----------------------------------\n", g.LocalPlayer().Name())
-
+func gameHandleNet(g *Game) {
 	// process any incoming network messages:
 	for len(g.client.Read()) > 0 {
 		msg := <-g.client.Read()
@@ -295,6 +293,12 @@ func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
 			panic(err)
 		}
 	}
+}
+
+func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
+	log.Printf("%s ----------------------------------\n", g.LocalPlayer().Name())
+
+	gameHandleNet(g)
 
 	// do all WRAM + SRAM(shadow) reads:
 	q := make([]snes.Read, 0, 20)
@@ -347,6 +351,7 @@ type gameSync struct {
 	e *emulator.System
 	g *Game
 	c *testClient
+	n []string
 }
 
 type gameSyncTestUpdateFunc func(t *testing.T, gs [2]gameSync)
@@ -357,21 +362,27 @@ type gameSyncTestFrame struct {
 }
 
 type gameSyncTestCase struct {
-	t  *testing.T
 	gs [2]gameSync
 	s  *testServer
 	f  []gameSyncTestFrame
 }
 
-func newGameSyncTestCase(t *testing.T, f []gameSyncTestFrame) (tc *gameSyncTestCase) {
+func newGameSyncTestCase(f []gameSyncTestFrame) (tc *gameSyncTestCase, err error) {
+	// create two independent clients and their respective emulators:
+	var c1 gameSync
+	c1, err = createTestGameSync("g1")
+	if err != nil {
+		return
+	}
+	var c2 gameSync
+	c2, err = createTestGameSync("g2")
+	if err != nil {
+		return
+	}
+
 	tc = &gameSyncTestCase{
-		t: t,
-		gs: [2]gameSync{
-			// create two independent clients and their respective emulators:
-			createTestGameSync(t, "g1"),
-			createTestGameSync(t, "g2"),
-		},
-		f: f,
+		gs: [2]gameSync{c1, c2},
+		f:  f,
 	}
 
 	// create a mock server to facilitate network comms between the clients:
@@ -383,67 +394,59 @@ func newGameSyncTestCase(t *testing.T, f []gameSyncTestFrame) (tc *gameSyncTestC
 	return
 }
 
-func (tc *gameSyncTestCase) runGameSyncTest() {
+func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 	const duration = time.Millisecond * 17
 
-	// handle join group messages for each client:
+	// issue join group messages:
 	tc.s.HandleAllClients()
 	tc.s.AdvanceTime(duration)
+
+	// handle join group messages for each client now to avoid them showing up in notification subscriptions:
+	for _, gs := range tc.gs {
+		gameHandleNet(gs.g)
+	}
+
+	for i := range tc.gs {
+		i := i
+
+		// subscribe to front-end Notifications from the game:
+		tc.gs[i].n = make([]string, 0, 10)
+		observerHandle := tc.gs[i].g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+			notification := object.(string)
+			tc.gs[i].n = append(tc.gs[i].n, notification)
+			log.Printf("notification[%d]: '%s'\n", len(tc.gs[i].n)-1, notification)
+		}))
+
+		defer func() {
+			tc.gs[i].g.Notifications.Unsubscribe(observerHandle)
+		}()
+	}
 
 	// execute test frames:
 	for _, f := range tc.f {
 		// pre-frame setup and/or test assumption verification:
 		if f.preFrame != nil {
-			f.preFrame(tc.t, tc.gs)
+			f.preFrame(t, tc.gs)
+		}
+		if t.Failed() {
+			break
 		}
 
 		// run a single frame for each client:
 		for i := range tc.gs {
-			gameRunFrame(tc.t, tc.gs[i].g, tc.gs[i].e)
+			gameRunFrame(t, tc.gs[i].g, tc.gs[i].e)
 			tc.s.HandleAllClients()
 		}
 
 		// post-frame test validation:
 		if f.postFrame != nil {
-			f.postFrame(tc.t, tc.gs)
+			f.postFrame(t, tc.gs)
+		}
+		if t.Failed() {
+			break
 		}
 
 		// advance server time:
 		tc.s.AdvanceTime(duration)
 	}
-}
-
-func TestGameSync_SmallKeysIdeal(t *testing.T) {
-	newGameSyncTestCase(t, []gameSyncTestFrame{
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// set both modules to $07, dungeons to $00:
-				gs[0].e.WRAM[0x10] = 0x07
-				gs[1].e.WRAM[0x10] = 0x07
-				gs[0].e.WRAM[0x040C] = 0
-				gs[1].e.WRAM[0x040C] = 0
-			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-
-			},
-		},
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// inc current dungeon key counter:
-				gs[0].e.WRAM[0xF36F] = 1
-			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 updated its emu:
-				t.Logf("%v\n", gs[1].e.WRAM[0xF36F])
-			},
-		},
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 confirmed last update:
-				t.Logf("%v\n", gs[1].e.WRAM[0xF36F])
-			},
-		},
-	}).runGameSyncTest()
 }

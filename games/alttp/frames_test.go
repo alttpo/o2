@@ -164,7 +164,7 @@ func Test_Frames(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator(t, "ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
 	if err != nil {
 		t.Fatal(err)
 		return
