@@ -216,7 +216,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		w.Timestamp = 0
 		w.IsWriting = false
 		w.Value = 0
-		w.ValueUsed = 0
 		w.ValueExpected = 0
 	}
 
@@ -279,15 +278,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			})
 		}
 		g.readMainComplete(rsps)
-
-		// verify system.WRAM was read into g.wram:
-		for j := range frame.preGenLocal {
-			set := &frame.preGenLocal[j]
-
-			if system.WRAM[set.offset] != g.wram[set.offset] {
-				t.Errorf("readMainComplete failed to read expected value")
-			}
-		}
 
 		// generate ASM code:
 		var code [0x200]byte

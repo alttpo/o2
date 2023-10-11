@@ -18,13 +18,25 @@ func (m Module) IsDungeon() bool {
 }
 
 type SyncableWRAM struct {
-	Name          string
-	Size          uint8
-	Timestamp     uint32
-	Value         uint16
-	ValueUsed     uint16
-	IsWriting     bool
-	ValueExpected uint16
+	Name      string
+	Size      uint8
+	Timestamp uint32
+	Value     uint16
+	IsWriting bool
+
+	// for tracking post-update confirmation:
+	PendingTimestamp uint32
+	ValueExpected    uint16
+}
+
+func (s *SyncableWRAM) ConfirmAsmExecuted(index uint32, value uint8) {
+	s.IsWriting = false
+	if value != 1 {
+		return
+	}
+
+	s.Timestamp = s.PendingTimestamp
+	s.Value = s.ValueExpected
 }
 
 type SRAMShadow [0x500]byte
@@ -51,11 +63,11 @@ func (r WRAMReadable) BusAddress(offs uint32) uint32 {
 }
 
 func (r WRAMReadable) ReadU8(offs uint32) uint8 {
-	return uint8(r[uint16(offs)].ValueUsed)
+	return uint8(r[uint16(offs)].Value)
 }
 
 func (r WRAMReadable) ReadU16(offs uint32) uint16 {
-	return r[uint16(offs)].ValueUsed
+	return r[uint16(offs)].Value
 }
 
 type Player struct {

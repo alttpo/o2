@@ -20,7 +20,6 @@ func (g *Game) initSmallKeysSync() {
 			Size:      1,
 			Timestamp: 0,
 			Value:     uint16(g.wram[offs]),
-			ValueUsed: uint16(g.wram[offs]),
 		}
 	}
 }
@@ -42,8 +41,33 @@ func (g *Game) readWRAM() {
 	now := g.ServerSNESTimestamp()
 	nowTs := timestampFromTime(now)
 
+	// copy current dungeon small key counter to specific dungeon:
+	if local.IsInDungeon() {
+		dungeonNumber := local.Dungeon
+		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
+			currentKeyCount := g.wram[0xF36F]
+
+			dungeonNumber >>= 1
+			dungeonOffs := smallKeyFirst + dungeonNumber
+
+			// copy current dungeon small key counter into the dungeon's small key SRAM shadow location:
+			g.wram[dungeonOffs] = currentKeyCount
+
+			// sync Sewers and HC dungeons:
+			if dungeonOffs == smallKeyFirst {
+				g.wram[smallKeyFirst+1] = currentKeyCount
+			} else if dungeonOffs == smallKeyFirst+1 {
+				g.wram[smallKeyFirst] = currentKeyCount
+			}
+		}
+	}
+
 	// read in all WRAM syncables:
 	for offs, w := range local.WRAM {
+		if w.IsWriting {
+			continue
+		}
+
 		var v uint16
 		if w.Size == 2 {
 			v = g.wramU16(uint32(offs))
@@ -51,40 +75,12 @@ func (g *Game) readWRAM() {
 			v = uint16(g.wramU8(uint32(offs)))
 		}
 
-		// if awaiting a write, don't update our value until it matches expected:
-		if w.IsWriting {
-			if w.ValueExpected == v {
-				w.IsWriting = false
-				w.Value = v
-			}
-			continue
-		}
-
 		if v != w.Value {
 			if g.notFirstWRAMRead {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
-			w.ValueUsed = v
-			log.Printf("alttp: wram[$%04x] -> %08x (%v), %04x   ; %s\n", offs, w.Timestamp, now.Format(time.RFC3339Nano), w.Value, w.Name)
-		}
-	}
-
-	// Small Keys:
-	if local.IsInDungeon() {
-		dungeonNumber := local.Dungeon
-		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
-			dungeonNumber >>= 1
-			dungeonOffs := smallKeyFirst + dungeonNumber
-			currentKeyCount := uint16(g.wram[0xF36F])
-			w := local.WRAM[dungeonOffs]
-			if currentKeyCount != w.ValueUsed {
-				if g.notFirstWRAMRead {
-					w.Timestamp = nowTs
-				}
-				w.ValueUsed = currentKeyCount
-				log.Printf("alttp: wram[$%04x] -> %08x (%v), %04x   ; current key counter\n", dungeonOffs, w.Timestamp, now.Format(time.RFC3339Nano), w.ValueUsed)
-			}
+			log.Printf("alttp: wram[$%04x] -> %04x @ %08x (%v)   ; %s\n", offs, w.Value, w.Timestamp, now.UTC().Format("15:04:05.999999999Z"), w.Name)
 		}
 	}
 }
@@ -123,9 +119,13 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 
 		ww := winner.WRAM[offs]
 
+		// record ourselves as requiring ASM exec confirmation:
+		index := uint32(len(g.updateGenerators))
+		g.updateGenerators = append(g.updateGenerators, lw)
+
 		// Force our local timestamp equal to the remote winner to prevent the value bouncing back:
 		lw.IsWriting = true
-		lw.Timestamp = ww.Timestamp
+		lw.PendingTimestamp = ww.Timestamp
 		lw.ValueExpected = ww.Value
 		log.Printf("alttp: keys[$%04x] <- %08x, %02x <- player '%s'\n", offs, ww.Timestamp, ww.Value, winner.Name())
 
@@ -137,10 +137,16 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		a.LDA_imm8_b(uint8(ww.Value))
 		a.Comment(fmt.Sprintf("check if current dungeon is %02x %s", dungeonNumber<<1, dungeonNames[dungeonNumber]))
 		a.LDY_abs(0x040C)
-		a.CPY_imm8_b(uint8(dungeonNumber << 1))
-		a.BNE(fmt.Sprintf("cmp%04x", offs))
+		if offs < smallKeyFirst+2 {
+			a.CPY_imm8_b(0x04)
+			a.BCS(fmt.Sprintf("cmp%04x", offs))
+		} else {
+			a.CPY_imm8_b(uint8(dungeonNumber << 1))
+			a.BNE(fmt.Sprintf("cmp%04x", offs))
+		}
 
 		a.STA_long(0x7EF36F)
+		a.BRA(fmt.Sprintf("end%04x", offs))
 
 		a.Label(fmt.Sprintf("cmp%04x", offs))
 		a.STA_long(0x7E0000 + uint32(offs))
@@ -148,16 +154,16 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		a.Comment("sync sewer keys with HC keys:")
 		if offs == smallKeyFirst {
 			// got new sewer key, update HC:
-			a.CPY_imm8_b(0x00)
-			a.BNE(fmt.Sprintf("end%04x", offs))
-			a.STA_long(0x7E0000 + uint32(smallKeyFirst) + 1)
+			a.STA_long(0x7E0000 + uint32(smallKeyFirst+1))
 		} else if offs == smallKeyFirst+1 {
 			// got new HC key, update sewer:
-			a.CPY_imm8_b(0x01)
-			a.BNE(fmt.Sprintf("end%04x", offs))
 			a.STA_long(0x7E0000 + uint32(smallKeyFirst))
 		}
 		a.Label(fmt.Sprintf("end%04x", offs))
+
+		// write confirmation:
+		a.LDA_imm8_b(0x01)
+		a.STA_long(a.GetBase() + 0x02 + index)
 
 		updated = true
 	}

@@ -314,13 +314,11 @@ func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 				Size:      2,
 				Timestamp: timestamp,
 				Value:     value,
-				ValueUsed: value,
 			}
 			p.WRAM[offs] = w
 		} else {
 			w.Timestamp = timestamp
 			w.Value = value
-			w.ValueUsed = value
 		}
 	}
 
@@ -581,7 +579,7 @@ func (g *Game) SerializeWRAM(p *Player, w io.Writer, start uint16, count uint8) 
 		var value uint16 = 0
 		if ok {
 			timestamp = wv.Timestamp
-			value = wv.ValueUsed
+			value = wv.Value
 		}
 
 		if err = binary.Write(w, binary.LittleEndian, &timestamp); err != nil {

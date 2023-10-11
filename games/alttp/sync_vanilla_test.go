@@ -848,13 +848,13 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 	}
 }
 
-func dungeonSmallKeyTest(
+func sameDungeonSmallKeyTest(
 	variant moduleVariant,
 	wramOffs uint32,
+	dungeonNumber uint32,
 	rightMeow time.Time,
 	initialValue, preAsmValue, remoteValue, expectedValue uint8,
 ) testCase {
-	dungeonNumber := wramOffs - uint32(smallKeyFirst)
 	test := testCase{
 		name:      fmt.Sprintf("%02x,%02x dungeon=%02x %04x %d->%d", variant.module, variant.submodule, dungeonNumber, wramOffs, initialValue, remoteValue),
 		module:    variant.module,
@@ -862,9 +862,8 @@ func dungeonSmallKeyTest(
 		frames: []frame{
 			{
 				preGenLocal: []wramSetValue{
-					{wramOffs, initialValue},            // small key counter for specific dungeon
-					{0xf36f, initialValue},              // current dungeon key counter
 					{0x040c, uint8(dungeonNumber << 1)}, // current dungeon
+					{0xf36f, initialValue},              // current dungeon key counter
 				},
 				preGenLocalUpdate: func(local *Player) {
 					lw := local.WRAM[uint16(wramOffs)]
@@ -879,17 +878,69 @@ func dungeonSmallKeyTest(
 						Size:      1,
 						Timestamp: timestampFromTime(rightMeow) + 2,
 						Value:     uint16(remoteValue),
-						ValueUsed: uint16(remoteValue),
+					}
+				},
+				wantAsm: true,
+				preAsmLocal: []wramSetValue{
+					{0xf36f, preAsmValue},
+				},
+				postAsmLocal: []wramTestValue{
+					{0xf36f, expectedValue},
+				},
+				wantNotifications: []string{
+					fmt.Sprintf("update %s small keys to %d from remote", dungeonNames[uint16(wramOffs)-smallKeyFirst], remoteValue),
+				},
+			},
+		},
+	}
+
+	if !variant.allowed {
+		test.frames[0].wantAsm = false
+		test.frames[0].wantNotifications = nil
+		test.frames[0].postAsmLocal[0].value = preAsmValue
+	}
+
+	return test
+}
+
+func diffDungeonSmallKeyTest(
+	variant moduleVariant,
+	wramOffs uint32,
+	dungeonNumber uint32,
+	rightMeow time.Time,
+	initialValue, preAsmValue, remoteValue, expectedValue uint8,
+) testCase {
+	test := testCase{
+		name:      fmt.Sprintf("%02x,%02x dungeon=%02x %04x %d->%d", variant.module, variant.submodule, dungeonNumber, wramOffs, initialValue, remoteValue),
+		module:    variant.module,
+		subModule: variant.submodule,
+		frames: []frame{
+			{
+				preGenLocal: []wramSetValue{
+					{0x040c, uint8(dungeonNumber << 1)}, // current dungeon
+					{wramOffs, initialValue},            // dungeon key counter
+				},
+				preGenLocalUpdate: func(local *Player) {
+					lw := local.WRAM[uint16(wramOffs)]
+					lw.Timestamp = timestampFromTime(rightMeow) + 1
+				},
+				preGenRemoteUpdate: func(remote *Player) {
+					if remote.WRAM == nil {
+						remote.WRAM = make(map[uint16]*SyncableWRAM)
+					}
+					remote.WRAM[uint16(wramOffs)] = &SyncableWRAM{
+						Name:      fmt.Sprintf("wram[$%04x]", wramOffs),
+						Size:      1,
+						Timestamp: timestampFromTime(rightMeow) + 2,
+						Value:     uint16(remoteValue),
 					}
 				},
 				wantAsm: true,
 				preAsmLocal: []wramSetValue{
 					{wramOffs, preAsmValue},
-					{0xf36f, preAsmValue},
 				},
 				postAsmLocal: []wramTestValue{
 					{wramOffs, expectedValue},
-					{0xf36f, expectedValue},
 				},
 				wantNotifications: []string{
 					fmt.Sprintf("update %s small keys to %d from remote", dungeonNames[uint16(wramOffs)-smallKeyFirst], remoteValue),
@@ -901,17 +952,16 @@ func dungeonSmallKeyTest(
 	if variant.allowed {
 		// verify HC<->sewer key sync:
 		if wramOffs == uint32(smallKeyFirst) {
-			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst + 1), expectedValue})
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst + 1), preAsmValue})
 			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst + 1), expectedValue})
 		} else if wramOffs == uint32(smallKeyFirst+1) {
-			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst), expectedValue})
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst), preAsmValue})
 			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst), expectedValue})
 		}
 	} else {
 		test.frames[0].wantAsm = false
 		test.frames[0].wantNotifications = nil
 		test.frames[0].postAsmLocal[0].value = preAsmValue
-		test.frames[0].postAsmLocal[1].value = preAsmValue
 	}
 
 	return test
@@ -947,7 +997,6 @@ func caveSmallKeyTest(
 						Size:      1,
 						Timestamp: timestampFromTime(rightMeow) + 2,
 						Value:     uint16(remoteValue),
-						ValueUsed: uint16(remoteValue),
 					}
 				},
 				wantAsm: true,
@@ -991,19 +1040,43 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 	for wramOffs := uint32(smallKeyFirst); wramOffs <= uint32(smallKeyLast); wramOffs++ {
 		for _, variant := range moduleVariants {
 			// normal increment from remote:
-			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 0, 0, 1, 1))
-			// normal decrement from remote:
-			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 2, 2, 1, 1))
-			// both local and remote decremented:
-			tests = append(tests, dungeonSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 0))
-		}
-		for _, variant := range moduleVariants {
-			// normal increment from remote:
 			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 0, 0, 1, 1))
 			// normal decrement from remote:
 			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 2, 1, 1))
 			// both local and remote decremented:
 			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 0))
+		}
+
+		for dungeonNumber := uint32(0); dungeonNumber <= uint32(smallKeyLast-smallKeyFirst); dungeonNumber++ {
+			var doDiffTest bool
+			keyDungeon := wramOffs - uint32(smallKeyFirst)
+			if dungeonNumber == keyDungeon {
+				doDiffTest = false
+			} else if keyDungeon <= 1 && dungeonNumber <= 1 {
+				doDiffTest = false
+			} else {
+				doDiffTest = true
+			}
+
+			if doDiffTest {
+				for _, variant := range moduleVariants {
+					// normal increment from remote:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 0, 0, 1, 1))
+					// normal decrement from remote:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 2, 1, 1))
+					// both local and remote decremented:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 1, 0, 0))
+				}
+			} else {
+				for _, variant := range moduleVariants {
+					// normal increment from remote:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 0, 0, 1, 1))
+					// normal decrement from remote:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 2, 1, 1))
+					// both local and remote decremented:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 1, 0, 0))
+				}
+			}
 		}
 	}
 
