@@ -266,7 +266,7 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 
 func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
-		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
 				preFrame: func(t *testing.T, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
@@ -298,13 +298,21 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				postFrame: func(t *testing.T, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 2 {
-						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+						t.Errorf("expected %d notifications actual %d", 2, len(gs[1].n))
 					}
 					if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
 					if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no redundant notifications:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
 					}
 				},
 			},
@@ -317,7 +325,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 	}
 
 	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
-		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
 				preFrame: func(t *testing.T, gs [2]gameSync) {
 					// set both modules to $07:
@@ -347,10 +355,18 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				postFrame: func(t *testing.T, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 1 {
-						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+						t.Errorf("expected %d notifications actual %d", 1, len(gs[1].n))
 					}
 					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[dungeonIndex]), gs[1].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no redundant notifications:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
 					}
 				},
 			},
@@ -365,7 +381,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 
 func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
-		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
 				preFrame: func(t *testing.T, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
@@ -427,6 +443,14 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 					}
 				},
 			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no redundant notifications:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+				},
+			},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -436,7 +460,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 	}
 
 	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
-		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
 				preFrame: func(t *testing.T, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
@@ -484,10 +508,19 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				postFrame: func(t *testing.T, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 1 {
-						t.Errorf("expected 1 notifications actual %d", len(gs[1].n))
+						t.Errorf("expected %d notifications actual %d", 1, len(gs[1].n))
+						return
 					}
 					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[dungeonIndex]), gs[1].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no redundant notifications:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
 					}
 				},
 			},
@@ -501,7 +534,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 }
 
 func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
-	tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+	tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 		{
 			preFrame: func(t *testing.T, gs [2]gameSync) {
 				// set both modules to $07, dungeons to $00:
@@ -548,8 +581,8 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 		{
 			postFrame: func(t *testing.T, gs [2]gameSync) {
 				// verify g2 confirmed last update:
-				if len(gs[1].n) != 2 {
-					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+				if len(gs[1].n) != 0 {
+					t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
 					return
 				}
 			},
@@ -557,8 +590,8 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 		{
 			postFrame: func(t *testing.T, gs [2]gameSync) {
 				// verify g2 confirmed last update:
-				if len(gs[1].n) != 2 {
-					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+				if len(gs[1].n) != 0 {
+					t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
 					return
 				}
 			},

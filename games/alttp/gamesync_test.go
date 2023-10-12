@@ -253,11 +253,11 @@ func (t *testQueue) IsTerminalError(err error) bool {
 	return false
 }
 
-func createTestGameSync(playerName string) (gs gameSync, err error) {
+func createTestGameSync(romTitle string, playerName string) (gs gameSync, err error) {
 	var rom *snes.ROM
 
 	// ROM title must start with "VT " to indicate randomizer
-	gs.e, rom, err = CreateTestEmulator("VT test")
+	gs.e, rom, err = CreateTestEmulator(romTitle)
 	if err != nil {
 		return
 	}
@@ -367,15 +367,15 @@ type gameSyncTestCase struct {
 	f  []gameSyncTestFrame
 }
 
-func newGameSyncTestCase(f []gameSyncTestFrame) (tc *gameSyncTestCase, err error) {
+func newGameSyncTestCase(romTitle string, f []gameSyncTestFrame) (tc *gameSyncTestCase, err error) {
 	// create two independent clients and their respective emulators:
 	var c1 gameSync
-	c1, err = createTestGameSync("g1")
+	c1, err = createTestGameSync(romTitle, "g1")
 	if err != nil {
 		return
 	}
 	var c2 gameSync
-	c2, err = createTestGameSync("g2")
+	c2, err = createTestGameSync(romTitle, "g2")
 	if err != nil {
 		return
 	}
@@ -425,6 +425,11 @@ func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 
 	// execute test frames:
 	for _, f := range tc.f {
+		// clear notifications:
+		for i := range tc.gs {
+			tc.gs[i].n = tc.gs[i].n[:0]
+		}
+
 		// pre-frame setup and/or test assumption verification:
 		if f.preFrame != nil {
 			f.preFrame(t, tc.gs)
