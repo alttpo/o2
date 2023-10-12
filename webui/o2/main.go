@@ -57,7 +57,7 @@ func orElse(a, b string) string {
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.LUTC)
 
-	ts := time.Now().Format("2006-01-02T15:04:05.000Z")
+	ts := time.Now().In(time.UTC).Format("2006-01-02T15:04:05.000Z")
 	ts = strings.ReplaceAll(ts, ":", "-")
 	ts = strings.ReplaceAll(ts, ".", "-")
 	logPath = filepath.Join(os.TempDir(), fmt.Sprintf("o2-%s.log", ts))
