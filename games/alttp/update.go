@@ -233,76 +233,77 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	} else {
 		clear(g.generated)
 	}
-	if g.updateGenerators == nil {
-		g.updateGenerators = make([]games.AsmExecConfirmer, 0, 20)
-	} else {
-		g.updateGenerators = g.updateGenerators[:0]
-	}
+	g.updateGenerators = nil
 
-	tmp := [0x400]byte{}
+	genIndex := uint32(0)
+	asmConfirmers := make([]games.AsmExecConfirmer, 0, 20)
 
-	// group up all 16-bit updates first, then reset back to 8-bit and do those updates:
-
-	// generate update ASM code for any 8-bit values:
-	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
-		var s games.SyncStrategy
-		var ok bool
-
-		if s, ok = g.syncable[offs]; !ok {
-			continue
-		}
-		if !s.IsEnabled() {
-			continue
-		}
-		if s.Size() != 1 {
-			continue
-		}
-
-		// clone the assembler to a temporary:
+	{
+		// 8-bit updates first:
+		tmp := [0x400]byte{}
 		newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
-		// generate the update asm routine in the temporary assembler:
-		if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
-			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Len()+a.Len()+epilogSize <= 255 {
-				g.updateGenerators = append(g.updateGenerators, s)
-				g.generated[offs] = struct{}{}
-				a.Append(ta)
-				updated = true
-			}
-		}
-	}
 
-	if g.SyncSmallKeys {
-		// clone the assembler to a temporary:
-		ta := a.Clone(tmp[:])
-		// generate the update asm routine in the temporary assembler:
-		u := g.doSyncSmallKeys(ta)
-		if u {
-			// don't emit the routine if it pushes us over the code size limit:
-			if ta.Len()+a.Len()+epilogSize <= 255 {
-				//g.updateGenerators = append(g.updateGenerators, item)
-				a.Append(ta)
-				updated = true
-			}
-		}
-	}
+		// generate update ASM code for any 8-bit values:
+		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
+			var s games.SyncStrategy
+			var ok bool
 
-	if g.SyncOverworld {
-		for i := range g.overworld {
-			s := &g.overworld[i]
+			if s, ok = g.syncable[offs]; !ok {
+				continue
+			}
 			if !s.IsEnabled() {
 				continue
 			}
+			if s.Size() != 1 {
+				continue
+			}
 
-			// clone the assembler to a temporary:
-			newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
-			// generate the update asm routine in the temporary assembler:
-			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
+			if u, ta := s.GenerateUpdate(newEmitter, genIndex); u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= 255 {
-					g.updateGenerators = append(g.updateGenerators, s)
+					genIndex++
+					asmConfirmers = append(asmConfirmers, s)
+					g.generated[offs] = struct{}{}
 					a.Append(ta)
 					updated = true
+				}
+			}
+		}
+
+		if g.SyncSmallKeys {
+			for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
+				if u, s, ta := g.GenerateSmallKeyUpdate(offs, newEmitter, genIndex); u {
+					// don't emit the routine if it pushes us over the code size limit:
+					if ta.Len()+a.Len()+epilogSize <= 255 {
+						genIndex++
+						asmConfirmers = append(asmConfirmers, s)
+
+						a.Append(ta)
+						updated = true
+					}
+				}
+			}
+		}
+
+		if g.SyncOverworld {
+			newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
+
+			for i := range g.overworld {
+				s := &g.overworld[i]
+				if !s.IsEnabled() {
+					continue
+				}
+
+				// generate the update asm routine in the temporary assembler:
+				if u, ta := s.GenerateUpdate(newEmitter, genIndex); u {
+					// don't emit the routine if it pushes us over the code size limit:
+					if ta.Len()+a.Len()+epilogSize <= 255 {
+						genIndex++
+						asmConfirmers = append(asmConfirmers, s)
+
+						a.Append(ta)
+						updated = true
+					}
 				}
 			}
 		}
@@ -310,13 +311,19 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 	{
 		updated16 := false
+		gen16Index := genIndex
+		asm16Confirmers := make([]games.AsmExecConfirmer, 0, 20)
+
 		// clone to a temporary assembler for 16-bit mode:
+		tmp := [0x400]byte{}
 		a16 := a.Clone(tmp[:])
+
 		// switch to 16-bit mode:
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
 
 		tmp2 := [0x400]byte{}
+		newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 
 		// sync u16 data:
 		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
@@ -333,13 +340,13 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				continue
 			}
 
-			// clone the assembler to a temporary:
-			newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 			// generate the update asm routine in the temporary assembler:
-			if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
+			if u, ta := s.GenerateUpdate(newEmitter, gen16Index); u {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
-					g.updateGenerators = append(g.updateGenerators, s)
+					gen16Index++
+					asm16Confirmers = append(asm16Confirmers, s)
+
 					a16.Append(ta)
 					updated16 = true
 				}
@@ -354,13 +361,13 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					continue
 				}
 
-				// clone the assembler to a temporary:
-				newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 				// generate the update asm routine in the temporary assembler:
-				if u, ta := s.GenerateUpdate(newEmitter, uint32(len(g.updateGenerators))); u {
+				if u, ta := s.GenerateUpdate(newEmitter, gen16Index); u {
 					// don't emit the routine if it pushes us over the code size limit:
 					if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
-						g.updateGenerators = append(g.updateGenerators, s)
+						gen16Index++
+						asm16Confirmers = append(asm16Confirmers, s)
+
 						a16.Append(ta)
 						updated16 = true
 					}
@@ -447,11 +454,16 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			//a16.SEP(0x30)
 			if a.Len()+a16.Len()+epilogSize <= 255 {
 				// commit the changes to the parent assembler:
+				asmConfirmers = append(asmConfirmers, asm16Confirmers...)
+				genIndex = gen16Index
+
 				a.Append(a16)
 				updated = true
 			}
 		}
 	}
+
+	g.updateGenerators = asmConfirmers
 
 	return updated
 }

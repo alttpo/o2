@@ -417,6 +417,7 @@ func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 			log.Printf("notification[%d]: '%s'\n", len(tc.gs[i].n)-1, notification)
 		}))
 
+		//goland:noinspection GoDeferInLoop
 		defer func() {
 			tc.gs[i].g.Notifications.Unsubscribe(observerHandle)
 		}()

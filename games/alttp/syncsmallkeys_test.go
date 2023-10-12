@@ -1,111 +1,503 @@
 package alttp
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
-func TestGameSync_SmallKeys_Ideal(t *testing.T) {
-	tc, err := newGameSyncTestCase([]gameSyncTestFrame{
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// set both modules to $07, dungeons to $00:
-				gs[0].e.WRAM[0x10] = 0x07
-				gs[1].e.WRAM[0x10] = 0x07
-				gs[0].e.WRAM[0x040C] = 0
-				gs[1].e.WRAM[0x040C] = 0
+func sameDungeonSmallKeyTest(
+	variant moduleVariant,
+	wramOffs uint32,
+	dungeonNumber uint32,
+	rightMeow time.Time,
+	initialValue, preAsmValue, remoteValue, expectedValue uint8,
+) testCase {
+	test := testCase{
+		name:      fmt.Sprintf("%02x,%02x dungeon=%02x %04x %d->%d", variant.module, variant.submodule, dungeonNumber, wramOffs, initialValue, remoteValue),
+		module:    variant.module,
+		subModule: variant.submodule,
+		frames: []frame{
+			{
+				preGenLocal: []wramSetValue{
+					{0x040c, uint8(dungeonNumber << 1)}, // current dungeon
+					{0xf36f, initialValue},              // current dungeon key counter
+					{wramOffs, initialValue},            // dungeon array key counter
+				},
+				preGenLocalUpdate: func(local *Player) {
+					lw := local.WRAM[uint16(wramOffs)]
+					lw.Timestamp = timestampFromTime(rightMeow) + 1
+				},
+				preGenRemoteUpdate: func(remote *Player) {
+					if remote.WRAM == nil {
+						remote.WRAM = make(map[uint16]*SyncableWRAM)
+					}
+					remote.WRAM[uint16(wramOffs)] = &SyncableWRAM{
+						Name:      fmt.Sprintf("wram[$%04x]", wramOffs),
+						Size:      1,
+						Timestamp: timestampFromTime(rightMeow) + 2,
+						Value:     uint16(remoteValue),
+					}
+				},
+				wantAsm: true,
+				preAsmLocal: []wramSetValue{
+					{0xf36f, preAsmValue},
+					{wramOffs, preAsmValue},
+				},
+				postAsmLocal: []wramTestValue{
+					{0xf36f, expectedValue},
+					{wramOffs, expectedValue},
+				},
+				wantNotifications: []string{
+					fmt.Sprintf("update %s small keys to %d from remote", dungeonNames[uint16(wramOffs)-smallKeyFirst], remoteValue),
+				},
 			},
 		},
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// inc current dungeon key counter:
-				gs[0].e.WRAM[0xF36F] = 1
-			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 updated its current small key counter:
-				if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
-					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
-				}
-			},
-		},
-		{
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 confirmed last update:
-				if len(gs[1].n) != 2 {
-					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
-				}
-				if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
-					t.Errorf("expected notification %q actual %q", expected, actual)
-				}
-				if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
-					t.Errorf("expected notification %q actual %q", expected, actual)
-				}
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 
-	tc.runGameSyncTest(t)
+	if !variant.allowed {
+		test.frames[0].wantAsm = false
+		test.frames[0].wantNotifications = nil
+		test.frames[0].postAsmLocal[0].value = preAsmValue
+		test.frames[0].postAsmLocal[1].value = preAsmValue
+	}
+
+	return test
+}
+
+func diffDungeonSmallKeyTest(
+	variant moduleVariant,
+	wramOffs uint32,
+	dungeonNumber uint32,
+	rightMeow time.Time,
+	initialValue, preAsmValue, remoteValue, expectedValue uint8,
+) testCase {
+	test := testCase{
+		name:      fmt.Sprintf("%02x,%02x dungeon=%02x %04x %d->%d", variant.module, variant.submodule, dungeonNumber, wramOffs, initialValue, remoteValue),
+		module:    variant.module,
+		subModule: variant.submodule,
+		frames: []frame{
+			{
+				preGenLocal: []wramSetValue{
+					{0x040c, uint8(dungeonNumber << 1)}, // current dungeon
+					{wramOffs, initialValue},            // dungeon key counter
+					{0xf36f, 7},                         // current unrelated dungeon key counter
+				},
+				preGenLocalUpdate: func(local *Player) {
+					lw := local.WRAM[uint16(wramOffs)]
+					lw.Timestamp = timestampFromTime(rightMeow) + 1
+				},
+				preGenRemoteUpdate: func(remote *Player) {
+					if remote.WRAM == nil {
+						remote.WRAM = make(map[uint16]*SyncableWRAM)
+					}
+					remote.WRAM[uint16(wramOffs)] = &SyncableWRAM{
+						Name:      fmt.Sprintf("wram[$%04x]", wramOffs),
+						Size:      1,
+						Timestamp: timestampFromTime(rightMeow) + 2,
+						Value:     uint16(remoteValue),
+					}
+				},
+				wantAsm: true,
+				preAsmLocal: []wramSetValue{
+					{wramOffs, preAsmValue},
+				},
+				postAsmLocal: []wramTestValue{
+					{wramOffs, expectedValue},
+					{0xf36f, 7}, // must remain unchanged
+				},
+				wantNotifications: []string{
+					fmt.Sprintf("update %s small keys to %d from remote", dungeonNames[uint16(wramOffs)-smallKeyFirst], remoteValue),
+				},
+			},
+		},
+	}
+
+	if variant.allowed {
+		// verify HC<->sewer key sync:
+		if wramOffs == uint32(smallKeyFirst) {
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst + 1), preAsmValue})
+			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst + 1), expectedValue})
+		} else if wramOffs == uint32(smallKeyFirst+1) {
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst), preAsmValue})
+			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst), expectedValue})
+		}
+	} else {
+		test.frames[0].wantAsm = false
+		test.frames[0].wantNotifications = nil
+		test.frames[0].postAsmLocal[0].value = preAsmValue
+	}
+
+	return test
+}
+
+func caveSmallKeyTest(
+	variant moduleVariant,
+	wramOffs uint32,
+	rightMeow time.Time,
+	initialValue, preAsmValue, remoteValue, expectedValue uint8,
+) testCase {
+	test := testCase{
+		name:      fmt.Sprintf("%02x,%02x dungeon=%02x %04x %d->%d", variant.module, variant.submodule, 0xFF, wramOffs, initialValue, remoteValue),
+		module:    variant.module,
+		subModule: variant.submodule,
+		frames: []frame{
+			{
+				preGenLocal: []wramSetValue{
+					{wramOffs, initialValue}, // small key counter for specific dungeon
+					{0xf36f, 0xFF},           // current dungeon key counter
+					{0x040c, 0xFF},           // current dungeon is cave
+				},
+				preGenLocalUpdate: func(local *Player) {
+					lw := local.WRAM[uint16(wramOffs)]
+					lw.Timestamp = timestampFromTime(rightMeow) + 1
+				},
+				preGenRemoteUpdate: func(remote *Player) {
+					if remote.WRAM == nil {
+						remote.WRAM = make(map[uint16]*SyncableWRAM)
+					}
+					remote.WRAM[uint16(wramOffs)] = &SyncableWRAM{
+						Name:      fmt.Sprintf("wram[$%04x]", wramOffs),
+						Size:      1,
+						Timestamp: timestampFromTime(rightMeow) + 2,
+						Value:     uint16(remoteValue),
+					}
+				},
+				wantAsm: true,
+				preAsmLocal: []wramSetValue{
+					{wramOffs, preAsmValue},
+				},
+				postAsmLocal: []wramTestValue{
+					{wramOffs, expectedValue},
+					{0xf36f, 0xFF},
+				},
+				wantNotifications: []string{
+					fmt.Sprintf("update %s small keys to %d from remote", dungeonNames[uint16(wramOffs)-smallKeyFirst], remoteValue),
+				},
+			},
+		},
+	}
+
+	if variant.allowed {
+		// verify HC<->sewer key sync:
+		if wramOffs == uint32(smallKeyFirst) {
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst + 1), expectedValue})
+			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst + 1), expectedValue})
+		} else if wramOffs == uint32(smallKeyFirst+1) {
+			test.frames[0].preAsmLocal = append(test.frames[0].preAsmLocal, wramSetValue{uint32(smallKeyFirst), expectedValue})
+			test.frames[0].postAsmLocal = append(test.frames[0].postAsmLocal, wramTestValue{uint32(smallKeyFirst), expectedValue})
+		}
+	} else {
+		test.frames[0].wantAsm = false
+		test.frames[0].wantNotifications = nil
+		test.frames[0].postAsmLocal[0].value = preAsmValue
+	}
+
+	return test
+}
+
+func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
+	tests := make([]testCase, 0, len(vanillaItemNames))
+
+	rightMeow := time.Now()
+
+	for wramOffs := uint32(smallKeyFirst); wramOffs <= uint32(smallKeyLast); wramOffs++ {
+		for _, variant := range moduleVariants {
+			// normal increment from remote:
+			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 0, 0, 1, 1))
+			// normal decrement from remote:
+			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 2, 1, 1))
+			// both local and remote decremented:
+			tests = append(tests, caveSmallKeyTest(variant, wramOffs, rightMeow, 2, 1, 0, 0))
+		}
+
+		for dungeonNumber := uint32(0); dungeonNumber <= uint32(smallKeyLast-smallKeyFirst); dungeonNumber++ {
+			var doDiffTest bool
+			keyDungeon := wramOffs - uint32(smallKeyFirst)
+			if dungeonNumber == keyDungeon {
+				doDiffTest = false
+			} else if keyDungeon <= 1 && dungeonNumber <= 1 {
+				doDiffTest = false
+			} else {
+				doDiffTest = true
+			}
+
+			if doDiffTest {
+				for _, variant := range moduleVariants {
+					// normal increment from remote:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 0, 0, 1, 1))
+					// normal decrement from remote:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 2, 1, 1))
+					// both local and remote decremented:
+					tests = append(tests, diffDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 1, 0, 0))
+				}
+			} else {
+				for _, variant := range moduleVariants {
+					// normal increment from remote:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 0, 0, 1, 1))
+					// normal decrement from remote:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 2, 1, 1))
+					// both local and remote decremented:
+					tests = append(tests, sameDungeonSmallKeyTest(variant, wramOffs, dungeonNumber, rightMeow, 2, 1, 0, 0))
+				}
+			}
+		}
+	}
+
+	// create system emulator and test ROM:
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	g := CreateTestGame(rom, system)
+
+	// run each test:
+	for i := range tests {
+		tt := &tests[i]
+		tt.system = system
+		tt.g = g
+		g.lastServerTime = rightMeow
+		g.lastServerRecvTime = rightMeow
+		t.Run(tt.name, tt.runFrameTest)
+	}
+}
+
+func TestGameSync_SmallKeys_Ideal(t *testing.T) {
+	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
+		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// set both modules to $07, dungeons to $00:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex
+					gs[1].e.WRAM[0x040C] = dungeonIndex
+				},
+			},
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// inc current dungeon key counter:
+					gs[0].e.WRAM[0xF36F] = 1
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 updated its current small key counter:
+					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[1].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[1].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 confirmed last update:
+					if len(gs[1].n) != 2 {
+						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					}
+					if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+					if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+	}
+
+	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
+		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// set both modules to $07:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex << 1
+					gs[1].e.WRAM[0x040C] = dungeonIndex << 1
+				},
+			},
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// inc current dungeon key counter:
+					gs[0].e.WRAM[0xF36F] = 1
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 updated its current small key counter:
+					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					if expected, actual := uint8(1), gs[1].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 confirmed last update:
+					if len(gs[1].n) != 1 {
+						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					}
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[dungeonIndex]), gs[1].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+	}
 }
 
 func TestGameSync_SmallKeys_Delayed(t *testing.T) {
-	tc, err := newGameSyncTestCase([]gameSyncTestFrame{
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// set both modules to $07, dungeons to $00:
-				gs[0].e.WRAM[0x10] = 0x07
-				gs[1].e.WRAM[0x10] = 0x07
-				gs[0].e.WRAM[0x040C] = 0
-				gs[1].e.WRAM[0x040C] = 0
+	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
+		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// set both modules to $07, dungeons to $00:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex << 1
+					gs[1].e.WRAM[0x040C] = dungeonIndex << 1
+				},
 			},
-		},
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// inc g1 current dungeon key counter:
-				gs[0].e.WRAM[0xF36F] = 1
-				// change g2 submodule to delay receiving sync:
-				gs[1].e.WRAM[0x11] = 0x05
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// inc g1 current dungeon key counter:
+					gs[0].e.WRAM[0xF36F] = 1
+					// change g2 submodule to delay receiving sync:
+					gs[1].e.WRAM[0x11] = 0x05
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 DID NOT update small keys:
+					if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+					}
+					if expected, actual := uint8(0), gs[1].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(0), gs[1].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+				},
 			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 updated its current small key counter:
-				if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
-					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
-				}
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// change g2 submodule back to 0 to enable sync:
+					gs[1].e.WRAM[0x11] = 0x00
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 updated small keys:
+					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+					}
+					if expected, actual := uint8(1), gs[1].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[1].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+				},
 			},
-		},
-		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
-				// change g2 submodule back to 0 to enable sync:
-				gs[1].e.WRAM[0x11] = 0x00
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 confirmed last update:
+					if len(gs[1].n) != 2 {
+						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					}
+					if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+					if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
 			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 updated its current small key counter:
-				if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
-					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
-				}
-			},
-		},
-		{
-			postFrame: func(t *testing.T, gs [2]gameSync) {
-				// verify g2 confirmed last update:
-				if len(gs[1].n) != 2 {
-					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
-				}
-				if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
-					t.Errorf("expected notification %q actual %q", expected, actual)
-				}
-				if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
-					t.Errorf("expected notification %q actual %q", expected, actual)
-				}
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_delayed_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
 
-	tc.runGameSyncTest(t)
+	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
+		tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// set both modules to $07, dungeons to $00:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex << 1
+					gs[1].e.WRAM[0x040C] = dungeonIndex << 1
+				},
+			},
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// inc g1 current dungeon key counter:
+					gs[0].e.WRAM[0xF36F] = 1
+					// change g2 submodule to delay receiving sync:
+					gs[1].e.WRAM[0x11] = 0x05
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 DID NOT update small keys:
+					if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+					}
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					if expected, actual := uint8(0), gs[1].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+				},
+			},
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// change g2 submodule back to 0 to enable sync:
+					gs[1].e.WRAM[0x11] = 0x00
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 updated small keys:
+					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+					}
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					if expected, actual := uint8(1), gs[1].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g2 confirmed last update:
+					if len(gs[1].n) != 1 {
+						t.Errorf("expected 1 notifications actual %d", len(gs[1].n))
+					}
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[dungeonIndex]), gs[1].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_delayed_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+	}
 }
 
 func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
