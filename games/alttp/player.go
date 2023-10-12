@@ -24,8 +24,12 @@ type SyncableWRAM struct {
 	Name   string
 	Size   uint8
 
-	Value     uint16
-	Timestamp uint32
+	Value             uint16
+	PreviousValue     uint16
+	Timestamp         uint32
+	PreviousTimestamp uint32
+
+	IsDirty bool
 
 	// for tracking post-update confirmation:
 	IsWriting         bool
@@ -40,6 +44,9 @@ func (s *SyncableWRAM) ConfirmAsmExecuted(index uint32, value uint8) {
 		log.Printf("alttp: wram[%04x] %s update failed (check = %02x, expected 01)", s.Offset, s.Name, value)
 		return
 	}
+
+	s.PreviousValue = s.Value
+	s.PreviousTimestamp = s.Timestamp
 
 	log.Printf("alttp: wram[%04x] %s update successful from ts=%08x,val=%04x to ts=%08x,val=%04x", s.Offset, s.Name, s.Timestamp, s.Value, s.PendingTimestamp, s.ValueExpected)
 

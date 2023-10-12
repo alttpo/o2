@@ -78,10 +78,13 @@ func (g *Game) readWRAM() {
 		}
 
 		if v != w.Value {
+			w.PreviousValue = w.Value
+			w.PreviousTimestamp = w.Timestamp
 			if g.notFirstWRAMRead {
 				w.Timestamp = nowTs
 			}
 			w.Value = v
+			w.UpdatedFromPlayer = local
 			log.Printf("alttp: local: wram[$%04x] -> %04x @ ts=%08x (%v)   ; %s\n", offs, w.Value, w.Timestamp, now.UTC().Format("15:04:05.999999Z"), w.Name)
 		}
 	}
@@ -100,26 +103,46 @@ func (g *Game) doSyncSmallKeys(a *asm.Emitter) (updated bool) {
 		}
 
 		// find latest timestamp among players:
-		winner := local
+		winnerTs := uint32(0)
+		winner := (*Player)(nil)
 		for _, p := range g.RemotePlayers() {
 			rw, ok := p.WRAM[offs]
 			if !ok {
 				continue
 			}
 
-			ww := winner.WRAM[offs]
-			if rw.Timestamp <= ww.Timestamp {
+			// check if this player has latest timestamp:
+			if rw.Timestamp <= winnerTs {
 				continue
 			}
 
+			winnerTs = rw.Timestamp
 			winner = p
 		}
 
-		if winner == local {
+		// no remote players?
+		if winner == nil {
 			continue
 		}
 
 		ww := winner.WRAM[offs]
+
+		// detect write conflict:
+		if lw.PreviousTimestamp < winnerTs && winnerTs < lw.Timestamp {
+			// this WOULD have made a change if local hadn't changed first:
+			notification := fmt.Sprintf("conflict with %s detected for %s", winner.Name(), lw.Name)
+			g.PushNotification(notification)
+			log.Printf("alttp: wram[$%04x] %s\n", offs, notification)
+
+			// change local timestamp to match remote winner's so we don't unnecessarily update:
+			log.Printf("alttp: wram[$%04x] reverting from ts=%08x to ts=%08x", offs, lw.Timestamp, ww.Timestamp)
+			lw.Timestamp = ww.Timestamp
+		}
+
+		// didn't write after local:
+		if winnerTs <= lw.Timestamp {
+			continue
+		}
 
 		// record ourselves as requiring ASM exec confirmation:
 		index := uint32(len(g.updateGenerators))

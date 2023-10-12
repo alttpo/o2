@@ -107,3 +107,74 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 
 	tc.runGameSyncTest(t)
 }
+
+func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
+	tc, err := newGameSyncTestCase([]gameSyncTestFrame{
+		{
+			preFrame: func(t *testing.T, gs [2]gameSync) {
+				// set both modules to $07, dungeons to $00:
+				gs[0].e.WRAM[0x10] = 0x07
+				gs[1].e.WRAM[0x10] = 0x07
+				gs[0].e.WRAM[0x040C] = 0
+				gs[1].e.WRAM[0x040C] = 0
+				// start both off with 1 key:
+				gs[0].e.WRAM[0xF36F] = 1
+				gs[1].e.WRAM[0xF36F] = 1
+			},
+		},
+		{
+			preFrame: func(t *testing.T, gs [2]gameSync) {
+				// dec g1 current dungeon key counter:
+				gs[0].e.WRAM[0xF36F] = 0
+				// dec g2 current dungeon key counter:
+				gs[1].e.WRAM[0xF36F] = 0
+			},
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+				// verify g2 updated its current small key counter:
+				if expected, actual := uint8(0), gs[0].e.WRAM[0xF36F]; expected != actual {
+					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+				}
+				// verify g2 updated its current small key counter:
+				if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
+					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
+				}
+
+				// verify g2 warned of double-spend:
+				if len(gs[1].n) != 2 {
+					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					return
+				}
+				if expected, actual := "conflict with g1 detected for Sewer Passage small keys", gs[1].n[0]; expected != actual {
+					t.Errorf("expected notification %q actual %q", expected, actual)
+				}
+				if expected, actual := "conflict with g1 detected for Hyrule Castle small keys", gs[1].n[1]; expected != actual {
+					t.Errorf("expected notification %q actual %q", expected, actual)
+				}
+
+			},
+		},
+		{
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+				// verify g2 confirmed last update:
+				if len(gs[1].n) != 2 {
+					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					return
+				}
+			},
+		},
+		{
+			postFrame: func(t *testing.T, gs [2]gameSync) {
+				// verify g2 confirmed last update:
+				if len(gs[1].n) != 2 {
+					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
+					return
+				}
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tc.runGameSyncTest(t)
+}
