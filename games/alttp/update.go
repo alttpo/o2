@@ -87,21 +87,27 @@ func (g *Game) updateWRAM() {
 			log.Println("alttp: update: write completed")
 
 			g.updateLock.Lock()
-			defer g.updateLock.Unlock()
-
 			if g.updateStage != 1 {
+				g.updateLock.Unlock()
 				log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
 				return
 			}
 
 			g.updateStage = 2
 			g.lastUpdateTime = time.Now()
+			g.updateLock.Unlock()
 
+			g.priorityReadsMu.Lock()
 			q := make([]snes.Read, 0, 8)
 			q = g.enqueueUpdateCheckRead(q)
 			// must always read module number LAST to validate the prior reads:
 			q = g.enqueueMainRead(q)
-			g.fillPriorityReads(0, q)
+
+			// we must only allow for check-for-update:
+			g.priorityReads[0] = q
+			g.priorityReads[1] = nil
+			g.priorityReads[2] = nil
+			g.priorityReadsMu.Unlock()
 		},
 	).EnqueueTo(q)
 	if err != nil {

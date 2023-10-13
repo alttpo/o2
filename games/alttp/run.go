@@ -97,7 +97,9 @@ sendloop:
 					continue
 				}
 
+				// clear the read so it doesn't repeat on the next tick:
 				g.priorityReads[p] = nil
+
 				// we have `reads` assigned and need to submit it to the queue:
 				break
 			}
@@ -114,23 +116,17 @@ sendloop:
 	}
 }
 
-func (g *Game) fillPriorityReads(p int, reads []snes.Read) {
-	if p >= len(g.priorityReads) || p < 0 {
-		panic("bad priority value")
-	}
-
-	g.priorityReadsMu.Lock()
-	g.priorityReads[p] = reads
-	g.priorityReadsMu.Unlock()
-}
-
 // run in a separate goroutine
 func (g *Game) run() {
 	q := make([]snes.Read, 0, 8)
+
+	// kick off initial WRAM read request:
+	g.priorityReadsMu.Lock()
 	q = g.enqueueWRAMReads(q)
 	// must always read module number LAST to validate the prior reads:
 	q = g.enqueueMainRead(q)
-	g.fillPriorityReads(2, q)
+	g.priorityReads[2] = q
+	g.priorityReadsMu.Unlock()
 
 	fastbeat := time.NewTicker(120 * time.Millisecond)
 	slowbeat := time.NewTicker(500 * time.Millisecond)
@@ -185,43 +181,49 @@ func (g *Game) run() {
 				return
 			}
 
-			if g.queue != nil {
-				// make sure a read request is always in flight to keep our main loop running:
-				timeSinceRead := time.Now().Sub(g.lastReadCompleted)
-				if timeSinceRead >= time.Millisecond*512 {
-					log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
-					q := make([]snes.Read, 0, 8)
-					q = g.enqueueWRAMReads(q)
-					// must always read module number LAST to validate the prior reads:
-					q = g.enqueueMainRead(q)
-					g.fillPriorityReads(2, q)
-				} else {
-					q := make([]snes.Read, 0, 8)
-					q = g.enqueueSRAMRead(q)
-
-					if debugSprites {
-						// DEBUG read sprite WRAM:
-						q = g.readEnqueue(q, 0xF50D00, 0xF0, 1) // [$0D00..$0DEF]
-						q = g.readEnqueue(q, 0xF50DF0, 0xF0, 1) // [$0DF0..$0EDF]
-						q = g.readEnqueue(q, 0xF50EE0, 0xC0, 1) // [$0EE0..$0F9F]
-					}
-
-					// must always read module number LAST to validate the prior reads:
-					q = g.enqueueMainRead(q)
-					g.fillPriorityReads(1, q)
-				}
-			}
-
 			if g.LocalPlayer().Index() < 0 && g.client != nil {
 				// request our player index:
 				m := g.makeJoinMessage()
-				if m == nil {
-					break
-				}
 				g.send(m)
-				break
 			}
 
+			if g.queue != nil {
+				// only issue a new read if there's not an update-check in progress:
+				g.updateLock.Lock()
+				stg := g.updateStage
+				g.updateLock.Unlock()
+				if stg == 0 {
+					// make sure a read request is always in flight to keep our main loop running:
+					timeSinceRead := time.Now().Sub(g.lastReadCompleted)
+					if timeSinceRead < time.Millisecond*512 {
+						// read SRAM data:
+						g.priorityReadsMu.Lock()
+						q := make([]snes.Read, 0, 8)
+						q = g.enqueueSRAMRead(q)
+
+						if debugSprites {
+							// DEBUG read sprite WRAM:
+							q = g.readEnqueue(q, 0xF50D00, 0xF0, 1) // [$0D00..$0DEF]
+							q = g.readEnqueue(q, 0xF50DF0, 0xF0, 1) // [$0DF0..$0EDF]
+							q = g.readEnqueue(q, 0xF50EE0, 0xC0, 1) // [$0EE0..$0F9F]
+						}
+
+						// must always read module number LAST to validate the prior reads:
+						q = g.enqueueMainRead(q)
+						g.priorityReads[1] = q
+						g.priorityReadsMu.Unlock()
+					} else {
+						g.priorityReadsMu.Lock()
+						log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
+						q := make([]snes.Read, 0, 8)
+						q = g.enqueueWRAMReads(q)
+						// must always read module number LAST to validate the prior reads:
+						q = g.enqueueMainRead(q)
+						g.priorityReads[2] = q
+						g.priorityReadsMu.Unlock()
+					}
+				}
+			}
 			break
 
 		case <-slowbeat.C:
@@ -337,6 +339,12 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.stateLock.Lock()
 	defer g.stateLock.Unlock()
 
+	// disallow any reads until we figure out what we need:
+	g.priorityReadsMu.Lock()
+	g.priorityReads[0] = nil
+	g.priorityReads[1] = nil
+	g.priorityReads[2] = nil
+
 	q := make([]snes.Read, 0, 8)
 
 	// assume module is invalid until we read it:
@@ -401,14 +409,34 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// check for update completeness:
 		q = g.enqueueUpdateCheckRead(q)
 		q = g.enqueueMainRead(q)
-		g.fillPriorityReads(0, q)
+		g.priorityReads[0] = q
+		g.priorityReadsMu.Unlock()
 		return
 	}
 
-	// do all the WRAM reads:
-	q = g.enqueueWRAMReads(q)
-	q = g.enqueueMainRead(q)
-	g.fillPriorityReads(2, q)
+	// we're not sure if an update is coming soon so prevent any background tickers from requesting a read:
+	g.updateStage = -1
+	g.priorityReadsMu.Unlock()
+
+	// defer the read:
+	defer func() {
+		// no update was made so we're okay now:
+		if g.updateStage == -1 {
+			g.updateStage = 0
+		}
+
+		// don't issue a normal read if an update is in progress:
+		if g.updateStage != 0 {
+			return
+		}
+
+		// do all the normal WRAM reads:
+		g.priorityReadsMu.Lock()
+		q = g.enqueueWRAMReads(q)
+		q = g.enqueueMainRead(q)
+		g.priorityReads[2] = q
+		g.priorityReadsMu.Unlock()
+	}()
 
 	if moduleStaging == -1 {
 		return
@@ -583,23 +611,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		return
 	}
 
-	g.frameAdvanced()
-
-	return
-}
-
-func (g *Game) wramU8(addr uint32) uint8 {
-	addr &= 0x01FFFF
-	return g.wram[addr]
-}
-
-func (g *Game) wramU16(addr uint32) uint16 {
-	addr &= 0x01FFFF
-	return binary.LittleEndian.Uint16(g.wram[addr : addr+2])
-}
-
-// called when the local game frame advances:
-func (g *Game) frameAdvanced() {
 	// increment frame timer:
 	lastFrame := uint64(g.lastGameFrame)
 	nextFrame := uint64(g.wram[0x1A])
@@ -634,4 +645,16 @@ func (g *Game) frameAdvanced() {
 	// backup the current WRAM:
 	copy(g.wramLastFrame[:], g.wram[:])
 	g.notFirstFrame = true
+
+	return
+}
+
+func (g *Game) wramU8(addr uint32) uint8 {
+	addr &= 0x01FFFF
+	return g.wram[addr]
+}
+
+func (g *Game) wramU16(addr uint32) uint16 {
+	addr &= 0x01FFFF
+	return binary.LittleEndian.Uint16(g.wram[addr : addr+2])
 }
