@@ -457,7 +457,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			// copy in new data:
 			copy(g.wram[start:end], rsp.Data)
 			for i := start; i <= end; i++ {
-				g.wramDirty[i] = true
+				g.wramFresh[i] = true
 			}
 		}
 		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
@@ -653,8 +653,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// backup the current WRAM:
 	copy(g.wramLastFrame[:], g.wram[:])
-	for i := range g.wramDirty {
-		g.wramDirty[i] = false
+	for i := range g.wramFresh {
+		g.wramFresh[i] = false
 	}
 	g.notFirstFrame = true
 

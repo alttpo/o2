@@ -39,7 +39,7 @@ func (g *Game) FixSmallKeys() {
 	g.stateLock.Lock()
 	defer g.stateLock.Unlock()
 
-	g.wramDirty[0xF36F] = false
+	g.wramFresh[0xF36F] = false
 	for offs, lw := range local.WRAM {
 		lw.Value = 0
 		lw.PreviousValue = 0
@@ -49,7 +49,7 @@ func (g *Game) FixSmallKeys() {
 		lw.PendingTimestamp = 0
 		lw.IsWriting = false
 
-		g.wramDirty[offs] = false
+		g.wramFresh[offs] = false
 	}
 
 	for _, p := range g.RemotePlayers() {
@@ -78,7 +78,7 @@ func (g *Game) readWRAM() {
 	nowTs := timestampFromTime(now)
 
 	// copy current dungeon small key counter to specific dungeon:
-	if g.wramDirty[0xF36F] && local.IsInDungeon() {
+	if g.wramFresh[0xF36F] && local.IsInDungeon() {
 		dungeonNumber := local.Dungeon
 		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
 			currentKeyCount := g.wram[0xF36F]
@@ -91,15 +91,15 @@ func (g *Game) readWRAM() {
 
 				// copy current dungeon small key counter into the dungeon's small key SRAM shadow location:
 				g.wram[dungeonOffs] = currentKeyCount
-				g.wramDirty[dungeonOffs] = true
+				g.wramFresh[dungeonOffs] = true
 
 				// sync Sewers and HC dungeons:
 				if dungeonOffs == smallKeyFirst {
 					g.wram[smallKeyFirst+1] = currentKeyCount
-					g.wramDirty[smallKeyFirst+1] = true
+					g.wramFresh[smallKeyFirst+1] = true
 				} else if dungeonOffs == smallKeyFirst+1 {
 					g.wram[smallKeyFirst] = currentKeyCount
-					g.wramDirty[smallKeyFirst] = true
+					g.wramFresh[smallKeyFirst] = true
 				}
 			}
 		}
@@ -110,7 +110,7 @@ func (g *Game) readWRAM() {
 		if w.IsWriting {
 			continue
 		}
-		if !g.wramDirty[offs] {
+		if !g.wramFresh[offs] {
 			continue
 		}
 
