@@ -224,8 +224,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	g.players[1].Ttl = 255
 	g.players[1].NameF = "remote"
 	g.players[1].WRAM = make(WRAMReadable)
-	for j := range g.players[1].SRAM {
-		g.players[1].SRAM[j] = 0
+	for j := range g.players[1].SRAM.data {
+		g.players[1].SRAM.data[j] = 0
+		g.players[1].SRAM.fresh[j] = false
 	}
 
 	// iterate through frames of test:
@@ -250,7 +251,8 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			if set.offset < 0xF000 {
 				continue
 			}
-			g.players[1].SRAM[set.offset-0xF000] = set.value
+			g.players[1].SRAM.data[set.offset-0xF000] = set.value
+			g.players[1].SRAM.fresh[set.offset-0xF000] = true
 		}
 
 		if u := frame.preGenLocalUpdate; u != nil {
@@ -295,7 +297,8 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 			system.WRAM[set.offset] = set.value
 
 			if set.offset >= 0xF000 {
-				g.local.SRAM[set.offset-0xF000] = set.value
+				g.local.SRAM.data[set.offset-0xF000] = set.value
+				g.local.SRAM.fresh[set.offset-0xF000] = true
 			}
 		}
 

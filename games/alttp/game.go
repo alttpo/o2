@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 // MaxPlayers can extend to 65536 theoretical max due to use of uint16 for player indexes in protocol
@@ -266,12 +267,16 @@ func (g *Game) Reset() {
 	// clear out players array:
 	for i := range g.players {
 		g.players[i] = Player{IndexF: -1, PlayerColor: 0x12ef}
+		g.players[i].SRAM.data = new([0x500]byte)
+		g.players[i].SRAM.fresh = new([0x500]bool)
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
 	g.local = &Player{IndexF: -1, PlayerColor: 0x12ef}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
+	local.SRAM.data = (*[0x500]byte)(unsafe.Pointer(&g.wram[0xF000]))
+	local.SRAM.fresh = (*[0x500]bool)(unsafe.Pointer(&g.wramFresh[0xF000]))
 
 	if g.viewModels != nil {
 		// preserve last-set info:
@@ -315,12 +320,16 @@ func (g *Game) SoftReset() {
 	// clear out players array:
 	for i := range g.players {
 		g.players[i] = Player{IndexF: -1, PlayerColor: 0x12ef}
+		g.players[i].SRAM.data = new([0x500]byte)
+		g.players[i].SRAM.fresh = new([0x500]bool)
 	}
 
 	// create a temporary Player instance until we get our Index assigned from the server:
 	g.local = &Player{IndexF: -1, PlayerColor: 0x12ef}
 	local := g.local
 	local.WRAM = make(map[uint16]*SyncableWRAM)
+	local.SRAM.data = (*[0x500]byte)(unsafe.Pointer(&g.wram[0xF000]))
+	local.SRAM.fresh = (*[0x500]bool)(unsafe.Pointer(&g.wramFresh[0xF000]))
 	local.NameF = backupLocal.NameF
 	local.PlayerColor = backupLocal.PlayerColor
 	local.Team = backupLocal.Team

@@ -55,21 +55,24 @@ func (s *SyncableWRAM) ConfirmAsmExecuted(index uint32, value uint8) {
 	s.Value = s.ValueExpected
 }
 
-type SRAMShadow [0x500]byte
+type SRAMShadow struct {
+	data  *[0x500]byte
+	fresh *[0x500]bool
+}
 
-func (r SRAMShadow) BusAddress(offs uint32) uint32 {
+func (r *SRAMShadow) BusAddress(offs uint32) uint32 {
 	return 0x7EF000 + offs
 }
 
-func (r SRAMShadow) ReadU8(offs uint32) uint8 {
-	return r[offs]
+func (r *SRAMShadow) ReadU8(offs uint32) uint8 {
+	return r.data[offs]
 }
 
-func (r SRAMShadow) ReadU16(offs uint32) uint16 {
+func (r *SRAMShadow) ReadU16(offs uint32) uint16 {
 	if offs >= 0x500 {
 		return 0xFFFF
 	}
-	return binary.LittleEndian.Uint16(r[offs : offs+2])
+	return binary.LittleEndian.Uint16(r.data[offs : offs+2])
 }
 
 type WRAMReadable map[uint16]*SyncableWRAM

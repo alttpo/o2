@@ -586,7 +586,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 
 	// copy $7EF000-4FF into `local.SRAM`:
-	copy(local.SRAM[:], g.wram[0xF000:0xF500])
+	//copy(local.SRAM[:], g.wram[0xF000:0xF500])
 
 	if debugSprites {
 		// display sprite data:

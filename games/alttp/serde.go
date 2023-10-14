@@ -347,8 +347,11 @@ func (g *Game) DeserializeSRAM(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing sram: %w", err))
 	}
 
-	if _, err = r.Read(p.SRAM[start : start+count]); err != nil {
+	if _, err = r.Read(p.SRAM.data[start : start+count]); err != nil {
 		panic(fmt.Errorf("error deserializing sram: %w", err))
+	}
+	for j := start; j < start+count; j++ {
+		p.SRAM.fresh[j] = true
 	}
 	return
 }
@@ -559,7 +562,7 @@ func (g *Game) SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16)
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
 
-	if _, err = w.Write(p.SRAM[start:endExclusive]); err != nil {
+	if _, err = w.Write(p.SRAM.data[start:endExclusive]); err != nil {
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
 	return
