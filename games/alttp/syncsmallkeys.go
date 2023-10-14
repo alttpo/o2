@@ -156,12 +156,17 @@ func (g *Game) GenerateSmallKeyUpdate(
 	}
 
 	// find latest timestamp among players:
+	noTimestamps := lw.Timestamp == 0
 	winnerTs := uint32(0)
 	winner := (*Player)(nil)
 	for _, p := range remotePlayers {
 		rw, ok := p.WRAM[offs]
 		if !ok {
 			continue
+		}
+
+		if rw.Timestamp != 0 {
+			noTimestamps = false
 		}
 
 		// check if this player has latest timestamp:
@@ -175,7 +180,7 @@ func (g *Game) GenerateSmallKeyUpdate(
 
 	updatingByValue := false
 
-	if winnerTs == 0 {
+	if noTimestamps {
 		// everyone has a 0 timestamp so find who has the max value:
 		maxValue := lw.Value
 		for _, p := range remotePlayers {
