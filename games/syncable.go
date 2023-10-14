@@ -84,13 +84,12 @@ type (
 	SyncableMaxU8GenerateAsm func(s *SyncableMaxU8, asm *asm.Emitter, initial, updated uint8)
 
 	SyncableCustomU8Update func(s *SyncableCustomU8, asm func() *asm.Emitter, index uint32) (bool, *asm.Emitter)
-	IsUpdateStillPending   func(s *SyncableCustomU8) bool
 )
 
 func PlayerPredicateIdentity(_ SyncablePlayer) bool { return true }
 
 type SyncableBitU8 struct {
-	SyncableGame
+	SyncableGame SyncableGame
 
 	Offset     uint32
 	MemoryKind MemoryKind
@@ -100,7 +99,7 @@ type SyncableBitU8 struct {
 	BitNames     [8]string
 	Verbs        [8]string
 
-	PlayerPredicate
+	PlayerPredicate PlayerPredicate
 
 	GenerateAsm SyncableBitU8GenerateAsm
 	OnUpdated   SyncableBitU8OnUpdated
@@ -286,7 +285,7 @@ func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 }
 
 type SyncableBitU16 struct {
-	SyncableGame
+	SyncableGame SyncableGame
 
 	Offset     uint32
 	MemoryKind MemoryKind
@@ -493,17 +492,17 @@ func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 }
 
 type SyncableMaxU8 struct {
-	SyncableGame
+	SyncableGame SyncableGame
 
-	Offset uint32
-	MemoryKind
+	Offset       uint32
+	MemoryKind   MemoryKind
 	IsEnabledPtr *bool
 	AbsMax       uint8
 
 	ValueNames []string
 	Verbs      []string
 
-	PlayerPredicate
+	PlayerPredicate PlayerPredicate
 
 	GenerateAsm SyncableMaxU8GenerateAsm
 	OnUpdated   SyncableMaxU8OnUpdated
@@ -677,10 +676,10 @@ func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 }
 
 type SyncableCustomU8 struct {
-	SyncableGame
+	SyncableGame SyncableGame
 
-	Offset uint32
-	MemoryKind
+	Offset       uint32
+	MemoryKind   MemoryKind
 	IsEnabledPtr *bool
 
 	CustomGenerateUpdate SyncableCustomU8Update
