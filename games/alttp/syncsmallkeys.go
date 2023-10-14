@@ -31,6 +31,40 @@ func timestampFromTime(t time.Time) uint32 {
 	return uint32(t.UnixNano() / 1e6)
 }
 
+// FixSmallKeys is only invoked from the view model by the player:
+func (g *Game) FixSmallKeys() {
+	// forget all the small key sync state:
+	local := g.local
+
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+
+	g.wramDirty[0xF36F] = false
+	for offs, lw := range local.WRAM {
+		lw.Value = 0
+		lw.PreviousValue = 0
+		lw.Timestamp = 0
+		lw.PreviousTimestamp = 0
+		lw.ValueExpected = 0
+		lw.PendingTimestamp = 0
+		lw.IsWriting = false
+
+		g.wramDirty[offs] = false
+	}
+
+	for _, p := range g.RemotePlayers() {
+		for _, rw := range p.WRAM {
+			rw.Value = 0
+			rw.PreviousValue = 0
+			rw.Timestamp = 0
+			rw.PreviousTimestamp = 0
+			rw.ValueExpected = 0
+			rw.PendingTimestamp = 0
+			rw.IsWriting = false
+		}
+	}
+}
+
 // readWRAM called when WRAM is read from SNES:
 func (g *Game) readWRAM() {
 	local := g.local

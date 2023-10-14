@@ -29,8 +29,6 @@ type SyncableWRAM struct {
 	Timestamp         uint32
 	PreviousTimestamp uint32
 
-	IsDirty bool
-
 	// for tracking post-update confirmation:
 	IsWriting         bool
 	ValueExpected     uint16

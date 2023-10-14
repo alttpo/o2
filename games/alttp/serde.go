@@ -324,12 +324,6 @@ func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 			w.Timestamp = timestamp
 			w.Value = value
 		}
-
-		if w.Value != w.PreviousValue || w.Timestamp != w.PreviousTimestamp {
-			w.IsDirty = true
-		} else {
-			w.IsDirty = false
-		}
 	}
 
 	return

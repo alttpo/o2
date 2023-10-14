@@ -133,18 +133,16 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 		return &setFieldCmd{g}, nil
 	case "asm":
 		return &sendCustomAsmCmd{g}, nil
+	case "fixSmallKeys":
+		return &fixSmallKeysCmd{g}, nil
 	default:
 		return nil, fmt.Errorf("no handler for command=%s", command)
 	}
 }
 
-type resetCmd struct {
-	g *Game
-}
+type resetCmd struct{ g *Game }
 
-func (r *resetCmd) CreateArgs() interfaces.CommandArgs {
-	return nil
-}
+func (r *resetCmd) CreateArgs() interfaces.CommandArgs { return nil }
 
 func (r *resetCmd) Execute(_ interfaces.CommandArgs) error {
 	log.Println("alttp: reset game")
@@ -154,6 +152,21 @@ func (r *resetCmd) Execute(_ interfaces.CommandArgs) error {
 	r.g.NotifyView()
 
 	r.g.PushNotification("reset game")
+	return nil
+}
+
+type fixSmallKeysCmd struct{ g *Game }
+
+func (r *fixSmallKeysCmd) CreateArgs() interfaces.CommandArgs { return nil }
+
+func (r *fixSmallKeysCmd) Execute(_ interfaces.CommandArgs) error {
+	log.Println("alttp: fix small keys")
+	r.g.FixSmallKeys()
+
+	// notify view of new values:
+	r.g.NotifyView()
+
+	r.g.PushNotification("fix small keys")
 	return nil
 }
 
