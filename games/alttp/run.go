@@ -415,20 +415,25 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	}
 
 	// we're not sure if an update is coming soon so prevent any background tickers from requesting a read:
+	g.updateLock.Lock()
 	g.updateStage = -1
+	g.updateLock.Unlock()
 	g.priorityReadsMu.Unlock()
 
 	// defer the read:
 	defer func() {
-		// no update was made so we're okay now:
+		g.updateLock.Lock()
 		if g.updateStage == -1 {
+			// no update was made so we're okay now:
 			g.updateStage = 0
 		}
 
 		// don't issue a normal read if an update is in progress:
 		if g.updateStage != 0 {
+			g.updateLock.Unlock()
 			return
 		}
+		g.updateLock.Unlock()
 
 		// do all the normal WRAM reads:
 		g.priorityReadsMu.Lock()
