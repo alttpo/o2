@@ -316,7 +316,9 @@ func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 				Size:      2,
 				Timestamp: timestamp,
 				Value:     value,
+				Fresh:     new(bool),
 			}
+			*w.Fresh = true
 			p.WRAM[offs] = w
 		} else {
 			w.PreviousValue = w.Value

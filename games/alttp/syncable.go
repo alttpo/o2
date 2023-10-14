@@ -130,6 +130,10 @@ func (s *syncableBottle) GenerateUpdate(newEmitter func() *asm.Emitter, index ui
 	offset := s.offset
 
 	localSRAM := local.ReadableMemory(games.SRAM)
+	if !localSRAM.IsFresh(s.offset) {
+		return
+	}
+
 	initial := localSRAM.ReadU8(offset)
 	if initial >= 2 {
 		// don't change existing bottle contents:
@@ -208,13 +212,19 @@ func (s *syncableBottle) GenerateUpdate(newEmitter func() *asm.Emitter, index ui
 func (s *syncableBottle) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
 	base := uint32(0xF000)
 
+	local := s.g.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(games.SRAM)
+	if !localMemory.IsFresh(s.offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.offset]
 	prev := wramPrevious[base+s.offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.g.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.offset)
+	longAddr := localMemory.BusAddress(s.offset)
 	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	if s.names == nil {
@@ -297,7 +307,12 @@ func (s *syncableUnderworld) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 	offs := s.Offset
 	mask := s.SyncMask
 
-	initial := local.ReadableMemory(games.SRAM).ReadU16(offs)
+	localMemory := local.ReadableMemory(games.SRAM)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
+	initial := localMemory.ReadU16(offs)
 	var receivedFrom [16]string
 
 	updated := initial
@@ -337,7 +352,7 @@ func (s *syncableUnderworld) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 	// notify local player of new item received:
 	s.Notification = ""
 
-	longAddr := local.ReadableMemory(games.SRAM).BusAddress(offs)
+	longAddr := localMemory.BusAddress(offs)
 	newBits := updated & ^initial
 
 	a.Comment(fmt.Sprintf("underworld room state changed: $%03x '%s'", s.Room, underworldNames[s.Room]))
@@ -419,13 +434,19 @@ func (s *syncableUnderworld) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 func (s *syncableUnderworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
 	base := uint32(0xF000)
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(games.SRAM)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := binary.LittleEndian.Uint16(wramCurrent[base+s.Offset : base+s.Offset+2])
 	prev := binary.LittleEndian.Uint16(wramPrevious[base+s.Offset : base+s.Offset+2])
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u16[$%06x]: %s -> %s ; %s\n", longAddr, bin16_4(prev), bin16_4(curr), underworldNames[s.Room])
 
 	k := uint16(1)
@@ -542,7 +563,12 @@ func (s *syncableOverworld) GenerateUpdate(newEmitter func() *asm.Emitter, index
 
 	offs := s.Offset
 
-	initial := local.ReadableMemory(s.MemoryKind).ReadU8(offs)
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
+	initial := localMemory.ReadU8(offs)
 	var receivedFrom [8]string
 
 	updated := initial
@@ -578,7 +604,7 @@ func (s *syncableOverworld) GenerateUpdate(newEmitter func() *asm.Emitter, index
 	// notify local player of new item received:
 	s.Notification = ""
 
-	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
+	longAddr := localMemory.BusAddress(offs)
 	newBits := updated & ^initial
 
 	{
@@ -634,13 +660,19 @@ func (s *syncableOverworld) GenerateUpdate(newEmitter func() *asm.Emitter, index
 func (s *syncableOverworld) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
 	base := uint32(0xF000)
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.Offset]
 	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u8 [$%06x]: %s -> %s ; %s\n", longAddr, bin8_4(prev), bin8_4(curr), overworldNames[s.Area])
 
 	k := uint8(1)

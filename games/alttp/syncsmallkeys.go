@@ -22,6 +22,7 @@ func (g *Game) initSmallKeysSync() {
 			Size:      1,
 			Timestamp: 0,
 			Value:     uint16(g.wram[offs]),
+			Fresh:     &g.wramFresh[offs],
 		}
 	}
 }
@@ -110,7 +111,7 @@ func (g *Game) readWRAM() {
 		if w.IsWriting {
 			continue
 		}
-		if !g.wramFresh[offs] {
+		if !*w.Fresh {
 			continue
 		}
 
@@ -146,6 +147,11 @@ func (g *Game) GenerateSmallKeyUpdate(
 
 	// don't process a value awaiting a write:
 	if lw.IsWriting {
+		return
+	}
+
+	// don't operate on stale local data:
+	if !*lw.Fresh {
 		return
 	}
 

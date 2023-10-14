@@ -69,6 +69,7 @@ func (g *Game) initSync() {
 		Size:      2,
 		Timestamp: 0,
 		Value:     0xFFFF,
+		Fresh:     &g.wramFresh[0x0400],
 	}
 
 	// define syncable items:
@@ -151,6 +152,10 @@ func (g *Game) initSync() {
 		local := g.LocalSyncablePlayer()
 
 		localSRAM := local.ReadableMemory(games.SRAM)
+		if !localSRAM.IsFresh(0x36C) || !localSRAM.IsFresh(0x36B) {
+			return
+		}
+
 		initial := (localSRAM.ReadU8(0x36C) & ^uint8(7)) | (localSRAM.ReadU8(0x36B) & 3)
 
 		maxP := local
@@ -386,10 +391,14 @@ func (g *Game) initSync() {
 		offset := s.Offset
 		local := s.SyncableGame.LocalSyncablePlayer()
 		localSRAM := local.ReadableMemory(games.SRAM)
+		if !localSRAM.IsFresh(s.Offset) {
+			return
+		}
+
 		initial := localSRAM.ReadU8(offset)
 
 		// check to make sure zelda telepathic follower removed if have uncle's gear:
-		if initial&0x01 == 0x01 && localSRAM.ReadU8(0x3CC) == 0x05 {
+		if initial&0x01 == 0x01 && localSRAM.IsFresh(0x3CC) && localSRAM.ReadU8(0x3CC) == 0x05 {
 			isUpdated, a = true, newEmitter()
 
 			a.Comment("already have uncle's gear; remove telepathic zelda follower:")
@@ -458,7 +467,12 @@ func (g *Game) initSync() {
 	// progress flags 2/2:
 	g.NewSyncableCustomU8(0x3C9, &g.SyncProgress, func(s *games.SyncableCustomU8, newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
 		offset := s.Offset
-		initial := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).ReadU8(offset)
+		localMemory := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM)
+		if !localMemory.IsFresh(s.Offset) {
+			return
+		}
+
+		initial := localMemory.ReadU8(offset)
 
 		newBits := initial
 		for _, p := range g.RemoteSyncablePlayers() {

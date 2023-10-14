@@ -35,7 +35,12 @@ func (s *SyncableVanillaBow) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 	local := g.LocalSyncablePlayer()
 	offset := s.Offset
 
-	initial := local.ReadableMemory(games.SRAM).ReadU8(offset)
+	localMemory := local.ReadableMemory(games.SRAM)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
+	initial := localMemory.ReadU8(offset)
 	// treat w/ and w/o arrows as the same:
 	if initial == 2 {
 		initial = 1
@@ -74,7 +79,7 @@ func (s *SyncableVanillaBow) GenerateUpdate(newEmitter func() *asm.Emitter, inde
 	a.CMP_imm8_b(0x01)   // are arrows present?
 	a.LDA_imm8_b(maxV)   // bow level; 1 = wood, 3 = silver
 	a.ADC_imm8_b(0x00)   // add +1 to bow if arrows are present
-	a.STA_long(local.ReadableMemory(games.SRAM).BusAddress(offset))
+	a.STA_long(localMemory.BusAddress(offset))
 
 	// write confirmation:
 	a.LDA_imm8_b(0x01)
@@ -98,13 +103,19 @@ func (s *SyncableVanillaBow) ConfirmAsmExecuted(index uint32, value uint8) {
 func (s *SyncableVanillaBow) LocalCheck(wramCurrent, wramPrevious []byte) (notifications []games.NotificationStatement) {
 	base := uint32(0xF000)
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(games.SRAM)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.Offset]
 	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(games.SRAM).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	valueNames := vanillaItemNames[uint16(s.Offset)]

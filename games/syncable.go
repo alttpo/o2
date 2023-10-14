@@ -146,7 +146,12 @@ func (s *SyncableBitU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	offs := s.Offset
 
-	initial := local.ReadableMemory(s.MemoryKind).ReadU8(offs)
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(offs) {
+		return
+	}
+
+	initial := localMemory.ReadU8(offs)
 	var receivedFrom [8]string
 
 	updated := initial
@@ -182,7 +187,7 @@ func (s *SyncableBitU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 	// notify local player of new item received:
 	s.Notification = ""
 
-	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
+	longAddr := localMemory.BusAddress(offs)
 	newBits := updated & ^initial
 
 	{
@@ -245,13 +250,19 @@ func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 		base = 0
 	}
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.Offset]
 	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u8 [$%06x]: %s -> %s\n", longAddr, bin8_4(prev), bin8_4(curr))
 
 	k := uint8(1)
@@ -328,13 +339,18 @@ func (s *SyncableBitU16) GenerateUpdate(newEmitter func() *asm.Emitter, index ui
 
 	// filter out local player:
 	if s.PlayerPredicate != nil && !s.PlayerPredicate(local) {
-		return false, nil
+		return
 	}
 
 	offs := s.Offset
 	mask := s.SyncMask
 
-	initial := local.ReadableMemory(s.MemoryKind).ReadU16(offs)
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(offs) {
+		return
+	}
+
+	initial := localMemory.ReadU16(offs)
 	var receivedFrom [16]string
 
 	updated := initial
@@ -374,7 +390,7 @@ func (s *SyncableBitU16) GenerateUpdate(newEmitter func() *asm.Emitter, index ui
 	// notify local player of new item received:
 	s.Notification = ""
 
-	longAddr := local.ReadableMemory(s.MemoryKind).BusAddress(offs)
+	longAddr := localMemory.BusAddress(offs)
 	newBits := updated & ^initial
 
 	{
@@ -441,13 +457,19 @@ func (s *SyncableBitU16) LocalCheck(wramCurrent, wramPrevious []byte) (notificat
 		base = 0
 	}
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := binary.LittleEndian.Uint16(wramCurrent[base+s.Offset : base+s.Offset+2])
 	prev := binary.LittleEndian.Uint16(wramPrevious[base+s.Offset : base+s.Offset+2])
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u16[$%06x]: %s -> %s\n", longAddr, bin16_4(prev), bin16_4(curr))
 
 	k := uint16(1)
@@ -525,10 +547,14 @@ func (s *SyncableMaxU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 		return false, nil
 	}
 
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	offset := s.Offset
 
 	maxP := local
-	localMemory := local.ReadableMemory(s.MemoryKind)
 	maxV := localMemory.ReadU8(offset)
 	initial := maxV
 	for _, p := range g.RemoteSyncablePlayers() {
@@ -612,13 +638,19 @@ func (s *SyncableMaxU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 		base = 0
 	}
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.Offset]
 	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	if s.ValueNames == nil {
@@ -691,13 +723,19 @@ func (s *SyncableCustomU8) LocalCheck(wramCurrent, wramPrevious []byte) (notific
 		base = 0
 	}
 
+	local := s.SyncableGame.LocalSyncablePlayer()
+	localMemory := local.ReadableMemory(s.MemoryKind)
+	if !localMemory.IsFresh(s.Offset) {
+		return
+	}
+
 	curr := wramCurrent[base+s.Offset]
 	prev := wramPrevious[base+s.Offset]
 	if curr == prev {
 		return
 	}
 
-	longAddr := s.SyncableGame.LocalSyncablePlayer().ReadableMemory(s.MemoryKind).BusAddress(s.Offset)
+	longAddr := localMemory.BusAddress(s.Offset)
 	log.Printf("alttp: local: u8 [$%06x]: $%02x -> $%02x\n", longAddr, prev, curr)
 
 	return

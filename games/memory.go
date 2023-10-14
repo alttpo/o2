@@ -9,6 +9,8 @@ const (
 )
 
 type ReadableMemory interface {
+	IsFresh(offs uint32) bool
+
 	BusAddress(offs uint32) uint32
 
 	ReadU8(offs uint32) uint8

@@ -269,7 +269,6 @@ func createTestGameSync(romTitle string, playerName string) (gs gameSync, err er
 		Wr: make(chan []byte, 100),
 	}
 	gs.g.ProvideClient(gs.c)
-	gs.g.ProvideQueue(&testQueue{E: gs.e})
 
 	// request our player index:
 	m := gs.g.makeJoinMessage()

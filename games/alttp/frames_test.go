@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/emulator"
 	"log"
 	"o2/interfaces"
@@ -279,13 +278,13 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 				Extra:   nil,
 			})
 		}
+		// force to write update in SRAM to 0x7C00
+		g.nextUpdateA = true
 		g.readMainComplete(rsps)
 
-		// generate ASM code:
-		var code [0x200]byte
-		a := asm.NewEmitter(code[:], true)
-		updated := g.generateSRAMRoutine(a, 0x707C00)
-		if updated != frame.wantAsm {
+		// check if asm was generated:
+		updated := g.updateStage > 0
+		if frame.wantAsm != updated {
 			t.Errorf("generateUpdateAsm() = %v, want %v", updated, frame.wantAsm)
 			return
 		}
@@ -300,11 +299,6 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 				g.local.SRAM.data[set.offset-0xF000] = set.value
 				g.local.SRAM.fresh[set.offset-0xF000] = true
 			}
-		}
-
-		if updated {
-			// deploy the SRAM routine if generated:
-			copy(system.SRAM[0x7C00:0x7D00], a.Bytes())
 		}
 
 		// execute a frame of ASM:
@@ -325,9 +319,9 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		if updated {
 			// invoke asm confirmations to get notifications:
-			log.Printf("alttp: update: states = %v\n", system.SRAM[0x7C00+0x02:0x7C00+0x02+len(g.updateGenerators)])
+			log.Printf("alttp: update: states = %v\n", system.SRAM[0x7C00+0x02:0x7C00+0x02+uint32(len(g.updateGenerators))])
 			for i, generator := range g.updateGenerators {
-				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+i])
+				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+uint32(i)])
 			}
 		}
 

@@ -24,6 +24,8 @@ type SyncableWRAM struct {
 	Name   string
 	Size   uint8
 
+	Fresh *bool
+
 	Value             uint16
 	PreviousValue     uint16
 	Timestamp         uint32
@@ -60,6 +62,10 @@ type SRAMShadow struct {
 	fresh *[0x500]bool
 }
 
+func (r *SRAMShadow) IsFresh(offs uint32) bool {
+	return r.fresh[offs]
+}
+
 func (r *SRAMShadow) BusAddress(offs uint32) uint32 {
 	return 0x7EF000 + offs
 }
@@ -76,6 +82,13 @@ func (r *SRAMShadow) ReadU16(offs uint32) uint16 {
 }
 
 type WRAMReadable map[uint16]*SyncableWRAM
+
+func (r WRAMReadable) IsFresh(offs uint32) bool {
+	if w, ok := r[uint16(offs)]; ok {
+		return *w.Fresh
+	}
+	return false
+}
 
 func (r WRAMReadable) BusAddress(offs uint32) uint32 {
 	return 0x7E0000 + offs

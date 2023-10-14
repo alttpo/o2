@@ -68,5 +68,7 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 
 	g.Reset()
 
+	g.ProvideQueue(&testQueue{E: system})
+
 	return g
 }
