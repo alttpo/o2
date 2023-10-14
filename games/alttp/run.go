@@ -456,10 +456,14 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		if start, end, ok := g.isReadWRAM(rsp); ok {
 			// copy in new data:
 			copy(g.wram[start:end], rsp.Data)
+			for i := start; i <= end; i++ {
+				g.wramDirty[i] = true
+			}
 		}
 		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
 		if start, end, ok := g.isReadSRAM(rsp); ok {
-			copy(g.sram[start:end], rsp.Data)
+			//copy(g.sram[start:end], rsp.Data)
+			_, _ = start, end
 		}
 	}
 
@@ -603,10 +607,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		fmt.Printf(sb.String())
 	}
 
-	// handle WRAM reads:
-	g.readWRAM()
-	g.notFirstWRAMRead = true
-
 	if g.shouldUpdatePlayersList {
 		g.updatePlayersList()
 	}
@@ -630,6 +630,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	//log.Printf("server now(): %v\n", g.ServerNow())
 
+	// handle WRAM reads:
+	g.readWRAM()
+	g.notFirstWRAMRead = true
+
 	// update underworld supertile state sync bit masks based on sync toggles from front-end:
 	g.setUnderworldSyncMasks()
 
@@ -649,6 +653,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// backup the current WRAM:
 	copy(g.wramLastFrame[:], g.wram[:])
+	for i := range g.wramDirty {
+		g.wramDirty[i] = false
+	}
 	g.notFirstFrame = true
 
 	return

@@ -44,7 +44,7 @@ func (g *Game) readWRAM() {
 	nowTs := timestampFromTime(now)
 
 	// copy current dungeon small key counter to specific dungeon:
-	if local.IsInDungeon() {
+	if g.wramDirty[0xF36F] && local.IsInDungeon() {
 		dungeonNumber := local.Dungeon
 		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
 			currentKeyCount := g.wram[0xF36F]
@@ -52,14 +52,21 @@ func (g *Game) readWRAM() {
 			dungeonNumber >>= 1
 			dungeonOffs := smallKeyFirst + dungeonNumber
 
-			// copy current dungeon small key counter into the dungeon's small key SRAM shadow location:
-			g.wram[dungeonOffs] = currentKeyCount
+			if g.wram[dungeonOffs] != currentKeyCount {
+				log.Printf("alttp: local: wram[$%04x] -> %04x -> wram[$%04x]   ; %s\n", 0xf36f, currentKeyCount, dungeonOffs, dungeonNames[dungeonNumber])
 
-			// sync Sewers and HC dungeons:
-			if dungeonOffs == smallKeyFirst {
-				g.wram[smallKeyFirst+1] = currentKeyCount
-			} else if dungeonOffs == smallKeyFirst+1 {
-				g.wram[smallKeyFirst] = currentKeyCount
+				// copy current dungeon small key counter into the dungeon's small key SRAM shadow location:
+				g.wram[dungeonOffs] = currentKeyCount
+				g.wramDirty[dungeonOffs] = true
+
+				// sync Sewers and HC dungeons:
+				if dungeonOffs == smallKeyFirst {
+					g.wram[smallKeyFirst+1] = currentKeyCount
+					g.wramDirty[smallKeyFirst+1] = true
+				} else if dungeonOffs == smallKeyFirst+1 {
+					g.wram[smallKeyFirst] = currentKeyCount
+					g.wramDirty[smallKeyFirst] = true
+				}
 			}
 		}
 	}
@@ -67,6 +74,9 @@ func (g *Game) readWRAM() {
 	// read in all WRAM syncables:
 	for offs, w := range local.WRAM {
 		if w.IsWriting {
+			continue
+		}
+		if !g.wramDirty[offs] {
 			continue
 		}
 
@@ -105,10 +115,16 @@ func (g *Game) GenerateSmallKeyUpdate(
 		return
 	}
 
+	// check for any remote players:
+	remotePlayers := g.RemotePlayers()
+	if len(remotePlayers) == 0 {
+		return
+	}
+
 	// find latest timestamp among players:
 	winnerTs := uint32(0)
 	winner := (*Player)(nil)
-	for _, p := range g.RemotePlayers() {
+	for _, p := range remotePlayers {
 		rw, ok := p.WRAM[offs]
 		if !ok {
 			continue
@@ -123,28 +139,57 @@ func (g *Game) GenerateSmallKeyUpdate(
 		winner = p
 	}
 
-	// no remote players?
+	updatingByValue := false
+
+	if winnerTs == 0 {
+		// everyone has a 0 timestamp so find who has the max value:
+		maxValue := lw.Value
+		for _, p := range remotePlayers {
+			rw, ok := p.WRAM[offs]
+			if !ok {
+				continue
+			}
+
+			// check if this player has the max value:
+			if rw.Value <= maxValue {
+				continue
+			}
+
+			maxValue = rw.Value
+			winner = p
+			updatingByValue = true
+		}
+	}
+
+	// no winner?
 	if winner == nil {
 		return
 	}
 
 	ww := winner.WRAM[offs]
 
-	// detect write conflict:
-	if lw.PreviousTimestamp < winnerTs && winnerTs < lw.Timestamp {
-		// this WOULD have made a change if local hadn't changed first:
-		notification := fmt.Sprintf("conflict with %s detected for %s", winner.Name(), lw.Name)
-		g.PushNotification(notification)
-		log.Printf("alttp: wram[$%04x] %s\n", offs, notification)
+	if updatingByValue {
+		// no update needed if values match:
+		if lw.Value == ww.Value {
+			return
+		}
+	} else {
+		// detect write conflict:
+		if lw.PreviousTimestamp < winnerTs && winnerTs < lw.Timestamp {
+			// this WOULD have made a change if local hadn't changed first:
+			notification := fmt.Sprintf("conflict with %s detected for %s", winner.Name(), lw.Name)
+			g.PushNotification(notification)
+			log.Printf("alttp: wram[$%04x] %s\n", offs, notification)
 
-		// change local timestamp to match remote winner's so we don't unnecessarily update:
-		log.Printf("alttp: wram[$%04x] reverting from ts=%08x to ts=%08x", offs, lw.Timestamp, ww.Timestamp)
-		lw.Timestamp = ww.Timestamp
-	}
+			// change local timestamp to match remote winner's so we don't unnecessarily update:
+			log.Printf("alttp: wram[$%04x] reverting from ts=%08x to ts=%08x", offs, lw.Timestamp, ww.Timestamp)
+			lw.Timestamp = ww.Timestamp
+		}
 
-	// didn't write after local:
-	if winnerTs <= lw.Timestamp {
-		return
+		// didn't write after local:
+		if winnerTs <= lw.Timestamp {
+			return
+		}
 	}
 
 	// Force our local timestamp equal to the remote winner to prevent the value bouncing back:

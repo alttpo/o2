@@ -603,3 +603,213 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 
 	tc.runGameSyncTest(t)
 }
+
+func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
+	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					// set both modules to $07, dungeons to $00:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex << 1
+					gs[1].e.WRAM[0x040C] = dungeonIndex << 1
+					// set different current dungeon key counter values:
+					gs[0].e.WRAM[0xF36F] = 1
+					gs[0].e.WRAM[smallKeyFirst] = 1
+					gs[0].e.WRAM[smallKeyFirst+1] = 1
+					gs[1].e.WRAM[0xF36F] = 2
+					gs[1].e.WRAM[smallKeyFirst] = 2
+					gs[1].e.WRAM[smallKeyFirst+1] = 2
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g1 no changes:
+					if expected, actual := uint8(1), gs[0].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[0].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[0].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+					// verify g2 no changes:
+					if expected, actual := uint8(2), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no notifications from g1:
+					if len(gs[0].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+					// verify g1 updated to g2's highest key count:
+					if expected, actual := uint8(2), gs[0].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[0].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[0].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+					// verify g2 no changes:
+					if expected, actual := uint8(2), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[smallKeyFirst]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[smallKeyFirst+1]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", smallKeyFirst+1, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g1 confirmed its last update with a notification:
+					if len(gs[0].n) != 2 {
+						t.Errorf("expected %d notifications actual %d", 2, len(gs[0].n))
+						return
+					}
+					if expected, actual := "update Sewer Passage small keys to 2 from g2", gs[0].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+					if expected, actual := "update Hyrule Castle small keys to 2 from g2", gs[0].n[1]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no notifications from g1:
+					if len(gs[0].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+	}
+
+	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
+		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+			{
+				preFrame: func(t *testing.T, gs [2]gameSync) {
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					// set both modules to $07, dungeons to $00:
+					gs[0].e.WRAM[0x10] = 0x07
+					gs[1].e.WRAM[0x10] = 0x07
+					gs[0].e.WRAM[0x040C] = dungeonIndex << 1
+					gs[1].e.WRAM[0x040C] = dungeonIndex << 1
+					// set different current dungeon key counter values:
+					gs[0].e.WRAM[0xF36F] = 1
+					gs[0].e.WRAM[offs] = 1
+					gs[1].e.WRAM[0xF36F] = 2
+					gs[1].e.WRAM[offs] = 2
+				},
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					// verify g1 no changes:
+					if expected, actual := uint8(1), gs[0].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(1), gs[0].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+					// verify g2 no changes:
+					if expected, actual := uint8(2), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					offs := smallKeyFirst + uint16(dungeonIndex)
+					// no notifications from g1:
+					if len(gs[0].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+					// verify g1 updated to g2's highest key count:
+					if expected, actual := uint8(2), gs[0].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[0].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+					// verify g2 no changes:
+					if expected, actual := uint8(2), gs[1].e.WRAM[0xF36F]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
+					}
+					if expected, actual := uint8(2), gs[1].e.WRAM[offs]; expected != actual {
+						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", offs, expected, actual)
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// verify g1 confirmed its last update with a notification:
+					if len(gs[0].n) != 1 {
+						t.Errorf("expected %d notifications actual %d", 1, len(gs[0].n))
+						return
+					}
+					if expected, actual := fmt.Sprintf("update %s small keys to 2 from g2", dungeonNames[dungeonIndex]), gs[0].n[0]; expected != actual {
+						t.Errorf("expected notification %q actual %q", expected, actual)
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+				},
+			},
+			{
+				postFrame: func(t *testing.T, gs [2]gameSync) {
+					// no notifications from g1:
+					if len(gs[0].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
+					}
+					// no notifications from g2:
+					if len(gs[1].n) != 0 {
+						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
+					}
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run(fmt.Sprintf("smallkeys_initialwithvarying_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+	}
+}

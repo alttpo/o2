@@ -82,7 +82,8 @@ type Game struct {
 	// game-valid memory:
 	wram          [0x20000]byte
 	wramLastFrame [0x20000]byte
-	sram          [0x10000]byte
+	wramDirty     [0x20000]bool
+	//sram          [0x10000]byte
 	notFirstFrame bool
 
 	syncing       bool
@@ -211,6 +212,7 @@ func (g *Game) FirstFrame() {
 	for i := range g.wram {
 		g.wram[i] = 0x00
 		g.wramLastFrame[i] = 0x00
+		g.wramDirty[i] = false
 	}
 }
 
