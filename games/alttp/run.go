@@ -622,7 +622,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	if nextFrame < lastFrame {
 		nextFrame += 256
 	}
-	g.localFrame += nextFrame - lastFrame
 	g.lastGameFrame = g.wram[0x1A]
 
 	// should wrap around 255 to 0:

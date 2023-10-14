@@ -288,15 +288,15 @@ func (s *SyncableBitU8) LocalCheck(wramCurrent, wramPrevious []byte) (notificati
 type SyncableBitU16 struct {
 	SyncableGame
 
-	Offset uint32
-	MemoryKind
-	SyncMask uint16
+	Offset     uint32
+	MemoryKind MemoryKind
+	SyncMask   uint16
 
 	IsEnabledPtr *bool
 	BitNames     [16]string
 	Verbs        [16]string
 
-	PlayerPredicate
+	PlayerPredicate PlayerPredicate
 
 	GenerateAsm SyncableBitU16GenerateAsm
 	OnUpdated   SyncableBitU16OnUpdated

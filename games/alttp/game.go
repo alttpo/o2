@@ -100,10 +100,8 @@ type Game struct {
 
 	romFunctions map[romFunction]uint32
 
-	lastGameFrame      uint8  // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
-	localFrame         uint64 // total frame count since start of local game
-	serverFrame        uint64 // total frame count according to server (taken from first player to enter group)
-	monotonicFrameTime uint8  // always increments by 1 whenever game frame increases by any amount N
+	lastGameFrame      uint8 // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
+	monotonicFrameTime uint8 // always increments by 1 whenever game frame increases by any amount N
 
 	shouldUpdatePlayersList bool
 
