@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	preMainLen = 8
+	preMainLen = 0x26
 	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
 	preMainAddr        = uint32(0x708000 - preMainLen)
-	preMainUpdateAAddr = uint32(0x707C00)
+	preMainJSRAddr     = uint32(0x707FF9)
+	preMainUpdateAAddr = uint32(0x707D00)
 	preMainUpdateBAddr = uint32(0x707E00)
 )
 
@@ -128,16 +129,55 @@ func (p *Patcher) Patch() (err error) {
 
 	// Build a temporary assembler to write the routine that gets written to SRAM:
 	taMain := asm.NewEmitter(make([]byte, 0x200), true)
-	taMain.SetBase(preMainAddr)
-	taMain.JSR_abs(0x7C00)
-	taMain.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
-	taMain.RTL()
-	if err := taMain.Finalize(); err != nil {
-		return err
-	}
-	taMain.WriteTextTo(textBuf)
-	if taMain.Len() != preMainLen {
-		panic(fmt.Errorf("SRAM preMain assembled code length: %02x (actual) != %02x (expected)", taMain.Len(), preMainLen))
+	{
+		taMain.SetBase(preMainAddr)
+
+		// assume 8-bit mode for accumulator and index registers:
+		taMain.AssumeSEP(0x30)
+
+		taMain.Label("moduleCheck")
+		taMain.Comment("only sync during 00 submodule for modules 07,09,0B:")
+		taMain.LDA_dp(0x10)
+		taMain.CMP_imm8_b(0x07)
+		taMain.BEQ("submoduleCheck")
+		taMain.CMP_imm8_b(0x09)
+		taMain.BEQ("submoduleCheck")
+		taMain.CMP_imm8_b(0x0B)
+		taMain.BEQ("submoduleCheck")
+		taMain.Comment("all submodules of menu/interface module 0E are ok:")
+		taMain.CMP_imm8_b(0x0E)
+		taMain.BNE("syncExit")
+		taMain.BRA("linkCheck")
+		taMain.Label("submoduleCheck")
+		taMain.LDA_dp(0x11)
+		taMain.BNE("syncExit")
+		taMain.Label("linkCheck")
+		taMain.Comment("don't update if Link is frozen:")
+		taMain.LDA_abs(0x02E4)
+		taMain.BNE("syncExit")
+
+		jsr := taMain.Label("syncStart")
+		if preMainJSRAddr != jsr+2 {
+			panic(fmt.Errorf("preMainJSRAddr expected to be $%06x but got $%06x", jsr+2, preMainJSRAddr))
+		}
+		taMain.JSR_abs(uint16(preMainUpdateAAddr & 0xFFFF))
+
+		// jsl to mainrouting that we patched over:
+		taMain.Label("syncExit")
+		taMain.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+		taMain.RTL()
+
+		if taMain.Len()&1 != 0 {
+			taMain.NOP()
+		}
+
+		if err := taMain.Finalize(); err != nil {
+			return err
+		}
+		taMain.WriteTextTo(textBuf)
+		if taMain.Len() != preMainLen {
+			panic(fmt.Errorf("SRAM preMain assembled code length: $%02x (actual) != $%02x (expected)", taMain.Len(), preMainLen))
+		}
 	}
 
 	// assemble the RTS instructions at the two A/B update routine locations:
@@ -198,8 +238,13 @@ func (p *Patcher) Patch() (err error) {
 }
 
 func (p *Patcher) asmCopyRoutine(tc []byte, a *asm.Emitter, addr uint32) uint32 {
+	ln := len(tc)
+	if ln&1 != 0 {
+		panic("asm routine length must be a multiple of 2 bytes")
+	}
+
 	// copy the assembled routine using LDA.w and STA.l instruction pairs, 16-bits at a time:
-	for i := 0; i < len(tc); i += 2 {
+	for i := 0; i < ln; i += 2 {
 		a.LDA_imm16_lh(tc[i], tc[i+1])
 		a.STA_long(addr)
 		addr += 2

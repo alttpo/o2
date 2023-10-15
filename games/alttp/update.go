@@ -66,7 +66,7 @@ func (g *Game) updateWRAM() {
 
 	// write generated asm routine to SRAM:
 	var targetJSR uint32
-	targetJSR, err = lorom.BusAddressToPak(preMainAddr + 2)
+	targetJSR, err = lorom.BusAddressToPak(preMainJSRAddr)
 	err = q.MakeWriteCommands(
 		[]snes.Write{
 			{
@@ -76,8 +76,8 @@ func (g *Game) updateWRAM() {
 			},
 			// finally, update the JSR instruction to point to the updated routine:
 			{
-				// JSR $7C00 | JSR $7E00
-				// update the $7C or $7E byte in the JSR instruction:
+				// JSR $7D00 | JSR $7E00
+				// update the $7D or $7E byte in the JSR instruction:
 				Address: targetJSR,
 				Size:    1,
 				Data:    []byte{uint8(targetSNES >> 8)},
@@ -140,41 +140,11 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 		return false
 	}
 
+	// refer to patcher.go for the initial setup of SRAM trampoline which eventually JSRs here
 	a.SetBase(targetSNES)
 
 	// assume 8-bit mode for accumulator and index registers:
 	a.AssumeSEP(0x30)
-
-	// clear out our routine with an RTS instruction at the start:
-	a.Comment("disable update routine with RTS instruction and copy of $1A:")
-	a.REP(0x30)
-	a.LDA_imm16_lh(0x60, g.lastGameFrame) // RTS
-	a.STA_long(targetSNES)
-	a.SEP(0x30)
-
-	a.Label("moduleCheck")
-	a.Comment("only sync during 00 submodule for modules 07,09,0B:")
-	a.LDA_dp(0x10)
-	a.CMP_imm8_b(0x07)
-	a.BEQ("submoduleCheck")
-	a.CMP_imm8_b(0x09)
-	a.BEQ("submoduleCheck")
-	a.CMP_imm8_b(0x0B)
-	a.BEQ("submoduleCheck")
-	a.Comment("all submodules of menu/interface module 0E are ok:")
-	a.CMP_imm8_b(0x0E)
-	a.BNE("syncExit")
-	a.BRA("linkCheck")
-	a.Label("submoduleCheck")
-	a.LDA_dp(0x11)
-	a.BNE("syncExit")
-	a.Label("linkCheck")
-	a.Comment("don't update if Link is frozen:")
-	a.LDA_abs(0x02E4)
-	a.BEQ("syncStart")
-	a.Label("syncExit")
-	a.RTS()
-	a.Label("syncStart")
 
 	// custom asm overrides update asm generation:
 	if !g.generateCustomAsm(a) {
@@ -184,10 +154,13 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 		}
 	}
 
-	// back to 8-bit mode for accumulator:
-	if a.Flags()&0x30 != 0x30 {
-		a.SEP(0x30)
-	}
+	// clear out our routine with an RTS instruction at the start:
+	a.Comment("disable update routine with RTS instruction and copy of $1A:")
+	a.REP(0x30)
+	a.LDA_imm16_lh(0x60, g.lastGameFrame) // RTS
+	a.STA_long(targetSNES)
+	a.SEP(0x30)
+
 	a.RTS()
 
 	if err := a.Finalize(); err != nil {

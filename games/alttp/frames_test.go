@@ -278,7 +278,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 				Extra:   nil,
 			})
 		}
-		// force to write update in SRAM to 0x7C00
+		// force to write update in SRAM to 0x7D00
 		g.nextUpdateA = true
 		g.readMainComplete(rsps)
 
@@ -319,9 +319,10 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 
 		if updated {
 			// invoke asm confirmations to get notifications:
-			log.Printf("alttp: update: states = %v\n", system.SRAM[0x7C00+0x02:0x7C00+0x02+uint32(len(g.updateGenerators))])
+			execCheck := uint16(g.lastUpdateTarget&0xFFFF) + 0x02
+			log.Printf("alttp: update: states = %v\n", system.SRAM[execCheck:execCheck+uint16(len(g.updateGenerators))])
 			for i, generator := range g.updateGenerators {
-				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[0x7C00+0x02+uint32(i)])
+				generator.ConfirmAsmExecuted(uint32(i), system.SRAM[execCheck+uint16(i)])
 			}
 		}
 
