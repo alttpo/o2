@@ -19,6 +19,9 @@ const (
 	preMainJSRAddr     = uint32(0x707FF9)
 	preMainUpdateAAddr = uint32(0x707D00)
 	preMainUpdateBAddr = uint32(0x707E00)
+	// bus address of unused/garbage area in ROM (JP and US confirmed):
+	romGarbageStart = uint32(0x1BB1D7)
+	romGarbageEnd   = uint32(0x1BB800)
 )
 
 type Patcher struct {
@@ -86,7 +89,7 @@ func (p *Patcher) Patch() (err error) {
 	}()
 
 	// overwrite $00:802F with `JSL $1BB1D7`
-	const initHook = 0x1BB1D7
+	const initHook = romGarbageStart
 
 	var pcAddr uint32
 	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
@@ -207,7 +210,7 @@ func (p *Patcher) Patch() (err error) {
 
 	// start writing at the end of the ROM after music data:
 	pcAddr, err = lorom.BusAddressToPak(initHook)
-	a = asm.NewEmitter(p.rom.Slice(pcAddr, 0x1C_0000-initHook), true)
+	a = asm.NewEmitter(p.rom.Slice(pcAddr, romGarbageEnd-romGarbageStart), true)
 	a.SetBase(initHook)
 	a.REP(0x20)
 	p.asmCopyRoutine(taUpdateA.Bytes(), a, preMainUpdateAAddr)
