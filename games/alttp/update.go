@@ -90,6 +90,7 @@ func (g *Game) updateWRAM() {
 			if g.updateStage != 1 {
 				g.updateLock.Unlock()
 				log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+				g.updateStage = 0
 				return
 			}
 

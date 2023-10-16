@@ -416,7 +416,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// we're not sure if an update is coming soon so prevent any background tickers from requesting a read:
 	g.updateLock.Lock()
-	g.updateStage = -1
+	if g.updateStage == 0 {
+		g.updateStage = -1
+	}
 	g.updateLock.Unlock()
 	g.priorityReadsMu.Unlock()
 
