@@ -7,7 +7,7 @@ import (
 
 func TestLocal_Vanilla_ItemNames(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -104,7 +104,7 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 
 func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -236,7 +236,7 @@ func TestLocal_Vanilla_Bottles(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -255,7 +255,7 @@ func TestLocal_Vanilla_Bottles(t *testing.T) {
 
 func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -345,7 +345,7 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 
 func TestLocal_Vanilla_OverworldRooms(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return

@@ -1,32 +1,27 @@
 package util
 
+import "strings"
+
 type CommitLogger struct {
-	Committer func(p []byte)
-	buf       []byte
+	Committer func(p string)
+	buf       strings.Builder
 }
 
 func (l *CommitLogger) Reserve(n int) {
-	if cap(l.buf) >= n {
-		return
-	}
-
-	newbuf := make([]byte, len(l.buf), n)
-	copy(newbuf, l.buf)
-	l.buf = newbuf
+	l.buf.Grow(n)
 }
 
 func (l *CommitLogger) Write(p []byte) (n int, err error) {
-	l.buf = append(l.buf, p...)
-	return len(p), nil
+	return l.buf.Write(p)
 }
 
 func (l *CommitLogger) Commit() {
 	if l.Committer != nil {
-		l.Committer(l.buf)
+		l.Committer(l.buf.String())
 	}
 	l.Reset()
 }
 
 func (l *CommitLogger) Reset() {
-	l.buf = l.buf[:0]
+	l.buf.Reset()
 }

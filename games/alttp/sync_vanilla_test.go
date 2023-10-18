@@ -428,7 +428,7 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -528,7 +528,7 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -631,7 +631,7 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -714,7 +714,7 @@ func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -733,7 +733,7 @@ func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 
 func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -849,7 +849,7 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 
 func TestGame_VanillaGenericSyncables(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -1025,7 +1025,7 @@ func TestGame_VanillaGenericSyncables(t *testing.T) {
 
 func TestGame_Vanilla_ListSyncables(t *testing.T) {
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return

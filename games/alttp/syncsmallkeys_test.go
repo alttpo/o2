@@ -245,7 +245,7 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -266,9 +266,9 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 
 func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
 					gs[0].e.WRAM[0x10] = 0x07
 					gs[1].e.WRAM[0x10] = 0x07
@@ -277,11 +277,11 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// inc current dungeon key counter:
 					gs[0].e.WRAM[0xF36F] = 1
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 updated its current small key counter:
 					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
@@ -295,7 +295,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 2 {
 						t.Errorf("expected %d notifications actual %d", 2, len(gs[1].n))
@@ -309,7 +309,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no redundant notifications:
 					if len(gs[1].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -317,17 +317,14 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
 		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
 
 	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// set both modules to $07:
 					gs[0].e.WRAM[0x10] = 0x07
 					gs[1].e.WRAM[0x10] = 0x07
@@ -336,11 +333,11 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// inc current dungeon key counter:
 					gs[0].e.WRAM[0xF36F] = 1
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 updated its current small key counter:
 					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
@@ -352,7 +349,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 1 {
 						t.Errorf("expected %d notifications actual %d", 1, len(gs[1].n))
@@ -363,7 +360,7 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no redundant notifications:
 					if len(gs[1].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -371,9 +368,6 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
 		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
@@ -381,9 +375,9 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 
 func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
 					gs[0].e.WRAM[0x10] = 0x07
 					gs[1].e.WRAM[0x10] = 0x07
@@ -392,13 +386,13 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// inc g1 current dungeon key counter:
 					gs[0].e.WRAM[0xF36F] = 1
 					// change g2 submodule to delay receiving sync:
 					gs[1].e.WRAM[0x11] = 0x05
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 DID NOT update small keys:
 					if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
@@ -412,11 +406,11 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// change g2 submodule back to 0 to enable sync:
 					gs[1].e.WRAM[0x11] = 0x00
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 updated small keys:
 					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
@@ -430,7 +424,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 2 {
 						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
@@ -444,7 +438,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no redundant notifications:
 					if len(gs[1].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -452,17 +446,14 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
 		t.Run(fmt.Sprintf("smallkeys_delayed_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
 
 	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
 					gs[0].e.WRAM[0x10] = 0x07
 					gs[1].e.WRAM[0x10] = 0x07
@@ -471,13 +462,13 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// inc g1 current dungeon key counter:
 					gs[0].e.WRAM[0xF36F] = 1
 					// change g2 submodule to delay receiving sync:
 					gs[1].e.WRAM[0x11] = 0x05
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 DID NOT update small keys:
 					if expected, actual := uint8(0), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
@@ -489,11 +480,11 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// change g2 submodule back to 0 to enable sync:
 					gs[1].e.WRAM[0x11] = 0x00
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 updated small keys:
 					if expected, actual := uint8(1), gs[1].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
@@ -505,7 +496,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g2 confirmed last update:
 					if len(gs[1].n) != 1 {
 						t.Errorf("expected %d notifications actual %d", 1, len(gs[1].n))
@@ -517,7 +508,7 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no redundant notifications:
 					if len(gs[1].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -525,18 +516,15 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
 		t.Run(fmt.Sprintf("smallkeys_delayed_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
 }
 
 func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
-	tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+	tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
+			preFrame: func(t testing.TB, gs [2]gameSync) {
 				// set both modules to $07, dungeons to $00:
 				gs[0].e.WRAM[0x10] = 0x07
 				gs[1].e.WRAM[0x10] = 0x07
@@ -548,13 +536,13 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 			},
 		},
 		{
-			preFrame: func(t *testing.T, gs [2]gameSync) {
+			preFrame: func(t testing.TB, gs [2]gameSync) {
 				// dec g1 current dungeon key counter:
 				gs[0].e.WRAM[0xF36F] = 0
 				// dec g2 current dungeon key counter:
 				gs[1].e.WRAM[0xF36F] = 0
 			},
-			postFrame: func(t *testing.T, gs [2]gameSync) {
+			postFrame: func(t testing.TB, gs [2]gameSync) {
 				// verify g2 updated its current small key counter:
 				if expected, actual := uint8(0), gs[0].e.WRAM[0xF36F]; expected != actual {
 					t.Errorf("expected wram[$f63f] == $%02x, got $%02x", expected, actual)
@@ -579,7 +567,7 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 			},
 		},
 		{
-			postFrame: func(t *testing.T, gs [2]gameSync) {
+			postFrame: func(t testing.TB, gs [2]gameSync) {
 				// verify g2 confirmed last update:
 				if len(gs[1].n) != 0 {
 					t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -588,7 +576,7 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 			},
 		},
 		{
-			postFrame: func(t *testing.T, gs [2]gameSync) {
+			postFrame: func(t testing.TB, gs [2]gameSync) {
 				// verify g2 confirmed last update:
 				if len(gs[1].n) != 0 {
 					t.Errorf("expected %d notifications actual %d", 0, len(gs[1].n))
@@ -597,18 +585,15 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tc.runGameSyncTest(t)
 }
 
 func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					// set both modules to $07, dungeons to $00:
 					gs[0].e.WRAM[0x10] = 0x07
 					gs[1].e.WRAM[0x10] = 0x07
@@ -622,7 +607,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 					gs[1].e.WRAM[smallKeyFirst] = 2
 					gs[1].e.WRAM[smallKeyFirst+1] = 2
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g1 no changes:
 					if expected, actual := uint8(1), gs[0].e.WRAM[0xF36F]; expected != actual {
 						t.Errorf("expected wram[$%04x] == $%02x, got $%02x", 0xF36F, expected, actual)
@@ -646,7 +631,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no notifications from g1:
 					if len(gs[0].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
@@ -678,7 +663,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g1 confirmed its last update with a notification:
 					if len(gs[0].n) != 2 {
 						t.Errorf("expected %d notifications actual %d", 2, len(gs[0].n))
@@ -697,7 +682,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no notifications from g1:
 					if len(gs[0].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
@@ -709,17 +694,14 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
-		t.Run(fmt.Sprintf("smallkeys_ideal_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
+		t.Run(fmt.Sprintf("smallkeys_initialwithvarying_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}
 
 	for dungeonIndex := uint8(2); dungeonIndex < 14; dungeonIndex++ {
-		tc, err := newGameSyncTestCase("VT test", []gameSyncTestFrame{
+		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
-				preFrame: func(t *testing.T, gs [2]gameSync) {
+				preFrame: func(t testing.TB, gs [2]gameSync) {
 					offs := smallKeyFirst + uint16(dungeonIndex)
 					// set both modules to $07, dungeons to $00:
 					gs[0].e.WRAM[0x10] = 0x07
@@ -732,7 +714,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 					gs[1].e.WRAM[0xF36F] = 2
 					gs[1].e.WRAM[offs] = 2
 				},
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					offs := smallKeyFirst + uint16(dungeonIndex)
 					// verify g1 no changes:
 					if expected, actual := uint8(1), gs[0].e.WRAM[0xF36F]; expected != actual {
@@ -751,7 +733,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					offs := smallKeyFirst + uint16(dungeonIndex)
 					// no notifications from g1:
 					if len(gs[0].n) != 0 {
@@ -778,7 +760,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// verify g1 confirmed its last update with a notification:
 					if len(gs[0].n) != 1 {
 						t.Errorf("expected %d notifications actual %d", 1, len(gs[0].n))
@@ -794,7 +776,7 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 			{
-				postFrame: func(t *testing.T, gs [2]gameSync) {
+				postFrame: func(t testing.TB, gs [2]gameSync) {
 					// no notifications from g1:
 					if len(gs[0].n) != 0 {
 						t.Errorf("expected %d notifications actual %d", 0, len(gs[0].n))
@@ -806,9 +788,6 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 				},
 			},
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
 
 		t.Run(fmt.Sprintf("smallkeys_initialwithvarying_d%02x", dungeonIndex<<1), tc.runGameSyncTest)
 	}

@@ -163,7 +163,7 @@ func Test_Frames(t *testing.T) {
 	}
 
 	// create system emulator and test ROM:
-	system, rom, err := CreateTestEmulator("ZELDANODENSETSU")
+	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -182,8 +182,6 @@ func Test_Frames(t *testing.T) {
 
 func (tt *testCase) runFrameTest(t *testing.T) {
 	system, g := tt.system, tt.g
-
-	//system.Logger.(*testinglogger.TestingLogger).TB = t
 
 	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {

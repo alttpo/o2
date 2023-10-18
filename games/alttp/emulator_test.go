@@ -4,18 +4,16 @@ import (
 	"fmt"
 	"github.com/alttpo/snes/emulator"
 	"github.com/alttpo/snes/mapping/lorom"
-	"log"
+	"io"
 	"o2/snes"
 	"o2/util"
+	"testing"
 )
 
-func CreateTestEmulator(romTitle string) (system *emulator.System, rom *snes.ROM, err error) {
+func createTestEmulator(romTitle string, logger io.Writer) (system *emulator.System, rom *snes.ROM, err error) {
 	// create the CPU-only SNES emulator:
 	system = &emulator.System{
-		Logger: &util.CommitLogger{Committer: func(p []byte) {
-			p = append(p, '\n')
-			log.Writer().Write(p)
-		}},
+		Logger: logger,
 	}
 	if err = system.CreateEmulator(); err != nil {
 		return
@@ -35,11 +33,20 @@ func CreateTestEmulator(romTitle string) (system *emulator.System, rom *snes.ROM
 	// run the initialization code to set up SRAM:
 	system.CPU.Reset()
 	if !system.RunUntil(0x00_8034, 0x1_000) {
-		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", 0x00_8033, system.CPU.PC)
+		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", 0x00_8034, system.CPU.PC)
 		return
 	}
 
 	return
+}
+
+func CreateTestEmulator(romTitle string, t testing.TB) (system *emulator.System, rom *snes.ROM, err error) {
+	return createTestEmulator(
+		romTitle,
+		&util.CommitLogger{Committer: func(p string) {
+			t.Logf("%s\n", p)
+		}},
+	)
 }
 
 func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {

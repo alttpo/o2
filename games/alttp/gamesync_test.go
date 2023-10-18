@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/alttpo/snes/emulator"
@@ -11,6 +12,7 @@ import (
 	"o2/client/protocol03"
 	"o2/interfaces"
 	"o2/snes"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -42,12 +44,12 @@ type testServer struct {
 	Now     time.Time
 }
 
-func (t *testServer) AdvanceTime(duration time.Duration) {
-	t.Now = t.Now.Add(duration)
+func (s *testServer) AdvanceTime(duration time.Duration) {
+	s.Now = s.Now.Add(duration)
 }
 
-func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
-	c := t.Clients[i]
+func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err error) {
+	c := s.Clients[i]
 
 	var protocolVersion uint8
 	{
@@ -72,7 +74,7 @@ func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
 	}
 
 	gm.PlayerIndex = uint32(i)
-	gm.ServerTime = t.Now.UnixNano()
+	gm.ServerTime = s.Now.UnixNano()
 
 	if gm.GetJoinGroup() != nil || gm.GetEcho() != nil || gm.GetBroadcastSector() != nil {
 		pkt := client.MakePacket(protocol)
@@ -96,7 +98,10 @@ func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
 			pname = "broadcastSector"
 			pvalue = gm.GetBroadcastSector()
 		}
-		log.Printf("server: c[%d] %s: %v\n", i, pname, pvalue)
+		if t != nil {
+			log.Printf("server: c[%d] %s\n", i, pname)
+			_ = pvalue
+		}
 
 		c.Rd <- pkt.Bytes()
 	} else if ba := gm.GetBroadcastAll(); ba != nil {
@@ -109,13 +114,13 @@ func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
 		}
 
 		pkt.Write(rspBytes)
-		for j := range t.Clients {
+		for j := range s.Clients {
 			if j == i {
 				continue
 			}
 
-			log.Printf("server: c[%d] -> c[%d] broadcastAll: %v\n", i, j, ba)
-			t.Clients[j].Rd <- pkt.Bytes()
+			log.Printf("server: c[%d] -> c[%d] broadcastAll\n", i, j)
+			s.Clients[j].Rd <- pkt.Bytes()
 		}
 	}
 	// TODO: proper handling of GetBroadcastSector()
@@ -123,9 +128,9 @@ func (t *testServer) HandleMessageFromClient(i int, b []byte) (err error) {
 	return
 }
 
-func (t *testServer) Run(ctx context.Context) (err error) {
-	cases := make([]reflect.SelectCase, 0, len(t.Clients)+1)
-	for _, c := range t.Clients {
+func (s *testServer) Run(ctx context.Context) (err error) {
+	cases := make([]reflect.SelectCase, 0, len(s.Clients)+1)
+	for _, c := range s.Clients {
 		cases = append(cases, reflect.SelectCase{
 			Dir:  reflect.SelectRecv,
 			Chan: reflect.ValueOf(c.Wr),
@@ -143,12 +148,12 @@ func (t *testServer) Run(ctx context.Context) (err error) {
 		if !ok {
 			continue
 		}
-		if i == len(t.Clients) {
+		if i == len(s.Clients) {
 			// ctx.Done() was received from
 			break
 		}
 
-		if err = t.HandleMessageFromClient(i, rcv.Bytes()); err != nil {
+		if err = s.HandleMessageFromClient(nil, i, rcv.Bytes()); err != nil {
 			panic(err)
 		}
 	}
@@ -156,11 +161,11 @@ func (t *testServer) Run(ctx context.Context) (err error) {
 	return
 }
 
-func (t *testServer) HandleAllClients() {
-	for i := range t.Clients {
-		for len(t.Clients[i].Wr) > 0 {
-			b := <-t.Clients[i].Wr
-			if err := t.HandleMessageFromClient(i, b); err != nil {
+func (s *testServer) HandleAllClients(t testing.TB) {
+	for i := range s.Clients {
+		for len(s.Clients[i].Wr) > 0 {
+			b := <-s.Clients[i].Wr
+			if err := s.HandleMessageFromClient(t, i, b); err != nil {
 				panic(err)
 			}
 		}
@@ -253,11 +258,11 @@ func (t *testQueue) IsTerminalError(err error) bool {
 	return false
 }
 
-func createTestGameSync(romTitle string, playerName string) (gs gameSync, err error) {
+func createTestGameSync(romTitle string, playerName string, logger io.Writer) (gs gameSync, err error) {
 	var rom *snes.ROM
 
 	// ROM title must start with "VT " to indicate randomizer
-	gs.e, rom, err = CreateTestEmulator(romTitle)
+	gs.e, rom, err = createTestEmulator(romTitle, logger)
 	if err != nil {
 		return
 	}
@@ -278,8 +283,8 @@ func createTestGameSync(romTitle string, playerName string) (gs gameSync, err er
 
 	// initialize reads:
 	gs.g.priorityReads[0] = nil
-	gs.g.priorityReads[1] = gs.g.enqueueMainRead(gs.g.enqueueSRAMRead(nil))
-	gs.g.priorityReads[2] = gs.g.enqueueMainRead(gs.g.enqueueWRAMReads(nil))
+	gs.g.priorityReads[1] = gs.g.enqueueMainRead(gs.g.enqueueSRAMRead(make([]snes.Read, 0, 20)))
+	gs.g.priorityReads[2] = gs.g.enqueueMainRead(gs.g.enqueueWRAMReads(make([]snes.Read, 0, 20)))
 
 	return
 }
@@ -294,7 +299,10 @@ func gameHandleNet(g *Game) {
 	}
 }
 
-func gameRunFrame(t *testing.T, g *Game, e *emulator.System) {
+func (gs *gameSync) runFrame(t testing.TB) {
+	g := gs.g
+	e := gs.e
+
 	log.Printf("%s ----------------------------------\n", g.LocalPlayer().Name())
 
 	gameHandleNet(g)
@@ -353,7 +361,7 @@ type gameSync struct {
 	n []string
 }
 
-type gameSyncTestUpdateFunc func(t *testing.T, gs [2]gameSync)
+type gameSyncTestUpdateFunc func(t testing.TB, gs [2]gameSync)
 
 type gameSyncTestFrame struct {
 	preFrame  gameSyncTestUpdateFunc
@@ -361,27 +369,98 @@ type gameSyncTestFrame struct {
 }
 
 type gameSyncTestCase struct {
-	gs [2]gameSync
-	s  *testServer
-	f  []gameSyncTestFrame
+	gs       [2]gameSync
+	s        *testServer
+	f        []gameSyncTestFrame
+	romTitle string
 }
 
-func newGameSyncTestCase(romTitle string, f []gameSyncTestFrame) (tc *gameSyncTestCase, err error) {
-	// create two independent clients and their respective emulators:
-	var c1 gameSync
-	c1, err = createTestGameSync(romTitle, "g1")
-	if err != nil {
-		return
+func (tc *gameSyncTestCase) runFrame(t testing.TB, f *gameSyncTestFrame, duration time.Duration) bool {
+	// clear notifications:
+	for i := range tc.gs {
+		tc.gs[i].n = tc.gs[i].n[:0]
 	}
-	var c2 gameSync
-	c2, err = createTestGameSync(romTitle, "g2")
+
+	// pre-frame setup and/or test assumption verification:
+	if f.preFrame != nil {
+		f.preFrame(t, tc.gs)
+	}
+	if t.Failed() {
+		return false
+	}
+
+	// run a single frame for each client:
+	for i := range tc.gs {
+		tc.gs[i].runFrame(t)
+		tc.s.HandleAllClients(t)
+	}
+
+	// post-frame test validation:
+	if f.postFrame != nil {
+		f.postFrame(t, tc.gs)
+	}
+	if t.Failed() {
+		return false
+	}
+
+	// advance server time:
+	tc.s.AdvanceTime(duration)
+	return true
+}
+
+func newGameSyncTestCase(romTitle string, f []gameSyncTestFrame) (tc *gameSyncTestCase) {
+	tc = &gameSyncTestCase{
+		romTitle: romTitle,
+		f:        f,
+	}
+
+	return
+}
+
+type testLogger struct {
+	u io.Writer
+	b bytes.Buffer
+}
+
+func (l *testLogger) Write(p []byte) (n int, err error) {
+	return l.b.Write(p)
+}
+
+func (l *testLogger) WriteTo(w io.Writer) (n int64, err error) {
+	n, err = l.b.WriteTo(w)
+	l.b.Reset()
+	return
+}
+
+func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
+	const duration = time.Millisecond * 17
+
+	var err error
+
+	//logger := log.Writer()
+	logger := &testLogger{}
+	logger.b.Grow(20000)
+	t.Cleanup(func() {
+		logger.WriteTo(log.Writer())
+		log.SetOutput(os.Stdout)
+	})
+	//defer func() {
+	//	logger.WriteTo(log.Writer())
+	//	log.SetOutput(os.Stdout)
+	//}()
+	log.SetOutput(logger)
+
+	// create two independent clients and their respective emulators:
+	tc.gs[0], err = createTestGameSync(tc.romTitle, "g1", logger)
 	if err != nil {
+		t.Error(err)
 		return
 	}
 
-	tc = &gameSyncTestCase{
-		gs: [2]gameSync{c1, c2},
-		f:  f,
+	tc.gs[1], err = createTestGameSync(tc.romTitle, "g2", logger)
+	if err != nil {
+		t.Error(err)
+		return
 	}
 
 	// create a mock server to facilitate network comms between the clients:
@@ -390,14 +469,8 @@ func newGameSyncTestCase(romTitle string, f []gameSyncTestFrame) (tc *gameSyncTe
 		Now:     time.Now(),
 	}
 
-	return
-}
-
-func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
-	const duration = time.Millisecond * 17
-
 	// issue join group messages:
-	tc.s.HandleAllClients()
+	tc.s.HandleAllClients(t)
 	tc.s.AdvanceTime(duration)
 
 	// handle join group messages for each client now to avoid them showing up in notification subscriptions:
@@ -423,35 +496,9 @@ func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 	}
 
 	// execute test frames:
-	for _, f := range tc.f {
-		// clear notifications:
-		for i := range tc.gs {
-			tc.gs[i].n = tc.gs[i].n[:0]
-		}
-
-		// pre-frame setup and/or test assumption verification:
-		if f.preFrame != nil {
-			f.preFrame(t, tc.gs)
-		}
-		if t.Failed() {
+	for i := range tc.f {
+		if !tc.runFrame(t, &tc.f[i], duration) {
 			break
 		}
-
-		// run a single frame for each client:
-		for i := range tc.gs {
-			gameRunFrame(t, tc.gs[i].g, tc.gs[i].e)
-			tc.s.HandleAllClients()
-		}
-
-		// post-frame test validation:
-		if f.postFrame != nil {
-			f.postFrame(t, tc.gs)
-		}
-		if t.Failed() {
-			break
-		}
-
-		// advance server time:
-		tc.s.AdvanceTime(duration)
 	}
 }
