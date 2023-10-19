@@ -118,7 +118,7 @@ sendloop:
 
 // run in a separate goroutine
 func (g *Game) run() {
-	q := make([]snes.Read, 0, 8)
+	q := make([]snes.Read, 0, 12)
 
 	// kick off initial WRAM read request:
 	g.priorityReadsMu.Lock()
@@ -198,7 +198,7 @@ func (g *Game) run() {
 					if timeSinceRead < time.Millisecond*512 {
 						// read SRAM data:
 						g.priorityReadsMu.Lock()
-						q := make([]snes.Read, 0, 8)
+						q := make([]snes.Read, 0, 12)
 						q = g.enqueueSRAMRead(q)
 
 						if debugSprites {
@@ -215,7 +215,7 @@ func (g *Game) run() {
 					} else {
 						g.priorityReadsMu.Lock()
 						log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
-						q := make([]snes.Read, 0, 8)
+						q := make([]snes.Read, 0, 12)
 						q = g.enqueueWRAMReads(q)
 						// must always read module number LAST to validate the prior reads:
 						q = g.enqueueMainRead(q)
@@ -345,7 +345,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.priorityReads[1] = nil
 	g.priorityReads[2] = nil
 
-	q := make([]snes.Read, 0, 8)
+	q := make([]snes.Read, 0, 16)
 
 	// assume module is invalid until we read it:
 	moduleStaging := -1

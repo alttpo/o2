@@ -12,7 +12,6 @@ import (
 	"o2/client/protocol03"
 	"o2/interfaces"
 	"o2/snes"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -440,14 +439,11 @@ func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 	//logger := log.Writer()
 	logger := &testLogger{}
 	logger.b.Grow(20000)
+	originalLogger := log.Writer()
 	t.Cleanup(func() {
-		logger.WriteTo(log.Writer())
-		log.SetOutput(os.Stdout)
+		logger.WriteTo(originalLogger)
+		log.SetOutput(originalLogger)
 	})
-	//defer func() {
-	//	logger.WriteTo(log.Writer())
-	//	log.SetOutput(os.Stdout)
-	//}()
 	log.SetOutput(logger)
 
 	// create two independent clients and their respective emulators:
