@@ -89,6 +89,8 @@ type wramTestValue struct {
 }
 
 func Test_Frames(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := []testCase{
 		{
 			name:      "wishing well bottle fill",

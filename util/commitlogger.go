@@ -1,10 +1,12 @@
 package util
 
-import "strings"
+import (
+	"bytes"
+)
 
 type CommitLogger struct {
-	Committer func(p string)
-	buf       strings.Builder
+	Committer func(p []byte)
+	buf       bytes.Buffer
 }
 
 func (l *CommitLogger) Reserve(n int) {
@@ -17,7 +19,8 @@ func (l *CommitLogger) Write(p []byte) (n int, err error) {
 
 func (l *CommitLogger) Commit() {
 	if l.Committer != nil {
-		l.Committer(l.buf.String())
+		l.buf.WriteByte('\n')
+		l.Committer(l.buf.Bytes())
 	}
 	l.Reset()
 }

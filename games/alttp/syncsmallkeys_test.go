@@ -197,6 +197,8 @@ func caveSmallKeyTest(
 }
 
 func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vanillaItemNames))
 
 	rightMeow := time.Now()
@@ -265,6 +267,8 @@ func TestAsmFrames_Vanilla_SmallKeys(t *testing.T) {
 }
 
 func TestGameSync_SmallKeys_Ideal(t *testing.T) {
+	setupTestLogger(t)
+
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
 		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
@@ -374,6 +378,8 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 }
 
 func TestGameSync_SmallKeys_Delayed(t *testing.T) {
+	setupTestLogger(t)
+
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
 		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{
@@ -522,6 +528,8 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 }
 
 func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
+	setupTestLogger(t)
+
 	tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 		{
 			preFrame: func(t testing.TB, gs [2]gameSync) {
@@ -590,6 +598,8 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 }
 
 func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
+	setupTestLogger(t)
+
 	for dungeonIndex := uint8(0); dungeonIndex <= 1; dungeonIndex++ {
 		tc := newGameSyncTestCase("VT test", []gameSyncTestFrame{
 			{

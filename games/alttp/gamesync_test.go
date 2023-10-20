@@ -436,15 +436,7 @@ func (tc *gameSyncTestCase) runGameSyncTest(t *testing.T) {
 
 	var err error
 
-	//logger := log.Writer()
-	logger := &testLogger{}
-	logger.b.Grow(20000)
-	originalLogger := log.Writer()
-	t.Cleanup(func() {
-		logger.WriteTo(originalLogger)
-		log.SetOutput(originalLogger)
-	})
-	log.SetOutput(logger)
+	logger := log.Writer().(*testLogger)
 
 	// create two independent clients and their respective emulators:
 	tc.gs[0], err = createTestGameSync(tc.romTitle, "g1", logger)

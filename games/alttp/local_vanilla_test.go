@@ -6,6 +6,8 @@ import (
 )
 
 func TestLocal_Vanilla_ItemNames(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
@@ -103,6 +105,8 @@ func TestLocal_Vanilla_ItemNames(t *testing.T) {
 }
 
 func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
@@ -198,6 +202,8 @@ func TestLocal_Vanilla_ItemBitNames(t *testing.T) {
 }
 
 func TestLocal_Vanilla_Bottles(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
 	for offs := uint16(0x35C); offs <= 0x35F; offs++ {
@@ -254,6 +260,8 @@ func TestLocal_Vanilla_Bottles(t *testing.T) {
 }
 
 func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
@@ -344,6 +352,8 @@ func TestLocal_Vanilla_UnderworldRooms(t *testing.T) {
 }
 
 func TestLocal_Vanilla_OverworldRooms(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {

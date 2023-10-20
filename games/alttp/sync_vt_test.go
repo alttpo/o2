@@ -7,6 +7,8 @@ import (
 )
 
 func TestAsm_VT_Items(t *testing.T) {
+	setupTestLogger(t)
+
 	sramTests := []sramTestCase{
 		{
 			name:        "No update",
@@ -589,6 +591,8 @@ func TestAsm_VT_Items(t *testing.T) {
 }
 
 func TestAsm_VT_ItemBits(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vtItemBitNames)*8)
 
 	for offs := uint16(0x38C); offs <= 0x38E; offs++ {
@@ -657,6 +661,8 @@ func TestAsm_VT_ItemBits(t *testing.T) {
 }
 
 func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vtItemBitNames)*8)
 
 	for d := 0; d < 0xe; d++ {
@@ -720,6 +726,8 @@ func TestAsm_VT_DungeonLocationChecks(t *testing.T) {
 }
 
 func TestGame_VTGenericSyncables(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	// ROM title must start with "VT " to indicate randomizer
 	system, rom, err := CreateTestEmulator("VT test", t)
@@ -733,8 +741,8 @@ func TestGame_VTGenericSyncables(t *testing.T) {
 	// find all Syncables without custom asm generation and verify basic behaviors
 	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 		offs := offs
-		s, ok := g.syncable[offs]
-		if !ok {
+		s := g.syncable[offs]
+		if s == nil {
 			continue
 		}
 
@@ -907,8 +915,8 @@ func TestGame_VTListSyncables(t *testing.T) {
 
 	g := CreateTestGame(rom, system)
 	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
-		syncable, ok := g.syncable[offs]
-		if !ok {
+		syncable := g.syncable[offs]
+		if syncable == nil {
 			continue
 		}
 

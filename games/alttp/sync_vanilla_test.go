@@ -7,6 +7,8 @@ import (
 )
 
 func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
+	setupTestLogger(t)
+
 	sramTests := []sramTestCase{
 		{
 			name:        "No update",
@@ -446,6 +448,8 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 }
 
 func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vanillaItemNames))
 
 	for wramOffs := uint32(0xF341); wramOffs <= 0xF3C7; wramOffs++ {
@@ -546,6 +550,8 @@ func TestAsmFrames_Vanilla_ItemNames(t *testing.T) {
 }
 
 func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
 	for wramOffs := uint32(0xF341); wramOffs <= 0xF37B; wramOffs++ {
@@ -649,6 +655,8 @@ func TestAsmFrames_Vanilla_ItemBitNames(t *testing.T) {
 }
 
 func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
+	setupTestLogger(t)
+
 	tests := make([]testCase, 0, len(vanillaItemBitNames))
 
 	for wramOffs := uint32(0xF35C); wramOffs <= 0xF35F; wramOffs++ {
@@ -732,6 +740,8 @@ func TestAsmFrames_Vanilla_Bottles(t *testing.T) {
 }
 
 func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
@@ -848,6 +858,8 @@ func TestAsmFrames_Vanilla_UnderworldRooms(t *testing.T) {
 }
 
 func TestGame_VanillaGenericSyncables(t *testing.T) {
+	setupTestLogger(t)
+
 	// create system emulator and test ROM:
 	system, rom, err := CreateTestEmulator("ZELDANODENSETSU", t)
 	if err != nil {
@@ -860,8 +872,8 @@ func TestGame_VanillaGenericSyncables(t *testing.T) {
 	// find all Syncables without custom asm generation and verify basic behaviors
 	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 		offs := offs
-		s, ok := g.syncable[offs]
-		if !ok {
+		s := g.syncable[offs]
+		if s == nil {
 			continue
 		}
 
@@ -1033,8 +1045,8 @@ func TestGame_Vanilla_ListSyncables(t *testing.T) {
 
 	g := CreateTestGame(rom, system)
 	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
-		syncable, ok := g.syncable[offs]
-		if !ok {
+		syncable := g.syncable[offs]
+		if syncable == nil {
 			continue
 		}
 
