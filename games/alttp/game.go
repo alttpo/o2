@@ -91,7 +91,7 @@ type Game struct {
 	lastModule    int
 	lastSubModule int
 
-	syncable        map[uint32]games.SyncStrategy
+	syncable        [0x10000]games.SyncStrategy
 	syncableOffsMin uint32
 	syncableOffsMax uint32
 
@@ -136,14 +136,17 @@ func NewGame(rom *snes.ROM) (g *Game) {
 	}
 
 	g = &Game{
-		rom:                rom,
-		running:            false,
-		stopped:            make(chan struct{}),
-		readComplete:       make(chan []snes.Response, 8),
-		romFunctions:       make(map[romFunction]uint32),
-		lastUpdateTarget:   0xFFFFFF,
-		lastServerSentTime: time.Now(),
-		lastServerRecvTime: time.Now(),
+		rom:                   rom,
+		running:               false,
+		stopped:               make(chan struct{}),
+		readComplete:          make(chan []snes.Response, 8),
+		romFunctions:          make(map[romFunction]uint32),
+		lastUpdateTarget:      0xFFFFFF,
+		lastServerSentTime:    time.Now(),
+		lastServerRecvTime:    time.Now(),
+		activePlayers:         make([]*Player, 0, MaxPlayers),
+		remotePlayers:         make([]*Player, 0, MaxPlayers),
+		remoteSyncablePlayers: make([]games.SyncablePlayer, 0, MaxPlayers),
 		// ViewModel:
 		IsCreated:        true,
 		GameName:         gameName,
@@ -378,9 +381,9 @@ func (g *Game) LocalPlayer() *Player {
 
 func (g *Game) ActivePlayers() []*Player {
 	if !g.activePlayersClean {
-		g.activePlayers = make([]*Player, 0, len(g.activePlayers))
-		g.remotePlayers = make([]*Player, 0, len(g.activePlayers))
-		g.remoteSyncablePlayers = make([]games.SyncablePlayer, 0, len(g.activePlayers))
+		g.activePlayers = g.activePlayers[:0]
+		g.remotePlayers = g.remotePlayers[:0]
+		g.remoteSyncablePlayers = g.remoteSyncablePlayers[:]
 
 		for i, p := range g.players {
 			if p.Index() < 0 {

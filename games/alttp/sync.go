@@ -53,7 +53,7 @@ const (
 
 func (g *Game) initSync() {
 	// reset map:
-	g.syncable = make(map[uint32]games.SyncStrategy)
+	g.syncable = [0x10000]games.SyncStrategy{}
 	g.syncableOffsMin = 0x1FFFF
 	g.syncableOffsMax = 0x00000
 

@@ -226,9 +226,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// generate update ASM code for any 8-bit values:
 		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 			var s games.SyncStrategy
-			var ok bool
 
-			if s, ok = g.syncable[offs]; !ok {
+			if s = g.syncable[offs]; s == nil {
 				continue
 			}
 			if !s.IsEnabled() {
@@ -308,9 +307,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// sync u16 data:
 		for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 			var s games.SyncStrategy
-			var ok bool
 
-			if s, ok = g.syncable[offs]; !ok {
+			if s = g.syncable[offs]; s == nil {
 				continue
 			}
 			if !s.IsEnabled() {

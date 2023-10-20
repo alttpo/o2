@@ -13,9 +13,8 @@ func (g *Game) localChecks() {
 	// generate update ASM code for any 8-bit values:
 	for offs := g.syncableOffsMin; offs <= g.syncableOffsMax; offs++ {
 		var s games.SyncStrategy
-		var ok bool
-		s, ok = g.syncable[offs]
-		if !ok {
+		s = g.syncable[offs]
+		if s == nil {
 			continue
 		}
 
