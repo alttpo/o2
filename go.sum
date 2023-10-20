@@ -8,6 +8,8 @@ github.com/alttpo/snes v0.0.0-20231018221254-0dba736ce9b5 h1:+BKmRjW0I1BSkbIV1K1
 github.com/alttpo/snes v0.0.0-20231018221254-0dba736ce9b5/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
 github.com/alttpo/snes v0.0.0-20231019041230-a33836fc27fd h1:kyDh9IEPTUpzFM9It/gZJkFDh081hXc1uAM3e0mFNZ8=
 github.com/alttpo/snes v0.0.0-20231019041230-a33836fc27fd/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
+github.com/alttpo/snes v0.0.0-20231020004806-ac32f778c756 h1:DEMtdlq5Rr6NDANs5iC4YtWTft+jVVRQpeARE3PN4Yc=
+github.com/alttpo/snes v0.0.0-20231020004806-ac32f778c756/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
 github.com/alttpo/systray v1.3.2 h1:86rDHDv/Q8MNA4TEd4Hy7TcSV+0TpNC0sZ8xc1bBNUI=
 github.com/alttpo/systray v1.3.2/go.mod h1:SHjooj3IKvtx2SeEbHOaDgTZ6dN3oYoMJAjtcN75Dzo=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
