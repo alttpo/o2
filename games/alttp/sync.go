@@ -723,6 +723,10 @@ func (g *Game) initSync() {
 		g.overworld[offs-0x280].InitFrom(g, offs-0x280)
 	}
 
+	// disable overlay sync at "Great Swamp S" and "Swamp":
+	g.overworld[0x3B].SyncMask = 0xDF
+	g.overworld[0x7B].SyncMask = 0xDF
+
 	// Pyramid bat crash: ([$7EF2DB] | 0x20)
 	g.overworld[0x5B].OnUpdated = func(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
 		if initial&0x20 == 0 && updated&0x20 == 0x20 {
