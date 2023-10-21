@@ -213,10 +213,10 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	} else {
 		clear(g.generated)
 	}
-	g.updateGenerators = nil
 
 	genIndex := uint32(0)
-	asmConfirmers := make([]games.AsmExecConfirmer, 0, 20)
+	asmConfirmers := g.updateGenerators[:0]
+	g.updateGenerators = nil
 
 	{
 		// 8-bit updates first:

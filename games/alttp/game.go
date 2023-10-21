@@ -200,7 +200,7 @@ func (g *Game) FirstFrame() {
 	g.updateStage = 0
 	g.colorPendingUpdate = 0
 	g.lastUpdateTarget = 0xFFFFFF
-	g.updateGenerators = nil
+	g.updateGenerators = make([]games.AsmExecConfirmer, 0, 20)
 	g.notFirstFrame = false
 	g.lastGameFrame = 0xFF
 
