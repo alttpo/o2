@@ -1,11 +1,10 @@
 //go:build !notray
-// +build !notray
 
 package main
 
 import (
 	"fmt"
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	"log"
 	"o2/webui/o2/icon"
 	"runtime/debug"
