@@ -72,7 +72,7 @@ jobs:
         run: |
           Set-Item -Path Env:GOOS -Value "${{matrix.goos}}"
           Set-Item -Path Env:GOARCH -Value "${{matrix.goarch}}"
-          go build -tags="${{ matrix.tags }}" -gcflags=all=-l -ldflags="-w -H=windowsgui -X 'main.version=${{env.GITHUB_REF_SLUG}}' -X 'main.commit=${{env.GITHUB_SHA_SHORT}}' -X 'main.date=$(date +'%Y-%m-%dT%H:%M:%S')' -X 'main.builtBy=$(go version | cut -f3 -d ' ')'" -o ./${{env.basename}}/o2.exe ./webui/o2
+          go build -tags="${{ matrix.tags }}" -gcflags=all=-l -ldflags="-w -X 'main.version=${{env.GITHUB_REF_SLUG}}' -X 'main.commit=${{env.GITHUB_SHA_SHORT}}' -X 'main.date=$(date +'%Y-%m-%dT%H:%M:%S')' -X 'main.builtBy=$(go version | cut -f3 -d ' ')'" -o ./${{env.basename}}/o2.exe ./webui/o2
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
