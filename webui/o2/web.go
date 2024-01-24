@@ -159,6 +159,12 @@ func (s *WebServer) ProvideViewCommandHandler(commandHandler interfaces.ViewComm
 }
 
 func (s *WebServer) handleBroadcast() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("WebServer:handleBroadcast recovered from panic %v\n%s\n", r, string(debug.Stack()))
+		}
+	}()
+
 	// read updates from the broadcast channel:
 	for u := range s.q {
 		s.socketsRw.RLock()

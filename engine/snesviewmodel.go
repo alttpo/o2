@@ -6,6 +6,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/snes"
+	"runtime/debug"
 	"time"
 )
 
@@ -161,6 +162,12 @@ func (v *SNESViewModel) Init() {
 
 	// background goroutine to auto-detect new devices every 2 seconds:
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("snewviemodel:Init device detect loop recovered from panic %v\n%s\n", r, string(debug.Stack()))
+			}
+		}()
+
 		for range time.NewTicker(time.Second * 2).C {
 			// don't need to auto-detect while already connected:
 			if v.IsConnected {

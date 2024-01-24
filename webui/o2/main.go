@@ -112,7 +112,7 @@ func main() {
 			}
 		}()
 
-		log.Fatal(webServer.Serve())
+		log.Printf("webServer.Serve: %v\n", webServer.Serve())
 	}()
 
 	// initialize viewModel now that all dependencies are set up:
