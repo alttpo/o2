@@ -551,9 +551,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	dungeon := g.wramU16(0x040C)
 	if local.Dungeon != dungeon {
-		dungName := "<unknown>"
-		if int(dungeon) < len(dungeonNames) {
-			dungName = dungeonNames[dungeon]
+		dungName := "cave"
+		if dungeon < 0x20 {
+			dungName = dungeonNames[dungeon>>1]
 		}
 		log.Printf(
 			"alttp: local: dungeon $%04x -> $%04x ; %s\n",
