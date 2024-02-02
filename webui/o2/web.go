@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"o2/interfaces"
 	"o2/snes"
+	"o2/util"
 	"o2/webui/dist"
 	"path/filepath"
-	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -161,7 +161,7 @@ func (s *WebServer) ProvideViewCommandHandler(commandHandler interfaces.ViewComm
 func (s *WebServer) handleBroadcast() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("WebServer:handleBroadcast recovered from panic %v\n%s\n", r, string(debug.Stack()))
+			util.LogPanic(r)
 		}
 	}()
 
@@ -209,7 +209,7 @@ func (k *Socket) readHandler() {
 	// the reader is in control of the lifetime of the socket:
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("Socket: readHandler: paniced with %v\n%s\n", err, string(debug.Stack()))
+			util.LogPanic(err)
 		}
 
 		log.Printf("Closing websocket connection to %s\n", k.conn.RemoteAddr())
@@ -350,7 +350,7 @@ func readTinyString(buf io.Reader) (value string, err error) {
 func (k *Socket) writeHandler() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("Socket: writeHandler: paniced with %v\n%s\n", err, string(debug.Stack()))
+			util.LogPanic(err)
 		}
 	}()
 

@@ -5,9 +5,8 @@ package main
 import (
 	"fmt"
 	"fyne.io/systray"
-	"log"
+	"o2/util"
 	"o2/webui/o2/icon"
-	"runtime/debug"
 )
 
 func createSystray() {
@@ -36,7 +35,7 @@ func trayStart() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("trayStart: paniced with %v\n%s\n", err, string(debug.Stack()))
+				util.LogPanic(err)
 			}
 		}()
 

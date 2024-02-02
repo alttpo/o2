@@ -6,7 +6,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/snes"
-	"runtime/debug"
+	"o2/util"
 	"time"
 )
 
@@ -164,7 +164,7 @@ func (v *SNESViewModel) Init() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("snewviemodel:Init device detect loop recovered from panic %v\n%s\n", r, string(debug.Stack()))
+				util.LogPanic(r)
 			}
 		}()
 

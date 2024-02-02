@@ -3,14 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/skratchdot/open-golang/open"
-	"io"
 	"log"
 	"net"
 	"o2/engine"
+	"o2/util"
 	"o2/util/env"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -64,7 +63,7 @@ func init() {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		log.Printf("logging to '%s'\n", logPath)
-		log.SetOutput(io.MultiWriter(logFile, os.Stderr))
+		log.SetOutput(util.NewPanicSafeLogger(logFile))
 	} else {
 		log.Printf("could not open log file '%s' for writing\n", logPath)
 	}
@@ -75,7 +74,7 @@ func init() {
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("main: paniced with %v\n%s\n", err, string(debug.Stack()))
+			util.LogPanic(err)
 		}
 	}()
 
@@ -108,7 +107,7 @@ func main() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("main: webserver.Serve() paniced with %v\n%s\n", err, string(debug.Stack()))
+				util.LogPanic(err)
 			}
 		}()
 

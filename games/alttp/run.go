@@ -7,7 +7,7 @@ import (
 	"github.com/alttpo/snes/timing"
 	"log"
 	"o2/snes"
-	"runtime/debug"
+	"o2/util"
 	"strings"
 	"time"
 )
@@ -76,7 +76,7 @@ const debugSprites = false
 func (g *Game) sendReads() {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("alttp: sendReads: paniced with %v\n%s\n", err, string(debug.Stack()))
+			util.LogPanic(err)
 		}
 	}()
 

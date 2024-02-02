@@ -2,7 +2,7 @@ package snes
 
 import (
 	"log"
-	"runtime/debug"
+	"o2/util"
 	"time"
 )
 
@@ -36,7 +36,7 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 	// FIXME: no great way I can figure out how to avoid panic on closed channel send below.
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("snes: basequeue: Enqueue paniced with %v\n%s\n", r, string(debug.Stack()))
+			util.LogPanic(r)
 			err = &TerminalError{ErrDeviceDisconnected}
 		}
 	}()
@@ -55,7 +55,7 @@ func (b *BaseQueue) Enqueue(cmd CommandWithCompletion) (err error) {
 func (b *BaseQueue) handleQueue() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("snes: BaseQueue: handleQueue recovered from panic %v\n%s\n", r, string(debug.Stack()))
+			util.LogPanic(r)
 		}
 	}()
 
@@ -114,7 +114,7 @@ channelLoop:
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						log.Printf("snes: basequeue: handleQueue: cmd.Execute paniced with %v\n%s\n", err, string(debug.Stack()))
+						util.LogPanic(err)
 					}
 
 					close(done)

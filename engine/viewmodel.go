@@ -12,7 +12,6 @@ import (
 	"o2/util"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sync"
 )
 
@@ -337,7 +336,7 @@ func (vm *ViewModel) tryCreateGame() bool {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("tryCreateGame: paniced with %v\n%s\n", err, string(debug.Stack()))
+				util.LogPanic(err)
 			}
 		}()
 
@@ -464,7 +463,7 @@ func (vm *ViewModel) SNESConnected(pair snes.NamedDriverDevicePair) {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("tryCreateGame: paniced with %v\n%s\n", err, string(debug.Stack()))
+				util.LogPanic(err)
 			}
 		}()
 

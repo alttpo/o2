@@ -7,7 +7,7 @@ import (
 	"o2/games"
 	"o2/interfaces"
 	"o2/snes"
-	"runtime/debug"
+	"o2/util"
 	"strings"
 	"sync"
 	"time"
@@ -349,7 +349,7 @@ func (g *Game) Start() {
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("alttp: run goroutine: paniced with %v\n%s\n", err, string(debug.Stack()))
+				util.LogPanic(err)
 			}
 
 			// notify that the game is stopped:
