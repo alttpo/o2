@@ -41,9 +41,16 @@ func (g *Game) updateWRAM() {
 	}
 
 	// generate SRAM routine:
+	var err error
 	// create an assembler:
-	a := asm.NewEmitter(make([]byte, 0x200), true)
-	updated := g.generateSRAMRoutine(a, targetSNES)
+	a := asm.NewEmitter(make([]byte, 0x400), true)
+	var updated bool
+	updated, err = g.generateSRAMRoutine(a, targetSNES)
+	if err != nil {
+		g.updateLock.Unlock()
+		log.Printf("alttp: error generating asm update routine: %v\n", err)
+		return
+	}
 	if !updated {
 		g.updateLock.Unlock()
 		return
@@ -55,7 +62,6 @@ func (g *Game) updateWRAM() {
 
 	// calculate target address in FX Pak Pro address space:
 	// SRAM starts at $E00000
-	var err error
 	var target uint32
 	target, err = lorom.BusAddressToPak(targetSNES)
 	g.lastUpdateTarget = target
@@ -123,22 +129,25 @@ func (g *Game) updateWRAM() {
 	}
 }
 
-func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool) {
+func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool, err error) {
 	module := g.wramU8(0x10)
 	if module == 0x07 || module == 0x09 || module == 0x0b {
 		// good module, check submodule:
 		if g.wramU8(0x11) != 0 {
-			return false
+			updated = false
+			return
 		}
 	} else if module == 0x0e {
 		// menu/interface module is ok
 	} else {
 		// bad module:
-		return false
+		updated = false
+		return
 	}
 	// don't update if Link is currently frozen:
 	if g.wramU8(0x02e4) != 0 {
-		return false
+		updated = false
+		return
 	}
 
 	// refer to patcher.go for the initial setup of SRAM trampoline which eventually JSRs here
@@ -151,32 +160,35 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	if !g.generateCustomAsm(a) {
 		if !g.generateUpdateAsm(a) {
 			// nothing to emit:
-			return false
+			updated = false
+			return
 		}
 	}
 
-	// clear out our routine with an RTS instruction at the start:
+	// clear out our routine with an RTS instruction at the start: {
 	a.Comment("disable update routine with RTS instruction and copy of $1A:")
 	a.REP(0x30)
 	a.LDA_imm16_lh(0x60, g.lastGameFrame) // RTS
 	a.STA_long(targetSNES)
 	a.SEP(0x30)
-
 	a.RTS()
+	// } 12 bytes
 
-	if err := a.Finalize(); err != nil {
+	if err = a.Finalize(); err != nil {
 		a.WriteTextTo(log.Writer())
-		panic(err)
+		return
 	}
 
 	// dump asm:
 	a.WriteTextTo(log.Writer())
 
 	if a.Len() > 255 {
-		panic(fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Len()))
+		err = fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Len())
+		return
 	}
 
-	return true
+	updated = true
+	return
 }
 
 func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {
@@ -205,7 +217,7 @@ func (g *Game) generateCustomAsm(a *asm.Emitter) bool {
 }
 
 func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
-	const epilogSize = 3
+	const epilogSize = 12
 
 	updated := false
 	if g.generated == nil {
