@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	fyne.io/systray v1.10.0
-	github.com/alttpo/snes v0.0.0-20231109035009-c100a9d8cc49
+	github.com/alttpo/snes v0.0.0-20240207011716-ced93427843c
 	github.com/gobwas/ws v1.3.2
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	go.bug.st/serial v1.6.1
@@ -26,6 +26,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 )
 
-replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.5
+//replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.5
 
 //replace github.com/alttpo/snes => ../snes

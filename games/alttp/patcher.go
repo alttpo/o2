@@ -16,7 +16,7 @@ const (
 	preMainLen = 0x26
 	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
 	preMainAddr        = uint32(0x708000 - preMainLen)
-	preMainJSRAddr     = uint32(0x707FF9)
+	preMainJSRAddr     = uint32(0x707FFA)
 	preMainUpdateAAddr = uint32(0x707D00)
 	preMainUpdateBAddr = uint32(0x707E00)
 	// bus address of unused/garbage area in ROM (JP and US confirmed):
@@ -139,21 +139,29 @@ func (p *Patcher) Patch() (err error) {
 		taMain.AssumeSEP(0x30)
 
 		taMain.Label("moduleCheck")
-		taMain.Comment("only sync during 00 submodule for modules 07,09,0B:")
+
+		// build a reversed bitmask because our bitmask lookup table is reversed:
+		modulesOK := [...]uint8{0x07, 0x09, 0x0B, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x15, 0x16}
+		mask := uint16(0)
+		for _, m := range modulesOK {
+			mask |= uint16(1 << (15 - (m - 0x07)))
+		}
+		log.Printf("mask: %04X\n", mask)
+
+		taMain.Comment("only sync during modules 07,09,0B,0E,0F,10,11,13,15,16:")
 		taMain.LDA_dp(0x10)
-		taMain.CMP_imm8_b(0x07)
-		taMain.BEQ("submoduleCheck")
-		taMain.CMP_imm8_b(0x09)
-		taMain.BEQ("submoduleCheck")
-		taMain.CMP_imm8_b(0x0B)
-		taMain.BEQ("submoduleCheck")
-		taMain.Comment("all submodules of menu/interface module 0E are ok:")
-		taMain.CMP_imm8_b(0x0E)
-		taMain.BNE("syncExit")
-		taMain.BRA("linkCheck")
-		taMain.Label("submoduleCheck")
-		taMain.LDA_dp(0x11)
-		taMain.BNE("syncExit")
+		taMain.CMP_imm8_b(0x17)
+		taMain.BCS("syncExit")
+		taMain.SBC_imm8_b(0x07 - 1)
+		taMain.BMI("syncExit")
+		taMain.ASL()
+		taMain.TAX()
+		taMain.REP(0x20)
+		// DungeonMask#_0098C0 is a uin16[16] of bit masks from $8000 down to $0001
+		taMain.LDA_long_x(0x00_98C0)
+		taMain.AND_imm16_w(mask)
+		taMain.SEP(0x20)
+		taMain.BEQ("syncExit")
 		taMain.Label("linkCheck")
 		taMain.Comment("don't update if Link is frozen:")
 		taMain.LDA_abs(0x02E4)

@@ -3,6 +3,7 @@ package alttp
 import (
 	"fmt"
 	"github.com/alttpo/snes/asm"
+	"github.com/alttpo/snes/emulator"
 	"github.com/alttpo/snes/mapping/lorom"
 	"log"
 	"o2/snes"
@@ -128,5 +129,77 @@ func TestPatcher_FastROMRandomizer(t *testing.T) {
 	err = os.WriteFile(fileNamePatched, rom.Contents, 0644)
 	if err != nil {
 		t.Logf("error writing patched ROM: %v", err)
+	}
+}
+
+func TestPatcher_ModuleTests(t *testing.T) {
+	var err error
+	var rom *snes.ROM
+	var e *emulator.System
+
+	e, rom, err = CreateTestEmulator("ZELDANODENSETSU", t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = rom
+	a := asm.NewEmitter(e.SRAM[0x7D00:], false)
+	// negative match case keeps $0F at #$00:
+	// positive match case sets  $0F to #$FF:
+	a.DEC_dp(0x0F)
+	a.RTS()
+	if err = a.Finalize(); err != nil {
+		return
+	}
+
+	{
+		mask := uint16(1)
+		for i := 0; i < 16; i++ {
+			e.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+0), byte(mask&0xFF))
+			e.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+1), byte(mask>>8&0xFF))
+			mask <<= 1
+		}
+	}
+
+	modulesOK := map[uint8]struct{}{
+		0x07: {},
+		0x09: {},
+		0x0B: {},
+		0x0E: {},
+		0x0F: {},
+		0x10: {},
+		0x11: {},
+		0x13: {},
+		0x15: {},
+		0x16: {},
+	}
+	for m := 0; m <= 0xFF; m++ {
+		m := uint8(m)
+		t.Run(fmt.Sprintf("module $%02X", m), func(t *testing.T) {
+			e.WRAM[0x0F] = 0
+			// set module for testing:
+			e.WRAM[0x10] = m
+
+			// test the module for inclusion:
+			e.CPU.Reset()
+			e.CPU.SetFlags(0x30)
+			e.SetPC(0x008056)
+			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])
+			if !e.RunUntil(0x008100, 10_000) {
+				t.Fatal("ran too long")
+			}
+			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])
+
+			// check if the module should have passed:
+			if _, ok := modulesOK[m]; ok {
+				if e.WRAM[0x0F] == 0 {
+					t.Fatal("unexpected fail!")
+				}
+			} else {
+				if e.WRAM[0x0F] != 0 {
+					t.Fatal("unexpected pass!")
+				}
+			}
+		})
 	}
 }
