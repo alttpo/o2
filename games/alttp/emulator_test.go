@@ -52,6 +52,16 @@ func createTestEmulator(romTitle string, logger io.Writer) (system *emulator.Sys
 		return
 	}
 
+	// setup the required ROM lookup table for the patcher's module check:
+	{
+		mask := uint16(1)
+		for i := 0; i < 16; i++ {
+			system.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+0), byte(mask&0xFF))
+			system.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+1), byte(mask>>8&0xFF))
+			mask <<= 1
+		}
+	}
+
 	return
 }
 

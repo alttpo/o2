@@ -341,6 +341,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// disallow any reads until we figure out what we need:
 	g.priorityReadsMu.Lock()
+	defer g.priorityReadsMu.Unlock()
+
 	g.priorityReads[0] = nil
 	g.priorityReads[1] = nil
 	g.priorityReads[2] = nil
@@ -353,6 +355,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	needUpdateCheck := false
 	now := time.Now()
+	g.updateLock.Lock()
 	for _, rsp := range rsps {
 		// check WRAM reads:
 		if val, ok := g.extractWRAMByte(rsp, 0xF50010); ok {
@@ -365,7 +368,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// ignore SRAM for staging.
 
 		// handle update routine check:
-		g.updateLock.Lock()
 		if g.updateStage > 0 {
 			// escape mechanism for long-running updates:
 			if now.Sub(g.lastUpdateTime) > timing.Frame*600 {
@@ -402,247 +404,260 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				}
 			}
 		}
-		g.updateLock.Unlock()
-	}
-
-	if needUpdateCheck {
-		// check for update completeness:
-		q = g.enqueueUpdateCheckRead(q)
-		q = g.enqueueMainRead(q)
-		g.priorityReads[0] = q
-		g.priorityReadsMu.Unlock()
-		return
 	}
 
 	// we're not sure if an update is coming soon so prevent any background tickers from requesting a read:
-	g.updateLock.Lock()
 	if g.updateStage == 0 {
 		g.updateStage = -1
 	}
 	g.updateLock.Unlock()
-	g.priorityReadsMu.Unlock()
 
-	// defer the read:
-	defer func() {
-		g.updateLock.Lock()
-		if g.updateStage == -1 {
-			// no update was made so we're okay now:
-			g.updateStage = 0
-		}
-
-		// don't issue a normal read if an update is in progress:
-		if g.updateStage != 0 {
-			g.updateLock.Unlock()
+	func() {
+		if moduleStaging == -1 {
 			return
 		}
-		g.updateLock.Unlock()
+		if submoduleStaging == -1 {
+			return
+		}
 
-		// do all the normal WRAM reads:
-		g.priorityReadsMu.Lock()
-		q = g.enqueueWRAMReads(q)
-		q = g.enqueueMainRead(q)
-		g.priorityReads[2] = q
-		g.priorityReadsMu.Unlock()
-	}()
-
-	if moduleStaging == -1 {
-		return
-	}
-	if submoduleStaging == -1 {
-		return
-	}
-
-	// copy the read data into our view of memory:
-	for _, rsp := range rsps {
-		// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
-		if start, end, ok := g.isReadWRAM(rsp); ok {
-			// copy in new data:
-			copy(g.wram[start:end], rsp.Data)
-			for i := start; i <= end; i++ {
-				g.wramFresh[i] = true
+		// copy the read data into our view of memory:
+		for _, rsp := range rsps {
+			// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
+			if start, end, ok := g.isReadWRAM(rsp); ok {
+				// copy in new data:
+				copy(g.wram[start:end], rsp.Data)
+				for i := start; i <= end; i++ {
+					g.wramFresh[i] = true
+				}
+			}
+			// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
+			if start, end, ok := g.isReadSRAM(rsp); ok {
+				//copy(g.sram[start:end], rsp.Data)
+				_, _ = start, end
 			}
 		}
-		// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
-		if start, end, ok := g.isReadSRAM(rsp); ok {
-			//copy(g.sram[start:end], rsp.Data)
-			_, _ = start, end
+
+		// assign local variables from WRAM:
+		local := g.LocalPlayer()
+
+		g.SetTTL(local, 255)
+
+		// log module changes regardless of syncing:
+		if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
+			log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
 		}
-	}
+		g.lastModule = moduleStaging
+		g.lastSubModule = submoduleStaging
 
-	// assign local variables from WRAM:
-	local := g.LocalPlayer()
-
-	g.SetTTL(local, 255)
-
-	// log module changes regardless of syncing:
-	if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
-		log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
-	}
-	g.lastModule = moduleStaging
-	g.lastSubModule = submoduleStaging
-
-	doSync := true
-	if moduleStaging == 0x07 || moduleStaging == 0x09 || moduleStaging == 0x0b {
-		// good module, check submodule:
-		if g.wramU8(0x11) != 0 {
+		doSync := true
+		if moduleStaging == 0x07 || moduleStaging == 0x09 || moduleStaging == 0x0b {
+			// good module, check submodule:
+			if g.wramU8(0x11) != 0 {
+				doSync = false
+			}
+		} else if moduleStaging == 0x0e {
+			// menu/interface module is ok:
+		} else {
+			// bad module:
 			doSync = false
 		}
-	} else if moduleStaging == 0x0e {
-		// menu/interface module is ok:
-	} else {
-		// bad module:
-		doSync = false
-	}
 
-	if !doSync {
-		if g.syncing {
-			log.Printf("alttp: DISABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
-		}
-		g.syncing = false
-		return
-	}
-
-	if !g.syncing {
-		log.Printf("alttp:  ENABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
-		g.syncing = true
-	}
-
-	newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
-	if local.Module != newModule || local.SubModule != newSubModule {
-		log.Printf(
-			"alttp: local: module [$%02x,$%02x] -> [$%02x,$%02x]\n",
-			local.Module,
-			local.SubModule,
-			newModule,
-			newSubModule,
-		)
-	}
-	local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
-
-	// this is documented as a uint16, but we use it as a uint8
-	local.PriorModule = Module(g.wram[0x010C])
-
-	inDungeon := g.wram[0x1B]
-	overworldArea := g.wramU16(0x8A)
-	dungeonRoom := g.wramU16(0xA0)
-	if local.OverworldArea != overworldArea {
-		log.Printf(
-			"alttp: local: overworld $%04x -> $%04x ; %s\n",
-			local.OverworldArea,
-			overworldArea,
-			overworldNames[overworldArea],
-		)
-	}
-	if local.DungeonRoom != dungeonRoom {
-		log.Printf(
-			"alttp: local: underworld $%04x -> $%04x ; %s\n",
-			local.DungeonRoom,
-			dungeonRoom,
-			underworldNames[dungeonRoom],
-		)
-	}
-	local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
-
-	// TODO: fix this calculation to be compatible with alttpo
-	inDarkWorld := uint32(0)
-	if overworldArea&0x40 != 0 {
-		inDarkWorld = 1 << 17
-	}
-
-	dungeon := g.wramU16(0x040C)
-	if local.Dungeon != dungeon {
-		dungName := "cave"
-		if dungeon < 0x20 {
-			dungName = dungeonNames[dungeon>>1]
-		}
-		log.Printf(
-			"alttp: local: dungeon $%04x -> $%04x ; %s\n",
-			local.Dungeon,
-			dungeon,
-			dungName,
-		)
-		g.shouldUpdatePlayersList = true
-	}
-	local.Dungeon = dungeon
-
-	lastLocation := local.Location
-	local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
-	if inDungeon != 0 {
-		local.Location |= uint32(dungeonRoom)
-	} else {
-		local.Location |= uint32(overworldArea)
-	}
-	if local.Location != lastLocation {
-		g.shouldUpdatePlayersList = true
-	}
-
-	if local.Module.IsOverworld() {
-		local.LastOverworldX = local.X
-		local.LastOverworldY = local.Y
-	}
-
-	local.X = g.wramU16(0x22)
-	local.Y = g.wramU16(0x20)
-
-	local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
-	local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
-
-	// copy $7EF000-4FF into `local.SRAM`:
-	//copy(local.SRAM[:], g.wram[0xF000:0xF500])
-
-	if debugSprites {
-		// display sprite data:
-		sb := strings.Builder{}
-		// reset 41 rows up
-		sb.WriteString("\033[42A\033[80D")
-		// [$0D00..$0DEF]
-		// [$0E20..$0E8F]
-		// [$0EF0..$0F9F]
-		for i := 0; i < 0x2A; i++ {
-			// clear to end of line:
-			sb.WriteString(fmt.Sprintf("\033[K$%04x: ", 0xD00+(i<<4)))
-			for j := 0; j < 16; j++ {
-				sb.WriteString(fmt.Sprintf(" %02x", g.wram[0x0D00+(i<<4)+j]))
+		if !doSync {
+			if g.syncing {
+				log.Printf("alttp: DISABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
 			}
-			sb.WriteByte('\n')
+			g.syncing = false
+			return
 		}
-		fmt.Printf(sb.String())
+
+		if !g.syncing {
+			log.Printf("alttp:  ENABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
+			g.syncing = true
+		}
+
+		newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
+		if local.Module != newModule || local.SubModule != newSubModule {
+			log.Printf(
+				"alttp: local: module [$%02x,$%02x] -> [$%02x,$%02x]\n",
+				local.Module,
+				local.SubModule,
+				newModule,
+				newSubModule,
+			)
+		}
+		local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
+
+		// this is documented as a uint16, but we use it as a uint8
+		local.PriorModule = Module(g.wram[0x010C])
+
+		inDungeon := g.wram[0x1B]
+		overworldArea := g.wramU16(0x8A)
+		dungeonRoom := g.wramU16(0xA0)
+		if local.OverworldArea != overworldArea {
+			log.Printf(
+				"alttp: local: overworld $%04x -> $%04x ; %s\n",
+				local.OverworldArea,
+				overworldArea,
+				overworldNames[overworldArea],
+			)
+		}
+		if local.DungeonRoom != dungeonRoom {
+			log.Printf(
+				"alttp: local: underworld $%04x -> $%04x ; %s\n",
+				local.DungeonRoom,
+				dungeonRoom,
+				underworldNames[dungeonRoom],
+			)
+		}
+		local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
+
+		// TODO: fix this calculation to be compatible with alttpo
+		inDarkWorld := uint32(0)
+		if overworldArea&0x40 != 0 {
+			inDarkWorld = 1 << 17
+		}
+
+		dungeon := g.wramU16(0x040C)
+		if local.Dungeon != dungeon {
+			dungName := "cave"
+			if dungeon < 0x20 {
+				dungName = dungeonNames[dungeon>>1]
+			}
+			log.Printf(
+				"alttp: local: dungeon $%04x -> $%04x ; %s\n",
+				local.Dungeon,
+				dungeon,
+				dungName,
+			)
+			g.shouldUpdatePlayersList = true
+		}
+		local.Dungeon = dungeon
+
+		lastLocation := local.Location
+		local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
+		if inDungeon != 0 {
+			local.Location |= uint32(dungeonRoom)
+		} else {
+			local.Location |= uint32(overworldArea)
+		}
+		if local.Location != lastLocation {
+			g.shouldUpdatePlayersList = true
+		}
+
+		if local.Module.IsOverworld() {
+			local.LastOverworldX = local.X
+			local.LastOverworldY = local.Y
+		}
+
+		local.X = g.wramU16(0x22)
+		local.Y = g.wramU16(0x20)
+
+		local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
+		local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
+
+		// copy $7EF000-4FF into `local.SRAM`:
+		//copy(local.SRAM[:], g.wram[0xF000:0xF500])
+
+		if debugSprites {
+			// display sprite data:
+			sb := strings.Builder{}
+			// reset 41 rows up
+			sb.WriteString("\033[42A\033[80D")
+			// [$0D00..$0DEF]
+			// [$0E20..$0E8F]
+			// [$0EF0..$0F9F]
+			for i := 0; i < 0x2A; i++ {
+				// clear to end of line:
+				sb.WriteString(fmt.Sprintf("\033[K$%04x: ", 0xD00+(i<<4)))
+				for j := 0; j < 16; j++ {
+					sb.WriteString(fmt.Sprintf(" %02x", g.wram[0x0D00+(i<<4)+j]))
+				}
+				sb.WriteByte('\n')
+			}
+			fmt.Printf(sb.String())
+		}
+
+		if g.shouldUpdatePlayersList {
+			g.updatePlayersList()
+		}
+
+		// did game frame change?
+		if g.wram[0x1A] == g.lastGameFrame {
+			return
+		}
+
+		// increment frame timer:
+		lastFrame := uint64(g.lastGameFrame)
+		nextFrame := uint64(g.wram[0x1A])
+		if nextFrame < lastFrame {
+			nextFrame += 256
+		}
+		g.lastGameFrame = g.wram[0x1A]
+
+		// should wrap around 255 to 0:
+		g.monotonicFrameTime++
+
+		//log.Printf("server now(): %v\n", g.ServerNow())
+
+		// handle WRAM reads:
+		g.readWRAM()
+		g.notFirstWRAMRead = true
+
+		// update underworld supertile state sync bit masks based on sync toggles from front-end:
+		g.setUnderworldSyncMasks()
+
+		// generate notifications about locally picked up items:
+		g.localChecks()
+	}()
+
+	// don't generate new ASM updates until confirmation of last update:
+	if !needUpdateCheck {
+		// generate any WRAM update code and send it to the SNES:
+		if writes, ok := g.updateWRAM(); ok {
+			q := g.queue
+			g.priorityReadsMu.Unlock()
+			if err := q.MakeWriteCommands(
+				writes,
+				func(cmd snes.Command, err error) {
+					log.Println("alttp: update: write completed")
+
+					g.updateLock.Lock()
+					if g.updateStage != 1 {
+						log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+						g.updateStage = 0
+						g.updateLock.Unlock()
+						return
+					}
+
+					g.updateStage = 2
+					g.lastUpdateTime = time.Now()
+					g.updateLock.Unlock()
+
+					g.priorityReadsMu.Lock()
+					q := make([]snes.Read, 0, 8)
+					q = g.enqueueUpdateCheckRead(q)
+					// must always read module number LAST to validate the prior reads:
+					q = g.enqueueMainRead(q)
+
+					// we must only allow for check-for-update:
+					g.priorityReads[0] = q
+					g.priorityReads[1] = nil
+					g.priorityReads[2] = nil
+					g.priorityReadsMu.Unlock()
+				},
+			).EnqueueTo(q); err != nil {
+				log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
+				var termErr *snes.TerminalError
+				if errors.As(err, &termErr) {
+					log.Println("alttp: update: terminal error encountered; disconnecting from queue")
+					_ = termErr
+					g.queue = nil
+				}
+				return
+			}
+			g.priorityReadsMu.Lock()
+		}
 	}
-
-	if g.shouldUpdatePlayersList {
-		g.updatePlayersList()
-	}
-
-	// did game frame change?
-	if g.wram[0x1A] == g.lastGameFrame {
-		return
-	}
-
-	// increment frame timer:
-	lastFrame := uint64(g.lastGameFrame)
-	nextFrame := uint64(g.wram[0x1A])
-	if nextFrame < lastFrame {
-		nextFrame += 256
-	}
-	g.lastGameFrame = g.wram[0x1A]
-
-	// should wrap around 255 to 0:
-	g.monotonicFrameTime++
-
-	//log.Printf("server now(): %v\n", g.ServerNow())
-
-	// handle WRAM reads:
-	g.readWRAM()
-	g.notFirstWRAMRead = true
-
-	// update underworld supertile state sync bit masks based on sync toggles from front-end:
-	g.setUnderworldSyncMasks()
-
-	// generate notifications about locally picked up items:
-	g.localChecks()
-
-	// generate any WRAM update code and send it to the SNES:
-	g.updateWRAM()
 
 	// send out any network updates:
 	g.sendPackets()
@@ -658,6 +673,32 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		g.wramFresh[i] = false
 	}
 	g.notFirstFrame = true
+
+	// now determine what to read next:
+	if needUpdateCheck {
+		// check for asm/update completion:
+		q = g.enqueueUpdateCheckRead(q)
+		q = g.enqueueMainRead(q)
+		g.priorityReads[0] = q
+		return
+	}
+
+	g.updateLock.Lock()
+	if g.updateStage == -1 {
+		// no update was made so we're okay now:
+		g.updateStage = 0
+	}
+	g.updateLock.Unlock()
+
+	// don't issue a normal read if an update is in progress:
+	if g.updateStage != 0 {
+		return
+	}
+
+	// do all the normal WRAM reads:
+	q = g.enqueueWRAMReads(q)
+	q = g.enqueueMainRead(q)
+	g.priorityReads[2] = q
 
 	return
 }

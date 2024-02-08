@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"errors"
 	"fmt"
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/mapping/lorom"
@@ -12,7 +11,9 @@ import (
 	"time"
 )
 
-func (g *Game) updateWRAM() {
+func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
+	ok = false
+
 	if !g.local.IsInGame() {
 		return
 	}
@@ -22,13 +23,10 @@ func (g *Game) updateWRAM() {
 		return
 	}
 
-	g.updateLock.Lock()
 	if g.updateStage > 0 {
-		g.updateLock.Unlock()
 		return
 	}
 	if time.Now().Sub(g.cooldownTime) < timing.Frame*2 {
-		g.updateLock.Unlock()
 		return
 	}
 
@@ -47,12 +45,10 @@ func (g *Game) updateWRAM() {
 	var updated bool
 	updated, err = g.generateSRAMRoutine(a, targetSNES)
 	if err != nil {
-		g.updateLock.Unlock()
 		log.Printf("alttp: error generating asm update routine: %v\n", err)
 		return
 	}
 	if !updated {
-		g.updateLock.Unlock()
 		return
 	}
 
@@ -68,65 +64,27 @@ func (g *Game) updateWRAM() {
 	g.lastUpdateFrame = g.lastGameFrame
 	g.lastUpdateTime = time.Now()
 
-	g.updateLock.Unlock()
-
 	// write generated asm routine to SRAM:
 	var targetJSR uint32
 	targetJSR, err = lorom.BusAddressToPak(preMainJSRAddr)
-	err = q.MakeWriteCommands(
-		[]snes.Write{
-			{
-				Address: target,
-				Size:    uint8(a.Len()),
-				Data:    a.Bytes(),
-			},
-			// finally, update the JSR instruction to point to the updated routine:
-			{
-				// JSR $7D00 | JSR $7E00
-				// update the $7D or $7E byte in the JSR instruction:
-				Address: targetJSR,
-				Size:    1,
-				Data:    []byte{uint8(targetSNES >> 8)},
-			},
+	writes = []snes.Write{
+		{
+			Address: target,
+			Size:    uint8(a.Len()),
+			Data:    a.Bytes(),
 		},
-		func(cmd snes.Command, err error) {
-			log.Println("alttp: update: write completed")
-
-			g.updateLock.Lock()
-			if g.updateStage != 1 {
-				g.updateLock.Unlock()
-				log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
-				g.updateStage = 0
-				return
-			}
-
-			g.updateStage = 2
-			g.lastUpdateTime = time.Now()
-			g.updateLock.Unlock()
-
-			g.priorityReadsMu.Lock()
-			q := make([]snes.Read, 0, 8)
-			q = g.enqueueUpdateCheckRead(q)
-			// must always read module number LAST to validate the prior reads:
-			q = g.enqueueMainRead(q)
-
-			// we must only allow for check-for-update:
-			g.priorityReads[0] = q
-			g.priorityReads[1] = nil
-			g.priorityReads[2] = nil
-			g.priorityReadsMu.Unlock()
+		// finally, update the JSR instruction to point to the updated routine:
+		{
+			// JSR $7D00 | JSR $7E00
+			// update the $7D or $7E byte in the JSR instruction:
+			Address: targetJSR,
+			Size:    1,
+			Data:    []byte{uint8(targetSNES >> 8)},
 		},
-	).EnqueueTo(q)
-	if err != nil {
-		log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
-		var termErr *snes.TerminalError
-		if errors.As(err, &termErr) {
-			log.Println("alttp: update: terminal error encountered; disconnecting from queue")
-			_ = termErr
-			g.queue = nil
-		}
-		return
 	}
+	ok = true
+
+	return
 }
 
 func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated bool, err error) {

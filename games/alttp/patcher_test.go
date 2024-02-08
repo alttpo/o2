@@ -152,15 +152,6 @@ func TestPatcher_ModuleTests(t *testing.T) {
 		return
 	}
 
-	{
-		mask := uint16(1)
-		for i := 0; i < 16; i++ {
-			e.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+0), byte(mask&0xFF))
-			e.Bus.EaWrite(uint32(0x00_98C0+((15-i)<<1)+1), byte(mask>>8&0xFF))
-			mask <<= 1
-		}
-	}
-
 	modulesOK := map[uint8]struct{}{
 		0x07: {},
 		0x09: {},
