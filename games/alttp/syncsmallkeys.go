@@ -88,7 +88,7 @@ func (g *Game) readWRAM() {
 			dungeonOffs := smallKeyFirst + dungeonNumber
 
 			if g.wram[dungeonOffs] != currentKeyCount {
-				log.Printf("alttp: local: wram[$%04x] -> %04x -> wram[$%04x]   ; %s\n", 0xf36f, currentKeyCount, dungeonOffs, dungeonNames[dungeonNumber])
+				//log.Printf("alttp: local: wram[$%04x] -> %04x -> wram[$%04x]   ; %s\n", 0xf36f, currentKeyCount, dungeonOffs, dungeonNames[dungeonNumber])
 
 				// copy current dungeon small key counter into the dungeon's small key SRAM shadow location:
 				g.wram[dungeonOffs] = currentKeyCount

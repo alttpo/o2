@@ -646,6 +646,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 					g.priorityReadsMu.Unlock()
 				},
 			).EnqueueTo(q); err != nil {
+				g.priorityReadsMu.Lock()
 				log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
 				var termErr *snes.TerminalError
 				if errors.As(err, &termErr) {
