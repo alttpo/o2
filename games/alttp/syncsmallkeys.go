@@ -79,7 +79,7 @@ func (g *Game) readWRAM() {
 	nowTs := timestampFromTime(now)
 
 	// copy current dungeon small key counter to specific dungeon:
-	if g.wramFresh[0xF36F] && local.IsInDungeon() {
+	if g.wramFresh[0xF36F] && local.IsInDungeon() && local.SubModule == 0 {
 		dungeonNumber := local.Dungeon
 		if dungeonNumber != 0xFF && dungeonNumber < 0x20 {
 			currentKeyCount := g.wram[0xF36F]

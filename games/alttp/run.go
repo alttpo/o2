@@ -122,7 +122,7 @@ func (g *Game) run() {
 
 	// kick off initial WRAM read request:
 	g.priorityReadsMu.Lock()
-	q = g.enqueueWRAMReads(q)
+	q = g.queueReads(q)
 	// must always read module number LAST to validate the prior reads:
 	q = g.enqueueMainRead(q)
 	g.priorityReads[2] = q
@@ -195,29 +195,11 @@ func (g *Game) run() {
 				if stg == 0 {
 					// make sure a read request is always in flight to keep our main loop running:
 					timeSinceRead := time.Now().Sub(g.lastReadCompleted)
-					if timeSinceRead < time.Millisecond*512 {
-						// read SRAM data:
-						g.priorityReadsMu.Lock()
-						q := make([]snes.Read, 0, 12)
-						q = g.enqueueSRAMRead(q)
-
-						if debugSprites {
-							// DEBUG read sprite WRAM:
-							q = g.readEnqueue(q, 0xF50D00, 0xF0, 1) // [$0D00..$0DEF]
-							q = g.readEnqueue(q, 0xF50DF0, 0xF0, 1) // [$0DF0..$0EDF]
-							q = g.readEnqueue(q, 0xF50EE0, 0xC0, 1) // [$0EE0..$0F9F]
-						}
-
-						// must always read module number LAST to validate the prior reads:
-						q = g.enqueueMainRead(q)
-						g.priorityReads[1] = q
-						g.priorityReadsMu.Unlock()
-					} else {
+					if timeSinceRead > time.Millisecond*250 {
 						g.priorityReadsMu.Lock()
 						log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 						q := make([]snes.Read, 0, 12)
-						q = g.enqueueWRAMReads(q)
-						// must always read module number LAST to validate the prior reads:
+						q = g.queueReads(q)
 						q = g.enqueueMainRead(q)
 						g.priorityReads[2] = q
 						g.priorityReadsMu.Unlock()
@@ -334,6 +316,25 @@ func (g *Game) enqueueMainRead(q []snes.Read) []snes.Read {
 	return q
 }
 
+func (g *Game) queueReads(q []snes.Read) []snes.Read {
+	if g.monotonicFrameTime&7 == 7 {
+		// read SRAM data less frequently:
+		q = g.enqueueSRAMRead(q)
+
+		if debugSprites {
+			// DEBUG read sprite WRAM:
+			q = g.readEnqueue(q, 0xF50D00, 0xF0, 1) // [$0D00..$0DEF]
+			q = g.readEnqueue(q, 0xF50DF0, 0xF0, 1) // [$0DF0..$0EDF]
+			q = g.readEnqueue(q, 0xF50EE0, 0xC0, 1) // [$0EE0..$0F9F]
+		}
+	} else {
+		// normally read just WRAM data:
+		q = g.enqueueWRAMReads(q)
+	}
+
+	return q
+}
+
 // called when all reads are completed:
 func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.stateLock.Lock()
@@ -442,6 +443,11 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		newFrame := g.wram[0x1A]
 		g.lastGameFrame = lastFrame
 
+		// should wrap around 255 to 0:
+		g.monotonicFrameTime++
+
+		//log.Printf("server now(): %v\n", g.ServerNow())
+
 		// assign local variables from WRAM:
 		local := g.LocalPlayer()
 
@@ -489,7 +495,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		local.PriorModule = Module(g.wram[0x010C])
 
 		// only sample location during sub-module 0 for any module; keeps location more stable:
-		if local.SubModule == 0 {
+		if local.Module == 0x15 || local.SubModule == 0 {
 			inDungeon := g.wram[0x1B]
 			overworldArea := g.wramU16(0x8A)
 			dungeonRoom := g.wramU16(0xA0)
@@ -586,11 +592,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		if newFrame == lastFrame {
 			return
 		}
-
-		// should wrap around 255 to 0:
-		g.monotonicFrameTime++
-
-		//log.Printf("server now(): %v\n", g.ServerNow())
 
 		// handle WRAM reads:
 		g.readWRAM()
@@ -689,8 +690,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		return
 	}
 
-	// do all the normal WRAM reads:
-	q = g.enqueueWRAMReads(q)
+	q = g.queueReads(q)
 	q = g.enqueueMainRead(q)
 	g.priorityReads[2] = q
 

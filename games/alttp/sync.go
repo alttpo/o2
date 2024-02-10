@@ -15,9 +15,12 @@ var modulesOKForSync = map[uint8]struct{}{
 	0x0F: {},
 	0x10: {},
 	0x11: {},
+	0x12: {},
 	0x13: {},
 	0x15: {},
 	0x16: {},
+	0x17: {},
+	0x18: {},
 }
 
 var dungeonNames = []string{

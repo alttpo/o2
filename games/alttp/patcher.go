@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	preMainLen = 0x26
+	preMainLen = 0x1E
 	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
 	preMainAddr        = uint32(0x708000 - preMainLen)
 	preMainJSRAddr     = uint32(0x707FFA)
@@ -139,32 +139,29 @@ func (p *Patcher) Patch() (err error) {
 		taMain.AssumeSEP(0x30)
 
 		taMain.Label("moduleCheck")
-
-		// build a reversed bitmask because our bitmask lookup table is reversed:
-		mask := uint16(0)
-		for m := range modulesOKForSync {
-			mask |= uint16(1 << (15 - (m - 0x07)))
-		}
-		log.Printf("mask: %04X\n", mask)
-
-		taMain.Comment("only sync during modules 07,09,0B,0E,0F,10,11,13,15,16:")
+		taMain.Comment("only update during safe modules:")
 		taMain.LDA_dp(0x10)
-		taMain.CMP_imm8_b(0x17)
+		// >= $19    : bad
+		taMain.CMP_imm8_b(0x19)
 		taMain.BCS("syncExit")
+		// <= $06    : bad
 		taMain.SBC_imm8_b(0x07 - 1)
 		taMain.BMI("syncExit")
-		taMain.ASL()
-		taMain.TAX()
-		taMain.REP(0x20)
-		// DungeonMask#_0098C0 is a uin16[16] of bit masks from $8000 down to $0001
-		taMain.LDA_long_x(0x00_98C0)
-		taMain.AND_imm16_w(mask)
-		taMain.SEP(0x20)
+		// == $08    : bad
+		taMain.CMP_imm8_b(0x08)
 		taMain.BEQ("syncExit")
+		// == $0A    : bad
+		taMain.CMP_imm8_b(0x0A)
+		taMain.BEQ("syncExit")
+		// == $14    : bad
+		taMain.CMP_imm8_b(0x14)
+		taMain.BEQ("syncExit")
+		// ok:
 		taMain.Label("linkCheck")
-		taMain.Comment("don't update if Link is frozen:")
-		taMain.LDA_abs(0x02E4)
-		taMain.BNE("syncExit")
+
+		//taMain.Comment("don't update if Link is frozen:")
+		//taMain.LDA_abs(0x02E4)
+		//taMain.BNE("syncExit")
 
 		jsr := taMain.Label("syncStart")
 		if preMainJSRAddr != jsr+2 {
