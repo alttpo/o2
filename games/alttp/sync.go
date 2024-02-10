@@ -7,6 +7,19 @@ import (
 	"strings"
 )
 
+var modulesOKForSync = map[uint8]struct{}{
+	0x07: {},
+	0x09: {},
+	0x0B: {},
+	0x0E: {},
+	0x0F: {},
+	0x10: {},
+	0x11: {},
+	0x13: {},
+	0x15: {},
+	0x16: {},
+}
+
 var dungeonNames = []string{
 	"Sewer Passage",     // $37C
 	"Hyrule Castle",     // $37D

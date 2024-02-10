@@ -152,18 +152,6 @@ func TestPatcher_ModuleTests(t *testing.T) {
 		return
 	}
 
-	modulesOK := map[uint8]struct{}{
-		0x07: {},
-		0x09: {},
-		0x0B: {},
-		0x0E: {},
-		0x0F: {},
-		0x10: {},
-		0x11: {},
-		0x13: {},
-		0x15: {},
-		0x16: {},
-	}
 	for m := 0; m <= 0xFF; m++ {
 		m := uint8(m)
 		t.Run(fmt.Sprintf("module $%02X", m), func(t *testing.T) {
@@ -182,7 +170,7 @@ func TestPatcher_ModuleTests(t *testing.T) {
 			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])
 
 			// check if the module should have passed:
-			if _, ok := modulesOK[m]; ok {
+			if _, ok := modulesOKForSync[m]; ok {
 				if e.WRAM[0x0F] == 0 {
 					t.Fatal("unexpected fail!")
 				}

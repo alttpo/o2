@@ -141,9 +141,8 @@ func (p *Patcher) Patch() (err error) {
 		taMain.Label("moduleCheck")
 
 		// build a reversed bitmask because our bitmask lookup table is reversed:
-		modulesOK := [...]uint8{0x07, 0x09, 0x0B, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x15, 0x16}
 		mask := uint16(0)
-		for _, m := range modulesOK {
+		for m := range modulesOKForSync {
 			mask |= uint16(1 << (15 - (m - 0x07)))
 		}
 		log.Printf("mask: %04X\n", mask)

@@ -437,6 +437,11 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			}
 		}
 
+		// update frame as early as possible:
+		lastFrame := g.lastGameFrame
+		newFrame := g.wram[0x1A]
+		g.lastGameFrame = lastFrame
+
 		// assign local variables from WRAM:
 		local := g.LocalPlayer()
 
@@ -450,14 +455,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		g.lastSubModule = submoduleStaging
 
 		doSync := true
-		if moduleStaging == 0x07 || moduleStaging == 0x09 || moduleStaging == 0x0b {
-			// good module, check submodule:
-			if g.wramU8(0x11) != 0 {
-				doSync = false
-			}
-		} else if moduleStaging == 0x0e {
-			// menu/interface module is ok:
-		} else {
+		if _, ok := modulesOKForSync[uint8(moduleStaging)]; !ok {
 			// bad module:
 			doSync = false
 		}
@@ -490,70 +488,73 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// this is documented as a uint16, but we use it as a uint8
 		local.PriorModule = Module(g.wram[0x010C])
 
-		inDungeon := g.wram[0x1B]
-		overworldArea := g.wramU16(0x8A)
-		dungeonRoom := g.wramU16(0xA0)
-		if local.OverworldArea != overworldArea {
-			log.Printf(
-				"alttp: local: overworld $%04x -> $%04x ; %s\n",
-				local.OverworldArea,
-				overworldArea,
-				overworldNames[overworldArea],
-			)
-		}
-		if local.DungeonRoom != dungeonRoom {
-			log.Printf(
-				"alttp: local: underworld $%04x -> $%04x ; %s\n",
-				local.DungeonRoom,
-				dungeonRoom,
-				underworldNames[dungeonRoom],
-			)
-		}
-		local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
-
-		// TODO: fix this calculation to be compatible with alttpo
-		inDarkWorld := uint32(0)
-		if overworldArea&0x40 != 0 {
-			inDarkWorld = 1 << 17
-		}
-
-		dungeon := g.wramU16(0x040C)
-		if local.Dungeon != dungeon {
-			dungName := "cave"
-			if dungeon < 0x20 {
-				dungName = dungeonNames[dungeon>>1]
+		// only sample location during sub-module 0 for any module; keeps location more stable:
+		if local.SubModule == 0 {
+			inDungeon := g.wram[0x1B]
+			overworldArea := g.wramU16(0x8A)
+			dungeonRoom := g.wramU16(0xA0)
+			if local.OverworldArea != overworldArea {
+				log.Printf(
+					"alttp: local: overworld $%04x -> $%04x ; %s\n",
+					local.OverworldArea,
+					overworldArea,
+					overworldNames[overworldArea],
+				)
 			}
-			log.Printf(
-				"alttp: local: dungeon $%04x -> $%04x ; %s\n",
-				local.Dungeon,
-				dungeon,
-				dungName,
-			)
-			g.shouldUpdatePlayersList = true
-		}
-		local.Dungeon = dungeon
+			if local.DungeonRoom != dungeonRoom {
+				log.Printf(
+					"alttp: local: underworld $%04x -> $%04x ; %s\n",
+					local.DungeonRoom,
+					dungeonRoom,
+					underworldNames[dungeonRoom],
+				)
+			}
+			local.OverworldArea, local.DungeonRoom = overworldArea, dungeonRoom
 
-		lastLocation := local.Location
-		local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
-		if inDungeon != 0 {
-			local.Location |= uint32(dungeonRoom)
-		} else {
-			local.Location |= uint32(overworldArea)
-		}
-		if local.Location != lastLocation {
-			g.shouldUpdatePlayersList = true
-		}
+			// TODO: fix this calculation to be compatible with alttpo
+			inDarkWorld := uint32(0)
+			if overworldArea&0x40 != 0 {
+				inDarkWorld = 1 << 17
+			}
 
-		if local.Module.IsOverworld() {
-			local.LastOverworldX = local.X
-			local.LastOverworldY = local.Y
+			dungeon := g.wramU16(0x040C)
+			if local.Dungeon != dungeon {
+				dungName := "cave"
+				if dungeon < 0x20 {
+					dungName = dungeonNames[dungeon>>1]
+				}
+				log.Printf(
+					"alttp: local: dungeon $%04x -> $%04x ; %s\n",
+					local.Dungeon,
+					dungeon,
+					dungName,
+				)
+				g.shouldUpdatePlayersList = true
+			}
+			local.Dungeon = dungeon
+
+			lastLocation := local.Location
+			local.Location = inDarkWorld | (uint32(inDungeon&1) << 16)
+			if inDungeon != 0 {
+				local.Location |= uint32(dungeonRoom)
+			} else {
+				local.Location |= uint32(overworldArea)
+			}
+			if local.Location != lastLocation {
+				g.shouldUpdatePlayersList = true
+			}
+
+			if local.Module.IsOverworld() {
+				local.LastOverworldX = local.X
+				local.LastOverworldY = local.Y
+			}
+
+			local.X = g.wramU16(0x22)
+			local.Y = g.wramU16(0x20)
+
+			local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
+			local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 		}
-
-		local.X = g.wramU16(0x22)
-		local.Y = g.wramU16(0x20)
-
-		local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
-		local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 
 		// copy $7EF000-4FF into `local.SRAM`:
 		//copy(local.SRAM[:], g.wram[0xF000:0xF500])
@@ -582,17 +583,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		}
 
 		// did game frame change?
-		if g.wram[0x1A] == g.lastGameFrame {
+		if newFrame == lastFrame {
 			return
 		}
-
-		// increment frame timer:
-		lastFrame := uint64(g.lastGameFrame)
-		nextFrame := uint64(g.wram[0x1A])
-		if nextFrame < lastFrame {
-			nextFrame += 256
-		}
-		g.lastGameFrame = g.wram[0x1A]
 
 		// should wrap around 255 to 0:
 		g.monotonicFrameTime++
