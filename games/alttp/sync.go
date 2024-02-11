@@ -11,6 +11,8 @@ var modulesOKForSync = map[uint8]struct{}{
 	0x07: {},
 	0x09: {},
 	0x0B: {},
+	0x0C: {}, // unused
+	0x0D: {}, // unused
 	0x0E: {},
 	0x0F: {},
 	0x10: {},

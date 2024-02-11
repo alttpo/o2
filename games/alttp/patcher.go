@@ -145,8 +145,8 @@ func (p *Patcher) Patch() (err error) {
 		taMain.CMP_imm8_b(0x19)
 		taMain.BCS("syncExit")
 		// <= $06    : bad
-		taMain.SBC_imm8_b(0x07 - 1)
-		taMain.BMI("syncExit")
+		taMain.CMP_imm8_b(0x07)
+		taMain.BCC("syncExit")
 		// == $08    : bad
 		taMain.CMP_imm8_b(0x08)
 		taMain.BEQ("syncExit")
