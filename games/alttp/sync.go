@@ -25,25 +25,6 @@ var modulesOKForSync = map[uint8]struct{}{
 	0x18: {},
 }
 
-var dungeonNames = []string{
-	"Sewer Passage",     // $37C
-	"Hyrule Castle",     // $37D
-	"Eastern Palace",    // $37E
-	"Desert Palace",     // $37F
-	"Hyrule Castle 2",   // $380
-	"Swamp Palace",      // $381
-	"Dark Palace",       // $382
-	"Misery Mire",       // $383
-	"Skull Woods",       // $384
-	"Ice Palace",        // $385
-	"Tower of Hera",     // $386
-	"Gargoyle's Domain", // $387
-	"Turtle Rock",       // $388
-	"Ganon's Tower",     // $389
-	"Extra Dungeon 1",   // $38A unused
-	"Extra Dungeon 2",   // $38B unused
-}
-
 // for VT randomizers:
 // InventorySwap1 $38C
 const (

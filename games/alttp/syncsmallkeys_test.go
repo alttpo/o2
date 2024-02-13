@@ -304,10 +304,10 @@ func TestGameSync_SmallKeys_Ideal(t *testing.T) {
 					if len(gs[1].n) != 2 {
 						t.Errorf("expected %d notifications actual %d", 2, len(gs[1].n))
 					}
-					if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[0]), gs[1].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
-					if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[1]), gs[1].n[1]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
 				},
@@ -435,10 +435,10 @@ func TestGameSync_SmallKeys_Delayed(t *testing.T) {
 					if len(gs[1].n) != 2 {
 						t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
 					}
-					if expected, actual := "update Sewer Passage small keys to 1 from g1", gs[1].n[0]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[0]), gs[1].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
-					if expected, actual := "update Hyrule Castle small keys to 1 from g1", gs[1].n[1]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 1 from g1", dungeonNames[1]), gs[1].n[1]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
 				},
@@ -565,10 +565,10 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 					t.Errorf("expected 2 notifications actual %d", len(gs[1].n))
 					return
 				}
-				if expected, actual := "conflict with g1 detected for Sewer Passage small keys", gs[1].n[0]; expected != actual {
+				if expected, actual := fmt.Sprintf("conflict with g1 detected for %s small keys", dungeonNames[0]), gs[1].n[0]; expected != actual {
 					t.Errorf("expected notification %q actual %q", expected, actual)
 				}
-				if expected, actual := "conflict with g1 detected for Hyrule Castle small keys", gs[1].n[1]; expected != actual {
+				if expected, actual := fmt.Sprintf("conflict with g1 detected for %s small keys", dungeonNames[1]), gs[1].n[1]; expected != actual {
 					t.Errorf("expected notification %q actual %q", expected, actual)
 				}
 
@@ -679,10 +679,10 @@ func TestGameSync_SmallKeys_InitialWithVarying(t *testing.T) {
 						t.Errorf("expected %d notifications actual %d", 2, len(gs[0].n))
 						return
 					}
-					if expected, actual := "update Sewer Passage small keys to 2 from g2", gs[0].n[0]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 2 from g2", dungeonNames[0]), gs[0].n[0]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
-					if expected, actual := "update Hyrule Castle small keys to 2 from g2", gs[0].n[1]; expected != actual {
+					if expected, actual := fmt.Sprintf("update %s small keys to 2 from g2", dungeonNames[1]), gs[0].n[1]; expected != actual {
 						t.Errorf("expected notification %q actual %q", expected, actual)
 					}
 					// no notifications from g2:
