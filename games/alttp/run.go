@@ -438,16 +438,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			}
 		}
 
-		// update frame as early as possible:
-		lastFrame := g.lastGameFrame
-		newFrame := g.wram[0x1A]
-		g.lastGameFrame = lastFrame
-
-		// should wrap around 255 to 0:
-		g.monotonicFrameTime++
-
-		//log.Printf("server now(): %v\n", g.ServerNow())
-
 		// assign local variables from WRAM:
 		local := g.LocalPlayer()
 
@@ -589,9 +579,18 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		}
 
 		// did game frame change?
-		if newFrame == lastFrame {
+		newFrame := g.wram[0x1A]
+		if newFrame == g.lastGameFrame {
 			return
 		}
+
+		// update frame as early as possible:
+		g.lastGameFrame = newFrame
+
+		// should wrap around 255 to 0:
+		g.monotonicFrameTime++
+
+		//log.Printf("server now(): %v\n", g.ServerNow())
 
 		// handle WRAM reads:
 		g.readWRAM()
