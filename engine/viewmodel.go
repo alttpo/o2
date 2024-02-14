@@ -196,6 +196,7 @@ func (vm *ViewModel) SaveConfiguration() bool {
 		}
 		// override named game configuration; keep other games' configuration as-is:
 		vm.config.Games[gameName] = marshaled
+		log.Printf("viewmodel: saveConfiguration: %s: %s\n", gameName, marshaled)
 	}
 
 	b, err := json.MarshalIndent(&vm.config, "", "  ")
@@ -329,7 +330,9 @@ func (vm *ViewModel) tryCreateGame() bool {
 	game.Reset()
 
 	// load configuration:
-	if gameConfig, ok := vm.config.Games[game.Name()]; ok {
+	gameName := game.Name()
+	if gameConfig, ok := vm.config.Games[gameName]; ok {
+		log.Printf("viewmodel: tryCreateGame: %s: %s\n", gameName, gameConfig)
 		game.LoadConfiguration(gameConfig)
 	}
 
