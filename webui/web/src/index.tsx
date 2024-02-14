@@ -111,7 +111,7 @@ const App = () => {
             <div id="main-wrapper">
                 <header>
                     <section class="rounded darken padded squeeze">
-                        <h1>O2{
+                        <h1>O2{ (vm.o2?.version) ? " " + vm.o2?.version : ""}{
                             (vm.game?.isCreated || false) ? " - " + vm.game.gameName : ""
                         }</h1>
                     </section>

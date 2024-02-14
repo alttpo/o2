@@ -71,6 +71,10 @@ func init() {
 	log.Printf("o2 %s %s built on %s by %s", version, commit, date, builtBy)
 }
 
+type O2ViewModel struct {
+	Version string `json:"version"`
+}
+
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -95,13 +99,18 @@ func main() {
 	browserHost = env.GetOrDefault("O2_WEB_BROWSER_HOST", "127.0.0.1")
 	browserUrl = fmt.Sprintf("http://%s:%d/", browserHost, listenPort)
 
-	// construct our viewModel and web server:
+	// construct our viewModel:
 	viewModel := engine.NewViewModel()
+	viewModel.SetViewModel("o2", &O2ViewModel{Version: version})
+
+	// construct the web server:
 	webServer := NewWebServer(listenAddr)
 
 	// inform viewModel of web server and vice versa:
 	viewModel.ProvideViewNotifier(webServer)
 	webServer.ProvideViewCommandHandler(viewModel)
+
+	// on a new /ws/ websocket connection, all named view models are sent to front-end.
 
 	// start the web server:
 	go func() {
