@@ -154,70 +154,70 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                        value={colorBlue} onInput={setColorValue.bind(this, 'blue', setcolorBlue)}/>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr;">
-                <label for="syncItems">
+                <div><label for="syncItems">
                     <input type="checkbox"
                            id="syncItems"
                            checked={syncItems}
                            onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}
                     />Sync Items
-                </label>
+                </label></div>
 
-                <label for="syncDungeonItems"
+                <div><label for="syncDungeonItems"
                        title="Big Keys, Compasses, Maps">
                     <input type="checkbox"
                            id="syncDungeonItems"
                            checked={syncDungeonItems}
                            onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}
                     />Sync Dungeon Items
-                </label>
+                </label></div>
 
-                <label for="syncProgress">
+                <div><label for="syncProgress">
                     <input type="checkbox"
                            id="syncProgress"
                            checked={syncProgress}
                            onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}
                     />Sync Progress
-                </label>
+                </label></div>
 
-                <label for="syncHearts">
+                <div><label for="syncHearts">
                     <input type="checkbox"
                            id="syncHearts"
                            checked={syncHearts}
                            onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}
                     />Sync Hearts
-                </label>
+                </label></div>
 
-                <label for="syncSmallKeys">
+                <div><label for="syncSmallKeys">
                     <input type="checkbox"
                            id="syncSmallKeys"
                            checked={syncSmallKeys}
                            onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
                     />Sync Small Keys
-                </label>
+                </label></div>
 
-                <label for="syncUnderworld">
+                <div><label for="syncUnderworld">
                     <input type="checkbox"
                            id="syncUnderworld"
                            checked={syncUnderworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
                     />Sync Underworld
-                </label>
+                </label></div>
 
-                <label for="syncOverworld">
+                <div><label for="syncOverworld">
                     <input type="checkbox"
                            id="syncOverworld"
                            checked={syncOverworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
                     />Sync Overworld
-                </label>
+                </label></div>
 
-                <label for="syncChests">
+                <div><label for="syncChests">
                     <input type="checkbox"
                            id="syncChests"
                            checked={syncChests}
                            onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
                     />Sync Chests
-                </label>
+                </label></div>
             </div>
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
