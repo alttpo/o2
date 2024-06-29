@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"o2/games"
+	"time"
 )
 
 type Module uint8
@@ -138,6 +139,9 @@ type Player struct {
 	WRAM WRAMReadable
 
 	showJoinMessage bool
+
+	GameStartTime  time.Time
+	GameFinishTime time.Time
 }
 
 func (p *Player) Index() int {
@@ -274,4 +278,27 @@ func (p *Player) isModuleInGame(m Module) bool {
 
 func (p *Player) IsDungeon() bool {
 	return p.Module == 0x07
+}
+
+func (p *Player) FormatTimer(now time.Time) string {
+	gameTimer := ""
+	if !p.GameStartTime.IsZero() {
+		var dur time.Duration
+
+		var endTime time.Time
+		if !p.GameFinishTime.IsZero() {
+			endTime = p.GameFinishTime
+		} else {
+			endTime = now
+		}
+
+		dur = endTime.Sub(p.GameStartTime)
+		gameTimer = fmt.Sprintf("%02d:%02d:%02d.%03d",
+			(dur/time.Hour)%24,
+			(dur/time.Minute)%60,
+			(dur/time.Second)%60,
+			(dur/time.Microsecond)%1000,
+		)
+	}
+	return gameTimer
 }

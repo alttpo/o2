@@ -217,6 +217,11 @@ func (g *Game) run() {
 				break
 			}
 
+			// update player list timer values every 500ms:
+			if !g.local.GameStartTime.IsZero() && g.local.GameFinishTime.IsZero() {
+				g.shouldUpdatePlayersList = true
+			}
+
 			g.sendEcho()
 
 			g.sendPlayerName()
@@ -237,11 +242,23 @@ func (g *Game) sendPlayerName() {
 	m := g.makeBroadcastMessage()
 	m.WriteByte(0x0C)
 	var name [20]byte
-	n := copy(name[:], g.LocalPlayer().Name())
+	p := g.LocalPlayer()
+	n := copy(name[:], p.Name())
 	for ; n < 20; n++ {
 		name[n] = ' '
 	}
 	m.Write(name[:])
+
+	_ = binary.Write(m, binary.LittleEndian, p.GameStartTime.IsZero())
+	if !p.GameStartTime.IsZero() {
+		_ = binary.Write(m, binary.LittleEndian, p.GameStartTime.UnixNano())
+	}
+
+	_ = binary.Write(m, binary.LittleEndian, p.GameFinishTime.IsZero())
+	if !p.GameFinishTime.IsZero() {
+		_ = binary.Write(m, binary.LittleEndian, p.GameFinishTime.UnixNano())
+	}
+
 	g.send(m)
 }
 
@@ -446,6 +463,21 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// log module changes regardless of syncing:
 		if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
 			log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
+			if moduleStaging == 0x05 {
+				// game load:
+				if g.local.GameStartTime.IsZero() {
+					g.local.GameStartTime = g.ServerNow()
+					g.shouldUpdatePlayersList = true
+					g.PushNotification("game started")
+				}
+			} else if moduleStaging == 0x19 {
+				// triforce room module:
+				if g.local.GameFinishTime.IsZero() {
+					g.local.GameFinishTime = g.ServerNow()
+					g.shouldUpdatePlayersList = true
+					g.PushNotification(fmt.Sprintf("game finished in %s", g.local.FormatTimer(g.ServerNow())))
+				}
+			}
 		}
 		g.lastModule = moduleStaging
 		g.lastSubModule = submoduleStaging

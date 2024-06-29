@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/util"
+	"time"
 )
 
 func (g *Game) NotifyView() {
@@ -37,6 +38,12 @@ func (g *Game) ClearNotificationHistory() {
 	viewModels.NotifyView("game/notification/history", make([]string, 0, 200))
 }
 
+// TimestampedNotification is json serializable
+type TimestampedNotification struct {
+	Timestamp string `json:"t"`
+	Message   string `json:"m"`
+}
+
 func (g *Game) PushNotification(notification string) {
 	g.Notifications.Publish(notification)
 
@@ -48,16 +55,30 @@ func (g *Game) PushNotification(notification string) {
 	// record history of Notifications:
 	historyVM, ok := viewModels.GetViewModel("game/notification/history")
 	if !ok {
-		historyVM = make([]string, 0, 200)
+		historyVM = make([]TimestampedNotification, 0, 200)
 	}
 
-	history, ok := historyVM.([]string)
+	history, ok := historyVM.([]TimestampedNotification)
 	if !ok {
-		history = make([]string, 0, 200)
+		history = make([]TimestampedNotification, 0, 200)
+	}
+
+	// prepend timestamp
+	b := make([]byte, 0, len("2006-01-02 15:04:05.000 - ")+len(notification))
+	if g.queue != nil && !g.lastServerTime.IsZero() {
+		b = append(b, 'S')
+		b = g.lastServerTime.AppendFormat(b, "2006-01-02 15:04:05.000")
+	} else {
+		b = append(b, 'C')
+		b = time.Now().AppendFormat(b, "2006-01-02 15:04:05.000")
+	}
+	timestampedNotification := TimestampedNotification{
+		Timestamp: string(b),
+		Message:   notification,
 	}
 
 	// append the notification:
-	history = append(history, notification)
+	history = append(history, timestampedNotification)
 	viewModels.NotifyView("game/notification/history", history)
 }
 
@@ -72,7 +93,7 @@ type PlayerViewModel struct {
 	Underworld  string `json:"underworld"`
 	DungeonName string `json:"dungeonName"`
 
-	// TODO: more player details
+	GameTimer string `json:"timer"`
 }
 
 func (g *Game) updatePlayersList() {
@@ -106,6 +127,8 @@ func (g *Game) updatePlayersList() {
 			overworldName = name
 		}
 
+		gameTimer := p.FormatTimer(g.ServerNow())
+
 		playerViewModels = append(playerViewModels, &PlayerViewModel{
 			Index: p.Index(),
 			Team:  int(p.Team),
@@ -116,6 +139,8 @@ func (g *Game) updatePlayersList() {
 			Overworld:   overworldName,
 			Underworld:  underworldName,
 			DungeonName: dungeonName,
+
+			GameTimer: gameTimer,
 		})
 	}
 

@@ -1,4 +1,4 @@
-import {GameALTTPViewModel, GameViewProps} from "../viewmodel";
+import {GameALTTPViewModel, GameViewProps, TimestampedNotification} from "../viewmodel";
 import {useEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {setField} from "../util";
@@ -21,7 +21,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
 
-    const [notifHistory, setNotifHistory] = useState([] as string[]);
+    const [notifHistory, setNotifHistory] = useState([] as TimestampedNotification[]);
     const historyTextarea = useRef(null);
 
     const [showASM, set_showASM] = useState(false);
@@ -48,26 +48,26 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     }, [game]);
 
     useEffect(() => {
-        let history = vm["game/notification/history"] as string[];
+        let history = vm["game/notification/history"] as TimestampedNotification[];
         if (!history) {
             history = [];
         }
         setNotifHistory(history);
+        // scroll to bottom:
+        if (historyTextarea.current) {
+            historyTextarea.current.scrollTop = historyTextarea.current.scrollHeight;
+        }
     }, [vm["game/notification/history"]]);
 
-    const mounted = useRef(false);
-    useEffect(() => {
-        if (!mounted.current) {
-            // do componentDidMount logic
-            mounted.current = true;
-        } else {
-            // do componentDidUpdate logic
-            // scroll to bottom:
-            if (historyTextarea.current) {
-                historyTextarea.current.scrollTop = historyTextarea.current.scrollHeight;
-            }
-        }
-    });
+    //const mounted = useRef(false);
+    //useEffect(() => {
+    //    if (!mounted.current) {
+    //        // do componentDidMount logic
+    //        mounted.current = true;
+    //    } else {
+    //        // do componentDidUpdate logic
+    //    }
+    //});
 
     const sendGameCommand = ch.command.bind(ch, "game");
 
@@ -90,7 +90,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     };
 
     const hexrgb24 = (rgb: number) => {
-        const hex = "#" + ("000000" + rgb.toString(16)).substr(-6);
+        const hex = "#" + ("000000" + rgb.toString(16)).slice(-6);
         return hex;
     };
 
@@ -134,7 +134,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            onChange={setField.bind(this, sendGameCommand, setsyncTunicColor, "syncTunicColor", getTargetChecked)}
                     />Sync Tunic Color:
                 </label>
-                <input type="text" readonly={true} value={("0000" + playerColor.toString(16)).substr(-4)}/>
+                <div>
+                    <input type="text" readonly={true} value={("0000" + playerColor.toString(16).toUpperCase()).slice(-4)} title="BGR555"/>
+                    <input type="text" readonly={true} value={("000000" + bgr16torgb24(playerColor).toString(16).toUpperCase()).slice(-6)} title="RGB888"/>
+                </div>
 
                 <div style={
                     "grid-column: 1; grid-row: 2 / span 3; border: 1px solid white; margin: 6px; background-color: " +
@@ -222,21 +225,23 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         </div>
         <h5 style="grid-row: 1; grid-column: 2">Players</h5>
         <div
-            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-row: 2 / span 2; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr; grid-column-gap: 0.5em">
-            <div style="font-weight: bold">##</div>
-            <div style="font-weight: bold">team</div>
-            <div style="font-weight: bold">name</div>
-            <div style="font-weight: bold">location</div>
+            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-row: 2 / span 2; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr 4fr; grid-column-gap: 0.5em">
+            <div style="font-weight: bold; text-decoration: underline">##</div>
+            <div style="font-weight: bold; text-decoration: underline">team</div>
+            <div style="font-weight: bold; text-decoration: underline">name</div>
+            <div style="font-weight: bold; text-decoration: underline">location</div>
+            <div style="font-weight: bold; text-decoration: underline">timer</div>
             {
                 (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
-                    <div class="mono" title="Player index">{("0" + p.index.toString(16)).substr(-2)}</div>
+                    <div class="mono" title="Player index">{("00" + p.index.toString(16).toUpperCase()).slice(-3)}</div>
                     <div class="mono" title="Team number">{p.team}</div>
-                    <div style="color: yellow; white-space: nowrap" title="Player name">{p.name}</div>
+                    <div style={"color: "+hexrgb24(bgr16torgb24(p.color))+"; white-space: nowrap"} title="Player name">{p.name}</div>
                     <div
                         style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan") + "; white-space: nowrap"}
                         title="Location">{
                         ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
                     }</div>
+                    <div class="mono" title="Timer">{p.timer}</div>
                 </Fragment>))
             }
         </div>
@@ -254,6 +259,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
 
                 <textarea id="asm" cols={40} rows={3} value={code}
                           style="height: 3.8em"
+                          title="enter 65816 opcodes in HEX format to execute"
                           hidden={!showASM}
                           onChange={e => set_code((e.target as HTMLTextAreaElement).value)}/>
                 <button hidden={!showASM}
@@ -266,11 +272,12 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     updates:
                 </div>
                 <div style="grid-column: 1 / span 2; margin-top: 0.5em">
-                    <textarea ref={historyTextarea}
-                              value={notifHistory.join("\n")}
-                              style="width: 100%; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em"
-                              rows={7}
-                              readonly={true}/>
+                    <div ref={historyTextarea}
+                         style="display: grid; grid-auto-rows: 18px; line-height: 18px; grid-template-columns: max-content; width: 100%; height: 7em; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em; overflow-y: scroll">
+                        {notifHistory.map(h => (<Fragment>
+                            <span><span style="font-family: monospace; font-size: 0.8rem">{h.t}</span>&nbsp;&ndash;&nbsp;{h.m}</span>
+                        </Fragment>))}
+                    </div>
                 </div>
             </div>
         </div>

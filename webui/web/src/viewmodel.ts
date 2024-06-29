@@ -12,6 +12,11 @@ export interface ViewModel {
     game?: GameViewModel;
 }
 
+export interface TimestampedNotification {
+    t: string; // timestamp
+    m: string; // message
+}
+
 export interface SNESViewModel {
     drivers: DriverViewModel[];
     isConnected: boolean;

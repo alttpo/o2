@@ -7,10 +7,11 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 )
 
 // NOTE: increment this when the serialization code changes in an incompatible way
-const SerializationVersion = 0x13
+const SerializationVersion = 0x14
 
 type MessageType uint8
 
@@ -475,6 +476,35 @@ func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 		// refresh the players list
 		g.shouldUpdatePlayersList = true
 	}
+
+	var isZero bool
+
+	_ = binary.Read(r, binary.LittleEndian, &isZero)
+	var startTime time.Time
+	if !isZero {
+		var startNano int64
+		_ = binary.Read(r, binary.LittleEndian, &startNano)
+		startTime = time.Unix(startNano/1e9, startNano%1e9)
+	}
+	if startTime != p.GameStartTime {
+		p.GameStartTime = startTime
+		// refresh the players list
+		g.shouldUpdatePlayersList = true
+	}
+
+	_ = binary.Read(r, binary.LittleEndian, &isZero)
+	var finishTime time.Time
+	if !isZero {
+		var finishNano int64
+		_ = binary.Read(r, binary.LittleEndian, &finishNano)
+		finishTime = time.Unix(finishNano/1e9, finishNano%1e9)
+	}
+	if finishTime != p.GameFinishTime {
+		p.GameFinishTime = finishTime
+		// refresh the players list
+		g.shouldUpdatePlayersList = true
+	}
+
 	return
 }
 
