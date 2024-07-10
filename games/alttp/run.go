@@ -206,6 +206,9 @@ func (g *Game) run() {
 					}
 				}
 			}
+
+			// update run timer:
+			g.updateRunTimer()
 			break
 
 		case <-slowbeat.C:
@@ -215,11 +218,6 @@ func (g *Game) run() {
 
 			if g.LocalPlayer().Index() < 0 {
 				break
-			}
-
-			// update player list timer values every 500ms:
-			if !g.local.GameStartTime.IsZero() && g.local.GameFinishTime.IsZero() {
-				g.shouldUpdatePlayersList = true
 			}
 
 			g.sendEcho()

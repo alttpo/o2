@@ -27,6 +27,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [showASM, set_showASM] = useState(false);
     const [code, set_code] = useState('A903 8F59F37E');
 
+    const [runTimer, setrunTimer] = useState("");
+
     useEffect(() => {
         setplayerColor(game.playerColor);
         const blu5 = (game.playerColor & 0x7E00) >> 10;
@@ -59,15 +61,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         }
     }, [vm["game/notification/history"]]);
 
-    //const mounted = useRef(false);
-    //useEffect(() => {
-    //    if (!mounted.current) {
-    //        // do componentDidMount logic
-    //        mounted.current = true;
-    //    } else {
-    //        // do componentDidUpdate logic
-    //    }
-    //});
+    useEffect(() => {
+        setrunTimer(vm["game/run/timer"]);
+    }, [vm["game/run/timer"]]);
 
     const sendGameCommand = ch.command.bind(ch, "game");
 
@@ -223,25 +219,31 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                 </label></div>
             </div>
         </div>
-        <h5 style="grid-row: 1; grid-column: 2">Players</h5>
+        <div style="grid-row: 1; grid-column: 2; display: flex">
+            <div style="flex: 1">Run Timer:</div><span class="mono" title="First player start to last player finish">{runTimer}</span>
+        </div>
         <div
-            style="grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-row: 2 / span 2; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr 4fr; grid-column-gap: 0.5em">
+            style="grid-row: 2 / span 2; grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr 4fr 4fr; grid-column-gap: 0.5em">
+            <h5 style="grid-column: 1 / span 6">Players</h5>
             <div style="font-weight: bold; text-decoration: underline">##</div>
             <div style="font-weight: bold; text-decoration: underline">team</div>
             <div style="font-weight: bold; text-decoration: underline">name</div>
             <div style="font-weight: bold; text-decoration: underline">location</div>
-            <div style="font-weight: bold; text-decoration: underline">timer</div>
+            <div style="font-weight: bold; text-decoration: underline">start</div>
+            <div style="font-weight: bold; text-decoration: underline">finish</div>
             {
                 (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
                     <div class="mono" title="Player index">{("00" + p.index.toString(16).toUpperCase()).slice(-3)}</div>
                     <div class="mono" title="Team number">{p.team}</div>
-                    <div style={"color: "+hexrgb24(bgr16torgb24(p.color))+"; white-space: nowrap"} title="Player name">{p.name}</div>
+                    <div style={"color: " + hexrgb24(bgr16torgb24(p.color)) + "; white-space: nowrap"}
+                         title="Player name">{p.name}</div>
                     <div
                         style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan") + "; white-space: nowrap"}
                         title="Location">{
                         ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
                     }</div>
-                    <div class="mono" title="Timer">{p.timer}</div>
+                    <div class="mono" title="Start">{p.relStart}</div>
+                    <div class="mono" title="Finish">{p.relFinish}</div>
                 </Fragment>))
             }
         </div>

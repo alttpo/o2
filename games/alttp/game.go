@@ -105,6 +105,10 @@ type Game struct {
 
 	shouldUpdatePlayersList bool
 
+	runMinStart        time.Time
+	runMaxFinish       time.Time
+	runPlayersFinished int
+
 	colorPendingUpdate int
 	colorUpdatedTo     uint16
 	last15             uint8
