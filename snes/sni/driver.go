@@ -40,7 +40,8 @@ func (d *Driver) Detect() (devices []snes.DeviceDescriptor, err error) {
 	// Dial the SNI service:
 	d.lock.Lock()
 	if d.cc == nil {
-		d.cc, err = grpc.Dial("localhost:8191", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		var sniAddress = env.GetOrDefault("O2_SNI_GRPC_ADDR", "localhost:8191")
+		d.cc, err = grpc.Dial(sniAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			d.lock.Unlock()
 			err = nil
