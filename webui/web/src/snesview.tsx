@@ -105,8 +105,7 @@ Devices are auto-detected every 2 seconds for each driver."
             ((vm.snes?.drivers?.some(drv => drv.name == "fxpakpro" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
                 ?
                     <div style="margin-top: 4px">
-For SD2SNES / FX Pak Pro, use firmware <a href="https://github.com/RedGuyyyy/sd2snes/releases/tag/usb2snes_v11">1.10.3-usb-v11</a> (or compatible)
-or the latest <a href="https://sd2snes.de/blog/archives/1157">1.11.0 beta 1</a>.
+For FX Pak Pro, use the <a href="https://sd2snes.de/blog/">latest firmware</a>.
                     </div>
                 : <Fragment/>)
         }
@@ -114,7 +113,7 @@ or the latest <a href="https://sd2snes.de/blog/archives/1157">1.11.0 beta 1</a>.
             (vm.snes?.drivers?.some(drv => drv.name == "retroarch" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
                 ?
                     <div style="margin-top: 4px">
-Recommended emulator is RetroArch 1.9.2+ with bsnes-mercury core;{' '}follow the setup instructions <a href="https://skarsnik.github.io/QUsb2snes/#retroarch" target="_blank">here</a>.{' '}<br/>
+Recommended emulator is <a href="https://github.com/Skarsnik/snes9x-emunwa/releases/latest" target="_blank">Snes9X-NWA</a>.
                     </div>
                 : <Fragment/>
         }
