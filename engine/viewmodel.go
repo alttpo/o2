@@ -389,7 +389,8 @@ version: 1.%d
 	allFactories := games.Factories()
 	factories := make([]games.Factory, 0, len(allFactories))
 	for _, f := range allFactories {
-		if !f.IsROMSupported(rom) {
+		if ok, whyNot := f.IsROMSupported(rom); !ok {
+			vm.setStatus(whyNot)
 			continue
 		}
 		factories = append(factories, f)

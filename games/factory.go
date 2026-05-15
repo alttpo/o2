@@ -8,7 +8,7 @@ import (
 
 type Factory interface {
 	// determines if this ROM is or should be supported by this provider
-	IsROMSupported(rom *snes.ROM) bool
+	IsROMSupported(rom *snes.ROM) (ok bool, whyNot string)
 
 	// determines if the provider can play the specific ROM with a reason why not
 	CanPlay(rom *snes.ROM) (ok bool, whyNot string)

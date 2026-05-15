@@ -32,9 +32,12 @@ func main() {
 
 	// check what the alttp Factory instance thinks of this ROM:
 	factoryInstance := alttp.FactoryInstance()
-	isBestProvider := factoryInstance.IsROMSupported(rom)
-	supported, whyNot := factoryInstance.CanPlay(rom)
+	isBestProvider, whyNot := factoryInstance.IsROMSupported(rom)
 	fmt.Printf("ROM is/should be supported? %v\n", isBestProvider)
+	if !isBestProvider {
+		fmt.Printf("  Why not? %s\n", whyNot)
+	}
+	supported, whyNot := factoryInstance.CanPlay(rom)
 	fmt.Printf("ROM can be played as ALTTP? %v\n", supported)
 	if !supported {
 		fmt.Printf("  Why not? %v\n", whyNot)
