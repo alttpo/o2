@@ -111,6 +111,24 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         sendGameCommand("setField", {"playerColor": bgr});
     };
 
+    const setColorHex24 = (e: Event) => {
+        const x = (e.target as HTMLInputElement).value.trim().toLowerCase();
+        if (x.length != 6) { return; }
+
+        console.log(x);
+        let r = (parseInt(x.slice(0, 2), 16) | 0) >> 3;
+        let g = (parseInt(x.slice(2, 4), 16) | 0) >> 3;
+        let b = (parseInt(x.slice(4, 6), 16) | 0) >> 3;
+        console.log(r, g, b);
+        setcolorRed(r);
+        setcolorGreen(g);
+        setcolorBlue(b);
+        let bgr = bgr16(r, g, b);
+
+        setplayerColor(bgr);
+        sendGameCommand("setField", {"playerColor": bgr});
+    };
+
     return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: 5fr 3fr;">
         <div style="grid-column: 1 / auto; display: grid; grid-template-columns: 5fr 2fr 1fr;">
             <h5>Game: {game.gameName}</h5>
@@ -132,7 +150,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                 </label>
                 <div>
                     <input type="text" readonly={true} value={("0000" + playerColor.toString(16).toUpperCase()).slice(-4)} title="BGR555"/>
-                    <input type="text" readonly={true} value={("000000" + bgr16torgb24(playerColor).toString(16).toUpperCase()).slice(-6)} title="RGB888"/>
+                    <input type="text" value={("000000" + bgr16torgb24(playerColor).toString(16).toUpperCase()).slice(-6)}
+                           title="RGB888"
+                           onInput={setColorHex24.bind(this)}
+                    />
                 </div>
 
                 <div style={
