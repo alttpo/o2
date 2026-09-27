@@ -34,9 +34,9 @@ jobs:
           - goos: windows
             goarch: "386"
             suffix: zip
-          - goos: windows
-            goarch: arm
-            suffix: zip
+          # - goos: windows
+          #   goarch: arm
+          #   suffix: zip
           - goos: windows
             goarch: arm64
             suffix: zip
