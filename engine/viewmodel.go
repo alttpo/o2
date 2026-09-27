@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"o2/client"
 	"o2/games"
@@ -45,6 +44,7 @@ type ViewModel struct {
 	serverViewModel *ServerViewModel
 
 	config Config
+	configName string
 }
 
 type Config struct {
@@ -112,6 +112,25 @@ func (vm *ViewModel) NotifyView(view string, model interface{}) {
 	vn.NotifyView(view, viewModel)
 }
 
+func (vm *ViewModel) GetConfigName() string {
+	return vm.configName
+}
+
+func (vm *ViewModel) SetConfigName(configName string) {
+	vm.configName = configName
+}
+
+func (vm *ViewModel) getConfigFilePath(dir string) string {
+	path := "config.json"
+	configName := vm.GetConfigName()
+
+	if configName != "" {
+		path = "config-" + configName + ".json"
+	}
+
+	return filepath.Join(dir, path)
+}
+
 // initializes all view models:
 func (vm *ViewModel) Init() {
 	for _, model := range vm.viewModels {
@@ -141,9 +160,19 @@ func (vm *ViewModel) LoadConfiguration() bool {
 		log.Printf("viewmodel: loadConfiguration: could not find configuration directory: %v\n", err)
 		return false
 	}
-	path := filepath.Join(dir, "config.json")
+	defaultPath := filepath.Join(dir, "config.json")
+	path := vm.getConfigFilePath(dir)
 
-	b, err := ioutil.ReadFile(path)
+	var b []byte
+	err = nil
+
+	b, err = os.ReadFile(path)
+	if path != defaultPath && err != nil {
+		// fall back to default config location:
+		log.Printf("viewmodel: loadConfiguration: could not find read custom configuration file: %v\n", err)
+		b, err = os.ReadFile(defaultPath)
+	}
+	
 	if err != nil {
 		log.Printf("viewmodel: loadConfiguration: could not find read configuration file: %v\n", err)
 		return false
@@ -215,10 +244,10 @@ func (vm *ViewModel) SaveConfiguration() bool {
 	if err != nil {
 		log.Printf("viewmodel: saveConfiguration: could not make directories along the path '%s': %v\n", dir, err)
 	}
+	
+	path := vm.getConfigFilePath(dir)
 
-	path := filepath.Join(dir, "config.json")
-
-	err = ioutil.WriteFile(path, b, 0644)
+	err = os.WriteFile(path, b, 0644)
 	if err != nil {
 		log.Printf("viewmodel: saveConfiguration: could not write configuration file '%s': %v\n", path, err)
 		return false
