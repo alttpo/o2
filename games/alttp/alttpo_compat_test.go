@@ -447,3 +447,31 @@ func TestAlttpoCompat_ItemsSyncFromAlttpo(t *testing.T) {
 		t.Errorf("expected hookshot to sync from alttpo player; got %02x", gs.e.WRAM[0xF342])
 	}
 }
+
+// TestAlttpoCompat_RemoteWithoutDoorState verifies that syncing does not crash when a remote player never sent the
+// WRAM values o2 syncs (alttpo does not send the current dungeon room state at $0400).
+func TestAlttpoCompat_RemoteWithoutDoorState(t *testing.T) {
+	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := gs.g
+	g.local.IndexF = 0
+	g.players[0] = *g.local
+	g.local = &g.players[0]
+
+	// in the same dungeon room as the alttpo player so the room state sync runs:
+	gs.e.WRAM[0x10] = 0x07
+	gs.e.WRAM[0x11] = 0x00
+	gs.e.WRAM[0x1B] = 0x01 // underworld
+	gs.e.WRAM[0xA0] = 0x12 // room $12
+	gs.e.WRAM[0x0400] = 0x01
+
+	for f := 0; f < 8; f++ {
+		p := newAlttpoPacket(1, uint8(f))
+		p.location(0x07, 0x04, 0x010012, 0, 0)
+		p.name("alttpo")
+		p.send(t, g)
+		gs.runFrame(t)
+	}
+}

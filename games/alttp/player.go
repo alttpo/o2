@@ -95,12 +95,20 @@ func (r WRAMReadable) BusAddress(offs uint32) uint32 {
 	return 0x7E0000 + offs
 }
 
+// ReadU8 returns 0 for values the player has not sent (e.g. alttpo clients do not send every WRAM value o2 syncs).
 func (r WRAMReadable) ReadU8(offs uint32) uint8 {
-	return uint8(r[uint16(offs)].Value)
+	if w, ok := r[uint16(offs)]; ok && w != nil {
+		return uint8(w.Value)
+	}
+	return 0
 }
 
+// ReadU16 returns 0 for values the player has not sent (e.g. alttpo clients do not send every WRAM value o2 syncs).
 func (r WRAMReadable) ReadU16(offs uint32) uint16 {
-	return r[uint16(offs)].Value
+	if w, ok := r[uint16(offs)]; ok && w != nil {
+		return w.Value
+	}
+	return 0
 }
 
 type Player struct {
