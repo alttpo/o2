@@ -38,6 +38,14 @@ func (g *Game) sendPackets() {
 		}
 	}
 
+	// don't send any game state while the local player is not in a module safe for syncing (e.g. the startup
+	// screens, file select, copy/erase/name player and loading game modules $00-$05). In those modules the WRAM copy
+	// of SRAM can contain stale data from a previous game or a partially loaded save file which other players would
+	// otherwise pick up:
+	if !g.syncing {
+		return
+	}
+
 	{
 		m := g.makeBroadcastMessage()
 		// small keys:
