@@ -19,9 +19,9 @@ import (
 // lack one ask for it again with a NAK (message 0x16).
 //
 // alttpo reads tiles from emulated VRAM; o2 reads them straight from its in-memory copy of the ROM, which also picks up
-// custom Link sprites patched into the ROM. Sword, shield and other sprites whose tiles are not in ROM are not sent
-// since o2 cannot read VRAM. Link's shadow is sent without tile data, the same as alttpo does: receivers draw it with
-// their own shadow tiles.
+// custom Link sprites patched into the ROM. Sword and shield tiles are rebuilt from ROM the same way the game builds
+// them in WRAM (see swordshield.go). Other sprites whose tiles are only in VRAM are not sent since o2 cannot read VRAM.
+// Link's shadow is sent without tile data, the same as alttpo does: receivers draw it with their own shadow tiles.
 //
 // o2 does not draw remote players, so incoming sprites and unique tiles are ignored.
 
@@ -58,11 +58,11 @@ type linkSpriteSync struct {
 	sprites []linkSprite
 	fresh   bool
 
-	// Link's palette (sprite palette 7):
-	palette [32]byte
+	// sprite palettes 5 (sword, shield) through 7 (Link):
+	palettes [3][32]byte
 
 	// unique tiles already broadcast and tiles waiting to be broadcast:
-	sent    [linkUniqTileCount]bool
+	sent    [swordShieldTileEnd]bool
 	pending []uint16
 }
 
@@ -85,11 +85,11 @@ func (g *Game) initSpriteSync() {
 	}
 }
 
-// linkTile returns the 32 bytes of 4bpp tile data for unique tile absidx from ROM.
+// linkTile returns the 32 bytes of 4bpp tile data for unique tile absidx.
 func (g *Game) linkTile(absidx uint16) (tile []byte, ok bool) {
 	s := &g.linkSprites
 	if absidx >= linkUniqTileCount {
-		return nil, false
+		return g.swordShieldTile(absidx)
 	}
 	pak, err := lorom.BusAddressToPak(uint32(s.tileBank)<<16 | (0x8000 + uint32(absidx)<<5))
 	if err != nil || int(pak)+32 > len(g.rom.Contents) {
@@ -126,8 +126,14 @@ func (g *Game) linkUniqTileIndex(chr uint16) (uint16, bool) {
 	case chrX == 0x04:
 		// aux:
 		ptr, x = 0x0AD4, 0
+	case chrX <= 0x06:
+		// sword, from WRAM:
+		return g.swordShieldUniqTileIndex(0x0AC0+chrY<<1, chrX-5)
+	case chrX <= 0x08:
+		// shield, from WRAM:
+		return g.swordShieldUniqTileIndex(0x0AC4+chrY<<1, chrX-7)
 	default:
-		// sword, shield, etc. are decompressed into WRAM; not available from ROM:
+		// other items are decompressed into WRAM; not available:
 		return 0, false
 	}
 
@@ -140,6 +146,19 @@ func (g *Game) linkUniqTileIndex(chr uint16) (uint16, bool) {
 		return 0, false
 	}
 	return uint16(idx), true
+}
+
+// swordShieldUniqTileIndex maps a sword or shield DMA source address in WRAM to a unique tile index.
+func (g *Game) swordShieldUniqTileIndex(ptr uint32, x uint32) (uint16, bool) {
+	src := uint32(g.wramU16(ptr)) + x<<5
+	if src < swordShieldWRAMStart || src >= swordShieldWRAMEnd {
+		return 0, false
+	}
+	idx := uint16(swordShieldTileFirst + (src-swordShieldWRAMStart)>>5)
+	if _, ok := g.swordShieldTile(idx); !ok {
+		return 0, false
+	}
+	return idx, true
 }
 
 func isLinkShadowChr(chr uint16) bool {
@@ -162,6 +181,13 @@ func (g *Game) readLinkSprites() {
 		// Link's OAM entries moved; read from the new location next time:
 		s.oamStart = start
 		return
+	}
+
+	// rebuild sword and shield tiles if the player's equipment changed; receivers need the changed tiles again:
+	if g.wramFresh[0xF359] && g.wramFresh[0xF35A] {
+		for _, idx := range g.updateSwordShieldGfx(g.wram[0xF359], g.wram[0xF35A]) {
+			s.sent[idx] = false
+		}
 	}
 
 	s.sprites = s.sprites[:0]
@@ -218,8 +244,11 @@ func (g *Game) readLinkSprites() {
 		s.sprites = append(s.sprites, sp)
 	}
 
-	if g.wramFresh[0xC6E0] {
-		copy(s.palette[:], g.wram[0xC6E0:0xC700])
+	if g.wramFresh[0xC6A0] {
+		for k := range s.palettes {
+			o := 0xC6A0 + k<<5
+			copy(s.palettes[k][:], g.wram[o:o+32])
+		}
 	}
 	s.fresh = true
 }
@@ -277,20 +306,20 @@ func (g *Game) SerializeUniqTiles(w io.Writer, absidx []uint16) (err error) {
 	return
 }
 
-// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; Link's palette is sent
-// along with the first sprite that uses it.
+// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each of sprite palettes
+// 5-7 is sent along with the first sprite that uses it.
 func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 	s := &g.linkSprites
 	_ = binary.Write(w, binary.LittleEndian, uint8(MsgSprites1))
 	_ = binary.Write(w, binary.LittleEndian, uint8(len(sprites)))
 
-	paletteSent := false
+	var paletteSent [8]bool
 	for _, sp := range sprites {
 		b4 := sp.b[4]
-		sendPalette := !paletteSent && sp.pal == 7
+		sendPalette := !paletteSent[sp.pal] && sp.pal >= 5
 		if sendPalette {
 			b4 |= 0x80
-			paletteSent = true
+			paletteSent[sp.pal] = true
 		}
 		_, _ = w.Write([]byte{sp.index, sp.b[0], sp.b[1], sp.b[2], sp.b[3], b4})
 		n := 1
@@ -301,7 +330,7 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 			_ = binary.Write(w, binary.LittleEndian, idx)
 		}
 		if sendPalette {
-			_, _ = w.Write(s.palette[:])
+			_, _ = w.Write(s.palettes[sp.pal-5][:])
 		}
 	}
 }
@@ -323,7 +352,7 @@ func (g *Game) DeserializeNakUniqTiles(p *Player, r io.Reader) (err error) {
 		if idx, err = readU16(r); err != nil {
 			return
 		}
-		if !forUs || idx >= linkUniqTileCount || !s.tileBankOK {
+		if !forUs || idx >= swordShieldTileEnd || !s.tileBankOK {
 			continue
 		}
 		// queue for re-sending if not already queued:

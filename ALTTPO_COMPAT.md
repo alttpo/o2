@@ -36,7 +36,7 @@ Values match alttpo's `GameState::deserialize`.
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
-| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body and shadow | parsed, ignored |
+| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
 | 0x05 | WRAM syncables | yes | yes | small keys used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | yes | no | parsed, ignored |
@@ -53,7 +53,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x12 | enemy data | yes | no | skipped |
 | 0x13 | enemy segment data | yes | no | skipped |
 | 0x14 | overlord data | yes | no | skipped |
-| 0x15 | unique sprite tiles | yes | yes (from ROM) | skipped |
+| 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x80 | o2: run times | n/a | yes, **protocol 03 only** | used |
 
@@ -73,9 +73,17 @@ following bytes as more messages, which corrupts the rest of the packet.
 ## Remaining discrepancies (not fixed)
 
 - **alttpo players see only part of o2 players.** o2 sends Link's head, body and hands (tiles straight from ROM,
-  which includes custom Link sprites) and Link's shadow, but not the sword, shield or any other sprites: their tiles
-  are decompressed into WRAM/VRAM, which o2 cannot read cheaply. Only Link's palette (sprite palette 7) is sent. o2
-  also does not send sfx, ancillae, tilemaps, torches or PvP. o2 does not draw anyone.
+  which includes custom Link sprites), sword and shield, and Link's shadow. Other sprites (items in use, effects, held
+  objects, followers) are not sent: their tiles only exist in VRAM, which o2 cannot read cheaply. Only sprite palettes
+  5 (sword, shield) to 7 (Link) are sent. o2 also does not send sfx, ancillae, tilemaps, torches or PvP. o2 does not
+  draw anyone.
+- **Sword and shield tiles are rebuilt from ROM.** The game decompresses sprite sheets `$5E`/`$5F` and converts the
+  current sword/shield to 4bpp in WRAM `$7E9000..$947F` (`DecompressSwordGraphics`, `DecompressShieldGraphics`); o2
+  runs the same decompression and conversion on its ROM copy (verified byte for byte against the game's routines on
+  US and JP ROMs) and sends them as unique tiles `$380..$3A3`, the indices alttpo reserves for them. alttpo itself
+  does not send these (its code for this is disabled because it never invalidates cached tiles); o2 re-sends the
+  changed tiles whenever its sword or shield level changes, which overwrites alttpo's cached copies. ROM hacks that
+  load sword/shield graphics some other way will show the vanilla graphics for that level.
 - **Sprite sampling is not frame-exact.** alttpo reads OAM and VRAM from the emulated PPU after the frame is done. o2
   reads Link's OAM buffer (`$0800`, `$0A20`) and graphics DMA source addresses (`$0ACC..$0AD7`) from WRAM over USB,
   which can catch the game mid-frame and occasionally send a mismatched pose for a frame. o2 locates Link's OAM entries

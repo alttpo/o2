@@ -298,3 +298,55 @@ func TestReadSubmit_CompletesOncePerSequence(t *testing.T) {
 		})
 	}
 }
+
+func TestLinkSprites_SwordAndShield(t *testing.T) {
+	h := newSpriteTestRig(t)
+	g, e := h.gs.g, h.gs.e
+
+	// the synthetic test ROM has no game code to find, so provide the sword and shield tiles directly:
+	ss := &g.swordShield
+	ss.swordOK, ss.shieldOK = true, true
+	for i := range ss.tiles {
+		ss.tiles[i] = uint8(0x55 ^ i)
+	}
+
+	// sword (8x8, palette 5) from $9020 and shield (16x16, palette 5) from $9340/$9380:
+	e.WRAM[0x0AC0], e.WRAM[0x0AC1] = 0x20, 0x90
+	e.WRAM[0x0AC4], e.WRAM[0x0AC5] = 0x40, 0x93
+	e.WRAM[0x0AC6], e.WRAM[0x0AC7] = 0x80, 0x93
+	copy(e.WRAM[0x0800+0x69*4:], []byte{0x68, 0x64, 0x07, 0x0A})
+	e.WRAM[0x0A20+0x69] = 0x02
+	for j := 0; j < 32; j++ {
+		e.WRAM[0xC6A0+j] = uint8(0x50 + j)
+	}
+
+	parsed := h.frames(4)
+	var sword, shield *alttpoSprite
+	for i := range parsed.sprites {
+		switch parsed.sprites[i].b[3] {
+		case 0x05:
+			sword = &parsed.sprites[i]
+		case 0x07:
+			shield = &parsed.sprites[i]
+		}
+	}
+	if sword == nil || shield == nil {
+		t.Fatalf("expected sword and shield sprites; got %+v", parsed.sprites)
+	}
+	if !equalU16(sword.absidx, []uint16{0x381}) {
+		t.Errorf("sword: expected uniqtile $381; got %x", sword.absidx)
+	}
+	if !equalU16(shield.absidx, []uint16{0x39A, 0x39B, 0x39C, 0x39D}) {
+		t.Errorf("shield: expected uniqtiles $39A,$39B,$39C,$39D; got %x", shield.absidx)
+	}
+	// palette 5 goes with the first sprite using it (the sword comes first in OAM):
+	if !bytes.Equal(sword.palette, e.WRAM[0xC6A0:0xC6C0]) || shield.palette != nil {
+		t.Errorf("expected palette 5 with the sword only")
+	}
+	for _, idx := range append(sword.absidx, shield.absidx...) {
+		expected, _ := g.swordShieldTile(idx)
+		if !bytes.Equal(parsed.tiles[idx], expected) {
+			t.Errorf("tile %#03x: expected sword/shield tile data", idx)
+		}
+	}
+}
