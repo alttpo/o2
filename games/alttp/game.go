@@ -108,6 +108,7 @@ type Game struct {
 	shouldUpdatePlayersList bool
 
 	linkSprites linkSpriteSync
+	swordShield swordShieldGfx
 
 	runMinStart        time.Time
 	runMaxFinish       time.Time
@@ -172,6 +173,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 	g.initSerde()
 	g.fillRomFunctions()
 	g.initSpriteSync()
+	g.initSwordShieldGfx()
 
 	return g
 }
