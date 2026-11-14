@@ -387,7 +387,8 @@ func (g *Game) sendResetMessage(phase resetPhase, key resetKey) {
 		return
 	}
 
-	m := g.makeBroadcastMessage()
+	// o2-only message; alttpo clients do not take part in the reset:
+	m := g.makeO2BroadcastMessage()
 	if err := SerializeReset(m, phase, key); err != nil {
 		log.Printf("alttp: reset: serialize: %v\n", err)
 		return

@@ -56,6 +56,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x80 | o2: run times | n/a | yes, **protocol 03 only** | used |
+| 0x81 | o2: group reset state machine | n/a | yes, **protocol 03 only** | used |
 
 o2-only message types start at `0x80` and must only be sent in protocol 03 packets
 (`Game.makeO2BroadcastMessage`). alttpo does not stop at an unknown message type: it logs it and keeps reading the
@@ -105,8 +106,6 @@ following bytes as more messages, which corrupts the rest of the packet.
   drops a packet from any player (o2 or alttpo) each time that player's frame counter wraps from `$FF` to `$00`.
 - **alttpo sprite size of disabled sprites:** alttpo's `Sprite::decodeOAMTableBytes` returns early when `b1 == $F0`
   without setting `size`. o2 assumes the default of 0 when parsing.
-- **Unmerged o2 branches:** `feature/group-reset` (`MsgReset`) and `feature/smallkey-sync` (`MsgSmallKeys`) each add a
-  message type numbered `0x0D`, which collides with alttpo's SM events. Before merging, they must be renumbered into the
-  o2-only range (`0x81`, `0x82`) and sent with `makeO2BroadcastMessage`. alttpo players will not take part in a group
-  reset. With delta-based small keys, o2 would also need to keep sending (and honoring) the 0x05 small key entries
-  for alttpo players.
+- **Group reset:** alttpo does not take part in o2's group reset. The initiating o2 player only waits for o2 players to
+  acknowledge, and alttpo players keep broadcasting their state, which o2 players accept again once the reset
+  finalizes. A mixed group should reset alttpo players by hand at the same time.

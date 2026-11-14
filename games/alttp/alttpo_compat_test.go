@@ -239,6 +239,11 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	seen := map[uint8]int{}
 	p2Count, p3Count := 0, 0
 	for f := 0; f < 256; f++ {
+		if f == 100 {
+			// o2-only reset messages must not reach alttpo:
+			gs.g.initiateReset(time.Now())
+		}
+		gs.g.tickReset(time.Now())
 		gs.runFrame(t)
 		if f%30 == 0 {
 			gs.g.sendPlayerName()
