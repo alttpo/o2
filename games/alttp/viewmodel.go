@@ -260,13 +260,9 @@ type resetCmd struct{ g *Game }
 func (r *resetCmd) CreateArgs() interfaces.CommandArgs { return nil }
 
 func (r *resetCmd) Execute(_ interfaces.CommandArgs) error {
-	log.Println("alttp: reset game")
-	r.g.SoftReset()
-
-	// notify view of new values:
-	r.g.NotifyView()
-
-	r.g.PushNotification("reset game")
+	log.Println("alttp: reset game requested")
+	// initiate the group-wide reset state machine on the game loop:
+	r.g.RequestReset()
 	return nil
 }
 

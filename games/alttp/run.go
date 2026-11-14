@@ -186,9 +186,22 @@ func (g *Game) run() {
 			}
 
 			err := g.handleNetMessage(msg)
+
+			// handle any reset state machine messages received:
+			g.processResetMessages(time.Now())
+
 			if err != nil {
 				break
 			}
+			break
+
+		// local player requested a reset:
+		case <-g.resetRequests:
+			if !g.IsRunning() {
+				return
+			}
+
+			g.initiateReset(time.Now())
 			break
 
 		// periodically send basic messages to the server to maintain our connection:
@@ -223,6 +236,9 @@ func (g *Game) run() {
 				}
 			}
 
+			// drive the reset state machine:
+			g.tickReset(time.Now())
+
 			// update run timer:
 			g.updateRunTimer()
 			break
@@ -252,6 +268,11 @@ func (g *Game) sendEcho() {
 }
 
 func (g *Game) sendPlayerName() {
+	// don't send any state (including run timer start/finish times) while resetting:
+	if g.IsResetting() {
+		return
+	}
+
 	p := g.LocalPlayer()
 
 	// broadcast player name to all clients (alttpo format; exactly 20 bytes):
@@ -653,8 +674,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		g.localChecks()
 	}()
 
-	// don't generate new ASM updates until confirmation of last update:
-	if !needUpdateCheck {
+	// don't generate new ASM updates until confirmation of last update; don't sync anything while resetting:
+	if !needUpdateCheck && !g.IsResetting() {
 		// generate any WRAM update code and send it to the SNES:
 		if writes, ok := g.updateWRAM(); ok {
 			q := g.queue

@@ -114,6 +114,10 @@ type Game struct {
 	runMaxFinish       time.Time
 	runPlayersFinished int
 
+	// group-wide reset state machine; only accessed from the game loop goroutine:
+	reset         resetState
+	resetRequests chan struct{}
+
 	colorPendingUpdate int
 	colorUpdatedTo     uint16
 	last15             uint8
@@ -149,6 +153,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		running:               false,
 		stopped:               make(chan struct{}),
 		readComplete:          make(chan []snes.Response, 8),
+		resetRequests:         make(chan struct{}, 1),
 		romFunctions:          make(map[romFunction]uint32),
 		lastUpdateTarget:      0xFFFFFF,
 		lastServerSentTime:    time.Now(),
