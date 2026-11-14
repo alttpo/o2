@@ -21,8 +21,6 @@ var defaults = map[string]string{
 	"retroarch_hosts": "localhost:55355",
 	// first port of the Emulator Network Access port range; the emunwa driver probes the range:
 	"nwa_port_range": "0xbeef",
-	// QUsb2Snes support is off by default; SNI is preferred:
-	"qusb2snes_disable": "1",
 }
 
 func newO2Config() *o2Config {

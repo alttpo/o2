@@ -100,15 +100,19 @@ func Drivers() []NamedDriver {
 	for name, driver := range drivers {
 		list = append(list, NamedDriver{driver, name})
 	}
-	sort.Slice(list, func(i, j int) bool {
-		li := list[i].Driver
-		lj := list[j].Driver
-		if di, ok := li.(DriverDescriptor); ok {
-			if dj, ok := lj.(DriverDescriptor); ok {
-				return di.DisplayOrder() < dj.DisplayOrder()
-			}
+	// list in DisplayOrder, then by name so the order is the same every time:
+	displayOrder := func(d Driver) int {
+		if dd, ok := d.(DriverDescriptor); ok {
+			return dd.DisplayOrder()
 		}
-		return false
+		return 1 << 30
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		oi, oj := displayOrder(list[i].Driver), displayOrder(list[j].Driver)
+		if oi != oj {
+			return oi < oj
+		}
+		return list[i].Name < list[j].Name
 	})
 	return list
 }

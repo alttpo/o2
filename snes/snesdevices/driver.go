@@ -33,6 +33,16 @@ var o2Names = map[string]string{
 	"mock":      "mock",
 }
 
+// o2DisplayOrder is the order o2 lists drivers in, by o2 name.
+var o2DisplayOrder = map[string]int{
+	"fxpakpro":  0,
+	"emunwa":    1,
+	"sni":       2,
+	"qusb2snes": 3,
+	"retroarch": 4,
+	"mock":      100,
+}
+
 // Init configures and initializes the device drivers o2 uses and registers them with o2's snes driver registry.
 func Init() {
 	devconfig.Set(newO2Config())
@@ -66,10 +76,10 @@ type Driver struct {
 }
 
 func (d *Driver) DisplayOrder() int {
-	if dd, ok := d.drv.(devices.DriverDescriptor); ok {
-		return dd.DisplayOrder()
+	if order, ok := o2DisplayOrder[d.name]; ok {
+		return order
 	}
-	return 0
+	return 1000
 }
 
 func (d *Driver) DisplayName() string {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -314,8 +315,8 @@ func TestConfig(t *testing.T) {
 	if c.GetString("nwa_port_range") != "0xbeef" || !c.IsSet("nwa_port_range") {
 		t.Errorf("expected default NWA port range")
 	}
-	if !c.GetBool("qusb2snes_disable") {
-		t.Errorf("expected QUsb2Snes disabled by default")
+	if c.GetBool("qusb2snes_disable") {
+		t.Errorf("expected QUsb2Snes enabled by default")
 	}
 	if c.GetDuration("fxpakpro_read_timeout") != 3*time.Second {
 		t.Errorf("unexpected duration %v", c.GetDuration("fxpakpro_read_timeout"))
@@ -329,17 +330,23 @@ func TestConfig(t *testing.T) {
 }
 
 func TestInit_RegistersO2Drivers(t *testing.T) {
-	t.Setenv("O2_FXPAKPRO_DISABLE", "1")
 	Init()
 
-	for _, name := range []string{"retroarch", "emunwa", "sni"} {
-		if _, ok := snes.DriverByName(name); !ok {
-			t.Errorf("expected driver %q to be registered", name)
-		}
-	}
-	for _, name := range []string{"fxpakpro", "qusb2snes", "mock", "luabridge", "proxy", "ra"} {
+	for _, name := range []string{"mock", "luabridge", "proxy", "ra"} {
 		if _, ok := snes.DriverByName(name); ok {
 			t.Errorf("driver %q should not be registered", name)
+		}
+	}
+
+	// listed in o2's order every time:
+	expected := []string{"fxpakpro", "emunwa", "sni", "qusb2snes", "retroarch"}
+	for attempt := 0; attempt < 20; attempt++ {
+		var names []string
+		for _, nd := range snes.Drivers() {
+			names = append(names, nd.Name)
+		}
+		if strings.Join(names, ",") != strings.Join(expected, ",") {
+			t.Fatalf("expected drivers in order %v; got %v", expected, names)
 		}
 	}
 }
