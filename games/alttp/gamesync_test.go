@@ -62,6 +62,33 @@ func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err
 			return
 		}
 	}
+	if protocolVersion == 0x02 {
+		// relay protocol 02 broadcasts like o2-server does:
+		if len(b) < 23 {
+			return
+		}
+		group, kind, payload := b[:20], b[20], b[23:]
+		if kind&0x7F != 0x01 && kind&0x7F != 0x02 {
+			return
+		}
+		if kind&0x7F == 0x02 {
+			// skip sector:
+			payload = payload[4:]
+		}
+		for j := range s.Clients {
+			if j == i {
+				continue
+			}
+			pkt := client.MakePacket(0x02)
+			pkt.Write(group)
+			pkt.WriteByte(0x81)
+			pkt.WriteByte(byte(i))
+			pkt.WriteByte(byte(i >> 8))
+			pkt.Write(payload)
+			s.Clients[j].Rd <- pkt.Bytes()
+		}
+		return
+	}
 	if protocolVersion != protocol {
 		return
 	}

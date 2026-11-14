@@ -21,6 +21,9 @@ type gameMessage interface {
 	SendToClient(c games.Client)
 }
 
+// gameBroadcastMessage carries game state shared with all clients in the group, including alttpo emulator script
+// clients. It is sent with server protocol 02 since alttpo does not understand protocol 03; the server relays protocol 02
+// packets to every client in the group regardless of which protocol they use, and o2 receives both.
 type gameBroadcastMessage struct {
 	bytes.Buffer
 
@@ -30,37 +33,44 @@ type gameBroadcastMessage struct {
 func (m *gameBroadcastMessage) SendToClient(c games.Client) {
 	g := m.g
 
-	if protocol == 0x03 {
-		p3msg := &protocol03.GroupMessage{
-			Group:          string(c.Group()),
-			PlayerTime:     time.Now().UnixNano(),
-			ServerTime:     0,
-			PlayerIndex:    uint32(g.LocalPlayer().IndexF),
-			PlayerInSector: uint64(g.LocalPlayer().Location),
-		}
-		//case protocol02.Broadcast:
-		p3msg.BroadcastAll = &protocol03.BroadcastAll{Data: m.Bytes()}
-		//case protocol02.BroadcastToSector:
-		//	p3msg.BroadcastSector = &protocol03.BroadcastSector{TargetSector: uint64(g.LocalPlayer().Location), Data: m.Bytes()}
+	buf := protocol02.MakePacket(
+		c.Group(),
+		protocol02.Broadcast,
+		uint16(g.LocalPlayer().IndexF),
+	)
+	_, _ = m.WriteTo(buf)
+	c.Write() <- buf.Bytes()
+}
 
-		// construct packet:
-		pkt := client.MakePacket(0x03)
-		b, err := proto.MarshalOptions{}.MarshalAppend(pkt.Bytes(), p3msg)
-		if err != nil {
-			log.Printf("alttp: send: proto.Marshal: %v\n", err)
-			return
-		}
+// gameO2BroadcastMessage carries o2-only game state. It is sent with server protocol 03 which alttpo clients ignore
+// entirely, so it may contain message types alttpo does not understand.
+type gameO2BroadcastMessage struct {
+	bytes.Buffer
 
-		c.Write() <- b
-	} else {
-		buf := protocol02.MakePacket(
-			c.Group(),
-			protocol02.Broadcast,
-			uint16(g.LocalPlayer().IndexF),
-		)
-		m.WriteTo(buf)
-		c.Write() <- buf.Bytes()
+	g *Game
+}
+
+func (m *gameO2BroadcastMessage) SendToClient(c games.Client) {
+	g := m.g
+
+	p3msg := &protocol03.GroupMessage{
+		Group:          string(c.Group()),
+		PlayerTime:     time.Now().UnixNano(),
+		ServerTime:     0,
+		PlayerIndex:    uint32(g.LocalPlayer().IndexF),
+		PlayerInSector: uint64(g.LocalPlayer().Location),
 	}
+	p3msg.BroadcastAll = &protocol03.BroadcastAll{Data: m.Bytes()}
+
+	// construct packet:
+	pkt := client.MakePacket(0x03)
+	b, err := proto.MarshalOptions{}.MarshalAppend(pkt.Bytes(), p3msg)
+	if err != nil {
+		log.Printf("alttp: send: proto.Marshal: %v\n", err)
+		return
+	}
+
+	c.Write() <- b
 }
 
 type gameJoinMessage struct {
@@ -120,6 +130,18 @@ func (g *Game) makeBroadcastMessage() (m *gameBroadcastMessage) {
 	return
 }
 
+// makeO2BroadcastMessage creates a message for o2-only state; see gameO2BroadcastMessage.
+func (g *Game) makeO2BroadcastMessage() (m *gameO2BroadcastMessage) {
+	m = &gameO2BroadcastMessage{g: g}
+
+	// same game header as makeBroadcastMessage:
+	m.WriteByte(SerializationVersion)
+	m.WriteByte(g.LocalPlayer().Team)
+	m.WriteByte(g.lastGameFrame)
+
+	return
+}
+
 func (g *Game) makeJoinMessage() (m *gameJoinMessage) {
 	m = &gameJoinMessage{g: g}
 	return
@@ -169,6 +191,14 @@ func (g *Game) send(m gameMessage) {
 }
 
 func (g *Game) handleNetMessage(msg []byte) (err error) {
+	// never let a malformed packet from another client take down the game loop:
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("alttp: net: %v", rec)
+			log.Println(err)
+		}
+	}()
+
 	var protocol uint8
 
 	r, err := client.ParseHeader(msg, &protocol)

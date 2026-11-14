@@ -549,6 +549,9 @@ func TestGameSync_SmallKeys_DoubleSpend(t *testing.T) {
 				gs[0].e.WRAM[0xF36F] = 0
 				// dec g2 current dungeon key counter:
 				gs[1].e.WRAM[0xF36F] = 0
+				// g2's change happens after g1's; game state broadcasts (protocol 02) carry no server time so make
+				// the ordering explicit rather than relying on wall clock timing:
+				gs[1].g.lastServerTime = gs[1].g.lastServerTime.Add(100 * time.Millisecond)
 			},
 			postFrame: func(t testing.TB, gs [2]gameSync) {
 				// verify g2 updated its current small key counter:
