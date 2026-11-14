@@ -50,6 +50,7 @@ const (
 // alttpo ignores entirely; see makeO2BroadcastMessage.
 const (
 	MsgO2RunTimes MessageType = 0x80
+	MsgReset      MessageType = 0x81
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -77,6 +78,7 @@ func (g *Game) initSerde() {
 		MsgUniqTiles:        skipUniqTiles,
 		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
+		MsgReset:            g.DeserializeReset,
 	}
 }
 
@@ -167,6 +169,11 @@ func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 		if !ok {
 			// no way to know the length of an unknown message, so the rest of the packet is lost:
 			err = fmt.Errorf("alttp: unknown msgType %#02x", msgType)
+			break
+		}
+
+		// while the reset state machine is active, ignore all game state from other players:
+		if msgType != MsgReset && g.IsResetting() {
 			break
 		}
 

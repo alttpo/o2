@@ -9,6 +9,10 @@ func (g *Game) sendPackets() {
 	if g.local.Index() < 0 {
 		return
 	}
+	// don't send any state while the reset state machine is active:
+	if g.IsResetting() {
+		return
+	}
 
 	local := g.local
 

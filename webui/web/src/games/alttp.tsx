@@ -139,7 +139,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     title="Fix small keys"
                     onClick={e => sendGameCommand("fixSmallKeys", {})}>Fix Small Keys</button>
             <button type="button"
-                    title="Forget all game state; does not reset the console/emulator"
+                    title="Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator"
                     onClick={e => sendGameCommand("reset", {})}>Reset</button>
         </div>
         <div style="grid-column: 1">
