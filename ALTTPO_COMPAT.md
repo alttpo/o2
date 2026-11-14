@@ -36,7 +36,7 @@ Values match alttpo's `GameState::deserialize`.
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
-| 0x03/0x04 | sprites / continuation | yes | no | parsed, ignored |
+| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body and shadow | parsed, ignored |
 | 0x05 | WRAM syncables | yes | yes | small keys used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | yes | no | parsed, ignored |
@@ -53,8 +53,8 @@ Values match alttpo's `GameState::deserialize`.
 | 0x12 | enemy data | yes | no | skipped |
 | 0x13 | enemy segment data | yes | no | skipped |
 | 0x14 | overlord data | yes | no | skipped |
-| 0x15 | unique sprite tiles | yes | no | skipped |
-| 0x16 | unique sprite tiles NAK | yes | no | skipped |
+| 0x15 | unique sprite tiles | yes | yes (from ROM) | skipped |
+| 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x80 | o2: run times | n/a | yes, **protocol 03 only** | used |
 
 o2-only message types start at `0x80` and must only be sent in protocol 03 packets
@@ -72,8 +72,16 @@ following bytes as more messages, which corrupts the rest of the packet.
 
 ## Remaining discrepancies (not fixed)
 
-- **o2 players are invisible in alttpo.** o2 does not send sprites, sfx, ancillae, tilemaps, torches or PvP, so alttpo
-  shows o2 players in its player list and map but does not draw them. o2 does not draw anyone.
+- **alttpo players see only part of o2 players.** o2 sends Link's head, body and hands (tiles straight from ROM,
+  which includes custom Link sprites) and Link's shadow, but not the sword, shield or any other sprites: their tiles
+  are decompressed into WRAM/VRAM, which o2 cannot read cheaply. Only Link's palette (sprite palette 7) is sent. o2
+  also does not send sfx, ancillae, tilemaps, torches or PvP. o2 does not draw anyone.
+- **Sprite sampling is not frame-exact.** alttpo reads OAM and VRAM from the emulated PPU after the frame is done. o2
+  reads Link's OAM buffer (`$0800`, `$0A20`) and graphics DMA source addresses (`$0ACC..$0AD7`) from WRAM over USB,
+  which can catch the game mid-frame and occasionally send a mismatched pose for a frame. o2 locates Link's OAM entries
+  from the previous read of `$0352` and skips a frame whenever they move.
+- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, bringing a normal read cycle to 10
+  reads, which takes two FX Pak Pro VGET commands instead of one.
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards. alttpo sends the
   crystal switch state `$C172`, which o2 stores but does not sync.

@@ -19,6 +19,23 @@ const alttpoScriptProtocol = 0x17
 // parse correctly in alttpo. alttpo does not stop on unknown message types (it logs and keeps reading the following
 // bytes as message types), so any unknown type is treated as a failure here. It returns the message types parsed.
 func alttpoParse(r []byte) (types []uint8, err error) {
+	types, _, err = alttpoParseFull(r)
+	return
+}
+
+type alttpoSprite struct {
+	b       [6]uint8 // index, b0..b4 as received (flag bits included)
+	absidx  []uint16
+	palette []byte
+}
+
+type alttpoParsed struct {
+	sprites []alttpoSprite
+	tiles   map[uint16][]byte
+}
+
+func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
+	parsed.tiles = map[uint16][]byte{}
 	c := 0
 	need := func(n int) {
 		if c+n > len(r) {
@@ -36,7 +53,7 @@ func alttpoParse(r []byte) (types []uint8, err error) {
 	}()
 
 	if u8() != alttpoScriptProtocol {
-		return nil, fmt.Errorf("bad game protocol")
+		return nil, parsed, fmt.Errorf("bad game protocol")
 	}
 	u8() // team
 	u8() // frame
@@ -55,18 +72,17 @@ func alttpoParse(r []byte) (types []uint8, err error) {
 			}
 			n := int(u8())
 			for i := 0; i < n; i++ {
-				fl := u8()
-				skip(1)
-				b1 := u8()
-				skip(2)
-				b4 := u8()
+				var spr alttpoSprite
+				need(6)
+				copy(spr.b[:], r[c:c+6])
+				fl, b1, b4 := u8(), (func() uint8 { skip(1); return u8() })(), (func() uint8 { skip(2); return u8() })()
 				size := (b4 >> 1) & 1
 				if b1 == 0xF0 {
 					size = 0
 				}
-				skip(2)
+				spr.absidx = append(spr.absidx, u16())
 				if size != 0 {
-					skip(6)
+					spr.absidx = append(spr.absidx, u16(), u16(), u16())
 				}
 				if fl&0x80 != 0 {
 					skip(32)
@@ -75,8 +91,11 @@ func alttpoParse(r []byte) (types []uint8, err error) {
 					}
 				}
 				if b4&0x80 != 0 {
+					need(32)
+					spr.palette = r[c : c+32]
 					skip(32)
 				}
+				parsed.sprites = append(parsed.sprites, spr)
 			}
 		case 0x05: // wram
 			n := int(u8())
@@ -111,9 +130,17 @@ func alttpoParse(r []byte) (types []uint8, err error) {
 			skip(int(u8()) * 2)
 		case 0x0C: // name
 			skip(20)
+		case 0x15: // uniqtiles
+			n := int(u8())
+			for i := 0; i < n; i++ {
+				idx := u16()
+				need(32)
+				parsed.tiles[idx] = r[c : c+32]
+				skip(32)
+			}
 		default:
-			// alttpo also understands 0x0B and 0x0D-0x16 but o2 never sends them:
-			return types, fmt.Errorf("message type %#02x not expected from o2 (alttpo would misparse the rest)", t)
+			// alttpo also understands 0x0B, 0x0D-0x14 and 0x16 but o2 never sends them:
+			return types, parsed, fmt.Errorf("message type %#02x not expected from o2 (alttpo would misparse the rest)", t)
 		}
 	}
 	return

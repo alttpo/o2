@@ -102,6 +102,9 @@ func (g *Game) sendPackets() {
 		g.send(m)
 	}
 
+	// Link's sprites for alttpo clients:
+	g.sendLinkSprites()
+
 	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
 		// overworld events; heart containers, overlays
 		m := g.makeBroadcastMessage()
