@@ -57,6 +57,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x80 | o2: run times | n/a | yes, **protocol 03 only** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **protocol 03 only** | used |
+| 0x82 | o2: small keys (delta based) | n/a | yes, **protocol 03 only** | used |
 
 o2-only message types start at `0x80` and must only be sent in protocol 03 packets
 (`Game.makeO2BroadcastMessage`). alttpo does not stop at an unknown message type: it logs it and keeps reading the
@@ -109,3 +110,23 @@ following bytes as more messages, which corrupts the rest of the packet.
 - **Group reset:** alttpo does not take part in o2's group reset. The initiating o2 player only waits for o2 players to
   acknowledge, and alttpo players keep broadcasting their state, which o2 players accept again once the reset
   finalizes. A mixed group should reset alttpo players by hand at the same time.
+
+## Bringing alttpo to delta small keys
+
+To share small keys between o2 and alttpo players, alttpo would need to adopt o2's delta-based scheme:
+
+1. **Transport.** alttpo only receives protocol 02, and current alttpo versions misread the rest of a packet after an
+   unknown message type. Before o2 can send 0x82 in protocol 02 packets, alttpo must either stop parsing at unknown
+   message types or o2 must only send it to alttpo versions that understand it (e.g. bump `script_protocol` together).
+2. **Message format (0x82).** `session u32`, `count u8` (16), then per dungeon slot `$F37C+i`: `net i16` (cumulative
+   change made by that player this session), `value u8` (current count, `$FF` if unknown), `timestamp u32` (server
+   msec of the last change, 0 if none).
+3. **Receiving.** Track each remote `(player, session)`; the first message only records `net` as a baseline. After
+   that, add the difference in `net` to a pending adjustment for that dungeon. Never copy remote absolute values except
+   once when catching up (no history this session): adopt the value of the player with the latest timestamp, else
+   the highest value.
+4. **Local changes.** Read the live count from `$7EF36F` while in that dungeon (`$040C`, with Sewers `$00` and Hyrule
+   Castle `$02` sharing slot `$F37C`/`$F37D`), otherwise from the slot; the slot is stale inside the dungeon. Count only
+   changes not caused by sync writes. alttpo's bus write interceptors make this simpler than in o2: apply pending
+   adjustments as a read-modify-write during the frame (clamped to 0..99) and exclude those writes from capture.
+5. **Resets.** Start a new session (new random id, zero `net`) on reset or game reload.

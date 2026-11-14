@@ -146,6 +146,8 @@ type Player struct {
 	SRAM SRAMShadow
 	WRAM WRAMReadable
 
+	SmallKeys smallKeysRemote
+
 	showJoinMessage bool
 
 	GameStartTime  time.Time

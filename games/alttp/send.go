@@ -48,12 +48,17 @@ func (g *Game) sendPackets() {
 
 	{
 		m := g.makeBroadcastMessage()
-		// small keys:
-		if err := g.SerializeWRAM(local, m, smallKeyFirst, 0x10); err != nil {
-			panic(err)
-		}
 		// current dungeon supertile door state:
 		if err := g.SerializeWRAM(local, m, 0x0400, 1); err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
+
+	{
+		// small keys; o2-only message (alttpo uses absolute small key values which are not compatible):
+		m := g.makeO2BroadcastMessage()
+		if err := g.SerializeSmallKeys(m); err != nil {
 			panic(err)
 		}
 		g.send(m)

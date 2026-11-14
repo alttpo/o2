@@ -110,6 +110,8 @@ type Game struct {
 	linkSprites linkSpriteSync
 	swordShield swordShieldGfx
 
+	smallKeys smallKeysLocal
+
 	runMinStart        time.Time
 	runMaxFinish       time.Time
 	runPlayersFinished int
@@ -225,6 +227,9 @@ func (g *Game) FirstFrame() {
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
+
+	// SNES state may have changed while disconnected; re-read small key counts without attributing changes:
+	g.invalidateSmallKeys(false)
 
 	// initialize WRAM:
 	for i := range g.wram {

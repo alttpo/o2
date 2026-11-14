@@ -149,6 +149,22 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	return
 }
 
+// asmExecAborter is implemented by update generators that must be told when their generated routine could not be
+// confirmed to have executed:
+type asmExecAborter interface {
+	AbortAsm()
+}
+
+// abortUpdateGenerators notifies all generators of the in-flight update routine that it was aborted.
+func (g *Game) abortUpdateGenerators() {
+	for _, generator := range g.updateGenerators {
+		if aborter, ok := generator.(asmExecAborter); ok {
+			aborter.AbortAsm()
+		}
+	}
+	g.updateGenerators = nil
+}
+
 func (g *Game) enqueueUpdateCheckRead(q []snes.Read) []snes.Read {
 	log.Println("alttp: update: enqueueUpdateCheckRead")
 	// read the first instruction of the last update routine to check if it completed (if it's a RTS):
@@ -220,12 +236,14 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		if g.SyncSmallKeys {
-			for offs := smallKeyFirst; offs <= smallKeyLast; offs++ {
-				if u, s, ta := g.GenerateSmallKeyUpdate(offs, newEmitter, genIndex); u {
+			g.adoptSmallKeys()
+			for k := 0; k < smallKeyCount; k++ {
+				if u, ta := g.generateSmallKeyUpdate(k, newEmitter, genIndex); u != nil {
 					// don't emit the routine if it pushes us over the code size limit:
 					if ta.Len()+a.Len()+epilogSize <= 255 {
 						genIndex++
-						asmConfirmers = append(asmConfirmers, s)
+						asmConfirmers = append(asmConfirmers, u)
+						u.begin()
 
 						a.Append(ta)
 						updated = true

@@ -427,6 +427,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			// escape mechanism for long-running updates:
 			if now.Sub(g.lastUpdateTime) > timing.Frame*600 {
 				log.Printf("alttp: update: wait time elapsed with no confirmation of asm execution; aborting\n")
+				g.abortUpdateGenerators()
 				g.updateStage = 0
 				g.nextUpdateA = !g.nextUpdateA
 				g.lastUpdateTarget = 0xFFFFFF
@@ -506,6 +507,11 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// log module changes regardless of syncing:
 		if g.lastModule != moduleStaging || g.lastSubModule != submoduleStaging {
 			log.Printf("alttp: local: module [$%02x,$%02x]\n", moduleStaging, submoduleStaging)
+			if moduleStaging <= 0x05 && g.lastModule > 0x05 {
+				// back at the title, file select or loading screens; a different game may be loaded so re-read small
+				// key counts without attributing any changes to the local player and re-adopt the group's counts:
+				g.invalidateSmallKeys(true)
+			}
 			if moduleStaging == 0x05 {
 				// game load:
 				if g.local.GameStartTime.IsZero() {
@@ -697,6 +703,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 					g.updateLock.Lock()
 					if g.updateStage != 1 {
 						log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+						g.abortUpdateGenerators()
 						g.updateStage = 0
 						g.updateLock.Unlock()
 						return
@@ -721,6 +728,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			).EnqueueTo(q); err != nil {
 				g.priorityReadsMu.Lock()
 				log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
+				g.updateLock.Lock()
+				g.abortUpdateGenerators()
+				g.updateStage = 0
+				g.updateLock.Unlock()
 				var termErr *snes.TerminalError
 				if errors.As(err, &termErr) {
 					log.Println("alttp: update: terminal error encountered; disconnecting from queue")

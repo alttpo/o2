@@ -371,6 +371,10 @@ func (gs *gameSync) runFrame(t testing.TB) {
 	}
 	g.readMainComplete(rsps)
 
+	if gs.beforeEmulate != nil {
+		gs.beforeEmulate()
+	}
+
 	// emulate a main loop iteration:
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
@@ -385,6 +389,10 @@ type gameSync struct {
 	g *Game
 	c *testClient
 	n []string
+
+	// beforeEmulate, if set, is called after the game processed reads and generated any update routine but before the
+	// emulated game frame executes it:
+	beforeEmulate func()
 }
 
 type gameSyncTestUpdateFunc func(t testing.TB, gs [2]gameSync)

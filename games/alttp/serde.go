@@ -51,6 +51,7 @@ const (
 const (
 	MsgO2RunTimes MessageType = 0x80
 	MsgReset      MessageType = 0x81
+	MsgSmallKeys  MessageType = 0x82
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -79,6 +80,7 @@ func (g *Game) initSerde() {
 		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
+		MsgSmallKeys:        g.DeserializeSmallKeys,
 	}
 }
 
