@@ -172,14 +172,11 @@ func TestReset_StateMachine(t *testing.T) {
 	// while resetting, a player sending old state must not be accepted:
 	h.gs[1].g.local.GameStartTime = h.now.Add(-time.Hour)
 	{
-		m := h.gs[1].g.makeBroadcastMessage()
-		m.WriteByte(byte(MsgPlayerName))
-		var name [20]byte
-		copy(name[:], "g2")
-		m.Write(name[:])
-		m.WriteByte(0)
-		m.Write(make([]byte, 8))
-		m.WriteByte(1)
+		// bypass sendPlayerName's reset check to send run times anyway:
+		m := h.gs[1].g.makeO2BroadcastMessage()
+		if err := SerializeRunTimes(m, h.gs[1].g.local.GameStartTime, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
 		h.gs[1].g.send(m)
 	}
 	// and the normal senders must not send anything:
