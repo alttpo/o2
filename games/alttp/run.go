@@ -525,6 +525,23 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		g.lastModule = moduleStaging
 		g.lastSubModule = submoduleStaging
 
+		// always track the current module, even when not syncing, so that IsInGame() and the location packet
+		// reflect when the local player is in a menu (e.g. file select) rather than the last in-game module:
+		newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
+		if local.Module != newModule || local.SubModule != newSubModule {
+			log.Printf(
+				"alttp: local: module [$%02x,$%02x] -> [$%02x,$%02x]\n",
+				local.Module,
+				local.SubModule,
+				newModule,
+				newSubModule,
+			)
+		}
+		local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
+
+		// this is documented as a uint16, but we use it as a uint8
+		local.PriorModule = Module(g.wram[0x010C])
+
 		doSync := true
 		if _, ok := modulesOKForSync[uint8(moduleStaging)]; !ok {
 			// bad module:
@@ -543,21 +560,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			log.Printf("alttp:  ENABLED syncing [$%02x,$%02x]", moduleStaging, submoduleStaging)
 			g.syncing = true
 		}
-
-		newModule, newSubModule, newSubSubModule := Module(g.wram[0x10]), g.wram[0x11], g.wram[0xB0]
-		if local.Module != newModule || local.SubModule != newSubModule {
-			log.Printf(
-				"alttp: local: module [$%02x,$%02x] -> [$%02x,$%02x]\n",
-				local.Module,
-				local.SubModule,
-				newModule,
-				newSubModule,
-			)
-		}
-		local.Module, local.SubModule, local.SubSubModule = newModule, newSubModule, newSubSubModule
-
-		// this is documented as a uint16, but we use it as a uint8
-		local.PriorModule = Module(g.wram[0x010C])
 
 		// only sample location during sub-module 0 for any module; keeps location more stable:
 		if local.Module == 0x15 || local.SubModule == 0 {
