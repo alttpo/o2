@@ -601,7 +601,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				}
 				sb.WriteByte('\n')
 			}
-			fmt.Printf(sb.String())
+			fmt.Print(sb.String())
 		}
 
 		if g.shouldUpdatePlayersList {

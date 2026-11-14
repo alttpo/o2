@@ -23,6 +23,12 @@ type DeviceDescriptor interface {
 	GetDisplayName() string
 }
 
+// LegacyDeviceIds MAY be implemented by a DeviceDescriptor whose device was known by a different id in saved
+// configurations, e.g. before o2 switched device driver implementations.
+type LegacyDeviceIds interface {
+	MatchesId(id string) bool
+}
+
 // MarshalDeviceDescriptor MUST be called to keep DeviceDescriptor in consistent state for marshaling
 func MarshalDeviceDescriptor(device DeviceDescriptor) DeviceDescriptor {
 	device.Base().Id = device.GetId()

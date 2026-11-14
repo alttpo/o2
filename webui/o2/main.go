@@ -16,13 +16,9 @@ import (
 	"time"
 )
 
-// include these SNES drivers:
+// SNES device drivers:
 import (
-	_ "o2/snes/fxpakpro"
-	_ "o2/snes/mock"
-	_ "o2/snes/qusb2snes"
-	_ "o2/snes/retroarch"
-	_ "o2/snes/sni"
+	"o2/snes/snesdevices"
 )
 
 // include these game providers:
@@ -125,6 +121,9 @@ func main() {
 	configName = resolveConfigName(env.GetOrDefault("O2_CONFIG_NAME", ""), listenPort);
 
 	// construct our viewModel:
+	// initialize the SNES device drivers before the engine detects devices:
+	snesdevices.Init()
+
 	viewModel := engine.NewViewModel()
 	viewModel.SetViewModel("o2", &O2ViewModel{Version: version})
 

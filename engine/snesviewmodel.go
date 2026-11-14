@@ -63,6 +63,16 @@ func (v *SNESViewModel) LoadConfiguration(config *SNESConfiguration) {
 		}
 	}
 	if device == nil {
+		// the device may have been saved under an id from a previous driver implementation:
+		for _, dv := range dvm.Devices {
+			if legacy, ok := dv.(snes.LegacyDeviceIds); ok && legacy.MatchesId(config.Device) {
+				log.Printf("snesviewmodel: loadConfiguration: driver '%s' device '%s' matched as '%s'\n", config.Driver, config.Device, dv.GetId())
+				device = dv
+				break
+			}
+		}
+	}
+	if device == nil {
 		log.Printf("snesviewmodel: loadConfiguration: driver '%s' device '%s' not found\n", config.Driver, config.Device)
 		return
 	}
