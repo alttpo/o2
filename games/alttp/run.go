@@ -9,6 +9,7 @@ import (
 	"o2/snes"
 	"o2/util"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,9 +39,22 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 		return
 	}
 
+	// a sequence may be split into several commands (e.g. FX Pak Pro VGETs are limited to 8 reads each) which each call
+	// the completion; only process the responses once all commands have completed (or one fails):
+	var remaining int32
 	sequence := q.MakeReadCommands(
 		readQueue,
 		func(cmd snes.Command, err error) {
+			if n := atomic.AddInt32(&remaining, -1); err == nil && n > 0 {
+				return
+			} else if n < 0 {
+				// an earlier command failed and already completed the sequence:
+				return
+			} else if err != nil {
+				// complete the sequence now; ignore completions of any remaining commands:
+				atomic.StoreInt32(&remaining, -1<<30)
+			}
+
 			g.readResponseLock.Lock()
 			// copy out read responses and clear that queue:
 			rsps := g.readResponse[:]
@@ -55,6 +69,8 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 			g.readComplete <- rsps
 		},
 	)
+
+	atomic.StoreInt32(&remaining, int32(len(sequence)))
 
 	//log.Printf("alttp: readSubmit: enqueue start %d reads\n", len(readQueue))
 	err := sequence.EnqueueTo(q)
@@ -310,7 +326,7 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	q = g.readEnqueue(q, 0xF50100, 0x36, nil) // [$0100..$0135]
 	q = g.readEnqueue(q, 0xF502E0, 0x08, nil) // [$02E0..$02E7]
-	q = g.readEnqueue(q, 0xF50400, 0x20, nil) // [$0400..$041F]
+	q = g.readEnqueue(q, 0xF50352, 0xCE, nil) // [$0352..$041F]; $0352 = Link's OAM buffer offset
 	// $1980..19E9 for reading underworld door state (19A0)
 	q = g.readEnqueue(q, 0xF51980, 0x6A, nil) // [$1980..$19E9]
 	// ALTTP's SRAM copy in WRAM:
@@ -319,6 +335,9 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 
 	// Link's palette:
 	q = g.readEnqueue(q, 0xF5C6E0, 0x20, nil)
+
+	// Link's sprites; this pushes the read cycle beyond a single FX Pak Pro batch of 8 reads:
+	q = g.enqueueSpriteReads(q)
 
 	return q
 }
@@ -623,6 +642,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		// handle WRAM reads:
 		g.readWRAM()
 		g.notFirstWRAMRead = true
+
+		// sample Link's sprites to send to alttpo clients:
+		g.readLinkSprites()
 
 		// update underworld supertile state sync bit masks based on sync toggles from front-end:
 		g.setUnderworldSyncMasks()

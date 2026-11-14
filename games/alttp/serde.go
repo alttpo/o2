@@ -75,7 +75,7 @@ func (g *Game) initSerde() {
 		MsgEnemySegmentData: skipEnemySegmentData,
 		MsgOverlordData:     skipOverlordData,
 		MsgUniqTiles:        skipUniqTiles,
-		MsgNakUniqTiles:     skipNakUniqTiles,
+		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 	}
 }
@@ -860,16 +860,4 @@ func skipUniqTiles(p *Player, r io.Reader) (err error) {
 	}
 	// absidx (u16) and 16 u16 tile words:
 	return discard(r, int(count)*(2+32))
-}
-
-func skipNakUniqTiles(p *Player, r io.Reader) (err error) {
-	// player index:
-	if err = discard(r, 2); err != nil {
-		return
-	}
-	var count uint8
-	if count, err = readU8(r); err != nil {
-		return
-	}
-	return discard(r, int(count)*2)
 }

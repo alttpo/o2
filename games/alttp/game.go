@@ -107,6 +107,8 @@ type Game struct {
 
 	shouldUpdatePlayersList bool
 
+	linkSprites linkSpriteSync
+
 	runMinStart        time.Time
 	runMaxFinish       time.Time
 	runPlayersFinished int
@@ -169,6 +171,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 
 	g.initSerde()
 	g.fillRomFunctions()
+	g.initSpriteSync()
 
 	return g
 }
