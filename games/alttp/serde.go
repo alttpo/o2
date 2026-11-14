@@ -10,46 +10,73 @@ import (
 	"time"
 )
 
-// NOTE: increment this when the serialization code changes in an incompatible way
-const SerializationVersion = 0x14
+// SerializationVersion is the game ("script") protocol version shared with the alttpo emulator script project
+// (see `script_protocol` in alttpo's GameState.as). o2 and alttpo clients can only share game state in the same group
+// when this matches.
+//
+// NOTE: coordinate with alttpo when the serialization code changes in an incompatible way
+const SerializationVersion = 0x17
 
 type MessageType uint8
 
+// Message types shared with alttpo; values must match `GameState::deserialize` in alttpo's GameState.as.
 const (
-	_                       = iota
-	MsgLocation MessageType = iota
-	MsgSfx
-	MsgSprites1
-	MsgSprites2
-	MsgWRAM
-	MsgSRAM
-	MsgTilemaps
-	MsgObjects
-	MsgAncillae
-	MsgTorches
-	MsgPvP
-	MsgPlayerName
+	MsgLocation         MessageType = 0x01
+	MsgSfx              MessageType = 0x02
+	MsgSprites1         MessageType = 0x03
+	MsgSprites2         MessageType = 0x04
+	MsgWRAM             MessageType = 0x05
+	MsgSRAM             MessageType = 0x06
+	MsgTilemaps         MessageType = 0x07
+	MsgObjects          MessageType = 0x08 // reserved; not implemented by either project
+	MsgAncillae         MessageType = 0x09
+	MsgTorches          MessageType = 0x0A
+	MsgPvP              MessageType = 0x0B
+	MsgPlayerName       MessageType = 0x0C
+	MsgSMEvents         MessageType = 0x0D
+	MsgSMSRAM           MessageType = 0x0E
+	MsgSMLocation       MessageType = 0x0F
+	MsgSMSprite         MessageType = 0x10 // reserved; not implemented by alttpo
+	MsgSMEnemies        MessageType = 0x11
+	MsgEnemyData        MessageType = 0x12
+	MsgEnemySegmentData MessageType = 0x13
+	MsgOverlordData     MessageType = 0x14
+	MsgUniqTiles        MessageType = 0x15
+	MsgNakUniqTiles     MessageType = 0x16
+)
 
-	MsgMaxMessageType
+// o2-only message types. alttpo stops understanding a packet at the first unknown message type (and misreads the rest
+// of it), so these must never be sent in packets alttpo receives. They are only sent in protocol 03 packets, which
+// alttpo ignores entirely; see makeO2BroadcastMessage.
+const (
+	MsgO2RunTimes MessageType = 0x80
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
 
 func (g *Game) initSerde() {
-	g.deserTable = []DeserializeFunc{
-		nil,
-		g.DeserializeLocation,
-		g.DeserializeSfx,
-		g.DeserializeSprites1,
-		g.DeserializeSprites2,
-		g.DeserializeWRAM,
-		g.DeserializeSRAM,
-		g.DeserializeTilemaps,
-		g.DeserializeObjects,
-		g.DeserializeAncillae,
-		g.DeserializeTorches,
-		g.DeserializePvP,
-		g.DeserializePlayerName,
+	g.deserTable = map[MessageType]DeserializeFunc{
+		MsgLocation:         g.DeserializeLocation,
+		MsgSfx:              g.DeserializeSfx,
+		MsgSprites1:         g.DeserializeSprites1,
+		MsgSprites2:         g.DeserializeSprites2,
+		MsgWRAM:             g.DeserializeWRAM,
+		MsgSRAM:             g.DeserializeSRAM,
+		MsgTilemaps:         g.DeserializeTilemaps,
+		MsgAncillae:         g.DeserializeAncillae,
+		MsgTorches:          g.DeserializeTorches,
+		MsgPvP:              g.DeserializePvP,
+		MsgPlayerName:       g.DeserializePlayerName,
+		MsgSMEvents:         skipBytes(0x54 + 2),
+		MsgSMSRAM:           skipBytes(0x40),
+		MsgSMLocation:       skipBytes(15),
+		MsgSMEnemies:        skipSMEnemies,
+		MsgEnemyData:        skipEnemyData,
+		MsgEnemySegmentData: skipEnemySegmentData,
+		MsgOverlordData:     skipOverlordData,
+		MsgUniqTiles:        skipUniqTiles,
+		MsgNakUniqTiles:     skipNakUniqTiles,
+		MsgO2RunTimes:       g.DeserializeRunTimes,
 	}
 }
 
@@ -78,30 +105,43 @@ func writeU24(w io.Writer, value uint32) (err error) {
 	return
 }
 
+// Deserialize parses a game packet from another player (o2 or alttpo). Malformed or incompatible packets are
+// rejected with an error rather than a panic.
 func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("alttp: deserialize: %v", rec)
+		}
+	}()
+
 	var (
 		serializationVersion uint8
 		frame                uint8
 	)
 
 	if err = binary.Read(r, binary.LittleEndian, &serializationVersion); err != nil {
-		panic(err)
+		return
 	}
 
 	if serializationVersion != SerializationVersion {
-		panic(fmt.Errorf("serializationVersion mismatch"))
+		// ignore players using an incompatible protocol version:
+		if g.badVersionLogLimit&0x7F == 0 {
+			log.Printf("alttp: ignoring player[%02x] with serialization version %#02x; expected %#02x\n", uint8(p.Index()), serializationVersion, SerializationVersion)
+		}
+		g.badVersionLogLimit++
+		return fmt.Errorf("alttp: serialization version mismatch %#02x != %#02x", serializationVersion, SerializationVersion)
 	}
 
 	lastTeam := p.Team
 	if err = binary.Read(r, binary.LittleEndian, &p.Team); err != nil {
-		panic(err)
+		return
 	}
 	if p.Team != lastTeam {
 		g.shouldUpdatePlayersList = true
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
-		panic(err)
+		return
 	}
 
 	// discard stale frame data:
@@ -120,21 +160,18 @@ func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 		// read message type or expect an EOF:
 		var msgType MessageType
 		if err = binary.Read(r, binary.LittleEndian, &msgType); err != nil {
-			//log.Println(err)
 			break
 		}
 
-		// check bounds for message type:
-		if msgType == 0 || msgType >= MsgMaxMessageType {
-			err = fmt.Errorf("alttp: msgType %#02x out of bounds", msgType)
-			// no good recourse to be able to skip over the message
+		deser, ok := g.deserTable[msgType]
+		if !ok {
+			// no way to know the length of an unknown message, so the rest of the packet is lost:
+			err = fmt.Errorf("alttp: unknown msgType %#02x", msgType)
 			break
 		}
 
 		// call deserializer for the message type:
-		//log.Printf("deserializing message type %02x\n", msgType)
-		if err = g.deserTable[msgType](p, r); err != nil {
-			//log.Println(err)
+		if err = deser(p, r); err != nil {
 			break
 		}
 	}
@@ -234,38 +271,45 @@ func (g *Game) DeserializeSprites1(p *Player, r io.Reader) (err error) {
 		length uint8
 	)
 	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
-		panic(fmt.Errorf("error deserializing sprites: %w", err))
+		return fmt.Errorf("error deserializing sprites: %w", err)
 	}
 
 	for i := uint8(0); i < length; i++ {
+		// OAM index (bit 7 = chr data follows) and 5 OAM table bytes (b4 bit 7 = palette data follows):
 		var spr [6]byte
-		if _, err = r.Read(spr[:]); err != nil {
-			panic(fmt.Errorf("error deserializing sprite %d: %w", i, err))
+		if _, err = io.ReadFull(r, spr[:]); err != nil {
+			return fmt.Errorf("error deserializing sprite %d: %w", i, err)
 		}
+
+		// matches alttpo's Sprite::decodeOAMTableBytes; size is not decoded for disabled sprites:
+		size := (spr[5] >> 1) & 1
+		if spr[2] == 0xF0 {
+			size = 0
+		}
+
+		// uniq tile absolute indices:
+		n := 2
+		if size != 0 {
+			n = 8
+		}
+		if err = discard(r, n); err != nil {
+			return fmt.Errorf("error deserializing sprite %d uniqtile indices: %w", i, err)
+		}
+
 		if spr[0]&0x80 != 0 {
-			// sprite graphics data 4bpp:
-			var gfx [32]byte
-			if _, err = r.Read(gfx[:]); err != nil {
-				panic(fmt.Errorf("error deserializing sprite %d gfx 0: %w", i, err))
-			}
-			size := (spr[5] >> 1) & 1
+			// sprite graphics data 4bpp; 1 or 4 chrs of 32 bytes each:
+			n = 32
 			if size != 0 {
-				if _, err = r.Read(gfx[:]); err != nil {
-					panic(fmt.Errorf("error deserializing sprite %d gfx 1: %w", i, err))
-				}
-				if _, err = r.Read(gfx[:]); err != nil {
-					panic(fmt.Errorf("error deserializing sprite %d gfx 2: %w", i, err))
-				}
-				if _, err = r.Read(gfx[:]); err != nil {
-					panic(fmt.Errorf("error deserializing sprite %d gfx 3: %w", i, err))
-				}
+				n = 32 * 4
+			}
+			if err = discard(r, n); err != nil {
+				return fmt.Errorf("error deserializing sprite %d gfx: %w", i, err)
 			}
 		}
 		if spr[5]&0x80 != 0 {
 			// palette data:
-			var pal [32]byte
-			if _, err = r.Read(pal[:]); err != nil {
-				panic(fmt.Errorf("error deserializing sprite %d palette: %w", i, err))
+			if err = discard(r, 32); err != nil {
+				return fmt.Errorf("error deserializing sprite %d palette: %w", i, err)
 			}
 		}
 	}
@@ -333,27 +377,33 @@ func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
 }
 
 func (g *Game) DeserializeSRAM(p *Player, r io.Reader) (err error) {
-	// something about SM:
-	var dummy [2]byte
-	if _, err = r.Read(dummy[:]); err != nil {
-		panic(fmt.Errorf("error deserializing sram: %w", err))
-	}
-
 	var (
+		inSM  uint8
 		start uint16
 		count uint16
 	)
+	if err = binary.Read(r, binary.LittleEndian, &inSM); err != nil {
+		return fmt.Errorf("error deserializing sram: %w", err)
+	}
 	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
-		panic(fmt.Errorf("error deserializing sram: %w", err))
+		return fmt.Errorf("error deserializing sram: %w", err)
 	}
 	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-		panic(fmt.Errorf("error deserializing sram: %w", err))
+		return fmt.Errorf("error deserializing sram: %w", err)
 	}
 
-	if _, err = r.Read(p.SRAM.data[start : start+count]); err != nil {
-		panic(fmt.Errorf("error deserializing sram: %w", err))
+	data := make([]byte, count)
+	if _, err = io.ReadFull(r, data); err != nil {
+		return fmt.Errorf("error deserializing sram: %w", err)
 	}
-	for j := start; j < start+count; j++ {
+
+	// only keep what fits in our SRAM shadow:
+	for i, b := range data {
+		j := int(start) + i
+		if j >= len(p.SRAM.data) {
+			break
+		}
+		p.SRAM.data[j] = b
 		p.SRAM.fresh[j] = true
 	}
 	return
@@ -413,7 +463,7 @@ func (g *Game) DeserializeTilemaps(p *Player, r io.Reader) (err error) {
 }
 
 func (g *Game) DeserializeObjects(p *Player, r io.Reader) (err error) {
-	panic(fmt.Errorf("not implemented"))
+	return fmt.Errorf("objects message not implemented")
 }
 
 func (g *Game) DeserializeAncillae(p *Player, r io.Reader) (err error) {
@@ -460,14 +510,34 @@ func (g *Game) DeserializeTorches(p *Player, r io.Reader) (err error) {
 	return
 }
 
+// DeserializePvP skips over alttpo's PvP state which o2 does not implement.
 func (g *Game) DeserializePvP(p *Player, r io.Reader) (err error) {
-	panic(fmt.Errorf("not implemented"))
+	var active uint8
+	if active, err = readU8(r); err != nil {
+		return
+	}
+	if active == 1 {
+		// hitbox x, y (u16), w, h, sword time, item used:
+		if err = discard(r, 8); err != nil {
+			return
+		}
+	}
+	// sword type, room level:
+	if err = discard(r, 2); err != nil {
+		return
+	}
+	var count uint8
+	if count, err = readU8(r); err != nil {
+		return
+	}
+	// attacks: player index (u16), sword time, melee item, ancilla mode, damage, recoil dx, dy, dz:
+	return discard(r, int(count)*9)
 }
 
 func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	var name [20]byte
-	if _, err = r.Read(name[:]); err != nil {
-		panic(fmt.Errorf("error deserializing name: %w", err))
+	if _, err = io.ReadFull(r, name[:]); err != nil {
+		return fmt.Errorf("error deserializing name: %w", err)
 	}
 	lastName := p.NameF
 	p.NameF = strings.Trim(string(name[:]), " \t\n\r\000")
@@ -477,34 +547,64 @@ func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 		g.shouldUpdatePlayersList = true
 	}
 
+	return
+}
+
+// DeserializeRunTimes reads the o2-only game start and finish times used for the run timer.
+func (g *Game) DeserializeRunTimes(p *Player, r io.Reader) (err error) {
 	var isZero bool
 
-	_ = binary.Read(r, binary.LittleEndian, &isZero)
+	if err = binary.Read(r, binary.LittleEndian, &isZero); err != nil {
+		return
+	}
 	var startTime time.Time
 	if !isZero {
 		var startNano int64
-		_ = binary.Read(r, binary.LittleEndian, &startNano)
+		if err = binary.Read(r, binary.LittleEndian, &startNano); err != nil {
+			return
+		}
 		startTime = time.Unix(startNano/1e9, startNano%1e9)
 	}
-	if startTime != p.GameStartTime {
-		p.GameStartTime = startTime
-		// refresh the players list
-		g.shouldUpdatePlayersList = true
-	}
 
-	_ = binary.Read(r, binary.LittleEndian, &isZero)
+	if err = binary.Read(r, binary.LittleEndian, &isZero); err != nil {
+		return
+	}
 	var finishTime time.Time
 	if !isZero {
 		var finishNano int64
-		_ = binary.Read(r, binary.LittleEndian, &finishNano)
+		if err = binary.Read(r, binary.LittleEndian, &finishNano); err != nil {
+			return
+		}
 		finishTime = time.Unix(finishNano/1e9, finishNano%1e9)
+	}
+
+	if startTime != p.GameStartTime {
+		p.GameStartTime = startTime
+		g.shouldUpdatePlayersList = true
 	}
 	if finishTime != p.GameFinishTime {
 		p.GameFinishTime = finishTime
-		// refresh the players list
 		g.shouldUpdatePlayersList = true
 	}
 
+	return
+}
+
+// SerializeRunTimes writes the o2-only game start and finish times used for the run timer.
+func SerializeRunTimes(w io.Writer, start, finish time.Time) (err error) {
+	if err = binary.Write(w, binary.LittleEndian, uint8(MsgO2RunTimes)); err != nil {
+		return
+	}
+	for _, t := range []time.Time{start, finish} {
+		if err = binary.Write(w, binary.LittleEndian, t.IsZero()); err != nil {
+			return
+		}
+		if !t.IsZero() {
+			if err = binary.Write(w, binary.LittleEndian, t.UnixNano()); err != nil {
+				return
+			}
+		}
+	}
 	return
 }
 
@@ -571,17 +671,8 @@ func (g *Game) SerializeSRAM(p *Player, w io.Writer, start, endExclusive uint16)
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
 
-	var (
-		startIsZero uint8 = 0
-		inSM        uint8 = 0
-	)
-	if start == 0 {
-		startIsZero = 1
-	}
-
-	if err = binary.Write(w, binary.LittleEndian, &startIsZero); err != nil {
-		panic(fmt.Errorf("error serializing sram: %w", err))
-	}
+	// alttpo format: in_sm flag (always 0 for o2):
+	var inSM uint8 = 0
 	if err = binary.Write(w, binary.LittleEndian, &inSM); err != nil {
 		panic(fmt.Errorf("error serializing sram: %w", err))
 	}
@@ -630,4 +721,155 @@ func (g *Game) SerializeWRAM(p *Player, w io.Writer, start uint16, count uint8) 
 	}
 
 	return
+}
+
+func readU8(r io.Reader) (v uint8, err error) {
+	err = binary.Read(r, binary.LittleEndian, &v)
+	return
+}
+
+func discard(r io.Reader, n int) (err error) {
+	if n <= 0 {
+		return
+	}
+	_, err = io.CopyN(io.Discard, r, int64(n))
+	return
+}
+
+func readU16(r io.Reader) (v uint16, err error) {
+	err = binary.Read(r, binary.LittleEndian, &v)
+	return
+}
+
+// The following skip over alttpo-only messages (Super Metroid / SMZ3 state, enemy sync and unique sprite tiles) so
+// that the rest of the packet can still be read. Formats follow alttpo's GameState.as deserialize_* functions.
+
+func skipBytes(n int) DeserializeFunc {
+	return func(p *Player, r io.Reader) error {
+		return discard(r, n)
+	}
+}
+
+func skipSMEnemies(p *Player, r io.Reader) (err error) {
+	var isEnemy, flag uint8
+	if isEnemy, err = readU8(r); err != nil {
+		return
+	}
+	if isEnemy == 34 {
+		return
+	}
+	// enemy index:
+	if err = discard(r, 1); err != nil {
+		return
+	}
+	if flag, err = readU8(r); err != nil {
+		return
+	}
+	if flag == 0 {
+		return
+	}
+	// 32 u16 enemy properties, host index, flag:
+	return discard(r, 32*2+2)
+}
+
+// alttpo: len(enemy_data_ptrs); one byte per property per sprite (two for OWDEATH spanning two properties):
+const alttpoEnemyDataProperties = 55
+
+func skipEnemyData(p *Player, r io.Reader) (err error) {
+	var mask uint16
+	if mask, err = readU16(r); err != nil {
+		return
+	}
+	// in_dungeon:
+	if err = discard(r, 1); err != nil {
+		return
+	}
+	for s := 0; s < 16; s++ {
+		if mask&(1<<s) == 0 {
+			continue
+		}
+		if err = discard(r, alttpoEnemyDataProperties); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func skipEnemySegmentData(p *Player, r io.Reader) (err error) {
+	var mask uint16
+	if mask, err = readU16(r); err != nil {
+		return
+	}
+	for s := 0; s < 16; s++ {
+		if mask&(1<<s) == 0 {
+			continue
+		}
+		var id uint8
+		if id, err = readU8(r); err != nil {
+			return
+		}
+		n := 0
+		switch id {
+		case 0xCF: // swamola
+			if s < 6 {
+				n = 4 * 0x20
+			}
+		case 0x09: // moldorm
+			n = 4 * 0x80
+		case 0x18: // mini moldorm
+			if s < 4 {
+				n = 4 * 0x20
+			}
+		case 0x54: // lanmolas
+			if s < 4 {
+				n = 4 * 0x40
+			}
+		default:
+			if s < 8 {
+				n = 7 * 0x10
+			}
+		}
+		if err = discard(r, n); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func skipOverlordData(p *Player, r io.Reader) (err error) {
+	var mask uint8
+	if mask, err = readU8(r); err != nil {
+		return
+	}
+	for s := 0; s < 8; s++ {
+		if mask&(1<<s) == 0 {
+			continue
+		}
+		// 9 u8 properties and 1 u16 property:
+		if err = discard(r, 9+2); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func skipUniqTiles(p *Player, r io.Reader) (err error) {
+	var count uint8
+	if count, err = readU8(r); err != nil {
+		return
+	}
+	// absidx (u16) and 16 u16 tile words:
+	return discard(r, int(count)*(2+32))
+}
+
+func skipNakUniqTiles(p *Player, r io.Reader) (err error) {
+	// player index:
+	if err = discard(r, 2); err != nil {
+		return
+	}
+	var count uint8
+	if count, err = readU8(r); err != nil {
+		return
+	}
+	return discard(r, int(count)*2)
 }

@@ -236,28 +236,26 @@ func (g *Game) sendEcho() {
 }
 
 func (g *Game) sendPlayerName() {
-	// broadcast player name:
-	m := g.makeBroadcastMessage()
-	m.WriteByte(0x0C)
-	var name [20]byte
 	p := g.LocalPlayer()
+
+	// broadcast player name to all clients (alttpo format; exactly 20 bytes):
+	m := g.makeBroadcastMessage()
+	m.WriteByte(byte(MsgPlayerName))
+	var name [20]byte
 	n := copy(name[:], p.Name())
 	for ; n < 20; n++ {
 		name[n] = ' '
 	}
 	m.Write(name[:])
-
-	_ = binary.Write(m, binary.LittleEndian, p.GameStartTime.IsZero())
-	if !p.GameStartTime.IsZero() {
-		_ = binary.Write(m, binary.LittleEndian, p.GameStartTime.UnixNano())
-	}
-
-	_ = binary.Write(m, binary.LittleEndian, p.GameFinishTime.IsZero())
-	if !p.GameFinishTime.IsZero() {
-		_ = binary.Write(m, binary.LittleEndian, p.GameFinishTime.UnixNano())
-	}
-
 	g.send(m)
+
+	// broadcast run timer to o2 clients only:
+	o := g.makeO2BroadcastMessage()
+	if err := SerializeRunTimes(o, p.GameStartTime, p.GameFinishTime); err != nil {
+		log.Printf("alttp: serialize run times: %v\n", err)
+		return
+	}
+	g.send(o)
 }
 
 func (g *Game) isReadWRAM(rsp snes.Response) (start, end uint32, ok bool) {

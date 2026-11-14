@@ -34,7 +34,9 @@ type Game struct {
 	priorityReadsMu sync.Mutex
 	priorityReads   [3][]snes.Read
 
-	deserTable []DeserializeFunc
+	deserTable map[MessageType]DeserializeFunc
+
+	badVersionLogLimit uint8
 
 	// Notifications publishes notifications about game events intended for the player to see
 	Notifications interfaces.ObservableImpl
