@@ -4,13 +4,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/alttpo/snes/timing"
 	"log"
 	"o2/snes"
 	"o2/util"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/alttpo/snes/timing"
 )
 
 func (g *Game) readEnqueue(q []snes.Read, addr uint32, size uint8, extra interface{}) []snes.Read {
@@ -453,6 +454,12 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			return
 		}
 
+		// backup the current WRAM:
+		copy(g.wramLastFrame[:], g.wram[:])
+		for i := range g.wramFresh {
+			g.wramFresh[i] = false
+		}
+
 		// copy the read data into our view of memory:
 		for _, rsp := range rsps {
 			// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
@@ -711,11 +718,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		g.DecTTL(p, 1)
 	}
 
-	// backup the current WRAM:
-	copy(g.wramLastFrame[:], g.wram[:])
-	for i := range g.wramFresh {
-		g.wramFresh[i] = false
-	}
 	g.notFirstFrame = true
 
 	// now determine what to read next:
