@@ -256,7 +256,7 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	gs.e.WRAM[0xF36F] = 1
 
 	seen := map[uint8]int{}
-	alttpoCount, o2Count := 0, 0
+	alttpoCount, o2Count, sectorCount := 0, 0, 0
 	for f := 0; f < 256; f++ {
 		if f == 100 {
 			// o2-only reset messages must not reach alttpo:
@@ -283,8 +283,14 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 			if gm.Group != "test" {
 				t.Fatalf("unexpected group %q", gm.Group)
 			}
-			if gm.Kind != protocol04.BroadcastAll {
+			if gm.Kind != protocol04.BroadcastAll && gm.Kind != protocol04.BroadcastSector {
 				continue
+			}
+			if gm.Kind == protocol04.BroadcastSector {
+				if gm.TargetSector != gm.PlayerInSector {
+					t.Fatalf("expected sector packet for own sector %#x; got %#x", gm.PlayerInSector, gm.TargetSector)
+				}
+				sectorCount++
 			}
 			payload := gm.Data
 			if len(payload) > 3 && payload[3] >= 0x80 {
@@ -303,8 +309,8 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 		}
 	}
 
-	if alttpoCount == 0 || o2Count == 0 {
-		t.Fatalf("expected both alttpo and o2-only packets; got %d and %d", alttpoCount, o2Count)
+	if alttpoCount == 0 || o2Count == 0 || sectorCount == 0 {
+		t.Fatalf("expected alttpo, o2-only and sector packets; got %d, %d and %d", alttpoCount, o2Count, sectorCount)
 	}
 	for _, ty := range []uint8{0x01, 0x05, 0x06, 0x0C} {
 		if seen[ty] == 0 {

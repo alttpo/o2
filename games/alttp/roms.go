@@ -17,6 +17,7 @@ const (
 	fnOverworldFinishMirrorWarp
 	fnOverworldCreatePyramidHole
 	fnResetSpriteProperties
+	fnToggleStarTileGraphics
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -46,6 +47,7 @@ func (g *Game) fillRomUS10() {
 	g.romFunctions[fnOverworldFinishMirrorWarp] = 0x02B260
 	g.romFunctions[fnOverworldCreatePyramidHole] = 0x1BC2A7
 	g.romFunctions[fnResetSpriteProperties] = 0x0DB871
+	g.romFunctions[fnToggleStarTileGraphics] = 0x00FDA7
 }
 
 func (g *Game) fillRomJP10() {
@@ -59,4 +61,5 @@ func (g *Game) fillRomJP10() {
 	g.romFunctions[fnOverworldFinishMirrorWarp] = 0x02B186
 	g.romFunctions[fnOverworldCreatePyramidHole] = 0x1BC2A7
 	g.romFunctions[fnResetSpriteProperties] = 0x0DB871
+	g.romFunctions[fnToggleStarTileGraphics] = 0x00FDA7
 }

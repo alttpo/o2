@@ -22,8 +22,8 @@ estimate of the server clock from the last message received and send an echo eve
 alone in a group. alttpo stores `player_time` / `server_time` per remote player and exposes `server_now()`.
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
-world bit cleared in the underworld), so they agree on sectors. o2 only sends broadcastAll; alttpo sends some state
-(sprites, tilemaps, torches, enemies) as broadcastSector.
+world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
+state (both), and sprites, tilemaps, torches and enemies (alttpo). Everything else is sent as broadcastAll.
 
 Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
 between protocols and the game `script_protocol` was reset, so those versions cannot share a group with the current
@@ -46,7 +46,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
-| 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$0400`, `$C172`) | `$C172` used; others stored but unused |
+| 0x05 | WRAM syncables | yes (crystal switch `$C172`; star switch `$04BC` per sector) | yes (`$0400`, `$C172`; `$04BC` per sector) | `$C172`, `$04BC` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | yes | no | parsed, ignored |
 | 0x08 | objects | no | no | reserved; not parsed by either |
@@ -100,8 +100,9 @@ more messages, which corrupted the rest of the packet.
   reads Link's OAM buffer (`$0800`, `$0A20`) and graphics DMA source addresses (`$0ACC..$0AD7`) from WRAM over USB,
   which can catch the game mid-frame and occasionally send a mismatched pose for a frame. o2 locates Link's OAM entries
   from the previous read of `$0352` and skips a frame whenever they move.
-- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame and the crystal switch state one
-  more, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of one.
+- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, and the crystal and star switch
+  states one more each, bringing a normal read cycle to 12 reads, which takes two FX Pak Pro VGET commands instead of
+  one.
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
@@ -157,3 +158,24 @@ sends and applies it when "Sync underworld" is enabled; alttpo when "Sync tilema
   plays the crystal switch sound effect, which alttpo does not.
 - **Timestamps.** alttpo uses its local clock (`chrono::realtime::millisecond`), o2 its estimate of the server clock,
   both in msec truncated to 32 bits. Clock skew between alttpo players' machines can make an older change win.
+
+## Star switches
+
+o2 (`games/alttp/syncstar.go`) and alttpo (`StarSwitch.as`) share the star tile state `$7E04BC` of the current room as
+a last-writer-wins value. Stepping on a star tile (`RoomTag_TriggerHoles`) picks a hole overlay (`$04BA`), switches to
+submodule `$03` to draw it, toggles `$04BC` and swaps the star tile graphics (`ToggleStarTileGraphics`, `$00FDA7` in
+US, JP and VT ROMs; unknown for EU ROMs, where alttpo does not apply it). Every room load resets the state.
+
+- **Message.** A 0x05 message (`count 1`, `offs $04BC`, `timestamp u32`, `value u16`) in a broadcastSector packet to
+  the player's own sector, sent every frame in the dungeon module. The value's low byte is `$04BC` and its high byte is
+  the overlay `$04BA`, which the receiver needs to draw the same holes. Older alttpo versions skip it.
+- **Local changes.** A change of `$04BC` in the dungeon module is timestamped only when it comes from stepping on a
+  star tile: alttpo intercepts writes made in submodule `$03`; o2 polls during submodule 0 or `$03`. Room loads and
+  any change of room (`$A0`) only record a baseline, so a freshly loaded room never overwrites the group's state.
+  Leaving the dungeon module (except for the menus in `$0E`) forgets the timestamp.
+- **Applying.** In module `$07`, submodule 0, with no animation (`$0112` = 0), take the state of the remote player on
+  the same team, in module `$07` and in the same room with the latest timestamp (or, on a tie with our own timestamp,
+  a higher value). If `$04BC` differs, do what stepping on the star tile does: set `$04BA` and `$04BC`, clear
+  `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
+- **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
+- **Timestamps** come from each client's estimate of the server clock, like small keys.

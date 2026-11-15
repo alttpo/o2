@@ -55,6 +55,20 @@ func (m *gameBroadcastMessage) SendToClient(c games.Client) {
 	})
 }
 
+// gameSectorMessage carries game state broadcast only to the clients in the same sector as the local player (see
+// broadcastSector), both o2 and alttpo.
+type gameSectorMessage struct {
+	gameBroadcastMessage
+}
+
+func (m *gameSectorMessage) SendToClient(c games.Client) {
+	m.g.sendGroupMessage(c, &protocol04.GroupMessage{
+		Kind:         protocol04.BroadcastSector,
+		TargetSector: broadcastSector(m.g.LocalPlayer().Location),
+		Data:         m.Bytes(),
+	})
+}
+
 type gameJoinMessage struct {
 	g *Game
 }
@@ -94,6 +108,15 @@ func (g *Game) makeBroadcastMessage() (m *gameBroadcastMessage) {
 // from messages alttpo uses.
 func (g *Game) makeO2BroadcastMessage() (m *gameBroadcastMessage) {
 	return g.makeBroadcastMessage()
+}
+
+// makeSectorMessage creates a packet sent only to the clients in the local player's sector (e.g. the same room).
+func (g *Game) makeSectorMessage() (m *gameSectorMessage) {
+	b := g.makeBroadcastMessage()
+	m = &gameSectorMessage{}
+	m.g = g
+	m.Write(b.Bytes())
+	return
 }
 
 func (g *Game) makeJoinMessage() (m *gameJoinMessage) {

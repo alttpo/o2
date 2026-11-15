@@ -40,6 +40,9 @@ func (t *testClient) Read() <-chan []byte {
 type testServer struct {
 	Clients []*testClient
 	Now     time.Time
+
+	// sectors holds each client's last reported playerInSector:
+	sectors map[int]uint64
 }
 
 func (s *testServer) AdvanceTime(duration time.Duration) {
@@ -65,6 +68,10 @@ func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err
 
 	gm.PlayerIndex = uint32(i)
 	gm.ServerTime = s.Now.UnixNano()
+	if s.sectors == nil {
+		s.sectors = make(map[int]uint64)
+	}
+	s.sectors[i] = gm.PlayerInSector
 
 	var pkt []byte
 	if pkt, err = protocol04.MakePacket(&gm); err != nil {
@@ -78,9 +85,12 @@ func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err
 		}
 		c.Rd <- pkt
 	case protocol04.BroadcastAll, protocol04.BroadcastSector:
-		// TODO: only relay BroadcastSector to clients in the target sector
 		for j := range s.Clients {
 			if j == i {
+				continue
+			}
+			if gm.Kind == protocol04.BroadcastSector && s.sectors[j] != gm.TargetSector {
+				// only relay BroadcastSector to clients in the target sector:
 				continue
 			}
 

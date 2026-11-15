@@ -61,6 +61,15 @@ func (g *Game) sendPackets() {
 		g.send(m)
 	}
 
+	if g.SyncUnderworld && local.Module == 0x07 {
+		// star switch state is room specific; send it only to players in the same room:
+		m := g.makeSectorMessage()
+		if err := g.SerializeStarSwitch(m); err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
+
 	{
 		// small keys (delta based; shared with alttpo's SmallKeys.as), in their own packet:
 		m := g.makeO2BroadcastMessage()

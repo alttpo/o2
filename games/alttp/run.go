@@ -356,6 +356,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
 	// crystal switch state:
 	q = g.readEnqueue(q, 0xF5C172, 0x01, nil) // [$C172]
+	// star switch state and hole overlay:
+	q = g.readEnqueue(q, 0xF504BA, 0x03, nil) // [$04BA..$04BC]
 
 	// sprite palettes 5 (sword, shield), 6 and 7 (Link):
 	q = g.readEnqueue(q, 0xF5C6A0, 0x60, nil)
