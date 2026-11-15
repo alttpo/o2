@@ -62,6 +62,7 @@ func (g *Game) initSync() {
 
 	// WRAM offsets for small keys, crystal switches, etc:
 	g.initSmallKeysSync()
+	g.resetCrystalSwitch()
 	g.local.WRAM[0x0400] = &SyncableWRAM{
 		g:         g,
 		Offset:    0x0400,

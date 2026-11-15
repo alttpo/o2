@@ -354,6 +354,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	// ALTTP's SRAM copy in WRAM:
 	q = g.readEnqueue(q, 0xF5F340, 0xFF, nil) // [$F340..$F43E]
 	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
+	// crystal switch state:
+	q = g.readEnqueue(q, 0xF5C172, 0x01, nil) // [$C172]
 
 	// sprite palettes 5 (sword, shield), 6 and 7 (Link):
 	q = g.readEnqueue(q, 0xF5C6A0, 0x60, nil)

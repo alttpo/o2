@@ -112,6 +112,8 @@ type Game struct {
 
 	smallKeys smallKeysLocal
 
+	crystalSwitch crystalSwitchLocal
+
 	runMinStart        time.Time
 	runMaxFinish       time.Time
 	runPlayersFinished int
@@ -230,6 +232,7 @@ func (g *Game) FirstFrame() {
 
 	// SNES state may have changed while disconnected; re-read small key counts without attributing changes:
 	g.invalidateSmallKeys(false)
+	g.resetCrystalSwitch()
 
 	// initialize WRAM:
 	for i := range g.wram {

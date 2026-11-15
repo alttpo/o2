@@ -235,6 +235,20 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
+		if g.SyncUnderworld {
+			if u, ta := g.generateCrystalSwitchUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= 255 {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.crystalSwitch.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
+		}
+
 		if g.SyncSmallKeys {
 			g.adoptSmallKeys()
 			for k := 0; k < smallKeyCount; k++ {

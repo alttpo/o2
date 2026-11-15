@@ -46,7 +46,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
-| 0x05 | WRAM syncables | yes (crystal switch) | yes (`$0400`) | stored but unused |
+| 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$0400`, `$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | yes | no | parsed, ignored |
 | 0x08 | objects | no | no | reserved; not parsed by either |
@@ -100,11 +100,10 @@ more messages, which corrupted the rest of the packet.
   reads Link's OAM buffer (`$0800`, `$0A20`) and graphics DMA source addresses (`$0ACC..$0AD7`) from WRAM over USB,
   which can catch the game mid-frame and occasionally send a mismatched pose for a frame. o2 locates Link's OAM entries
   from the previous read of `$0352` and skips a frame whenever they move.
-- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, bringing a normal read cycle to 10
-  reads, which takes two FX Pak Pro VGET commands instead of one.
+- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame and the crystal switch state one
+  more, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of one.
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
-- **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards. alttpo sends the
-  crystal switch state `$C172`, which o2 stores but does not sync.
+- **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
   test for one item; the rules were not compared item by item.
@@ -141,3 +140,20 @@ in message 0x82; alttpo no longer sends small keys as last-writer-wins entries i
   and catches up again without starting a new session.
 - **Timestamps** come from each client's estimate of the server clock (alttpo's `server_now()`, falling back to the
   local clock until a server message has been received).
+
+## Crystal switches
+
+o2 (`games/alttp/synccrystal.go`) and alttpo (`LocalGameState.as`, `crystal`) share the dungeon crystal switch state
+`$7EC172` as a last-writer-wins value in a 0x05 message (`count 1`, `offs $C172`, `timestamp u32`, `value u16`). o2
+sends and applies it when "Sync underworld" is enabled; alttpo when "Sync tilemap" is enabled.
+
+- **Local changes.** `$C172` is overworld scratch space, so it is only sampled in the dungeon module `$07`. A change
+  there is timestamped. Leaving the dungeon module (except for the menus in `$0E`) forgets the timestamp, since the
+  dungeon load resets `$C172`; the first value read back is a baseline. alttpo intercepts writes instead of polling,
+  so it only captures changes in module `$07` and forgets the timestamp in modules `$05`/`$06`.
+- **Applying.** In module `$07`, submodule 0, with no animation (`$0112` = 0), take the value of the remote player on
+  the same team, in module `$07` and the same dungeon (`$040C`) with the latest timestamp (or, on a tie with our own
+  timestamp, a higher value). If it differs, write `$C172` and switch to submodule `$16` to redraw the pegs. o2 also
+  plays the crystal switch sound effect, which alttpo does not.
+- **Timestamps.** alttpo uses its local clock (`chrono::realtime::millisecond`), o2 its estimate of the server clock,
+  both in msec truncated to 32 bits. Clock skew between alttpo players' machines can make an older change win.

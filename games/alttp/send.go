@@ -52,6 +52,12 @@ func (g *Game) sendPackets() {
 		if err := g.SerializeWRAM(local, m, 0x0400, 1); err != nil {
 			panic(err)
 		}
+		if g.SyncUnderworld {
+			// crystal switch state (shared with alttpo):
+			if err := g.SerializeCrystalSwitch(m); err != nil {
+				panic(err)
+			}
+		}
 		g.send(m)
 	}
 

@@ -241,6 +241,7 @@ func (g *Game) readWRAM() {
 	}
 
 	g.readSmallKeys()
+	g.readCrystalSwitch()
 
 	now := g.ServerSNESTimestamp()
 	nowTs := timestampFromTime(now)
