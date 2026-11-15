@@ -574,8 +574,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			g.syncing = true
 		}
 
-		// only sample location during sub-module 0 for any module; keeps location more stable:
-		if local.Module == 0x15 || local.SubModule == 0 {
+		// sample location the same way alttpo does (LocalGameState::fetch_basics): don't update it during screen
+		// transitions so that it stays on the room or area the player's screen is still showing:
+		if local.canSampleLocation() && !local.isInScreenTransition() {
 			inDungeon := g.wram[0x1B]
 			overworldArea := g.wramU16(0x8A)
 			dungeonRoom := g.wramU16(0xA0)
@@ -630,14 +631,22 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				g.shouldUpdatePlayersList = true
 			}
 
-			if local.Module.IsOverworld() {
-				local.LastOverworldX = local.X
-				local.LastOverworldY = local.Y
-			}
+		}
 
+		if local.Module.IsOverworld() {
+			local.LastOverworldX = local.X
+			local.LastOverworldY = local.Y
+		}
+
+		// Link's coordinates and the screen scroll offsets are sampled every frame, including during screen
+		// transitions, like alttpo does. alttpo draws a remote player's OAM sprites (which are relative to that
+		// player's screen) offset by the difference between both players' scroll offsets; if these went stale while
+		// the screen scrolls during a room transition, the sprites would drift across the other player's screen:
+		if !(local.Module == 0x0E && local.SubModule == 0x07) {
 			local.X = g.wramU16(0x22)
 			local.Y = g.wramU16(0x20)
 
+			// BG2 scroll offsets minus the screen shake offsets:
 			local.XOffs = int16(g.wramU16(0xE2)) - int16(g.wramU16(0x11A))
 			local.YOffs = int16(g.wramU16(0xE8)) - int16(g.wramU16(0x11C))
 		}

@@ -81,6 +81,11 @@ more messages, which corrupted the rest of the packet.
 
 ## Format differences fixed in o2
 
+- **Location (0x01):** o2 sampled Link's coordinates and the screen scroll offsets (`xoffs`, `yoffs`) only in
+  submodule 0, so they froze while the screen scrolled during room transitions. alttpo draws a remote player's OAM
+  sprites shifted by `remote.xoffs - local.xoffs`, so o2 players drifted across alttpo players' screens when walking
+  through a doorway. o2 now samples them every frame and updates the location only when alttpo would
+  (`can_sample_location() && !is_in_screen_transition()`).
 - **Player name (0x0C):** o2 appended the run timer start and finish times after the 20 byte name, which alttpo would
   read as further messages. The name is now exactly 20 bytes and the run times moved to the o2-only `0x80` message.
 - **SRAM (0x06):** o2 wrote two flag bytes before `start`; alttpo writes one (`in_sm`). o2 now matches alttpo and also

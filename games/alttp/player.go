@@ -227,6 +227,51 @@ func (g *Game) PlayerLeft(p *Player) {
 	g.shouldUpdatePlayersList = true
 }
 
+// canSampleLocation reports whether the location (room or area) can be sampled in the current module. Same as alttpo's
+// LocalGameState::can_sample_location.
+func (p *Player) canSampleLocation() bool {
+	switch p.Module {
+	case 0x07:
+		// climbing/descending stairs; keep the old location until the main climb animation finishes:
+		if p.SubModule == 0x0E {
+			return p.SubSubModule > 0x02
+		}
+		return true
+	case 0x09:
+		// overworld screen transition:
+		if p.SubModule >= 0x01 && p.SubModule <= 0x08 {
+			return false
+		}
+		// mirror (0x23) and failed mirror back to the dark world (0x2C); in the new world once sub-sub module is 3:
+		if p.SubModule == 0x23 || p.SubModule == 0x2C {
+			return p.SubSubModule >= 0x03
+		}
+		return true
+	case 0x0E:
+		// in-game mode 7 map:
+		return p.SubModule != 0x07
+	default:
+		return true
+	}
+}
+
+// isInScreenTransition reports whether the screen is scrolling to another overworld area or underworld room. Same as
+// alttpo's GameState::is_in_screen_transition.
+func (p *Player) isInScreenTransition() bool {
+	switch {
+	case p.Module == 0x09 && p.SubModule >= 0x01:
+		// scrolling between overworld areas:
+		return true
+	case p.Module == 0x07 && p.SubModule == 0x02:
+		// scrolling between underworld rooms:
+		return true
+	case p.Module == 0x07 && p.SubModule == 0x19:
+		// mirroring in the underworld:
+		return true
+	}
+	return false
+}
+
 func (p *Player) IsInDungeon() bool {
 	if p.IsDungeon() {
 		return true
