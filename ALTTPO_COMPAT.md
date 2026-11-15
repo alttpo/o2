@@ -253,12 +253,19 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   keeping the last tile for each position. In submodule 0 of the overworld module, in the same area, an entry whose
   tile `$7E2000,X` already has is skipped; otherwise it is appended to the local log (while it has room), which passes
   it on to players who enter the area later and keeps it through a mirror bonk, and drawn with
-  `Overworld_DrawMap16_Persist` (`$1BC97C`) if it is within 12 map16 rows/columns before or 15 after `$84` (VRAM holds
-  32x32 map16 tiles, so nothing visible is overwritten). Tiles further away are only written to `$7E2000`; the game draws
-  them as it scrolls. Draws stop when the VRAM stripe buffer (`$1000`) passes `$80` bytes and continue later. A local
+  `Overworld_DrawMap16_Persist` (`$1BC97C`) if VRAM holds it; other tiles are only written to `$7E2000` and the game
+  draws them as it scrolls. Small areas (`$0712` = 0) are entirely in VRAM since the area load and the game never draws
+  tiles while scrolling there, so changes are always drawn. Large areas keep a 32x32 map16 ring in VRAM around `$84`:
+  the area load draws rows -7..+24 and columns -8..+23 of `$84`, and scrolling draws the next row or column (-8 or +24)
+  from `$7E2000` before moving `$84`, even if it was in VRAM already, so rows and columns -7..+23 are always in VRAM and
+  are drawn. (Earlier versions drew within 12 map16 rows/columns before or 15 after `$84`, which left changes in small
+  areas and below or right of the screen undrawn until scrolled away and back, and could overwrite ring slots of rows
+  in VRAM.) Draws stop when the VRAM stripe buffer (`$1000`) passes `$80` bytes and continue later. A local
   area load makes all remote entries apply again. o2 applies them from its update routine (a table of up to 8 entries
   per routine, reporting how many were applied); alttpo checks between frames and puts the draw calls in its patch
   buffer.
+- **Menus.** A player in the item menu or a text box (`$0E`) keeps its log, keeps sending it and is still taken as
+  being in its area, so players entering the area meanwhile catch up.
 - **Teams.** Only players on the same team share changes; game worlds are team specific. (alttpo's old tilemap sync
   shared overworld changes across teams.)
 - **Regions.** Map16 tile numbers differ between US and JP ROMs (the cut grass tile is `$0DC5` in US and `$0DBF` in

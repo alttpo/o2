@@ -32,7 +32,16 @@ import (
 // Each receiver remembers how far into each remote player's log it has applied and only applies newly added entries.
 // Applying an entry skips it if $7E2000,X already holds the tile, otherwise writes it, appends it to the local log
 // (so it survives a mirror bonk and is passed on to players who enter the area later) and draws it with
-// Overworld_DrawMap16_Persist if it is near the screen; tiles further away are drawn by the game as it scrolls.
+// Overworld_DrawMap16_Persist if VRAM holds it; other tiles are drawn by the game as it scrolls:
+//
+//   - Small areas ($0712 = 0) are entirely in VRAM since the area load and the game never draws tiles while
+//     scrolling there, so changes are always drawn.
+//   - Large areas keep a 32x32 map16 ring in VRAM around $84, which scrolling moves along: the area load draws rows
+//     -7..+24 and columns -8..+23 of $84, and scrolling draws the next row or column (-8 or +24) from $7E2000 before
+//     moving $84, even if that row was already in VRAM. Rows and columns -7..+23 are always in VRAM and are drawn;
+//     anything else is drawn by the game when scrolled to. (Drawing outside that range would overwrite the ring slot
+//     of a row that is in VRAM, and leaving a tile inside it undrawn would show the old tile until it scrolls away
+//     and back.)
 
 const (
 	map16LogIndex     = uint16(0x04AC)
@@ -66,6 +75,9 @@ type map16Local struct {
 
 	// inflight is the update routine awaiting confirmation of execution, if any:
 	inflight *map16Update
+
+	// diagLogged is set once the remote players' logs were described after entering the area:
+	diagLogged bool
 }
 
 // map16Remote tracks a remote player's map16 change log as received.
@@ -76,6 +88,16 @@ type map16Remote struct {
 	have    [map16LogMax]bool
 	// applied is how many entries of this log were applied locally:
 	applied int
+
+	// lastHdr is the last message header received, for diagnostics:
+	lastHdr map16Header
+}
+
+type map16Header struct {
+	Area  uint16
+	Count uint8
+	Start uint8
+	Len   uint8
 }
 
 func (r *map16Remote) reset(area uint16) {
@@ -196,7 +218,8 @@ func (g *Game) readMap16() {
 // sendMap16 sends the new entries of the local log, and the whole log every 16 frames, to the players in the area.
 func (g *Game) sendMap16() {
 	m := &g.map16
-	if !m.valid || !isOverworldModule(g.local.Module) {
+	// menus and text boxes ($0E) keep the log; keep sending it so players entering the area still catch up:
+	if !m.valid || !(isOverworldModule(g.local.Module) || g.local.Module == 0x0E) {
 		return
 	}
 
@@ -241,12 +264,7 @@ func (g *Game) SerializeMap16(w io.Writer, start, end int) (err error) {
 }
 
 func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
-	var hdr struct {
-		Area  uint16
-		Count uint8
-		Start uint8
-		Len   uint8
-	}
+	var hdr map16Header
 	if err = binary.Read(r, binary.LittleEndian, &hdr); err != nil {
 		return fmt.Errorf("error deserializing map16 changes: %w", err)
 	}
@@ -260,6 +278,11 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 	}
 
 	rm := &p.Map16
+	if hdr != rm.lastHdr {
+		// diagnostics: log only when the header changes, so the periodic whole-log resends don't spam:
+		rm.lastHdr = hdr
+		log.Printf("alttp: map16: from '%s': area $%02x count %d start %d len %d\n", p.Name(), hdr.Area, hdr.Count, hdr.Start, hdr.Len)
+	}
 	if rm.area != hdr.Area || count < rm.count {
 		// another area, or the sender's area was reloaded:
 		rm.reset(hdr.Area)
@@ -347,13 +370,31 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		return
 	}
 
+	if !m.diagLogged {
+		// describe what we know of the remote players' logs once per area visit, to explain missing changes:
+		m.diagLogged = true
+		for _, p := range g.RemotePlayers() {
+			rm := &p.Map16
+			have := 0
+			for i := 0; i < rm.count; i++ {
+				if rm.have[i] {
+					have++
+				}
+			}
+			log.Printf(
+				"alttp: map16: area $%02x: remote '%s' team %d module $%02x location $%06x log area $%02x count %d have %d applied %d\n",
+				m.area, p.Name(), p.Team, uint8(p.Module), p.Location, rm.area, rm.count, have, rm.applied,
+			)
+		}
+	}
+
 	// collect pending changes, keeping only the latest tile for each position:
 	list := make([]map16Entry, 0, map16MaxPerUpdate)
 	at := make(map[uint16]int, map16MaxPerUpdate)
 	ends := make(map[int]int)
 	for _, p := range g.RemotePlayers() {
-		// game worlds are team specific:
-		if p.Team != local.Team || !isOverworldModule(p.Module) || p.Location&0x010000 != 0 || p.OverworldArea != m.area {
+		// game worlds are team specific; menus and text boxes ($0E) keep the log, like alttpo:
+		if p.Team != local.Team || !(isOverworldModule(p.Module) || p.Module == 0x0E) || p.Location&0x010000 != 0 || p.OverworldArea != m.area {
 			continue
 		}
 		rm := &p.Map16
@@ -397,6 +438,7 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	}
 
 	u = &map16Update{g: g, area: m.area, entries: entries, ends: ends}
+	log.Printf("alttp: map16: generating update for %d of %d pending changes\n", len(entries), len(list))
 
 	a = newEmitter()
 	a.Comment(fmt.Sprintf("map16 changes for area $%02x:", m.area))
@@ -415,7 +457,11 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.LDA_dp(0x8A)
 	a.CMP_imm16_w(m.area)
 	asmBNEFar(a, "m16_skip", "m16_area_ok")
-	a.Comment("$08 = row and $0A = column of $84 for the on-screen check:")
+	a.Comment("$06 = $0712 (0 in small areas, which are entirely in VRAM):")
+	a.LDA_abs(0x0712)
+	a.AND_imm16_w(0x00FF)
+	a.STA_dp(0x06)
+	a.Comment("$08 = row and $0A = column of $84 for the VRAM residency check:")
 	a.LDA_dp(0x84)
 	a.AND_imm16_w(0x1F80)
 	a.STA_dp(0x08)
@@ -452,23 +498,27 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.STX_abs(map16LogIndex)
 	a.TAX()
 	a.Label("m16_no_memo")
-	a.Comment("draw it if within 12 map16 rows/columns before or 15 after $84; VRAM holds 32x32 map16 tiles:")
+	a.Comment("small areas never stream tiles while scrolling; always draw:")
+	a.LDA_dp(0x06)
+	a.BEQ("m16_draw")
+	a.Comment("large areas: draw if within 7 map16 rows/columns before or 23 after $84, which VRAM always holds:")
 	a.TXA()
 	a.AND_imm16_w(0x1F80)
 	asmSEC(a)
 	asmSBC_dp(a, 0x08)
 	a.CLC()
-	asmADC_imm16(a, 12<<7)
-	a.CMP_imm16_w(28 << 7)
+	asmADC_imm16(a, 7<<7)
+	a.CMP_imm16_w(31 << 7)
 	a.BCS("m16_offscreen")
 	a.TXA()
 	a.AND_imm16_w(0x007E)
 	asmSEC(a)
 	asmSBC_dp(a, 0x0A)
 	a.CLC()
-	asmADC_imm16(a, 12<<1)
-	a.CMP_imm16_w(28 << 1)
+	asmADC_imm16(a, 7<<1)
+	a.CMP_imm16_w(31 << 1)
 	a.BCS("m16_offscreen")
+	a.Label("m16_draw")
 	a.LDA_dp(0x0E)
 	a.JSL(fnDraw)
 	a.SEP(0x20)

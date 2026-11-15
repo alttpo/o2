@@ -14,6 +14,10 @@ const (
 	m16Bush     = uint16(0x0DC7)
 	m16Drawn    = uint32(0x14000) // test stub marks drawn tiles at $7F4000,X
 	m16ScrollAt = uint16(0x0390)
+	// a position in VRAM 20 rows below $84 (row 7, column 8) and one at the far side of a small area:
+	m16PosLow      = uint16(0x0D90)
+	m16PosSmallFar = uint16(0x0F3C)
+	m16ScreenSize  = uint32(0x0712)
 )
 
 // newM16Scenario stubs Overworld_DrawMap16_Persist to write the tile to $7E2000,X and mark it drawn at $7F4000,X.
@@ -41,6 +45,8 @@ func (h *skScenario) inArea(i int, area uint16) {
 	e.WRAM[0x8B] = 0
 	e.WRAM[0x84] = uint8(m16ScrollAt & 0xFF)
 	e.WRAM[0x85] = uint8(m16ScrollAt >> 8)
+	// a large area (Overworld_LoadGFXAndScreenSize):
+	e.WRAM[m16ScreenSize] = 0x20
 	e.WRAM[map16LogIndex] = 0
 	e.WRAM[map16LogIndex+1] = 0
 	for o := uint32(0); o < 0x4000; o++ {
@@ -121,6 +127,33 @@ func TestMap16Scenario_OffScreenNotDrawn(t *testing.T) {
 	h.changeMap16(0, m16PosFar, m16Bush)
 	h.frames(skSettleFrames)
 	h.expectTile("far away", 1, m16PosFar, m16Bush, false)
+}
+
+func TestMap16Scenario_InVRAMBelowScreenDrawn(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	// VRAM holds rows -7..+24 of $84 in large areas; this tile is in VRAM, so it must be drawn there:
+	h.changeMap16(0, m16PosLow, m16Bush)
+	h.frames(skSettleFrames)
+	h.expectTile("in VRAM below the screen", 1, m16PosLow, m16Bush, true)
+}
+
+func TestMap16Scenario_SmallAreaAlwaysDrawn(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	for _, gs := range h.gs {
+		// small areas are entirely in VRAM and never stream tiles while scrolling:
+		gs.e.WRAM[m16ScreenSize] = 0
+	}
+	h.frames(skSettleFrames)
+
+	h.changeMap16(0, m16PosSmallFar, m16Bush)
+	h.frames(skSettleFrames)
+	h.expectTile("small area", 1, m16PosSmallFar, m16Bush, true)
 }
 
 func TestMap16Scenario_OtherArea(t *testing.T) {
@@ -206,5 +239,92 @@ func TestMap16Scenario_OtherTeam(t *testing.T) {
 	h.frames(skSettleFrames)
 	if h.wramU16(1, 0x2000+uint32(m16Pos)) != 0 {
 		t.Errorf("other team: g2: expected the tile unchanged")
+	}
+}
+
+func TestMap16Scenario_ManyChangesWhileAway(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16OtherArea)
+	h.frames(skSettleFrames)
+
+	// g1 lifts a semicircle of rocks while g2 is elsewhere; g2 then enters the area and must take all of them:
+	const n = 10
+	for k := 0; k < n; k++ {
+		h.changeMap16(0, m16Pos+uint16(k<<1), m16Bush)
+	}
+	h.frames(skSettleFrames)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames * 3)
+	for k := 0; k < n; k++ {
+		h.expectTile("entered area", 1, m16Pos+uint16(k<<1), m16Bush, true)
+	}
+}
+
+func TestMap16Scenario_RemoteInMenu(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16OtherArea)
+	h.frames(skSettleFrames)
+
+	h.changeMap16(0, m16Pos, m16Bush)
+	h.frames(skSettleFrames)
+	// g1 opens the item menu; g2 then enters the area and must still take g1's changes:
+	h.gs[0].e.WRAM[skModule] = 0x0E
+	h.frames(2)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames * 2)
+	h.expectTile("g1 in menu", 1, m16Pos, m16Bush, true)
+}
+
+func TestMap16Scenario_ExitDungeonIntoArea(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inRoom(1, 0x0083)
+	h.frames(skSettleFrames)
+
+	// g1 lifts a semicircle of rocks while g2 is in a dungeon; g2 then exits into the area:
+	stones := []uint16{0x02A2, 0x02A8, 0x0324, 0x0326}
+	for _, pos := range stones {
+		h.changeMap16(0, pos, 0x0DC4)
+		h.frames(4)
+	}
+	h.frames(skSettleFrames)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames * 3)
+	for _, pos := range stones {
+		h.expectTile("exited dungeon", 1, pos, 0x0DC4, true)
+	}
+}
+
+func TestMap16Scenario_WithPaletteUpdate(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inRoom(1, 0x0083)
+	h.frames(skSettleFrames)
+
+	stones := []uint16{0x02A2, 0x02A8, 0x0324, 0x0326}
+	for _, pos := range stones {
+		h.changeMap16(0, pos, 0x0DC4)
+	}
+	h.frames(skSettleFrames)
+
+	// g2 exits into the area while its tunic colors need updating too (the area load reloads the palette), which
+	// together with the map16 routine does not fit in one update routine:
+	g := h.gs[1].g
+	g.SyncTunicColor = true
+	g.local.PlayerColor = 0x5CD2
+	h.inArea(1, m16Area)
+	// hold off updates (Link frozen) until g2 has g1's log, so that both are due in the same update:
+	e := h.gs[1].e
+	e.WRAM[0x02E4] = 1
+	h.frames(skSettleFrames)
+	e.WRAM[0x02E4] = 0
+	h.frames(skSettleFrames * 3)
+	for _, pos := range stones {
+		h.expectTile("exited dungeon", 1, pos, 0x0DC4, true)
+	}
+	if c := h.wramU16(1, 0xC6F8); c != 0x5CD2 {
+		t.Errorf("g2: expected tunic color $5cd2; got $%04x", c)
 	}
 }

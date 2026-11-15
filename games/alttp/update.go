@@ -316,6 +316,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		updated16 := false
 		gen16Index := genIndex
 		asm16Confirmers := make([]games.AsmExecConfirmer, 0, 20)
+		// run once the 16-bit section is committed; the whole section is dropped if it does not fit, and routines
+		// waiting for confirmation of a dropped routine would wait forever:
+		var commit16 []func()
 
 		// clone to a temporary assembler for 16-bit mode:
 		tmp := [0x400]byte{}
@@ -358,10 +361,13 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// apply map16 changes made by players in the same overworld area:
 		if g.SyncOverworld {
 			if u, ta := g.generateMap16Update(newEmitter, gen16Index); u != nil {
+				if n := ta.Len() + a16.Len() + a.Len() + epilogSize; n > 255 {
+					log.Printf("alttp: map16: update routine too big: %d + %d + %d + %d = %d > 255\n", ta.Len(), a16.Len(), a.Len(), epilogSize, n)
+				}
 				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
 					gen16Index++
 					asm16Confirmers = append(asm16Confirmers, u)
-					g.map16.inflight = u
+					commit16 = append(commit16, func() { g.map16.inflight = u })
 
 					a16.Append(ta)
 					updated16 = true
@@ -375,7 +381,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
 					gen16Index++
 					asm16Confirmers = append(asm16Confirmers, u)
-					g.manip.inflight = u
+					commit16 = append(commit16, func() { g.manip.inflight = u })
 
 					a16.Append(ta)
 					updated16 = true
@@ -435,6 +441,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				canUpdate = true
 			}
 
+			// emit into a scratch assembler and append it below only if it fits in the remaining space:
+			outer16 := a16
+			a16 := newEmitter()
 			if canUpdate && currentColorC != lightColor {
 				// link palette occupies last 16 colors of palette copy in WRAM ($7EC6E0..FF):
 				// $7EC4E0..FF is a second copy of the palette used for restoring colors during special effects
@@ -471,9 +480,14 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// TODO: is this safe to do as a 16-bit operation? should be fine for 99.9998% of the time.
 				a16.INC_dp(0x15)
 
-				updated16 = true
-				g.colorPendingUpdate = 4
-				g.colorUpdatedTo = lightColor
+				if a16.Len()+outer16.Len()+a.Len()+epilogSize <= 255 {
+					outer16.Append(a16)
+					updated16 = true
+					commit16 = append(commit16, func() {
+						g.colorPendingUpdate = 4
+						g.colorUpdatedTo = lightColor
+					})
+				}
 			}
 		}
 
@@ -486,9 +500,14 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// commit the changes to the parent assembler:
 				asmConfirmers = append(asmConfirmers, asm16Confirmers...)
 				genIndex = gen16Index
+				for _, f := range commit16 {
+					f()
+				}
 
 				a.Append(a16)
 				updated = true
+			} else {
+				log.Printf("alttp: update: 16-bit section too big: %d + %d + %d > 255; dropped\n", a.Len(), a16.Len(), epilogSize)
 			}
 		}
 	}
