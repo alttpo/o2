@@ -306,7 +306,7 @@ func TestAlttpoCompat_ManipFromAlttpo(t *testing.T) {
 		p := newAlttpoPacket(3, frame)
 		p.location(0x07, skEastern, 0x010000|uint32(mnRoom), 0, 0)
 		// StarSwitchLocal::serialize then ManipSync::serialize:
-		p.u8(0x05, 0x01).u16(starSwitchOffs).u32(0).u16(0)
+		p.u8(0x19).u16(mnRoom).u32(0).u8(0, 0)
 		p.u8(0x18).u16(mnRoom).u8(1).u16(pot.typ).u16(pot.objx).u16(pot.pos).u8(flags)
 		if flags&manipFlagTiles != 0 {
 			for _, tile := range pot.tiles {

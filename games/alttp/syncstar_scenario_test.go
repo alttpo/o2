@@ -103,7 +103,7 @@ func TestStarSwitchScenario_OtherRoom(t *testing.T) {
 	h.stepOnStar(0, ssOverlayB)
 	h.settleStar(skSettleFrames)
 	h.expectStar("other room", star(1, ssOverlayB), star(0, 0))
-	if h.gs[1].g.players[0].WRAM[starSwitchOffs] != nil {
+	if h.gs[1].g.players[0].Star.valid {
 		t.Errorf("g2: expected star switch state only to be sent to players in the same room")
 	}
 }
@@ -148,8 +148,8 @@ func TestAlttpoCompat_StarSwitchFromAlttpo(t *testing.T) {
 		frame++
 		p := newAlttpoPacket(3, frame)
 		p.location(0x07, skEastern, 0x010000|uint32(ssRoom), 0, 0)
-		// LocalGameState::serialize_star:
-		p.u8(0x05, 0x01).u16(starSwitchOffs).u32(ts).u16(value)
+		// StarSwitchLocal::serialize:
+		p.u8(0x19).u16(ssRoom).u32(ts).u8(uint8(value), uint8(value>>8))
 		p.name("alttpo")
 		p.send(t, g)
 	}
@@ -169,4 +169,61 @@ func TestAlttpoCompat_StarSwitchFromAlttpo(t *testing.T) {
 	send(star(1, ssOverlayB), ts)
 	h.settleStar(skSettleFrames)
 	h.expectStar("o2 stepped", star(0, ssOverlayA))
+}
+
+// sendAlttpoStar sends what an alttpo player at location sends: its location and, if room is not $FFFF, a star switch
+// message for that room.
+func sendAlttpoStar(t *testing.T, g *Game, frame uint8, location uint32, room uint16, value, overlay uint8, ts uint32) {
+	p := newAlttpoPacket(3, frame)
+	p.location(0x07, skEastern, location, 0, 0)
+	if room != 0xFFFF {
+		p.u8(0x19).u16(room).u32(ts).u8(value, overlay)
+	}
+	p.name("alttpo")
+	p.send(t, g)
+}
+
+// TestStarSwitchScenario_BaselineNeverWins: a player whose state in the room is only a baseline (timestamp 0) must
+// never make others draw holes, even with a higher value and the previous room's overlay (what alttpo used to send
+// right after a room change).
+func TestStarSwitchScenario_BaselineNeverWins(t *testing.T) {
+	h := newSSScenario(t, 1)
+	g := h.gs[0].g
+	h.inRoom(0, ssOtherRoom)
+	h.settleStar(skSettleFrames)
+
+	sendAlttpoStar(t, g, 1, 0x010000|uint32(ssOtherRoom), ssOtherRoom, 1, ssOverlayB, 0)
+	h.settleStar(skSettleFrames)
+	h.expectStar("baseline", star(0, 0))
+}
+
+// TestStarSwitchScenario_StaleRoomState: both players leave a room with star tiles for a room without; the other
+// player's last star state (from the previous room) must not be applied in the new room.
+func TestStarSwitchScenario_StaleRoomState(t *testing.T) {
+	h := newSSScenario(t, 1)
+	g := h.gs[0].g
+	h.inRoom(0, ssRoom)
+	h.settleStar(skSettleFrames)
+
+	ts := timestampFromTime(g.ServerSNESTimestamp()) - 1000
+	sendAlttpoStar(t, g, 1, 0x010000|uint32(ssRoom), ssRoom, 1, ssOverlayB, ts)
+	h.settleStar(skSettleFrames)
+	h.expectStar("alttpo stepped", star(1, ssOverlayB))
+
+	// o2 player falls into the room below, which keeps $04BC but not the overlay:
+	h.gs[0].e.WRAM[skSubModule] = 0x11
+	h.settleStar(2)
+	h.inRoom(0, ssOtherRoom)
+	h.gs[0].e.WRAM[starSwitchOffs] = 1
+	h.settleStar(skSettleFrames)
+
+	// the alttpo player's location changes before it sends anything for the new room:
+	sendAlttpoStar(t, g, 2, 0x010000|uint32(ssOtherRoom), 0xFFFF, 0, 0, 0)
+	h.settleStar(skSettleFrames)
+	h.expectStar("both in the other room", star(1, 0))
+
+	// a late star message for the previous room must not apply either:
+	sendAlttpoStar(t, g, 3, 0x010000|uint32(ssOtherRoom), ssRoom, 0, ssOverlayA, ts+1)
+	h.settleStar(skSettleFrames)
+	h.expectStar("late message", star(1, 0))
 }

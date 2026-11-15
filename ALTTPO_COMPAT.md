@@ -47,7 +47,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
-| 0x05 | WRAM syncables | yes (crystal switch `$C172`; star switch `$04BC` per sector) | yes (`$0400`, `$C172`; `$04BC` per sector) | `$C172`, `$04BC` used; others stored but unused |
+| 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$0400`, `$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
 | 0x08 | objects | no | no | reserved; not parsed by either |
@@ -67,6 +67,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x17 | overworld map16 changes | yes (per sector) | yes (per sector) | used |
 | 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
+| 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -168,19 +169,28 @@ sends and applies it when "Sync underworld" is enabled; alttpo when "Sync tilema
 o2 (`games/alttp/syncstar.go`) and alttpo (`StarSwitch.as`) share the star tile state `$7E04BC` of the current room as
 a last-writer-wins value. Stepping on a star tile (`RoomTag_TriggerHoles`) picks a hole overlay (`$04BA`), switches to
 submodule `$03` to draw it, toggles `$04BC` and swaps the star tile graphics (`ToggleStarTileGraphics`, `$00FDA7` in
-US, JP and VT ROMs; unknown for EU ROMs, where alttpo does not apply it). Every room load resets the state.
+US, JP and VT ROMs; unknown for EU ROMs, where alttpo does not apply it). Every room load clears the overlay
+(`Underworld_LoadRoom`) and most clear `$04BC` too (`ResetStarTileGraphics` in `Module07_02_01_LoadNextRoom` and
+`Underworld_InitializeRoomFromSpecial`), but falling through a hole (`Module07_11_02_LoadAndPrepRoom`) keeps `$04BC`
+and only re-toggles the graphics. During a room transition `$A0` already holds the new room while `$04BA` still holds
+the previous room's overlay.
 
-- **Message.** A 0x05 message (`count 1`, `offs $04BC`, `timestamp u32`, `value u16`) in a broadcastSector packet to
-  the player's own sector, sent every frame in the dungeon module. The value's low byte is `$04BC` and its high byte is
-  the overlay `$04BA`, which the receiver needs to draw the same holes. Older alttpo versions skip it.
+- **Message 0x19** (`room u16`, `timestamp u32`, `value u8` (`$04BC`), `overlay u8` (`$04BA`)) in a broadcastSector
+  packet to the player's own sector, sent every frame in the dungeon module once the state was sampled in that room.
+  The overlay is what the receiver needs to draw the same holes; the room says which room the state belongs to.
+  (Earlier versions sent the state as a 0x05 message for `$04BC` without the room. A receiver then paired a player's
+  new location with its last star state from the previous room, and alttpo sampled the previous room's overlay during
+  the transition, so both players moving from a room with star tiles into one without could draw the old holes there.)
 - **Local changes.** A change of `$04BC` in the dungeon module is timestamped only when it comes from stepping on a
   star tile: alttpo intercepts writes made in submodule `$03`; o2 polls during submodule 0 or `$03`. Room loads and
-  any change of room (`$A0`) only record a baseline, so a freshly loaded room never overwrites the group's state.
-  Leaving the dungeon module (except for the menus in `$0E`) forgets the timestamp.
+  any change of room (`$A0`) forget the state, and a new baseline with timestamp 0 is only taken in submodule 0 once
+  the room is loaded. Leaving the dungeon module (except for the menus in `$0E`) forgets it too.
 - **Applying.** In module `$07`, submodule 0, with no animation (`$0112` = 0), take the state of the remote player on
-  the same team, in module `$07` and in the same room with the latest timestamp (or, on a tie with our own timestamp,
-  a higher value). If `$04BC` differs, do what stepping on the star tile does: set `$04BA` and `$04BC`, clear
-  `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
+  the same team, in module `$07` and in the same room, sent for that room, with the latest nonzero timestamp (or, on a
+  tie with our own timestamp, a higher value). A timestamp of 0 means the player did not step on a star tile during
+  this room visit, so it never wins. A player's star state is dropped whenever its location changes, so a state from an
+  earlier visit to the room is never used. If `$04BC` differs, do what stepping on the star tile does: set `$04BA` and
+  `$04BC`, clear `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
 - **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
 
@@ -237,7 +247,8 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   then either is drawn at the new position (tiles `$0922`/`$0932`/`$0923`/`$0933`, attribute `$27`, state `$FFFF`),
   toggles the switch (`$0466`) under it, or falls into a pit, recording the room below (`$7EC000`) and position in
   the push block table.
-- **Message 0x18**, broadcastSector, in the same packet as the star switch state: `room u16`, `count u8`, then per
+- **Message 0x18**, broadcastSector, in the same packet as the star switch state (dropped, like 0x17, whenever the
+  sender's location changes): `room u16`, `count u8`, then per
   slot `type u16`, `objx u16`, `pos u16`, `flags u8` (bit 0: revealed, bit 1: four replacement tiles `u16` follow).
 - **Sampling.** In the dungeon module during submodule 0. A change of room, of the slot count or of any `$0520` starts
   a new baseline; leaving the dungeon module (except for the menus) forgets the room. An object counts as revealed once

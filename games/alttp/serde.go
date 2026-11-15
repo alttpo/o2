@@ -45,6 +45,7 @@ const (
 	MsgNakUniqTiles     MessageType = 0x16
 	MsgMap16            MessageType = 0x17 // overworld map16 change log, broadcastSector; see syncmap16.go
 	MsgManip            MessageType = 0x18 // underworld manipulable objects, broadcastSector; see syncmanip.go
+	MsgStarSwitch       MessageType = 0x19 // star switch state of a room, broadcastSector; see syncstar.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -80,6 +81,7 @@ func (g *Game) initSerde() {
 		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
 		MsgMap16:            g.DeserializeMap16,
 		MsgManip:            g.DeserializeManip,
+		MsgStarSwitch:       g.DeserializeStarSwitch,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -218,6 +220,10 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 
 	if p.Location != lastLocation {
 		g.shouldUpdatePlayersList = true
+		// room and area specific state received so far belongs to the previous location:
+		p.Star.valid = false
+		p.Manip.reset()
+		p.Map16.reset(0)
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {

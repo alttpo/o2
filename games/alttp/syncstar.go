@@ -12,22 +12,35 @@ import (
 //
 // Star tiles (Misery Mire, Turtle Rock, ...) open and close holes in the current room. Stepping on a star tile
 // (RoomTag_TriggerHoles) picks the hole overlay for the tile ($04BA), toggles the star tile state $04BC, swaps the star
-// tile graphics (ToggleStarTileGraphics) and switches to submodule $03 which draws the overlay. The state is reset
-// whenever a room is loaded, so it only means something for the current room. It is shared with alttpo
-// (LocalGameState.as `star`) as a last-writer-wins value:
+// tile graphics (ToggleStarTileGraphics) and switches to submodule $03 which draws the overlay. The state only means
+// something for the current room: every room load clears the overlay $04BA (Underworld_LoadRoom), and most of them
+// clear $04BC too (ResetStarTileGraphics), but falling through a hole (Module07_11) keeps $04BC. It is shared with
+// alttpo (StarSwitch.as) as a last-writer-wins value:
 //
-//   - It is sent in a WRAM syncables message (0x05) for offset $04BC in a broadcastSector packet to the current room's
-//     sector. The u16 value carries $04BC in the low byte and the overlay $04BA in the high byte, which a remote player
-//     needs to draw the same holes.
+//   - It is sent in message 0x19 (`room u16`, `timestamp u32`, `value u8` ($04BC), `overlay u8` ($04BA)) in a
+//     broadcastSector packet to the current room's sector, only once it was sampled in that room. The room tells
+//     receivers which room the state belongs to, since the sender's location and its last star message can be from
+//     different rooms for a while. A receiver also drops a player's star state whenever that player's location changes.
 //   - Changes are only sampled in the dungeon module ($07) during submodule 0 or $03 (stepping on a star tile). Room
-//     loads happen in other submodules, and a change of room ($A0) only records a new baseline.
+//     loads happen in other submodules (and still hold the previous room's overlay), and a change of room ($A0) only
+//     records a new baseline with timestamp 0.
 //   - While in the dungeon module with submodule 0 and no animation running ($0112), take the state of the remote
-//     player in the same room and in the dungeon module with the latest timestamp (or, on a timestamp tie, a higher
-//     value). If it differs from ours, do what stepping on the star tile does: set $04BA and $04BC, swap the star tile
-//     graphics and switch to submodule $03.
+//     player in the same room and in the dungeon module with the latest nonzero timestamp (or, on a tie with our own
+//     timestamp, a higher value). A timestamp of 0 means the player did not step on a star tile in this room visit, so
+//     such a state never wins. If it differs from ours, do what stepping on the star tile does: set $04BA and $04BC,
+//     swap the star tile graphics and switch to submodule $03.
 
 const starSwitchOffs = uint16(0x04BC)
 const starOverlayOffs = uint16(0x04BA)
+
+// starSwitchRemote is a remote player's star switch state as received.
+type starSwitchRemote struct {
+	valid   bool
+	room    uint16
+	ts      uint32
+	value   uint8
+	overlay uint8
+}
 
 // starSwitchLocal tracks the local player's star switch state.
 type starSwitchLocal struct {
@@ -128,18 +141,18 @@ func (g *Game) starSwitchWinner() (winner *Player, value, overlay uint8, ts uint
 		if p.Module != 0x07 || p.Location&0x010000 == 0 || p.DungeonRoom != ss.room {
 			continue
 		}
-		w, ok := p.WRAM[starSwitchOffs]
-		if !ok || w == nil {
+		rs := &p.Star
+		if !rs.valid || rs.room != ss.room || rs.ts == 0 {
+			// not from this room, or nobody stepped on a star tile there:
 			continue
 		}
 
-		rv, rts := uint8(w.Value), w.Timestamp
-		if rts > tsCompare {
-			winner, value, overlay, ts = p, rv, uint8(w.Value>>8), rts
-			tsCompare = rts
-		} else if rts == ss.ts && rv > ss.value {
-			// same as alttpo's SyncableByte.compareTo; somebody may have a larger value that we overwrote:
-			winner, value, overlay, ts = p, rv, uint8(w.Value>>8), rts
+		if rs.ts > tsCompare {
+			winner, value, overlay, ts = p, rs.value, rs.overlay, rs.ts
+			tsCompare = rs.ts
+		} else if rs.ts == ss.ts && rs.value > ss.value {
+			// somebody may have a larger value that we overwrote:
+			winner, value, overlay, ts = p, rs.value, rs.overlay, rs.ts
 		}
 	}
 	return
@@ -273,29 +286,29 @@ func (g *Game) generateStarSwitchUpdate(newEmitter func() *asm.Emitter, index ui
 	return
 }
 
-// SerializeStarSwitch writes the star switch state as a WRAM syncables message (0x05) like alttpo's
-// LocalGameState::serialize_star; the value's low byte is $04BC and its high byte is $04BA.
+// SerializeStarSwitch writes message 0x19 with the star switch state, if it was sampled in the current room.
 func (g *Game) SerializeStarSwitch(w io.Writer) (err error) {
 	ss := &g.starSwitch
-	value, ts := uint16(ss.value)|uint16(ss.overlay)<<8, ss.ts
 	if !ss.valid {
-		value, ts = 0, 0
-	}
-
-	if err = binary.Write(w, binary.LittleEndian, uint8(MsgWRAM)); err != nil {
 		return
 	}
-	if err = binary.Write(w, binary.LittleEndian, uint8(1)); err != nil {
-		return
-	}
-	if err = binary.Write(w, binary.LittleEndian, starSwitchOffs); err != nil {
-		return
-	}
-	if err = binary.Write(w, binary.LittleEndian, ts); err != nil {
-		return
-	}
-	if err = binary.Write(w, binary.LittleEndian, value); err != nil {
-		return
-	}
+	b := []byte{uint8(MsgStarSwitch), uint8(ss.room), uint8(ss.room >> 8)}
+	b = binary.LittleEndian.AppendUint32(b, ss.ts)
+	b = append(b, ss.value, ss.overlay)
+	_, err = w.Write(b)
 	return
+}
+
+func (g *Game) DeserializeStarSwitch(p *Player, r io.Reader) (err error) {
+	var m struct {
+		Room    uint16
+		Ts      uint32
+		Value   uint8
+		Overlay uint8
+	}
+	if err = binary.Read(r, binary.LittleEndian, &m); err != nil {
+		return fmt.Errorf("error deserializing star switch: %w", err)
+	}
+	p.Star = starSwitchRemote{valid: true, room: m.Room, ts: m.Ts, value: m.Value, overlay: m.Overlay}
+	return nil
 }

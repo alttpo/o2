@@ -151,6 +151,7 @@ type Player struct {
 	// overworld map16 change log and underworld manipulable objects, sent to players in the same area or room:
 	Map16 map16Remote
 	Manip manipRemote
+	Star  starSwitchRemote
 
 	showJoinMessage bool
 

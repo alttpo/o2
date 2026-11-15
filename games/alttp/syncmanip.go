@@ -102,6 +102,11 @@ type manipRemote struct {
 	slots [manipSlots]manipRemoteSlot
 }
 
+func (r *manipRemote) reset() {
+	r.room = 0
+	r.n = 0
+}
+
 func manipIsPushBlock(t uint16) bool { return t < 0x0010 || t == 0xFFFF }
 
 // manipIsLiftable is true for pots, big gray rocks and hammer pegs, which are revealed by RoomDraw_16x16Single.
