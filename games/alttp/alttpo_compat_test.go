@@ -129,6 +129,9 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			skip(int(u8()) * 2)
 		case 0x0C: // name
 			skip(20)
+		case 0x82: // small keys
+			skip(4)
+			skip(int(u8()) * 7)
 		case 0x15: // uniqtiles
 			n := int(u8())
 			for i := 0; i < n; i++ {
@@ -200,11 +203,11 @@ func (p *alttpoPacket) sram(start uint16, data []byte) *alttpoPacket {
 	return p
 }
 
-func (p *alttpoPacket) smallKeys(ts uint32, values [16]uint8) *alttpoPacket {
-	p.u8(0x05, 0x10)
-	p.u16(smallKeyFirst)
-	for _, v := range values {
-		p.u32(ts).u16(uint16(v))
+// smallKeyDeltas follows alttpo's SmallKeysLocal::serialize (SmallKeys.as).
+func (p *alttpoPacket) smallKeyDeltas(session uint32, net [16]int16, value [16]uint8, ts [16]uint32) *alttpoPacket {
+	p.u8(0x82).u32(session).u8(16)
+	for k := 0; k < 16; k++ {
+		p.u16(uint16(net[k])).u8(value[k]).u32(ts[k])
 	}
 	return p
 }
@@ -334,9 +337,11 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		p.u8(0x09, 2, 0x81).zeros(0x20).u8(0x06).zeros(0x16)
 		// crystal switch:
 		p.u8(0x05, 0x01).u16(0xC172).u32(5).u16(1)
-		var keys [16]uint8
-		keys[2] = 3
-		p.smallKeys(0x01020304, keys)
+		var net [16]int16
+		var value [16]uint8
+		var ts [16]uint32
+		value[2] = 3
+		p.smallKeyDeltas(0x01020304, net, value, ts)
 		p.send(t, g)
 	}
 
@@ -347,8 +352,8 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 	if rp.Module != 0x07 || rp.Location != 0x010012 || rp.X != 0x1234 || rp.Y != 0x5678 || rp.Dungeon != 0x04 {
 		t.Errorf("unexpected remote location: module=%02x location=%06x x=%04x y=%04x dungeon=%02x", rp.Module, rp.Location, rp.X, rp.Y, rp.Dungeon)
 	}
-	if w := rp.WRAM[smallKeyFirst+2]; w == nil || w.Value != 3 || w.Timestamp != 0x01020304 {
-		t.Errorf("expected remote Eastern Palace small keys = 3 @ 01020304; got %+v", w)
+	if rk := rp.SmallKeys; !rk.valid || rk.session != 0x01020304 || rk.value[2] != 3 {
+		t.Errorf("expected remote small keys session 01020304 with Eastern Palace = 3; got %+v", rk)
 	}
 
 	// sprites packet with chr data, palettes and uniqtile indices, followed by uniqtiles and a NAK:
@@ -509,4 +514,58 @@ func TestAlttpoCompat_BroadcastSector(t *testing.T) {
 			t.Errorf("broadcastSector(%06x) = %06x; want %06x", tc.location, got, tc.want)
 		}
 	}
+}
+
+// TestAlttpoCompat_SmallKeyDeltasFromAlttpo verifies o2 applies small key deltas sent by alttpo, which sends message
+// 0x82 in its main packet alongside other messages.
+func TestAlttpoCompat_SmallKeyDeltasFromAlttpo(t *testing.T) {
+	h := newSKScenario(t, 1)
+	g := h.gs[0].g
+	h.inDungeon(0, 1)
+	h.frames(8)
+
+	var (
+		net   [16]int16
+		value [16]uint8
+		ts    [16]uint32
+	)
+	for k := range value {
+		value[k] = 0xFF
+	}
+	value[2] = 1
+
+	frame := uint8(0)
+	send := func() {
+		frame++
+		p := newAlttpoPacket(3, frame)
+		p.location(0x07, 0x04, 0x010012, 0, 0)
+		p.smallKeyDeltas(0x12345678, net, value, ts)
+		p.name("alttpo")
+		p.send(t, g)
+	}
+
+	// first message only establishes a baseline:
+	send()
+	h.frames(8)
+	if name := g.players[3].Name(); name != "alttpo" {
+		t.Fatalf("expected parsing to continue past small keys; name = %q", name)
+	}
+	h.expectKeys("baseline", 1)
+
+	// alttpo player picks up a key:
+	net[2], value[2], ts[2] = 1, 2, 1000
+	send()
+	h.frames(8)
+	h.expectKeys("alttpo pickup", 2)
+
+	// alttpo player spends two keys:
+	net[2], value[2], ts[2] = -1, 0, 2000
+	send()
+	h.frames(8)
+	h.expectKeys("alttpo spend", 0)
+
+	// repeated messages without changes don't apply anything:
+	send()
+	h.frames(8)
+	h.expectKeys("no change", 0)
 }

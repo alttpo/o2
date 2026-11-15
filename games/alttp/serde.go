@@ -45,12 +45,12 @@ const (
 	MsgNakUniqTiles     MessageType = 0x16
 )
 
-// o2-only message types. alttpo stops parsing a packet at the first message type it does not understand, so these
-// must only be sent in their own packets, separate from message types alttpo uses; see makeO2BroadcastMessage.
+// o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
+// these are sent in their own packets, separate from message types alttpo uses; see makeO2BroadcastMessage.
 const (
-	MsgO2RunTimes MessageType = 0x80
-	MsgReset      MessageType = 0x81
-	MsgSmallKeys  MessageType = 0x82
+	MsgO2RunTimes MessageType = 0x80 // o2-only
+	MsgReset      MessageType = 0x81 // o2-only
+	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error

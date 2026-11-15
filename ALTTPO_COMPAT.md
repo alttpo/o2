@@ -46,7 +46,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
-| 0x05 | WRAM syncables | yes | yes | small keys used; others stored but unused |
+| 0x05 | WRAM syncables | yes (crystal switch) | yes (`$0400`) | stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | yes | no | parsed, ignored |
 | 0x08 | objects | no | no | reserved; not parsed by either |
@@ -66,9 +66,9 @@ Values match alttpo's `GameState::deserialize`.
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
-| 0x82 | o2: small keys (delta based) | n/a | yes, **own packet** | used |
+| 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
 
-o2-only message types start at `0x80` and must only be sent in their own packets (`Game.makeO2BroadcastMessage`),
+Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
 cannot know its length) and does not log types `>= 0x80`; older alttpo versions kept reading the following bytes as
 more messages, which corrupted the rest of the packet.
@@ -105,10 +105,6 @@ more messages, which corrupted the rest of the packet.
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards. alttpo sends the
   crystal switch state `$C172`, which o2 stores but does not sync.
-- **Small key timestamps:** both sync small keys as last-writer-wins `(timestamp u32, value u16)` entries for
-  `$F37C..$F38B` in a 0x05 message, so the formats are compatible. alttpo timestamps come from the local wall clock
-  (`chrono::realtime::millisecond`); o2's come from its estimate of the server clock. Clock skew between alttpo
-  machines can misorder concurrent changes.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
   test for one item; the rules were not compared item by item.
@@ -121,22 +117,27 @@ more messages, which corrupted the rest of the packet.
   acknowledge, and alttpo players keep broadcasting their state, which o2 players accept again once the reset
   finalizes. A mixed group should reset alttpo players by hand at the same time.
 
-## Bringing alttpo to delta small keys
+## Small keys
 
-To share small keys between o2 and alttpo players, alttpo would need to adopt o2's delta-based scheme:
+o2 (`games/alttp/syncsmallkeys.go`) and alttpo (`SmallKeys.as`) share small keys with the same delta-based scheme
+in message 0x82; alttpo no longer sends small keys as last-writer-wins entries in a 0x05 message.
 
-1. **Transport.** Done: alttpo now receives o2's 0x82 packets over protocol 04 (and currently ignores them) and has the
-   server clock (`server_now()`) needed for timestamps. Adding 0x82 to alttpo's `GameState::deserialize` is enough to
-   receive it.
-2. **Message format (0x82).** `session u32`, `count u8` (16), then per dungeon slot `$F37C+i`: `net i16` (cumulative
-   change made by that player this session), `value u8` (current count, `$FF` if unknown), `timestamp u32` (server
-   msec of the last change, 0 if none).
-3. **Receiving.** Track each remote `(player, session)`; the first message only records `net` as a baseline. After
-   that, add the difference in `net` to a pending adjustment for that dungeon. Never copy remote absolute values except
-   once when catching up (no history this session): adopt the value of the player with the latest timestamp, else
-   the highest value.
-4. **Local changes.** Read the live count from `$7EF36F` while in that dungeon (`$040C`, with Sewers `$00` and Hyrule
-   Castle `$02` sharing slot `$F37C`/`$F37D`), otherwise from the slot; the slot is stale inside the dungeon. Count only
-   changes not caused by sync writes. alttpo's bus write interceptors make this simpler than in o2: apply pending
-   adjustments as a read-modify-write during the frame (clamped to 0..99) and exclude those writes from capture.
-5. **Resets.** Start a new session (new random id, zero `net`) on reset or game reload.
+- **Message format (0x82).** `session u32`, `count u8` (16), then per dungeon slot `$F37C+i`: `net i16` (cumulative
+  change made by that player this session), `value u8` (current count, `$FF` if unknown), `timestamp u32` (server
+  msec of the last change, 0 if none). o2 sends it in its own packet; alttpo sends it in its main packet (only when
+  "Sync small keys" is enabled).
+- **Receiving.** Each remote `(player, session)` is tracked; the first message only records `net` as a baseline. After
+  that, the difference in `net` is added to a pending adjustment for that dungeon. Remote absolute values are only used
+  once when catching up (no history this session): adopt the value of the player with the latest timestamp, else the
+  highest value. alttpo only accepts changes from players on the same team.
+- **Local changes.** The live count is `$7EF36F` while in that dungeon (`$040C`, with Sewers `$00` and Hyrule Castle
+  `$02` sharing slot `$F37C`/`$F37D`), otherwise the slot; the slot is stale inside the dungeon. Both sample only in
+  modules `$07`/`$09`/`$0B` with submodule 0.
+- **Applying.** o2 applies pending adjustments with a generated read-modify-write routine that reports the value it
+  saw, confirmed asynchronously. alttpo runs between frames (`on_main_alttp`), so it applies the adjustment directly
+  with bus reads and writes, clamped to 0..99, and takes the written value as the new observed value.
+- **Sessions.** A new session (new id, zero `net`) starts on game reset or "fix small keys" (o2), and on connect,
+  disconnect or enabling "Sync small keys" (alttpo). Returning to the title/file select screens re-reads key counts
+  and catches up again without starting a new session.
+- **Timestamps** come from each client's estimate of the server clock (alttpo's `server_now()`, falling back to the
+  local clock until a server message has been received).

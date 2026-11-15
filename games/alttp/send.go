@@ -56,7 +56,7 @@ func (g *Game) sendPackets() {
 	}
 
 	{
-		// small keys; o2-only message (alttpo uses absolute small key values which are not compatible):
+		// small keys (delta based; shared with alttpo's SmallKeys.as), in their own packet:
 		m := g.makeO2BroadcastMessage()
 		if err := g.SerializeSmallKeys(m); err != nil {
 			panic(err)
