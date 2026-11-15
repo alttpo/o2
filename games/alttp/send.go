@@ -72,6 +72,10 @@ func (g *Game) sendPackets() {
 				panic(err)
 			}
 		}
+		// last, since older alttpo versions stop parsing at the first message type they don't know:
+		if err := g.SerializeRoomState(m); err != nil {
+			panic(err)
+		}
 		g.send(m)
 	}
 

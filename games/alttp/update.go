@@ -247,6 +247,17 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					updated = true
 				}
 			}
+			if u, ta := g.generateRoomStateUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= 255 {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.roomState.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
 			if u, ta := g.generateStarSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= 255 {

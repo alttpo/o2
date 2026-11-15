@@ -114,6 +114,7 @@ type Game struct {
 
 	crystalSwitch crystalSwitchLocal
 	starSwitch    starSwitchLocal
+	roomState     roomStateLocal
 
 	map16 map16Local
 	manip manipLocal
@@ -238,6 +239,7 @@ func (g *Game) FirstFrame() {
 	g.invalidateSmallKeys(false)
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetRoomState()
 	g.resetMap16()
 	g.resetManip()
 

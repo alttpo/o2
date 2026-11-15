@@ -152,6 +152,7 @@ type Player struct {
 	Map16 map16Remote
 	Manip manipRemote
 	Star  starSwitchRemote
+	Room  roomStateRemote
 
 	showJoinMessage bool
 

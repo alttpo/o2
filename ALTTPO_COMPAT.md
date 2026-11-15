@@ -23,7 +23,8 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state, overworld map16 changes and underworld manipulable objects (both), and sprites, torches and enemies (alttpo).
+state, room trap doors and key flags, overworld map16 changes and underworld manipulable objects (both), and sprites,
+torches and enemies (alttpo).
 Everything else is sent as broadcastAll.
 
 Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
@@ -68,6 +69,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x17 | overworld map16 changes | yes (per sector) | yes (per sector) | used |
 | 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
 | 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
+| 0x1A | room trap doors and key flags | yes (per sector) | yes (per sector) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -109,7 +111,8 @@ more messages, which corrupted the rest of the packet.
   one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to three
   one-byte attribute reads in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
-- **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards.
+- **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state, used for key doors between o2 players),
+  which alttpo discards.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
   test for one item; the rules were not compared item by item.
@@ -193,6 +196,40 @@ the previous room's overlay.
   `$04BC`, clear `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
 - **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
+
+## Room trap doors and key flags
+
+o2 (`games/alttp/syncroom.go`) and alttpo (`RoomState.as`) share two pieces of underworld state that only live in
+WRAM while the room is loaded; the SRAM room flags (`$7EF000`) only pick them up when a player leaves the room, so
+players in the same room did not see each other open trap doors, and a key taken by one player could still be taken by
+the other.
+
+- **Trap doors** (`$0468`, 0 = open, 1 = closed). Room tags open or close the shutters by changing it, clearing
+  `$068E`/`$0690` and switching to submodule `$05` (`OperateShutterDoors`), e.g. `RoomTag_SwitchTrigger_ToggleDoor`
+  for the switches hidden under pots in most rooms that have them, or the kill room tags. Room loads set it to 1, an
+  inter-room transition closes the shutters behind Link and an intra-room transition (submodule `$01`) opens and then
+  closes them.
+- **Key flags** (`$0403`, the room's chest/key/boss flags). Picking up a small or big key sprite (`$E4`/`$E5`) or a bonk
+  key (sprite `$3B` with `$0DC0` = 1, like the one on a Desert Palace torch) sets `$40` (key index 0) or `$20` (key
+  index 1), the index being the sprite's `$0CBA`. Key sprites remove themselves as soon as their flag is set; bonk keys
+  only check it when the room loads.
+- **Message 0x1A**, broadcastSector, last in the same packet as the star switch state (dropped whenever the sender's
+  location changes): `room u16`, `flags u8` (`$0403`), `doorTs u32`, `door u8` (`$0468`).
+- **Sampling.** In the dungeon module while `$A0` stays the same. The baseline is taken in submodule 0 (after the room
+  load), recording the time it was taken. A change of `$0468` seen in submodule 0, `$05` or `$17` (pressure plate) is
+  timestamped. A change of room, an intra-room transition or leaving the dungeon module (except for the menus) forgets
+  the state.
+- **Applying.** In submodule 0 of the dungeon module, from remote players on the same team in the same room whose
+  state was sampled there. Key flags `$40` (and `$20` when chests are synced, since it is also chest 5's flag) are OR'ed
+  into `$0403` and bonk keys of the new flags are removed (`$0DD0` cleared). Trap doors are last writer wins among
+  changes made after our own baseline, so only changes made while both players are in the room count; the winner's
+  state is written like a room tag does (`$0468`, clear `$068E`/`$0690`, SFX3 `$25`, submodule `$05`). Rooms with a
+  hold switch (`$16`), push block (`$0B`-`$13`) or torch puzzle (`$33`) door tag are skipped, since those tags recompute
+  `$0468` every frame from the local player's own switch, block or torches and would close the doors again.
+- **Settings.** o2 uses "Sync underworld" (and "Sync chests" for `$20`), alttpo "Sync tilemap" (and "Sync chests").
+- **Not synced.** Heart pieces in caves share the `$40`/`$20` flags but their sprites are not removed. Enemies are not
+  synced by o2, so a kill room opened by another player stays open even if its enemies are alive here, and keys
+  dropped by enemies get their index in the order they spawn, which can differ between players in rooms with two.
 
 ## Overworld map16 changes
 

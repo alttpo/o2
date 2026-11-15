@@ -64,6 +64,7 @@ func (g *Game) initSync() {
 	g.initSmallKeysSync()
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetRoomState()
 	g.local.WRAM[0x0400] = &SyncableWRAM{
 		g:         g,
 		Offset:    0x0400,
