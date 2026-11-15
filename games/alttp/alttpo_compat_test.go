@@ -6,18 +6,17 @@ import (
 	"fmt"
 	"io"
 	"o2/client"
-	"o2/client/protocol02"
-	"strings"
+	"o2/client/protocol04"
 	"testing"
 	"time"
 )
 
 // alttpoScriptProtocol is `script_protocol` from alttpo's GameState.as.
-const alttpoScriptProtocol = 0x17
+const alttpoScriptProtocol = 0x01
 
 // alttpoParse is a model of alttpo's `GameState::deserialize` (GameState.as) used to verify that the packets o2 sends
-// parse correctly in alttpo. alttpo does not stop on unknown message types (it logs and keeps reading the following
-// bytes as message types), so any unknown type is treated as a failure here. It returns the message types parsed.
+// parse correctly in alttpo. alttpo stops parsing a packet at the first unknown message type, so any unknown type is
+// treated as a failure here since the messages following it would be lost. It returns the message types parsed.
 func alttpoParse(r []byte) (types []uint8, err error) {
 	types, _, err = alttpoParseFull(r)
 	return
@@ -140,23 +139,22 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			}
 		default:
 			// alttpo also understands 0x0B, 0x0D-0x14 and 0x16 but o2 never sends them:
-			return types, parsed, fmt.Errorf("message type %#02x not expected from o2 (alttpo would misparse the rest)", t)
+			return types, parsed, fmt.Errorf("message type %#02x not expected from o2 (alttpo would drop the rest)", t)
 		}
 	}
 	return
 }
 
-// alttpoPacket builds a protocol 02 broadcast as relayed by the server from an alttpo client.
+// alttpoPacket builds a protocol 04 broadcast as relayed by the server from an alttpo client. The buffer holds the
+// broadcast data (game packet header and messages).
 type alttpoPacket struct {
 	bytes.Buffer
+
+	index uint16
 }
 
 func newAlttpoPacket(index uint16, frame uint8) *alttpoPacket {
-	p := &alttpoPacket{}
-	p.Write(client.MakePacket(0x02).Bytes())
-	p.WriteString(fmt.Sprintf("%-20s", "test"))
-	p.WriteByte(0x81)
-	p.u16(index)
+	p := &alttpoPacket{index: index}
 	// script protocol, team, frame:
 	p.WriteByte(alttpoScriptProtocol)
 	p.WriteByte(0)
@@ -211,16 +209,34 @@ func (p *alttpoPacket) smallKeys(ts uint32, values [16]uint8) *alttpoPacket {
 	return p
 }
 
+// packet wraps the broadcast data in a protocol 04 packet as the server relays it.
+func (p *alttpoPacket) packet(t *testing.T) []byte {
+	t.Helper()
+	b, err := protocol04.MakePacket(&protocol04.GroupMessage{
+		Group:          "test",
+		PlayerTime:     1,
+		ServerTime:     time.Now().UnixNano(),
+		PlayerIndex:    uint32(p.index),
+		PlayerInSector: 0x010012,
+		Kind:           protocol04.BroadcastAll,
+		Data:           p.Bytes(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 func (p *alttpoPacket) send(t *testing.T, g *Game) {
 	t.Helper()
-	if err := g.handleNetMessage(p.Bytes()); err != nil {
+	if err := g.handleNetMessage(p.packet(t)); err != nil {
 		t.Fatalf("o2 failed to handle alttpo packet: %v", err)
 	}
 }
 
 // TestAlttpoCompat_O2PacketsParseInAlttpo captures every packet o2 sends over several hundred frames and verifies that
-// all protocol 02 packets (which alttpo receives) parse completely under alttpo's rules, and that o2-only data only
-// travels in protocol 03 packets (which alttpo ignores).
+// all packets containing alttpo message types parse completely under alttpo's rules, and that o2-only message types
+// only travel in their own packets (which alttpo stops parsing at their first message).
 func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
 	if err != nil {
@@ -237,7 +253,7 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	gs.e.WRAM[0xF36F] = 1
 
 	seen := map[uint8]int{}
-	p2Count, p3Count := 0, 0
+	alttpoCount, o2Count := 0, 0
 	for f := 0; f < 256; f++ {
 		if f == 100 {
 			// o2-only reset messages must not reach alttpo:
@@ -251,43 +267,41 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 		for len(gs.c.Wr) > 0 {
 			b := <-gs.c.Wr
 			var proto uint8
-			rd, err := client.ParseHeader(b, &proto)
-			if err != nil {
+			if _, err := client.ParseHeader(b, &proto); err != nil {
 				t.Fatal(err)
 			}
-			body, _ := io.ReadAll(rd)
-			switch proto {
-			case 0x02:
-				p2Count++
-				var h protocol02.Header
-				br := bytes.NewReader(body)
-				if err := protocol02.Parse(br, &h); err != nil {
-					t.Fatal(err)
-				}
-				if h.Kind != protocol02.Broadcast {
-					t.Fatalf("unexpected protocol 02 kind %v", h.Kind)
-				}
-				if strings.TrimSpace(string(h.Group[:])) != "test" {
-					t.Fatalf("unexpected group %q", h.Group)
-				}
-				payload, _ := io.ReadAll(br)
-				types, err := alttpoParse(payload)
-				if err != nil {
-					t.Fatalf("alttpo would fail to parse o2 packet %x: %v", payload, err)
-				}
-				for _, ty := range types {
-					seen[ty]++
-				}
-			case 0x03:
-				p3Count++
-			default:
+			if proto != protocol04.Protocol {
 				t.Fatalf("unexpected server protocol %d", proto)
+			}
+			var gm protocol04.GroupMessage
+			if err := protocol04.Unmarshal(b[3:], &gm); err != nil {
+				t.Fatal(err)
+			}
+			if gm.Group != "test" {
+				t.Fatalf("unexpected group %q", gm.Group)
+			}
+			if gm.Kind != protocol04.BroadcastAll {
+				continue
+			}
+			payload := gm.Data
+			if len(payload) > 3 && payload[3] >= 0x80 {
+				// o2-only packet; alttpo stops parsing at its first message:
+				o2Count++
+				continue
+			}
+			alttpoCount++
+			types, err := alttpoParse(payload)
+			if err != nil {
+				t.Fatalf("alttpo would fail to parse o2 packet %x: %v", payload, err)
+			}
+			for _, ty := range types {
+				seen[ty]++
 			}
 		}
 	}
 
-	if p2Count == 0 || p3Count == 0 {
-		t.Fatalf("expected both protocol 02 and 03 packets; got %d and %d", p2Count, p3Count)
+	if alttpoCount == 0 || o2Count == 0 {
+		t.Fatalf("expected both alttpo and o2-only packets; got %d and %d", alttpoCount, o2Count)
 	}
 	for _, ty := range []uint8{0x01, 0x05, 0x06, 0x0C} {
 		if seen[ty] == 0 {
@@ -412,9 +426,8 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 	// a different script protocol version is ignored without taking down the game:
 	{
 		p := newAlttpoPacket(remote, 13)
-		b := p.Bytes()
-		b[len(client.MakePacket(0x02).Bytes())+20+1+2] = 0x16
-		if err := g.handleNetMessage(b); err == nil {
+		p.Bytes()[0] = 0x16
+		if err := g.handleNetMessage(p.packet(t)); err == nil {
 			t.Fatalf("expected a version mismatch error")
 		}
 	}
@@ -478,5 +491,22 @@ func TestAlttpoCompat_RemoteWithoutDoorState(t *testing.T) {
 		p.name("alttpo")
 		p.send(t, g)
 		gs.runFrame(t)
+	}
+}
+
+// TestAlttpoCompat_BroadcastSector verifies o2 reports the same server sector as alttpo's `broadcast_sector()`.
+func TestAlttpoCompat_BroadcastSector(t *testing.T) {
+	for _, tc := range []struct {
+		location uint32
+		want     uint64
+	}{
+		{0x000012, 0x000012}, // light world overworld
+		{0x020052, 0x020052}, // dark world overworld
+		{0x010012, 0x010012}, // underworld
+		{0x030012, 0x010012}, // underworld entered from the dark world
+	} {
+		if got := broadcastSector(tc.location); got != tc.want {
+			t.Errorf("broadcastSector(%06x) = %06x; want %06x", tc.location, got, tc.want)
+		}
 	}
 }

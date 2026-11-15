@@ -15,7 +15,7 @@ import (
 // when this matches.
 //
 // NOTE: coordinate with alttpo when the serialization code changes in an incompatible way
-const SerializationVersion = 0x17
+const SerializationVersion = 0x01
 
 type MessageType uint8
 
@@ -45,9 +45,8 @@ const (
 	MsgNakUniqTiles     MessageType = 0x16
 )
 
-// o2-only message types. alttpo stops understanding a packet at the first unknown message type (and misreads the rest
-// of it), so these must never be sent in packets alttpo receives. They are only sent in protocol 03 packets, which
-// alttpo ignores entirely; see makeO2BroadcastMessage.
+// o2-only message types. alttpo stops parsing a packet at the first message type it does not understand, so these
+// must only be sent in their own packets, separate from message types alttpo uses; see makeO2BroadcastMessage.
 const (
 	MsgO2RunTimes MessageType = 0x80
 	MsgReset      MessageType = 0x81

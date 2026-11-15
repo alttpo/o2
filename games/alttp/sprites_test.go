@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"o2/client"
-	"o2/client/protocol02"
+	"o2/client/protocol04"
 	"o2/snes"
 	"testing"
 
@@ -89,18 +89,20 @@ func (h *spriteTestRig) frames(n int) (parsed alttpoParsed) {
 		for len(h.gs.c.Wr) > 0 {
 			b := <-h.gs.c.Wr
 			var proto uint8
-			rd, err := client.ParseHeader(b, &proto)
-			if err != nil {
+			if _, err := client.ParseHeader(b, &proto); err != nil {
 				h.t.Fatal(err)
 			}
-			if proto != 0x02 {
+			if proto != protocol04.Protocol {
 				continue
 			}
-			var hdr protocol02.Header
-			if err := protocol02.Parse(rd, &hdr); err != nil {
+			var gm protocol04.GroupMessage
+			if err := protocol04.Unmarshal(b[3:], &gm); err != nil {
 				h.t.Fatal(err)
 			}
-			payload, _ := io.ReadAll(rd)
+			payload := gm.Data
+			if gm.Kind != protocol04.BroadcastAll || (len(payload) > 3 && payload[3] >= 0x80) {
+				continue
+			}
 			_, p, err := alttpoParseFull(payload)
 			if err != nil {
 				h.t.Fatalf("alttpo would fail to parse o2 packet: %v", err)

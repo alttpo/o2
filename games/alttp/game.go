@@ -51,9 +51,9 @@ type Game struct {
 	remotePlayers         []*Player
 	remoteSyncablePlayers []games.SyncablePlayer
 
-	lastServerTime     time.Time // server's clock when the echo message arrived at server
+	lastServerTime     time.Time // server's clock when the last received message passed through the server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
-	lastServerRecvTime time.Time // our local clock when we received the echo reply
+	lastServerRecvTime time.Time // our local clock when we received the last message
 
 	running bool
 	stopped chan struct{}

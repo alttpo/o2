@@ -5,11 +5,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/alttpo/snes/emulator"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"log"
 	"o2/client"
-	"o2/client/protocol03"
+	"o2/client/protocol04"
 	"o2/interfaces"
 	"o2/snes"
 	"reflect"
@@ -51,105 +50,44 @@ func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err
 	c := s.Clients[i]
 
 	var protocolVersion uint8
-	{
-		var r io.Reader
-		r, err = client.ParseHeader(b, &protocolVersion)
-		if err != nil {
-			return
-		}
-		b, err = io.ReadAll(r)
-		if err != nil {
-			return
-		}
-	}
-	if protocolVersion == 0x02 {
-		// relay protocol 02 broadcasts like o2-server does:
-		if len(b) < 23 {
-			return
-		}
-		group, kind, payload := b[:20], b[20], b[23:]
-		if kind&0x7F != 0x01 && kind&0x7F != 0x02 {
-			return
-		}
-		if kind&0x7F == 0x02 {
-			// skip sector:
-			payload = payload[4:]
-		}
-		for j := range s.Clients {
-			if j == i {
-				continue
-			}
-			pkt := client.MakePacket(0x02)
-			pkt.Write(group)
-			pkt.WriteByte(0x81)
-			pkt.WriteByte(byte(i))
-			pkt.WriteByte(byte(i >> 8))
-			pkt.Write(payload)
-			s.Clients[j].Rd <- pkt.Bytes()
-		}
+	if _, err = client.ParseHeader(b, &protocolVersion); err != nil {
 		return
 	}
-	if protocolVersion != protocol {
+	if protocolVersion != protocol04.Protocol {
 		return
 	}
 
-	gm := protocol03.GroupMessage{}
-	err = proto.Unmarshal(b, &gm)
-	if err != nil {
+	// handle the message like o2-server does:
+	gm := protocol04.GroupMessage{}
+	if err = protocol04.Unmarshal(b[3:], &gm); err != nil {
 		return
 	}
 
 	gm.PlayerIndex = uint32(i)
 	gm.ServerTime = s.Now.UnixNano()
 
-	if gm.GetJoinGroup() != nil || gm.GetEcho() != nil || gm.GetBroadcastSector() != nil {
-		pkt := client.MakePacket(protocol)
-		var rspBytes []byte
-		rspBytes, err = proto.Marshal(&gm)
-		if err != nil {
-			return
-		}
+	var pkt []byte
+	if pkt, err = protocol04.MakePacket(&gm); err != nil {
+		return
+	}
 
-		pkt.Write(rspBytes)
-
-		pname := ""
-		var pvalue any
-		if gm.GetJoinGroup() != nil {
-			pname = "joinGroup"
-			pvalue = gm.GetJoinGroup()
-		} else if gm.GetEcho() != nil {
-			pname = "echo"
-			pvalue = gm.GetEcho()
-		} else if gm.GetBroadcastSector() != nil {
-			pname = "broadcastSector"
-			pvalue = gm.GetBroadcastSector()
-		}
+	switch gm.Kind {
+	case protocol04.JoinGroup, protocol04.Echo:
 		if t != nil {
-			log.Printf("server: c[%d] %s\n", i, pname)
-			_ = pvalue
+			log.Printf("server: c[%d] %s\n", i, gm.Kind)
 		}
-
-		c.Rd <- pkt.Bytes()
-	} else if ba := gm.GetBroadcastAll(); ba != nil {
-
-		pkt := client.MakePacket(protocol)
-		var rspBytes []byte
-		rspBytes, err = proto.Marshal(&gm)
-		if err != nil {
-			return
-		}
-
-		pkt.Write(rspBytes)
+		c.Rd <- pkt
+	case protocol04.BroadcastAll, protocol04.BroadcastSector:
+		// TODO: only relay BroadcastSector to clients in the target sector
 		for j := range s.Clients {
 			if j == i {
 				continue
 			}
 
-			log.Printf("server: c[%d] -> c[%d] broadcastAll\n", i, j)
-			s.Clients[j].Rd <- pkt.Bytes()
+			log.Printf("server: c[%d] -> c[%d] %s\n", i, j, gm.Kind)
+			s.Clients[j].Rd <- pkt
 		}
 	}
-	// TODO: proper handling of GetBroadcastSector()
 
 	return
 }

@@ -1,30 +1,39 @@
 # Compatibility with alttpo
 
 o2 and the [alttpo](../alttpo/alttpo/) emulator scripts can join the same group on the alttp.online server and share
-game state. This note records what was changed in o2 to make that work and the discrepancies that remain. alttpo was
-not modified.
+game state. This note records what was changed to make that work and the discrepancies that remain.
 
 ## Transport
 
-| | alttpo | o2 |
-|---|---|---|
-| Server protocol | 02 only; silently ignores 03 | 03 for join/echo (server time); **02 for shared game state**; 03 for o2-only game state |
-| Group name | 20 bytes, space padded | 20 bytes, space padded (`protocol02.MakePacket` now enforces this) |
-| Player index | from protocol 02 `request_index` | from protocol 03 `joinGroup` |
+Both o2 and alttpo use server protocol 04 exclusively (`client/protocol04`, alttpo's `receive.as` and
+`LocalGameState::make_server_envelope`). Protocol 04 carries the same `GroupMessage` as protocol 03 but in a simple
+little-endian binary encoding instead of protobuf, which AngelScript can read and write easily:
 
-The server keeps one client table per group regardless of protocol but **does not translate between protocols**: a
-protocol 02 broadcast is relayed as protocol 02 and a protocol 03 broadcast as protocol 03. Because alttpo ignores
-protocol 03, o2 sends all shared game state as protocol 02 `broadcast` packets. o2 understands both protocols, so
-o2-to-o2 sync is unaffected. Both protocols address the same server client (same UDP socket), so indices agree.
+| Kind | Name | Body | Server response |
+|---|---|---|---|
+| 0x01 | joinGroup | (empty) | sent back to the sender with its player index |
+| 0x02 | broadcastAll | `u16 len`, data | relayed to all other clients in the group |
+| 0x03 | broadcastSector | `u64 targetSector`, `u16 len`, data | relayed to other clients whose `playerInSector` matches |
+| 0x04 | echo | `u16 len`, data | sent back to the sender |
 
-Protocol 02 packets carry no server time; o2 keeps its server clock in sync from the protocol 03 echo (every 500ms)
-and join responses only.
+Every message the server sends carries the sender's `playerIndex`, the sender's own clock (`playerTime`, Unix
+nanoseconds) and the server's clock (`serverTime`, Unix nanoseconds, stamped by the server). Both clients keep an
+estimate of the server clock from the last message received and send an echo every 500ms to keep it fresh even when
+alone in a group. alttpo stores `player_time` / `server_time` per remote player and exposes `server_now()`.
+
+Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
+world bit cleared in the underworld), so they agree on sectors. o2 only sends broadcastAll; alttpo sends some state
+(sprites, tilemaps, torches, enemies) as broadcastSector.
+
+Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
+between protocols and the game `script_protocol` was reset, so those versions cannot share a group with the current
+ones.
 
 ## Game packet header
 
 Both: `script protocol (u8)`, `team (u8)`, `frame (u8)`, then messages of `type (u8)` + payload.
 
-- `SerializationVersion` changed from `0x14` to `0x17` to match alttpo's `script_protocol`.
+- `SerializationVersion` and alttpo's `script_protocol` are both `0x01` (reset when moving to server protocol 04).
 - o2 used to `panic` (stopping its game loop) on a version mismatch or malformed packet. It now ignores such packets
   and logs (rate limited), like alttpo does.
 
@@ -55,13 +64,14 @@ Values match alttpo's `GameState::deserialize`.
 | 0x14 | overlord data | yes | no | skipped |
 | 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
-| 0x80 | o2: run times | n/a | yes, **protocol 03 only** | used |
-| 0x81 | o2: group reset state machine | n/a | yes, **protocol 03 only** | used |
-| 0x82 | o2: small keys (delta based) | n/a | yes, **protocol 03 only** | used |
+| 0x80 | o2: run times | n/a | yes, **own packet** | used |
+| 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
+| 0x82 | o2: small keys (delta based) | n/a | yes, **own packet** | used |
 
-o2-only message types start at `0x80` and must only be sent in protocol 03 packets
-(`Game.makeO2BroadcastMessage`). alttpo does not stop at an unknown message type: it logs it and keeps reading the
-following bytes as more messages, which corrupts the rest of the packet.
+o2-only message types start at `0x80` and must only be sent in their own packets (`Game.makeO2BroadcastMessage`),
+never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
+cannot know its length) and does not log types `>= 0x80`; older alttpo versions kept reading the following bytes as
+more messages, which corrupted the rest of the packet.
 
 ## Format differences fixed in o2
 
@@ -115,9 +125,9 @@ following bytes as more messages, which corrupts the rest of the packet.
 
 To share small keys between o2 and alttpo players, alttpo would need to adopt o2's delta-based scheme:
 
-1. **Transport.** alttpo only receives protocol 02, and current alttpo versions misread the rest of a packet after an
-   unknown message type. Before o2 can send 0x82 in protocol 02 packets, alttpo must either stop parsing at unknown
-   message types or o2 must only send it to alttpo versions that understand it (e.g. bump `script_protocol` together).
+1. **Transport.** Done: alttpo now receives o2's 0x82 packets over protocol 04 (and currently ignores them) and has the
+   server clock (`server_now()`) needed for timestamps. Adding 0x82 to alttpo's `GameState::deserialize` is enough to
+   receive it.
 2. **Message format (0x82).** `session u32`, `count u8` (16), then per dungeon slot `$F37C+i`: `net i16` (cumulative
    change made by that player this session), `value u8` (current count, `$FF` if unknown), `timestamp u32` (server
    msec of the last change, 0 if none).

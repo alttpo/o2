@@ -8,7 +8,6 @@ require (
 	github.com/alttpo/snes-devices v0.0.0-20261114222344-5b57803e09cb
 	github.com/gobwas/ws v1.4.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
-	google.golang.org/protobuf v1.36.10
 )
 
 require (
@@ -23,6 +22,7 @@ require (
 	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/grpc v1.76.0 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 )
 
 //replace github.com/getlantern/systray => github.com/alttpo/systray v1.3.5
