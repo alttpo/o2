@@ -26,6 +26,9 @@ type skScenario struct {
 	s  *testServer
 	gs []*gameSync
 	n  [][]string
+
+	// gameStripes is the size of the game's own VRAM stripes queued every frame (see settleStripes):
+	gameStripes uint8
 }
 
 func newSKScenario(t *testing.T, players int) *skScenario {

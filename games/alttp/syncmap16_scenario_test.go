@@ -328,3 +328,97 @@ func TestMap16Scenario_WithPaletteUpdate(t *testing.T) {
 		t.Errorf("g2: expected tunic color $5cd2; got $%04x", c)
 	}
 }
+
+// newM16StripeScenario is newM16Scenario with a draw stub that also uses $10 bytes of the VRAM stripe buffer ($1000)
+// per tile like Overworld_DrawMap16_Persist; settleStripes empties it like NMI does when $14 is set.
+func newM16StripeScenario(t *testing.T, players int) *skScenario {
+	t.Helper()
+	h := newSKScenario(t, players)
+	for _, gs := range h.gs {
+		addr := gs.g.romFunctions[fnOverworldDrawMap16Persist]
+		pak, _ := lorom.BusAddressToPak(addr)
+		copy(gs.e.ROM[pak:], []byte{
+			0x9F, 0x00, 0x20, 0x7E, // STA.l $7E2000,X
+			0x9F, 0x00, 0x40, 0x7F, // STA.l $7F4000,X
+			0xAF, 0x00, 0x10, 0x7E, // LDA.l $7E1000
+			0x18,             // CLC
+			0x69, 0x10, 0x00, // ADC #$0010
+			0x8F, 0x00, 0x10, 0x7E, // STA.l $7E1000
+			0x6B, // RTL
+		})
+	}
+	return h
+}
+
+func (h *skScenario) settleStripes(n int) {
+	for f := 0; f < n; f++ {
+		h.frame()
+		for _, gs := range h.gs {
+			if gs.e.WRAM[0x14] != 0 {
+				gs.e.WRAM[0x1000] = 0
+				gs.e.WRAM[0x1001] = 0
+				gs.e.WRAM[0x14] = 0
+			}
+			// the game's own stripes queued for the next frame:
+			if h.gameStripes != 0 {
+				gs.e.WRAM[0x1000] = h.gameStripes
+				gs.e.WRAM[0x14] = 1
+			}
+		}
+	}
+}
+
+func TestMap16Scenario_FullLogMakesProgress(t *testing.T) {
+	testMap16FullLog(t, 0)
+}
+
+func TestMap16Scenario_FullLogMakesProgressWithBusyStripes(t *testing.T) {
+	// only room for 3 tiles per frame; updates apply part of their changes and the rest later:
+	testMap16FullLog(t, 0x50)
+}
+
+func testMap16FullLog(t *testing.T, gameStripes uint8) {
+	h := newM16StripeScenario(t, 2)
+	h.gameStripes = gameStripes
+	h.inArea(0, m16Area)
+	h.inRoom(1, 0x0083)
+	h.settleStripes(skSettleFrames)
+
+	// g1 fills its whole log while g2 is in a dungeon; spread over the large area so some are in VRAM around $84
+	// (row 7, column 8) and some are not:
+	positions := make([]uint16, 0, map16LogMax)
+	for k := 0; k < map16LogMax; k++ {
+		row, col := uint16(k/16)*3, uint16(k%16)*4
+		positions = append(positions, row<<7|col<<1)
+	}
+	for _, pos := range positions {
+		h.changeMap16(0, pos, m16Bush)
+	}
+	if h.logLen(0) != map16LogMax {
+		t.Fatalf("g1: expected a full log of %d entries; got %d", map16LogMax, h.logLen(0))
+	}
+	h.settleStripes(skSettleFrames)
+
+	h.inArea(1, m16Area)
+	h.settleStripes(map16LogMax * 2)
+
+	s84 := m16ScrollAt
+	missing := 0
+	for _, pos := range positions {
+		dr := int(pos&0x1F80)>>7 - int(s84&0x1F80)>>7
+		dc := int(pos&0x007E)>>1 - int(s84&0x007E)>>1
+		inVRAM := dr >= -7 && dr < 24 && dc >= -7 && dc < 24
+		if h.wramU16(1, 0x2000+uint32(pos)) != m16Bush {
+			missing++
+			continue
+		}
+		h.expectTile("full log", 1, pos, m16Bush, inVRAM)
+	}
+	if missing > 0 {
+		t.Errorf("g2: %d of %d changes not applied", missing, len(positions))
+	}
+	// g2 passes them on in its own log:
+	if n := h.logLen(1); n != map16LogMax {
+		t.Errorf("g2: expected its log to hold all %d changes; got %d", map16LogMax, n)
+	}
+}
