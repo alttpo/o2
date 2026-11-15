@@ -3,10 +3,11 @@ package alttp
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/alttpo/snes/mapping/lorom"
 	"io"
 	"log"
 	"o2/snes"
+
+	"github.com/alttpo/snes/mapping/lorom"
 )
 
 // Link sprite sync (outgoing only)
@@ -55,8 +56,9 @@ type linkSpriteSync struct {
 	tileBankOK bool
 
 	// sprites sampled this frame and not yet sent:
-	sprites []linkSprite
-	fresh   bool
+	sprites           []linkSprite
+	fresh             bool
+	linkMissingFrames int
 
 	// sprite palettes 5 (sword, shield) through 7 (Link):
 	palettes [3][32]byte
@@ -277,6 +279,16 @@ func (g *Game) sendLinkSprites() {
 		return
 	}
 	s.fresh = false
+
+	// debounce where we sampled OAM copy in WRAM when it was being blanked out
+	if len(s.sprites) == 0 {
+		s.linkMissingFrames++
+		if s.linkMissingFrames < 2 {
+			return
+		}
+	} else {
+		s.linkMissingFrames = 0
+	}
 
 	m := g.makeBroadcastMessage()
 	g.SerializeLinkSprites(m, s.sprites)
