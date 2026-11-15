@@ -356,8 +356,11 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
 	// crystal switch state:
 	q = g.readEnqueue(q, 0xF5C172, 0x01, nil) // [$C172]
-	// star switch state and hole overlay:
-	q = g.readEnqueue(q, 0xF504BA, 0x03, nil) // [$04BA..$04BC]
+	// manipulable object count, map16 change log index, star switch state and hole overlay:
+	q = g.readEnqueue(q, 0xF50478, 0x45, nil) // [$0478..$04BC]
+	// overworld map16 change log and underworld manipulable objects:
+	q = g.enqueueMap16Reads(q)
+	q = g.enqueueManipReads(q)
 
 	// sprite palettes 5 (sword, shield), 6 and 7 (Link):
 	q = g.readEnqueue(q, 0xF5C6A0, 0x60, nil)

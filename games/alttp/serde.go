@@ -27,7 +27,7 @@ const (
 	MsgSprites2         MessageType = 0x04
 	MsgWRAM             MessageType = 0x05
 	MsgSRAM             MessageType = 0x06
-	MsgTilemaps         MessageType = 0x07
+	MsgTilemaps         MessageType = 0x07 // retired; replaced by MsgMap16 and MsgManip, neither project sends it
 	MsgObjects          MessageType = 0x08 // reserved; not implemented by either project
 	MsgAncillae         MessageType = 0x09
 	MsgTorches          MessageType = 0x0A
@@ -43,6 +43,8 @@ const (
 	MsgOverlordData     MessageType = 0x14
 	MsgUniqTiles        MessageType = 0x15
 	MsgNakUniqTiles     MessageType = 0x16
+	MsgMap16            MessageType = 0x17 // overworld map16 change log, broadcastSector; see syncmap16.go
+	MsgManip            MessageType = 0x18 // underworld manipulable objects, broadcastSector; see syncmanip.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -63,7 +65,6 @@ func (g *Game) initSerde() {
 		MsgSprites2:         g.DeserializeSprites2,
 		MsgWRAM:             g.DeserializeWRAM,
 		MsgSRAM:             g.DeserializeSRAM,
-		MsgTilemaps:         g.DeserializeTilemaps,
 		MsgAncillae:         g.DeserializeAncillae,
 		MsgTorches:          g.DeserializeTorches,
 		MsgPvP:              g.DeserializePvP,
@@ -77,6 +78,8 @@ func (g *Game) initSerde() {
 		MsgOverlordData:     skipOverlordData,
 		MsgUniqTiles:        skipUniqTiles,
 		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
+		MsgMap16:            g.DeserializeMap16,
+		MsgManip:            g.DeserializeManip,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -414,59 +417,6 @@ func (g *Game) DeserializeSRAM(p *Player, r io.Reader) (err error) {
 		p.SRAM.data[j] = b
 		p.SRAM.fresh[j] = true
 	}
-	return
-}
-
-func (g *Game) DeserializeTilemaps(p *Player, r io.Reader) (err error) {
-	var (
-		timestamp uint32
-		location  uint32
-		start     uint8
-		length    uint8
-	)
-	if err = binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
-		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-	}
-	if location, err = readU24(r); err != nil {
-		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-	}
-	_ = location
-
-	if err = binary.Read(r, binary.LittleEndian, &start); err != nil {
-		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-	}
-	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
-		panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-	}
-
-	for i := uint8(0); i < length; i++ {
-		var (
-			offs  uint16
-			count uint8
-		)
-		if err = binary.Read(r, binary.LittleEndian, &offs); err != nil {
-			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		}
-		if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-			panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-		}
-
-		same := (offs & 0x8000) != 0
-		if same {
-			var tile [3]byte
-			if _, err = r.Read(tile[:]); err != nil {
-				panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-			}
-		} else {
-			for j := uint8(0); j < count; j++ {
-				var tile [3]byte
-				if _, err = r.Read(tile[:]); err != nil {
-					panic(fmt.Errorf("error deserializing tilemaps: %w", err))
-				}
-			}
-		}
-	}
-
 	return
 }
 

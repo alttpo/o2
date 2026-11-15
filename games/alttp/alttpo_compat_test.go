@@ -104,16 +104,18 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			u8() // in_sm
 			u16()
 			skip(int(u16()))
-		case 0x07: // tilemaps
-			skip(4 + 3 + 1)
+		case 0x17: // map16 changes
+			u16() // area
+			u8()  // count
+			u8()  // start
+			skip(int(u8()) * 4)
+		case 0x18: // manipulables
+			u16() // room
 			n := int(u8())
 			for i := 0; i < n; i++ {
-				offs := u16()
-				count := int(u8())
-				if offs&0x8000 != 0 {
-					skip(3)
-				} else {
-					skip(3 * count)
+				skip(6)
+				if u8()&0x02 != 0 {
+					skip(8)
 				}
 			}
 		case 0x09: // ancillae
@@ -393,10 +395,12 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		p.u8(0x14, 0x05).zeros(2 * 11)
 		// torches:
 		p.u8(0x0A, 2, 1, 5, 2, 6)
-		// tilemaps: one "same" run and one varying run:
-		p.u8(0x07).u32(1).u8(0x12, 0x00, 0x01).u8(0, 2)
-		p.u16(0x8010).u8(4).u8(1, 2, 3)
-		p.u16(0x4020).u8(2).u8(1, 2, 3, 4, 5, 6)
+		// manipulables: a pot that was lifted and a push block:
+		p.u8(0x18).u16(0x0012).u8(2)
+		p.u16(0x1111).u16(0x0030).u16(0x0410).u8(0x03).u16(0x0D0E).u16(0x0D1E).u16(0x4D0E).u16(0x4D1E)
+		p.u16(0x0000).u16(0x0008).u16(0x0820).u8(0x00)
+		// map16 changes (alttpo sends these to its sector in the overworld; the parser does not care):
+		p.u8(0x17).u16(0x0018).u8(2, 0, 2).u16(0x0410).u16(0x0DC7).u16(0x0412).u16(0x0DC7)
 		p.name("alttpo3")
 		p.send(t, g)
 	}

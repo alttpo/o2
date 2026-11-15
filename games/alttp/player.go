@@ -148,6 +148,10 @@ type Player struct {
 
 	SmallKeys smallKeysRemote
 
+	// overworld map16 change log and underworld manipulable objects, sent to players in the same area or room:
+	Map16 map16Remote
+	Manip manipRemote
+
 	showJoinMessage bool
 
 	GameStartTime  time.Time

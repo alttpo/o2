@@ -115,6 +115,9 @@ type Game struct {
 	crystalSwitch crystalSwitchLocal
 	starSwitch    starSwitchLocal
 
+	map16 map16Local
+	manip manipLocal
+
 	runMinStart        time.Time
 	runMaxFinish       time.Time
 	runPlayersFinished int
@@ -235,6 +238,8 @@ func (g *Game) FirstFrame() {
 	g.invalidateSmallKeys(false)
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetMap16()
+	g.resetManip()
 
 	// initialize WRAM:
 	for i := range g.wram {

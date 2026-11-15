@@ -23,7 +23,8 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state (both), and sprites, tilemaps, torches and enemies (alttpo). Everything else is sent as broadcastAll.
+state, overworld map16 changes and underworld manipulable objects (both), and sprites, torches and enemies (alttpo).
+Everything else is sent as broadcastAll.
 
 Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
 between protocols and the game `script_protocol` was reset, so those versions cannot share a group with the current
@@ -48,7 +49,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
 | 0x05 | WRAM syncables | yes (crystal switch `$C172`; star switch `$04BC` per sector) | yes (`$0400`, `$C172`; `$04BC` per sector) | `$C172`, `$04BC` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
-| 0x07 | tilemaps | yes | no | parsed, ignored |
+| 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
 | 0x08 | objects | no | no | reserved; not parsed by either |
 | 0x09 | ancillae | yes | no | parsed, ignored |
 | 0x0A | torches | yes | no | parsed, ignored |
@@ -64,6 +65,8 @@ Values match alttpo's `GameState::deserialize`.
 | 0x14 | overlord data | yes | no | skipped |
 | 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
+| 0x17 | overworld map16 changes | yes (per sector) | yes (per sector) | used |
+| 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -102,7 +105,8 @@ more messages, which corrupted the rest of the packet.
   from the previous read of `$0352` and skips a frame whenever they move.
 - **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 12 reads, which takes two FX Pak Pro VGET commands instead of
-  one.
+  one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to three
+  one-byte attribute reads in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state), which alttpo discards.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
@@ -179,3 +183,76 @@ US, JP and VT ROMs; unknown for EU ROMs, where alttpo does not apply it). Every 
   `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
 - **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
+
+## Overworld map16 changes
+
+o2 (`games/alttp/syncmap16.go`) and alttpo (`Map16Changes.as`) share the game's own log of persistent map16 changes
+in the current overworld area. They replace alttpo's old tilemap sync (message 0x07), which intercepted every write to
+`$7E2000`/`$7F2000` and sent compressed runs of the whole changed tilemap every frame.
+
+- **The log.** `$7E04AC` is the byte index of the next free entry, `$7EF800` a `[$A0]uint16` array of tilemap
+  offsets (`$7E2000,X`) and `$7EFA00` a `[$A0]uint16` array of the map16 tiles written there. The game appends to it in
+  `Overworld_MemorizeMap16Change` (`$0EDD40` US, `$04E780` JP) and `Overworld_DoMapUpdate32x32` (four entries at once),
+  always before advancing `$04AC`, and resets `$04AC` on every area load. Its only use in the game is restoring the
+  changes after a mirror bonk. Cut grass and dirt patches are never logged, so they are not synced.
+- **Message 0x17**, broadcastSector: `area u16` (`$8A`, which is the parent screen in large areas), `count u8`,
+  `start u8`, `len u8`, then `len` × (`pos u16`, `tile u16`) for log indices `[start, start+len)`. Entries are sent as
+  soon as they are seen and the whole log (in chunks of 64) every 16 frames so players entering the area catch up.
+- **Sampling.** Only in overworld modules `$09`/`$0B` during submodule 0, since `$8A` and `$04AC` change at different
+  times during an area load. A change of area, leaving the overworld modules (except for the menus in `$0E`) or `$04AC`
+  going down resets the log. o2 reads `$04AC` along with the star switch state and a 16-entry window of both arrays
+  starting at the first entry it has not read yet.
+- **Applying.** Each receiver remembers how much of each remote player's log it applied and only applies new entries,
+  keeping the last tile for each position. In submodule 0 of the overworld module, in the same area, an entry whose
+  tile `$7E2000,X` already has is skipped; otherwise it is appended to the local log (while it has room), which passes
+  it on to players who enter the area later and keeps it through a mirror bonk, and drawn with
+  `Overworld_DrawMap16_Persist` (`$1BC97C`) if it is within 12 map16 rows/columns before or 15 after `$84` (VRAM holds
+  32x32 map16 tiles, so nothing visible is overwritten). Tiles further away are only written to `$7E2000`; the game draws
+  them as it scrolls. Draws stop when the VRAM stripe buffer (`$1000`) passes `$80` bytes and continue later. A local
+  area load makes all remote entries apply again. o2 applies them from its update routine (a table of up to 8 entries
+  per routine, reporting how many were applied); alttpo checks between frames and puts the draw calls in its patch
+  buffer.
+- **Teams.** Only players on the same team share changes; game worlds are team specific. (alttpo's old tilemap sync
+  shared overworld changes across teams.)
+- **Regions.** Map16 tile numbers differ between US and JP ROMs (the cut grass tile is `$0DC5` in US and `$0DBF` in
+  JP), so US and JP based players in the same area would draw each other's changes with the wrong tiles. The old sync
+  had the same problem.
+
+## Underworld manipulable objects
+
+o2 (`games/alttp/syncmanip.go`) and alttpo (`Manipulables.as`) share the state of the current room's manipulable
+objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has no change log like the overworld.
+
+- **The slots.** The room loader registers up to 16 objects: `$0500` type and state (`$0000`-`$0005`/`$FFFF` push
+  block states, `$1010`-`$1212` pots, `$2020`-`$2323` the quarters of a big gray rock, `$3030`-`$3333` the quarters of a
+  bombable floor, `$4040` hammer pegs), `$0520` the object's offset in the room data (for push blocks the index into the
+  dungeon's push block table at `$7EF940`: `room u16`, `pos u16` per block, `$18C` bytes, loaded from ROM at the
+  dungeon entrance and overlapping the overworld log arrays), `$0540` the tilemap position (`$2000` set for the upper
+  layer) and `$0560`/`$0580`/`$05A0`/`$05C0` the tiles drawn when the object goes away. Slots `[0, $0478/2)` are
+  manipulables; the room's torches follow (synced by alttpo's torch messages).
+- **What changes.** Each manipulable except bombable floors gets the tile attribute `$70+slot` in `$7F2000`. Lifting a
+  pot, pounding a peg or lifting a big rock (all four quarters) calls `RoomDraw_16x16Single` (`$01D828` US, `$01D826`
+  JP), which draws the replacement tiles and their attributes and leaves `$0500` alone; a pot may first replace its
+  tiles with a hole or a switch it hid (`RevealPotItem`). A pushed block draws its replacement tiles, moves 16 pixels,
+  then either is drawn at the new position (tiles `$0922`/`$0932`/`$0923`/`$0933`, attribute `$27`, state `$FFFF`),
+  toggles the switch (`$0466`) under it, or falls into a pit, recording the room below (`$7EC000`) and position in
+  the push block table.
+- **Message 0x18**, broadcastSector, in the same packet as the star switch state: `room u16`, `count u8`, then per
+  slot `type u16`, `objx u16`, `pos u16`, `flags u8` (bit 0: revealed, bit 1: four replacement tiles `u16` follow).
+- **Sampling.** In the dungeon module during submodule 0. A change of room, of the slot count or of any `$0520` starts
+  a new baseline; leaving the dungeon module (except for the menus) forgets the room. An object counts as revealed once
+  its attribute was seen as `$70+slot` and then no longer is. o2 reads `$0500..$05DF` every frame and the attributes of
+  three not yet revealed objects per frame in turn; alttpo reads everything every frame.
+- **Applying.** In submodule 0 of the dungeon module, same room, same team: slots are matched by `$0520` (and position
+  and type, except for push blocks), since their order can differ between players. A remote revealed object whose
+  attribute is still `$70+slot` here gets the remote's replacement tiles and `RoomDraw_16x16Single`, called through
+  the RTL right before it (`PHK`, `PEA` return, `PEA` RTL-1, `JML`), since it ends with RTS. A remote push block that
+  finished moving one step from where ours still stands untouched is moved here in one step: draw its replacement
+  tiles, move it, then do what `PushBlock_CheckForPit` does at the new position (pit: record it in the push block
+  table; switch: toggle `$0466`; otherwise draw the block with attribute `$27` and state `$FFFF`). Draws stop when the
+  VRAM stripe buffer passes `$68` (o2) or `$80` (alttpo) bytes.
+- **Not synced.** Items hidden under pots are not spawned for other players (only the player who lifts the pot gets
+  them, so keys are not duplicated), the push animation is not shown, and bombable floors are left to the room flags in
+  `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
+  whether it was pushed there locally or by sync.
+- **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".

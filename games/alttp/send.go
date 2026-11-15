@@ -62,12 +62,22 @@ func (g *Game) sendPackets() {
 	}
 
 	if g.SyncUnderworld && local.Module == 0x07 {
-		// star switch state is room specific; send it only to players in the same room:
+		// star switch state and manipulable objects are room specific; send them only to players in the same room:
 		m := g.makeSectorMessage()
 		if err := g.SerializeStarSwitch(m); err != nil {
 			panic(err)
 		}
+		if g.manip.valid {
+			if err := g.SerializeManip(m); err != nil {
+				panic(err)
+			}
+		}
 		g.send(m)
+	}
+
+	if g.SyncOverworld {
+		// the overworld map16 change log is area specific; send it only to players in the same area:
+		g.sendMap16()
 	}
 
 	{

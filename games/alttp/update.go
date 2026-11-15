@@ -344,6 +344,34 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
+		// apply map16 changes made by players in the same overworld area:
+		if g.SyncOverworld {
+			if u, ta := g.generateMap16Update(newEmitter, gen16Index); u != nil {
+				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+					gen16Index++
+					asm16Confirmers = append(asm16Confirmers, u)
+					g.map16.inflight = u
+
+					a16.Append(ta)
+					updated16 = true
+				}
+			}
+		}
+
+		// reveal objects and move push blocks like the players in the same room did:
+		if g.SyncUnderworld {
+			if u, ta := g.generateManipUpdate(newEmitter, gen16Index); u != nil {
+				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+					gen16Index++
+					asm16Confirmers = append(asm16Confirmers, u)
+					g.manip.inflight = u
+
+					a16.Append(ta)
+					updated16 = true
+				}
+			}
+		}
+
 		// sync all the underworld supertile state:
 		if g.SyncUnderworld {
 			for i := range g.underworld {
