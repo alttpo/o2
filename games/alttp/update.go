@@ -33,15 +33,15 @@ func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
 	// select target SRAM routine:
 	var targetSNES uint32
 	if g.nextUpdateA {
-		targetSNES = preMainUpdateAAddr
+		targetSNES = updateBufAAddr
 	} else {
-		targetSNES = preMainUpdateBAddr
+		targetSNES = updateBufBAddr
 	}
 
 	// generate SRAM routine:
 	var err error
 	// create an assembler:
-	a := asm.NewEmitter(make([]byte, 0x400), true)
+	a := asm.NewEmitter(make([]byte, updateBufSize*2), true)
 	var updated bool
 	updated, err = g.generateSRAMRoutine(a, targetSNES)
 	if err != nil {
@@ -67,11 +67,20 @@ func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
 	// write generated asm routine to SRAM:
 	var targetJSR uint32
 	targetJSR, err = lorom.BusAddressToPak(preMainJSRAddr)
+	code := a.Bytes()
 	writes = []snes.Write{
 		{
+			// may be larger than 255 bytes; the device drivers split it into chunks (e.g. FX Pak Pro VPUTs) and write
+			// them in order. Write all but the first two bytes first: if the trampoline still points at this buffer
+			// (e.g. after o2 restarted), the routine that was there already ran and starts with RTS, so the game
+			// never runs a partially written routine:
+			Address: target + 2,
+			Data:    code[2:],
+		},
+		{
 			Address: target,
-			Size:    uint8(a.Len()),
-			Data:    a.Bytes(),
+			Size:    2,
+			Data:    code[:2],
 		},
 		// finally, update the JSR instruction to point to the updated routine:
 		{
@@ -140,8 +149,8 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	// dump asm:
 	a.WriteTextTo(log.Writer())
 
-	if a.Len() > 255 {
-		err = fmt.Errorf("alttp: generated update ASM larger than 255 bytes: %d", a.Len())
+	if a.Len() > updateBufSize {
+		err = fmt.Errorf("alttp: generated update ASM larger than %d bytes: %d", updateBufSize, a.Len())
 		return
 	}
 
@@ -206,7 +215,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 	{
 		// 8-bit updates first:
-		tmp := [0x400]byte{}
+		tmp := [updateBufSize * 2]byte{}
 		newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
 
 		// generate update ASM code for any 8-bit values:
@@ -225,7 +234,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 			if u, ta := s.GenerateUpdate(newEmitter, genIndex); u {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 					genIndex++
 					asmConfirmers = append(asmConfirmers, s)
 					g.generated[offs] = struct{}{}
@@ -238,7 +247,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		if g.SyncUnderworld {
 			if u, ta := g.generateCrystalSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 					genIndex++
 					asmConfirmers = append(asmConfirmers, u)
 					g.crystalSwitch.inflight = u
@@ -249,7 +258,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 			if u, ta := g.generateRoomStateUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 					genIndex++
 					asmConfirmers = append(asmConfirmers, u)
 					g.roomState.inflight = u
@@ -260,7 +269,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 			if u, ta := g.generateStarSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 					genIndex++
 					asmConfirmers = append(asmConfirmers, u)
 					g.starSwitch.inflight = u
@@ -276,7 +285,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			for k := 0; k < smallKeyCount; k++ {
 				if u, ta := g.generateSmallKeyUpdate(k, newEmitter, genIndex); u != nil {
 					// don't emit the routine if it pushes us over the code size limit:
-					if ta.Len()+a.Len()+epilogSize <= 255 {
+					if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 						genIndex++
 						asmConfirmers = append(asmConfirmers, u)
 						u.begin()
@@ -300,7 +309,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// generate the update asm routine in the temporary assembler:
 				if u, ta := s.GenerateUpdate(newEmitter, genIndex); u {
 					// don't emit the routine if it pushes us over the code size limit:
-					if ta.Len()+a.Len()+epilogSize <= 255 {
+					if ta.Len()+a.Len()+epilogSize <= updateBufSize {
 						genIndex++
 						asmConfirmers = append(asmConfirmers, s)
 
@@ -321,14 +330,14 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		var commit16 []func()
 
 		// clone to a temporary assembler for 16-bit mode:
-		tmp := [0x400]byte{}
+		tmp := [updateBufSize * 2]byte{}
 		a16 := a.Clone(tmp[:])
 
 		// switch to 16-bit mode:
 		a16.Comment("switch to 16-bit mode:")
 		a16.REP(0x30)
 
-		tmp2 := [0x400]byte{}
+		tmp2 := [updateBufSize * 2]byte{}
 		newEmitter := func() *asm.Emitter { return a16.Clone(tmp2[:]) }
 
 		// sync u16 data:
@@ -348,7 +357,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// generate the update asm routine in the temporary assembler:
 			if u, ta := s.GenerateUpdate(newEmitter, gen16Index); u {
 				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {
 					gen16Index++
 					asm16Confirmers = append(asm16Confirmers, s)
 
@@ -361,10 +370,10 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// apply map16 changes made by players in the same overworld area:
 		if g.SyncOverworld {
 			if u, ta := g.generateMap16Update(newEmitter, gen16Index); u != nil {
-				if n := ta.Len() + a16.Len() + a.Len() + epilogSize; n > 255 {
-					log.Printf("alttp: map16: update routine too big: %d + %d + %d + %d = %d > 255\n", ta.Len(), a16.Len(), a.Len(), epilogSize, n)
+				if n := ta.Len() + a16.Len() + a.Len() + epilogSize; n > updateBufSize {
+					log.Printf("alttp: map16: update routine too big: %d + %d + %d + %d = %d > %d\n", ta.Len(), a16.Len(), a.Len(), epilogSize, n, updateBufSize)
 				}
-				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {
 					gen16Index++
 					asm16Confirmers = append(asm16Confirmers, u)
 					commit16 = append(commit16, func() { g.map16.inflight = u })
@@ -378,7 +387,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// reveal objects and move push blocks like the players in the same room did:
 		if g.SyncUnderworld {
 			if u, ta := g.generateManipUpdate(newEmitter, gen16Index); u != nil {
-				if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+				if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {
 					gen16Index++
 					asm16Confirmers = append(asm16Confirmers, u)
 					commit16 = append(commit16, func() { g.manip.inflight = u })
@@ -400,7 +409,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// generate the update asm routine in the temporary assembler:
 				if u, ta := s.GenerateUpdate(newEmitter, gen16Index); u {
 					// don't emit the routine if it pushes us over the code size limit:
-					if ta.Len()+a16.Len()+a.Len()+epilogSize <= 255 {
+					if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {
 						gen16Index++
 						asm16Confirmers = append(asm16Confirmers, s)
 
@@ -480,7 +489,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				// TODO: is this safe to do as a 16-bit operation? should be fine for 99.9998% of the time.
 				a16.INC_dp(0x15)
 
-				if a16.Len()+outer16.Len()+a.Len()+epilogSize <= 255 {
+				if a16.Len()+outer16.Len()+a.Len()+epilogSize <= updateBufSize {
 					outer16.Append(a16)
 					updated16 = true
 					commit16 = append(commit16, func() {
@@ -496,7 +505,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			// switch back to 8-bit mode:
 			//a16.Comment("switch back to 8-bit mode:")
 			//a16.SEP(0x30)
-			if a.Len()+a16.Len()+epilogSize <= 255 {
+			if a.Len()+a16.Len()+epilogSize <= updateBufSize {
 				// commit the changes to the parent assembler:
 				asmConfirmers = append(asmConfirmers, asm16Confirmers...)
 				genIndex = gen16Index
@@ -507,7 +516,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				a.Append(a16)
 				updated = true
 			} else {
-				log.Printf("alttp: update: 16-bit section too big: %d + %d + %d > 255; dropped\n", a.Len(), a16.Len(), epilogSize)
+				log.Printf("alttp: update: 16-bit section too big: %d + %d + %d > %d; dropped\n", a.Len(), a16.Len(), epilogSize, updateBufSize)
 			}
 		}
 	}

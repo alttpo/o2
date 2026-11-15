@@ -19,6 +19,15 @@ const (
 	preMainJSRAddr     = uint32(0x707FFA)
 	preMainUpdateAAddr = uint32(0x707D00)
 	preMainUpdateBAddr = uint32(0x707E00)
+	// SRAM buffers that generated update routines are written to, alternately. The patched init code only puts RTS
+	// at preMainUpdateAAddr/preMainUpdateBAddr (where the trampoline's JSR points after a reset); the JSR is only
+	// pointed at one of these buffers after a routine was written there, so ROMs patched for the old 256-byte buffers
+	// work too. $707400..$707BFF is free in vanilla and in z3randomizer based ROMs, which use $700000..$705FFF.
+	updateBufAAddr = uint32(0x707400)
+	updateBufBAddr = uint32(0x707800)
+	// updateBufSize is the size of each buffer and the maximum size of a generated update routine. Routines larger
+	// than 255 bytes are written in several chunks; the trampoline's JSR is only redirected after all of them:
+	updateBufSize = 0x400
 	// bus address of unused/garbage area in ROM (JP and US confirmed):
 	romGarbageStart = uint32(0x1BB1D7)
 	romGarbageEnd   = uint32(0x1BB800)

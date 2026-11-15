@@ -179,7 +179,7 @@ func (c testWriteCommand) Execute(q snes.Queue, keepAlive snes.KeepAlive) error 
 			panic("unsupported address for write in testQueue!")
 		}
 
-		copy(tq.E.SRAM[wr.Address-0xE0_0000:], wr.Data[0:wr.Size])
+		copy(tq.E.SRAM[wr.Address-0xE0_0000:], wr.Data)
 		if wr.Completion != nil {
 			wr.Completion(snes.Response{
 				IsWrite: true,
