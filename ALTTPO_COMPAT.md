@@ -455,7 +455,10 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
   neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
-  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0 (except in dialogs, which upload nothing else during NMI), the player is
+  the 256 bytes right after the game's own upload of those chrs. While a dialog renders text, the game disables its own sprite uploads (`$0710` = 2, `Text_Render`) to upload
+  the text; a second NMI hook at the start of `NMI_DoUpdates` (`$0089E2`) uploads the body then, which keeps the NMI
+  well under its usual load. Otherwise, outside submodule 0 (except in dialogs) or while core updates are disabled
+  outside dialogs, the player is
   drawn as a blob instead.
 - **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 4
   like the blob magic powder turns enemies into) at their Link
