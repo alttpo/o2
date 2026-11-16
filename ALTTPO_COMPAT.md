@@ -438,7 +438,8 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 (`games/alttp/remotesprites.go`):
 
 - **Only players in the same room or overworld area** (alttpo's `locations_equal`) and not in a bad module
-  (alttpo's `is_it_a_bad_time`) are drawn, and only while the local game draws the underworld or overworld sprites: modules `$07`, `$09`,
+  (alttpo's `is_it_a_bad_time`; o2 used to also require its own "in game" check, which depends on the module before
+  a dialog or menu that remote players don't send, so remote players disappeared during their dialogs) are drawn, and only while the local game draws the underworld or overworld sprites: modules `$07`, `$09`,
   `$0B`, spotlight open/close (`$0F`/`$10`), boss victories (`$13`/`$16`), and dialogs and menus (`$0E`) except
   while the dungeon map, overworld map or flute menu is shown (the same condition as `Module0E_Interface`).
 - **Switched off** with "Sync Sprites" in the web UI (on by default).
@@ -454,9 +455,10 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
   neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
-  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0 (except in dialogs and menus), the player is
+  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0 (except in dialogs, which upload nothing else during NMI), the player is
   drawn as a blob instead.
-- **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 7) at their Link
+- **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 4
+  like the blob magic powder turns enemies into) at their Link
   coordinates.
 - **OAM:** sprites go into unused OAM entries (Y = `$F0`) searched from the end of the buffer, behind all of the
   game's own sprites. Positions use alttpo's convention (OAM coordinate + `BG2 scroll - shake offset` of the sender)
