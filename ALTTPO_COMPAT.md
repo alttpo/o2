@@ -445,6 +445,10 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   `$0B`, spotlight open/close (`$0F`/`$10`), boss victories (`$13`/`$16`), and dialogs and menus (`$0E`) except
   while the dungeon map, overworld map or flute menu is shown (the same condition as `Module0E_Interface`).
 - **Switched off** with "Sync Sprites" in the web UI (on by default).
+- **Players leaving the room or area are not drawn**, although their reported location only changes once their
+  screen transition or warp finishes: not while they are in a screen transition (alttpo's `is_in_screen_transition`,
+  which includes warps; a warp switches the area on its first frame), and not once their sprites stop arriving for
+  250ms (alttpo sends them to the sector it is actually in, and only draws remote players from received sprites).
 - **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
   from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
