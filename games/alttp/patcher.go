@@ -251,8 +251,7 @@ func (p *Patcher) Patch() (err error) {
 		a.EmitBytes([]byte{0})
 	}
 	emitCaptureExtras(a)
-	nmiHook := a.PC()
-	emitNMIHook(a, linkGfxBankInstruction(p.rom))
+	nmiHookLate, nmiHookEarly := emitNMIHooks(a, linkGfxBankInstruction(p.rom))
 	if err := a.Finalize(); err != nil {
 		return err
 	}
@@ -281,25 +280,40 @@ func (p *Patcher) Patch() (err error) {
 	}
 	a.WriteTextTo(textBuf)
 
-	// NMI hook in NMI_DoUpdates that uploads a remote player's head and body tiles; without it, remote players are only
-	// drawn as blobs (see Game.remoteBodyOK):
-	pcAddr, err = lorom.BusAddressToPak(nmiHookPatchAddr)
-	if err != nil {
-		return
+	// NMI hooks in NMI_DoUpdates that upload a remote player's head and body tiles; without them, remote players are
+	// only drawn as blobs (see Game.remoteBodyOK):
+	hooks := []struct {
+		addr     uint32
+		expected []byte
+		target   uint32
+	}{
+		{nmiHookPatchAddr, nmiHookPatchExpected, nmiHookLate},
+		{nmiEarlyPatchAddr, nmiEarlyPatchExpected, nmiHookEarly},
 	}
-	nmiCode := p.rom.Slice(pcAddr, uint32(len(nmiHookPatchExpected)))
-	if bytes.Equal(nmiCode, nmiHookPatchExpected) {
-		a = asm.NewEmitter(nmiCode, true)
-		a.SetBase(nmiHookPatchAddr)
-		a.JSL(nmiHook)
-		a.NOP()
-		a.NOP()
-		if err := a.Finalize(); err != nil {
-			return err
+	hooksOK := true
+	for _, h := range hooks {
+		if pcAddr, err = lorom.BusAddressToPak(h.addr); err != nil {
+			return
 		}
-		a.WriteTextTo(textBuf)
-	} else {
-		log.Printf("alttp: patch: unexpected code at $%06x: % x; remote players are drawn without Link's graphics\n", nmiHookPatchAddr, nmiCode)
+		if c := p.rom.Slice(pcAddr, uint32(len(h.expected))); !bytes.Equal(c, h.expected) {
+			log.Printf("alttp: patch: unexpected code at $%06x: % x; remote players are drawn without Link's graphics\n", h.addr, c)
+			hooksOK = false
+		}
+	}
+	if hooksOK {
+		for _, h := range hooks {
+			pcAddr, _ = lorom.BusAddressToPak(h.addr)
+			a = asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(h.expected))), true)
+			a.SetBase(h.addr)
+			a.JSL(h.target)
+			for a.PC() < h.addr+uint32(len(h.expected)) {
+				a.NOP()
+			}
+			if err := a.Finalize(); err != nil {
+				return err
+			}
+			a.WriteTextTo(textBuf)
+		}
 	}
 
 	return nil

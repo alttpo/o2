@@ -75,6 +75,7 @@ func computePatchVersion() (v [4]byte) {
 		remoteStateAddr,
 		remoteStateSize,
 		nmiHookPatchAddr,
+		nmiEarlyPatchAddr,
 		linkOAMCopyAddr,
 		linkOAMCopySize,
 		linkOAMCopyReadSize,
@@ -104,7 +105,7 @@ func computePatchVersion() (v [4]byte) {
 	a = asm.NewEmitter(make([]byte, 0x200), false)
 	a.SetBase(captureTypeListAddr)
 	emitCaptureExtras(a)
-	emitNMIHook(a, []byte{0xA9, 0x10})
+	emitNMIHooks(a, []byte{0xA9, 0x10})
 	h.Write(a.Bytes())
 
 	copy(v[:], h.Sum(nil))

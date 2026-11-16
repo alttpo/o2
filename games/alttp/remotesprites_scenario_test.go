@@ -321,13 +321,19 @@ func (d *dmaSim) bytes(vaddr uint16, n int) []byte {
 	return b
 }
 
-// runNMIHook calls the NMI hook the way NMI_DoUpdates does, with the PPU and DMA registers simulated.
+// runNMIHook calls the late NMI hook the way NMI_DoUpdates does, with the PPU and DMA registers simulated.
 func runNMIHook(t *testing.T, e *emulator.System, g *Game) *dmaSim {
 	t.Helper()
-	pak, _ := lorom.BusAddressToPak(nmiHookPatchAddr)
+	return runNMIHookAt(t, e, g, nmiHookPatchAddr)
+}
+
+// runNMIHookAt calls the NMI hook patched in at addr the way NMI_DoUpdates does.
+func runNMIHookAt(t *testing.T, e *emulator.System, g *Game, addr uint32) *dmaSim {
+	t.Helper()
+	pak, _ := lorom.BusAddressToPak(addr)
 	c := g.rom.Contents[pak : pak+4]
 	if c[0] != 0x22 {
-		t.Fatalf("no JSL at $%06x: % x", nmiHookPatchAddr, c)
+		t.Fatalf("no JSL at $%06x: % x", addr, c)
 	}
 
 	d := &dmaSim{e: e, vram: map[uint16]uint16{}}
@@ -643,4 +649,58 @@ func TestRemoteSpritesScenario_RemoteInDialog(t *testing.T) {
 	e.WRAM[0x11] = 0x07
 	h.frames(8)
 	h.expectOAMUnused("on the map", 0, 0x7F)
+}
+
+// While a dialog renders text, the game disables its own sprite uploads ($0710 = 2, Text_Render) to upload the text;
+// the early NMI hook uploads the body then, so the remote player keeps Link's graphics during the local player's
+// dialogs.
+func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
+	h := newRSScenario(t)
+	h.frames(8)
+	g1 := h.gs[0]
+	e := g1.e
+	e.WRAM[0x010C] = e.WRAM[0x10]
+	e.WRAM[0x10], e.WRAM[0x11] = 0x0E, 0x02
+	clearOAM := g1.beforeEmulate
+	g1.beforeEmulate = func() {
+		clearOAM()
+		// Text_Render:
+		e.WRAM[0x0710] = 2
+	}
+	h.frames(4)
+	h.expectOAM("dialog", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("dialog", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+
+	vram := runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr)
+	rom := func(addr uint16) []byte {
+		pak, _ := lorom.BusAddressToPak(0x100000 | uint32(addr))
+		return g1.g.rom.Contents[pak : pak+0x40]
+	}
+	for _, c := range []struct {
+		vram uint16
+		src  uint16
+	}{{0x4200, 0x9000}, {0x4220, 0x8400}, {0x4300, 0x9200}, {0x4320, 0x8600}} {
+		if actual := vram.bytes(c.vram, 0x40); !bytes.Equal(actual, rom(c.src)) {
+			t.Errorf("VRAM $%04x = % x; expected LinkGraphics $%04x", c.vram, actual, c.src)
+		}
+	}
+	if vmain := vram.regs[0x2115]; vmain != 0x80 {
+		t.Errorf("patched over code did not run: VMAIN = $%02x", vmain)
+	}
+	if vram.dmaBank(0) != 0x7E || vram.dmaBank(1) != 0x7E {
+		t.Errorf("DMA source banks not restored to $7E")
+	}
+
+	// with core updates enabled the early hook leaves the upload to the late hook:
+	e.WRAM[0x0710] = 0
+	if vram := runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr); len(vram.writes) != 0 {
+		t.Errorf("early hook uploaded %d words with core updates enabled", len(vram.writes))
+	}
+
+	// outside of dialogs, disabled core updates mean the NMI is busy with something else: the blob is drawn:
+	e.WRAM[0x10], e.WRAM[0x11] = 0x07, 0x00
+	h.frames(2)
+	if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
+		t.Errorf("expected a blob with core updates disabled outside dialogs; OAM[$7d] = % x", entry[:])
+	}
 }

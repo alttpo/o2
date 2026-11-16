@@ -137,12 +137,18 @@ const (
 	// nmiHookPatchAddr is where NMI_DoUpdates sets up the animated tiles upload, right after uploading the follower
 	// and NPC tiles; patched with a JSL to the NMI hook:
 	nmiHookPatchAddr = uint32(0x008B50)
+	// nmiEarlyPatchAddr is at the start of NMI_DoUpdates, before it checks whether core updates are disabled; patched
+	// with a JSL to the early NMI hook:
+	nmiEarlyPatchAddr = uint32(0x0089E2)
 	// linkGfxBankAddr is the `LDA.b #LinkGraphics>>16` in NMI_DoUpdates, which randomizers replace with `LDA.b $BC`:
 	linkGfxBankAddr = uint32(0x008A01)
 )
 
 // nmiHookPatchExpected is the original code at nmiHookPatchAddr: LDX.w $0ADC; STX.w DMA0ADDRL
 var nmiHookPatchExpected = []byte{0xAE, 0xDC, 0x0A, 0x8E, 0x02, 0x43}
+
+// nmiEarlyPatchExpected is the original code at nmiEarlyPatchAddr: LDA.b #$80; STA.w VMAIN
+var nmiEarlyPatchExpected = []byte{0xA9, 0x80, 0x8D, 0x15, 0x21}
 
 // remoteTTLFrames is the TTL o2 writes to the table, in frames:
 const remoteTTLFrames = 60
@@ -303,8 +309,13 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.BNE("rd_no_body")
 	a.LDA_abs(st(rsBodyBlocked))
 	a.BNE("rd_no_body")
+	a.Comment("core NMI updates enabled, or a dialog rendering text (the early NMI hook uploads then):")
 	a.LDA_long(0x7E0710)
+	a.BEQ("rd_body_nmi_ok")
+	a.LDA_long(0x7E0010)
+	a.CMP_imm8_b(0x0E)
 	a.BNE("rd_no_body")
+	a.Label("rd_body_nmi_ok")
 	a.REP(0x20)
 	a.TYA()
 	emitCMPAbs(a, tb(rtBodyEnd))
@@ -440,21 +451,52 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 }
 
-// emitNMIHook emits the routine that NMI_DoUpdates calls with JSL from nmiHookPatchAddr, after it uploaded the
-// follower and NPC tiles. It uploads the remote player's head and body tiles over chrs $20..$23 and $30..$33 when the
-// trampoline enabled it this frame, then runs the code it was patched over. Called with A 8-bit, X and Y 16-bit, DB =
-// $00 (or $80), D = $0000; DMA channels 0 and 1 are set up for VRAM writes ($1801) and VMAIN is $80.
+// emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the remote player's head and body
+// tiles over chrs $20..$23 and $30..$33 when the trampoline enabled it this frame, and the upload subroutine they
+// share. Both are called with A 8-bit, X and Y 16-bit, DB = $00 (or $80), D = $0000. It returns their addresses:
+//
+//   - late, from nmiHookPatchAddr, when core updates are enabled ($0710 = 0): right after the game uploaded the
+//     follower and NPC tiles to the same chrs; DMA channels 0 and 1 are set up for VRAM writes ($1801). It runs the
+//     code it was patched over.
+//   - early, from nmiEarlyPatchAddr at the start of NMI_DoUpdates, when core updates are disabled ($0710 != 0) and
+//     the game skips all of its sprite uploads, e.g. on every frame a dialog renders text (Text_Render). It runs the
+//     code it was patched over (setting VMAIN) and sets up DMA channels 0 and 1 itself.
 //
 // linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the bank of Link's graphics.
-func emitNMIHook(a *asm.Emitter, linkGfxBankIns []byte) {
+func emitNMIHooks(a *asm.Emitter, linkGfxBankIns []byte) (late, early uint32) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
-
-	a.Label("nmiHook")
 	a.AssumeSEP(0x20)
 	a.AssumeREP(0x10)
-	a.LDA_long(st(rsNMIEnable))
-	a.BEQ("nmi_done")
 
+	late = a.Label("nmiHook")
+	a.LDA_long(st(rsNMIEnable))
+	a.BEQ("nmi_late_done")
+	a.JSR_abs(0xFFFF) // fixed up below
+	lateJSR := a.PC() - 2
+	a.Label("nmi_late_done")
+	a.Comment("the code patched over:")
+	a.LDX_abs(0x0ADC)
+	a.STX_abs(0x4302)
+	a.RTL()
+
+	early = a.Label("nmiHookEarly")
+	a.Comment("the code patched over:")
+	a.LDA_imm8_b(0x80)
+	a.STA_abs(0x2115)
+	a.Comment("only when core updates are disabled; otherwise the late hook uploads:")
+	a.LDA_long(0x7E0710)
+	a.BEQ("nmi_early_done")
+	a.LDA_long(st(rsNMIEnable))
+	a.BEQ("nmi_early_done")
+	a.LDX_imm16_w(0x1801)
+	a.STX_abs(0x4300)
+	a.STX_abs(0x4310)
+	a.JSR_abs(0xFFFF) // fixed up below
+	earlyJSR := a.PC() - 2
+	a.Label("nmi_early_done")
+	a.RTL()
+
+	upload := a.Label("nmiUpload")
 	a.Comment("bank of Link's graphics, the same way NMI_DoUpdates gets it:")
 	a.EmitBytes(linkGfxBankIns)
 	a.STA_abs(0x4304)
@@ -478,13 +520,17 @@ func emitNMIHook(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.LDA_imm8_b(0x7E)
 	a.STA_abs(0x4304)
 	a.STA_abs(0x4314)
-
-	a.Label("nmi_done")
-	a.Comment("the code patched over:")
-	a.LDX_abs(0x0ADC)
-	a.STX_abs(0x4302)
-	a.RTL()
+	a.RTS()
 	a.AssumeSEP(0x30)
+
+	// fix up the JSRs to the upload subroutine:
+	code := a.Bytes()
+	base := a.GetBase()
+	for _, op := range []uint32{lateJSR, earlyJSR} {
+		code[op-base+0] = uint8(upload)
+		code[op-base+1] = uint8(upload >> 8)
+	}
+	return
 }
 
 // linkGfxBankInstruction returns the instruction at linkGfxBankAddr if it is `LDA.b #imm` or `LDA.b dp`, else
@@ -657,16 +703,21 @@ type remoteSpritesLocal struct {
 	writtenTime time.Time
 }
 
-// remoteBodyOK reports whether the patched ROM has the NMI hook that uploads the body tiles: a JSL into the ROM area
+// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the body tiles: JSLs into the ROM area
 // the patcher uses.
 func (g *Game) remoteBodyOK() bool {
-	pak, err := lorom.BusAddressToPak(nmiHookPatchAddr)
-	if err != nil || int(pak)+4 > len(g.rom.Contents) {
-		return false
+	for _, addr := range []uint32{nmiHookPatchAddr, nmiEarlyPatchAddr} {
+		pak, err := lorom.BusAddressToPak(addr)
+		if err != nil || int(pak)+4 > len(g.rom.Contents) {
+			return false
+		}
+		c := g.rom.Contents[pak : pak+4]
+		target := uint32(c[1]) | uint32(c[2])<<8 | uint32(c[3])<<16
+		if c[0] != 0x22 || target < romGarbageStart || target >= romGarbageEnd {
+			return false
+		}
 	}
-	c := g.rom.Contents[pak : pak+4]
-	target := uint32(c[1]) | uint32(c[2])<<8 | uint32(c[3])<<16
-	return c[0] == 0x22 && target >= romGarbageStart && target < romGarbageEnd
+	return true
 }
 
 // buildRemoteSpritesTable makes the remote sprites table for the local player's current location, with both TTLs 0.
