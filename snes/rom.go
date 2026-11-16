@@ -11,6 +11,8 @@ import (
 type ROM struct {
 	Name     string
 	Contents []byte
+	// PatchVersion identifies the o2 patch applied to Contents, if any; it is included in the patched ROM's filename:
+	PatchVersion string
 
 	HeaderOffset    uint32
 	Header          Header

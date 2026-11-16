@@ -239,6 +239,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 	copy(p.rom.Slice(pcAddr, patchSignatureSize), signature[:])
 	textBuf.WriteString(fmt.Sprintf("patch signature at $%06x: % x\n", patchSignatureROMAddr, signature[:]))
+	p.rom.PatchVersion = patchVersionString()
 
 	// overwrite the frame hook with a JSL to the SRAM trampoline:
 	pcAddr, err = lorom.BusAddressToPak(frameHook)

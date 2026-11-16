@@ -65,7 +65,7 @@ func (g *Game) PushNotification(notification string) {
 
 	// prepend timestamp
 	b := make([]byte, 0, len("2006-01-02 15:04:05.000 - ")+len(notification))
-	if g.queue != nil && !g.lastServerTime.IsZero() {
+	if g.getQueue() != nil && !g.lastServerTime.IsZero() {
 		b = append(b, 'S')
 		b = g.lastServerTime.AppendFormat(b, "2006-01-02 15:04:05.000")
 	} else {

@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPatchSignature_Verified(t *testing.T) {
@@ -21,6 +22,12 @@ func TestPatchSignature_Verified(t *testing.T) {
 	if !gs.g.ROMVerified {
 		t.Fatalf("expected the patched ROM to be verified; status: %s", gs.g.ROMStatus)
 	}
+	if !strings.Contains(gs.g.ROMStatus, patchVersionString()) {
+		t.Errorf("expected status to mention patch version %s; got %q", patchVersionString(), gs.g.ROMStatus)
+	}
+	if gs.g.rom.PatchVersion != patchVersionString() {
+		t.Errorf("patched ROM PatchVersion = %q; expected %q", gs.g.rom.PatchVersion, patchVersionString())
+	}
 
 	// the signature in SRAM was copied there by the patched init code:
 	o := patchSignatureAddr & 0x7FFF
@@ -35,8 +42,8 @@ func TestPatchSignature_Mismatch(t *testing.T) {
 		offs   int
 		status string
 	}{
-		{"unpatched ROM", 0, "not running an O2 patched ROM"},
-		{"different patch version", 8, "different version of O2"},
+		{"unpatched ROM", 0, "could not verify the O2 patch version"},
+		{"different patch version", 8, "patch version mismatch"},
 		{"different ROM", 12, "different O2 patched ROM"},
 	}
 	for _, tt := range tests {
@@ -136,5 +143,36 @@ func TestPatchSignature_InitOverwrites(t *testing.T) {
 	}
 	if got := patchSignature(gs.e.SRAM[o : o+patchSignatureSize]); got != gs.g.patchSignature {
 		t.Errorf("SRAM signature % x after reset; expected % x", got[:], gs.g.patchSignature[:])
+	}
+}
+
+// TestPatchSignature_Timeout checks that the user is told when the patch version can't be read from the SNES.
+func TestPatchSignature_Timeout(t *testing.T) {
+	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs.g.resetPatchSignature()
+	start := gs.g.romCheckStart
+
+	// not yet:
+	gs.g.checkPatchSignatureTimeout(start.Add(romCheckTimeout - time.Millisecond))
+	if gs.g.ROMStatus != romStatusWaiting {
+		t.Fatalf("expected to still be waiting; status: %q", gs.g.ROMStatus)
+	}
+
+	gs.g.checkPatchSignatureTimeout(start.Add(romCheckTimeout))
+	if gs.g.ROMVerified {
+		t.Fatal("ROM should not be verified without reading the SNES")
+	}
+	if !strings.Contains(gs.g.ROMStatus, "could not verify the O2 patch version") ||
+		!strings.Contains(gs.g.ROMStatus, "Download") {
+		t.Errorf("unexpected status: %q", gs.g.ROMStatus)
+	}
+
+	// a late signature still verifies the ROM:
+	gs.runFrame(t)
+	if !gs.g.ROMVerified {
+		t.Fatalf("expected the patched ROM to be verified; status: %s", gs.g.ROMStatus)
 	}
 }

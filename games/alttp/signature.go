@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"hash/crc32"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/alttpo/snes/asm"
 	"github.com/alttpo/snes/mapping/lorom"
@@ -115,7 +117,20 @@ var patchSignaturePak = func() uint32 {
 	return pak
 }()
 
-const romStatusWaiting = "waiting to read the patch signature from the SNES"
+const romStatusWaiting = "waiting to read the patch version from the SNES"
+
+// romCheckTimeout is how long o2 waits for the SNES to return the patch signature before telling the user that the
+// patch version could not be verified:
+const romCheckTimeout = 5 * time.Second
+
+// romStatusAdvice tells the user how to fix a failed ROM check:
+const romStatusAdvice = "click Download to save a newly patched ROM, then load it on the SNES"
+
+// patchVersionString formats patchVersion for display and for the patched ROM's filename.
+func patchVersionString() string {
+	v := patchVersion()
+	return hex.EncodeToString(v[:])
+}
 
 // enqueuePatchSignatureRead reads the signature from SRAM.
 func (g *Game) enqueuePatchSignatureRead(q []snes.Read) []snes.Read {
@@ -124,10 +139,30 @@ func (g *Game) enqueuePatchSignatureRead(q []snes.Read) []snes.Read {
 
 // resetPatchSignature forgets whether the SNES is running the patched ROM until the signature is read again.
 func (g *Game) resetPatchSignature() {
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+	g.romCheckStart = time.Now()
 	g.setROMStatus(false, romStatusWaiting)
 }
 
-// checkPatchSignature compares the signature read from SRAM with the one in the ROM o2 patched.
+// checkPatchSignatureTimeout tells the user if the SNES has not returned the patch signature in time.
+func (g *Game) checkPatchSignatureTimeout(now time.Time) {
+	g.stateLock.Lock()
+	defer g.stateLock.Unlock()
+	if g.ROMVerified || g.ROMStatus != romStatusWaiting || g.romCheckStart.IsZero() {
+		return
+	}
+	if now.Sub(g.romCheckStart) < romCheckTimeout {
+		return
+	}
+	g.failROMCheck(fmt.Sprintf(
+		"could not verify the O2 patch version: no response from the SNES; %s",
+		romStatusAdvice,
+	))
+}
+
+// checkPatchSignature compares the signature read from SRAM with the one in the ROM o2 patched. The ROM only passes
+// when the signature in SRAM carries this o2's patch version and matches the selected ROM.
 func (g *Game) checkPatchSignature(rsp snes.Response) {
 	if rsp.Address != patchSignaturePak || len(rsp.Data) != patchSignatureSize {
 		return
@@ -136,24 +171,48 @@ func (g *Game) checkPatchSignature(rsp snes.Response) {
 	copy(s[:], rsp.Data)
 
 	expected := g.patchSignature
+	version := patchVersion()
 	var status string
 	switch {
 	case !g.patchSignatureOK:
-		status = "the selected ROM was not patched by O2"
-	case s == expected:
-		g.setROMStatus(true, "the SNES is running the O2 patched ROM")
-		return
+		status = fmt.Sprintf("could not verify the O2 patch version: the selected ROM was not patched by O2; %s", romStatusAdvice)
+	case !bytes.Equal(expected[8:12], version[:]):
+		// cannot happen unless the selected ROM was patched by a different o2 build:
+		status = fmt.Sprintf(
+			"O2 patch version mismatch: the selected ROM has patch version %s but this O2 needs %s; %s",
+			hex.EncodeToString(expected[8:12]), patchVersionString(), romStatusAdvice,
+		)
 	case !bytes.Equal(s[0:8], patchSignatureMagic[:]):
-		status = "the SNES is not running an O2 patched ROM; Boot or load the patched ROM"
-	case !bytes.Equal(s[8:12], expected[8:12]):
-		status = "the SNES is running a ROM patched by a different version of O2; Boot or load the patched ROM again"
+		status = fmt.Sprintf(
+			"could not verify the O2 patch version: the SNES is not running an O2 patched ROM; %s",
+			romStatusAdvice,
+		)
+	case !bytes.Equal(s[8:12], version[:]):
+		status = fmt.Sprintf(
+			"O2 patch version mismatch: the SNES is running patch version %s but this O2 needs %s; %s",
+			hex.EncodeToString(s[8:12]), patchVersionString(), romStatusAdvice,
+		)
+	case s != expected:
+		status = fmt.Sprintf(
+			"the SNES is running a different O2 patched ROM than the one selected; %s",
+			romStatusAdvice,
+		)
 	default:
-		status = "the SNES is running a different O2 patched ROM than the one selected; Boot or load the patched ROM"
+		// magic, patch version and ROM all match:
+		g.setROMStatus(true, fmt.Sprintf("the SNES is running the O2 patched ROM (patch version %s)", patchVersionString()))
+		return
 	}
-	if g.setROMStatus(false, status) {
+	if g.failROMCheck(status) {
 		log.Printf("alttp: rom: signature % x != expected % x\n", s[:], expected[:])
+	}
+}
+
+// failROMCheck marks the ROM as unverified and, if the status changed, notifies the user in the notification history.
+func (g *Game) failROMCheck(status string) (changed bool) {
+	if changed = g.setROMStatus(false, status); changed {
 		g.PushNotification("ROM check failed: " + status)
 	}
+	return
 }
 
 // setROMStatus sets the ROM go/no-go status shown in the UI and reports whether it changed.

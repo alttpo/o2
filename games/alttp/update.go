@@ -8,10 +8,11 @@ import (
 	"log"
 	"o2/games"
 	"o2/snes"
+	"strings"
 	"time"
 )
 
-func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
+func (g *Game) updateWRAM(q snes.Queue) (writes []snes.Write, ok bool) {
 	ok = false
 
 	if !g.local.IsInGame() {
@@ -22,7 +23,6 @@ func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
 		return
 	}
 
-	q := g.queue
 	if q == nil {
 		return
 	}
@@ -148,12 +148,12 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	// } 12 bytes
 
 	if err = a.Finalize(); err != nil {
-		a.WriteTextTo(log.Writer())
+		logAsm(a)
 		return
 	}
 
 	// dump asm:
-	a.WriteTextTo(log.Writer())
+	logAsm(a)
 
 	if a.Len() > updateBufSize {
 		err = fmt.Errorf("alttp: generated update ASM larger than %d bytes: %d", updateBufSize, a.Len())
@@ -530,4 +530,11 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 	g.updateGenerators = asmConfirmers
 
 	return updated
+}
+
+// logAsm logs the emitted asm text in a single write so other log messages can't interleave with it:
+func logAsm(a *asm.Emitter) {
+	sb := &strings.Builder{}
+	_ = a.WriteTextTo(sb)
+	log.Print(sb.String())
 }

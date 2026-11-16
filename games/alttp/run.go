@@ -35,7 +35,7 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 		return
 	}
 
-	q := g.queue
+	q := g.getQueue()
 	if q == nil {
 		return
 	}
@@ -62,9 +62,7 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 			g.readResponse = nil
 			g.readResponseLock.Unlock()
 
-			if err != nil {
-				log.Printf("alttp: readSubmit: complete: %s\n", err)
-			}
+			g.readFinished(err)
 
 			// inform the main loop:
 			g.readComplete <- rsps
@@ -81,7 +79,7 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 		if errors.As(err, &termErr) {
 			log.Println("alttp: readSubmit: terminal error encountered; disconnecting from queue")
 			_ = termErr
-			g.queue = nil
+			g.clearQueue(q)
 		}
 		return
 	}
@@ -89,6 +87,46 @@ func (g *Game) readSubmit(readQueue []snes.Read) {
 }
 
 const debugSprites = false
+
+// readBackoff is how long to wait before reading again after a read fails:
+const readBackoff = time.Second
+
+// readFinished logs a read failure and backs off further reads; identical repeated failures are logged once, with a
+// count when they stop.
+func (g *Game) readFinished(err error) {
+	g.readErrLock.Lock()
+	defer g.readErrLock.Unlock()
+
+	if err == nil {
+		if g.readErr != "" {
+			log.Printf("alttp: readSubmit: reads recovered after %d repeated errors\n", g.readErrRepeats)
+		}
+		g.readErr = ""
+		g.readErrRepeats = 0
+		return
+	}
+
+	g.readBackoffUntil = time.Now().Add(readBackoff)
+
+	msg := err.Error()
+	if msg == g.readErr {
+		g.readErrRepeats++
+		return
+	}
+	if g.readErrRepeats > 0 {
+		log.Printf("alttp: readSubmit: previous error repeated %d times\n", g.readErrRepeats)
+	}
+	log.Printf("alttp: readSubmit: complete: %s (retrying every %s)\n", msg, readBackoff)
+	g.readErr = msg
+	g.readErrRepeats = 0
+}
+
+// inReadBackoff reports whether reads are paused after a failed read.
+func (g *Game) inReadBackoff(now time.Time) bool {
+	g.readErrLock.Lock()
+	defer g.readErrLock.Unlock()
+	return now.Before(g.readBackoffUntil)
+}
 
 func (g *Game) sendReads() {
 	defer func() {
@@ -104,6 +142,11 @@ sendloop:
 	for {
 		select {
 		case <-t.C:
+			// leave the reads queued while backing off after a failed read:
+			if g.inReadBackoff(time.Now()) {
+				break
+			}
+
 			var reads []snes.Read
 
 			// submit and clear the highest priority read:
@@ -217,15 +260,17 @@ func (g *Game) run() {
 				g.send(m)
 			}
 
-			if g.queue != nil {
+			if g.getQueue() != nil {
 				// only issue a new read if there's not an update-check in progress:
 				g.updateLock.Lock()
 				stg := g.updateStage
 				g.updateLock.Unlock()
 				if stg == 0 {
 					// make sure a read request is always in flight to keep our main loop running:
-					timeSinceRead := time.Now().Sub(g.lastReadCompleted)
-					if timeSinceRead > time.Millisecond*250 {
+					// (unless reads are backing off after a failure; they are already queued for when it ends)
+					now := time.Now()
+					timeSinceRead := now.Sub(g.lastReadCompleted)
+					if timeSinceRead > time.Millisecond*250 && !g.inReadBackoff(now) {
 						g.priorityReadsMu.Lock()
 						log.Printf("alttp: fastbeat: enqueue main reads; %d msec since last read\n", timeSinceRead.Milliseconds())
 						q := make([]snes.Read, 0, 12)
@@ -236,6 +281,9 @@ func (g *Game) run() {
 					}
 				}
 			}
+
+			// tell the user if the patch version can't be read from the SNES:
+			g.checkPatchSignatureTimeout(time.Now())
 
 			// drive the reset state machine:
 			g.tickReset(time.Now())
@@ -405,6 +453,24 @@ func (g *Game) queueReads(q []snes.Read) []snes.Read {
 	}
 
 	return q
+}
+
+// enqueueUnlocked runs enqueue with g.priorityReadsMu temporarily released (it must be held by the caller) so that
+// the enqueue can't deadlock with sendReads. The mutex is re-acquired even if enqueue panics, so the caller's deferred
+// Unlock never unlocks an unlocked mutex (a fatal, unrecoverable error).
+func (g *Game) enqueueUnlocked(enqueue func() error) error {
+	g.priorityReadsMu.Unlock()
+	defer g.priorityReadsMu.Lock()
+	return enqueue()
+}
+
+// clearQueue disconnects from the queue after a terminal error, unless it was already replaced by a new one:
+func (g *Game) clearQueue(q snes.Queue) {
+	g.queueLock.Lock()
+	defer g.queueLock.Unlock()
+	if g.queue == q {
+		g.queue = nil
+	}
 }
 
 // called when all reads are completed:
@@ -723,42 +789,43 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// don't generate new ASM updates until confirmation of last update; don't sync anything while resetting:
 	if !needUpdateCheck && !g.IsResetting() {
-		// generate any WRAM update code and send it to the SNES:
-		if writes, ok := g.updateWRAM(); ok {
-			q := g.queue
-			g.priorityReadsMu.Unlock()
-			if err := q.MakeWriteCommands(
-				writes,
-				func(cmd snes.Command, err error) {
-					log.Println("alttp: update: write completed")
+		// generate any WRAM update code and send it to the SNES. Snapshot the queue once; it is cleared concurrently
+		// when the SNES disconnects:
+		q := g.getQueue()
+		if writes, ok := g.updateWRAM(q); ok {
+			if err := g.enqueueUnlocked(func() error {
+				return q.MakeWriteCommands(
+					writes,
+					func(cmd snes.Command, err error) {
+						log.Println("alttp: update: write completed")
 
-					g.updateLock.Lock()
-					if g.updateStage != 1 {
-						log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
-						g.abortUpdateGenerators()
-						g.updateStage = 0
+						g.updateLock.Lock()
+						if g.updateStage != 1 {
+							log.Printf("alttp: update: write complete but updateStage = %d (should be 1)\n", g.updateStage)
+							g.abortUpdateGenerators()
+							g.updateStage = 0
+							g.updateLock.Unlock()
+							return
+						}
+
+						g.updateStage = 2
+						g.lastUpdateTime = time.Now()
 						g.updateLock.Unlock()
-						return
-					}
 
-					g.updateStage = 2
-					g.lastUpdateTime = time.Now()
-					g.updateLock.Unlock()
+						g.priorityReadsMu.Lock()
+						q := make([]snes.Read, 0, 8)
+						q = g.enqueueUpdateCheckRead(q)
+						// must always read module number LAST to validate the prior reads:
+						q = g.enqueueMainRead(q)
 
-					g.priorityReadsMu.Lock()
-					q := make([]snes.Read, 0, 8)
-					q = g.enqueueUpdateCheckRead(q)
-					// must always read module number LAST to validate the prior reads:
-					q = g.enqueueMainRead(q)
-
-					// we must only allow for check-for-update:
-					g.priorityReads[0] = q
-					g.priorityReads[1] = nil
-					g.priorityReads[2] = nil
-					g.priorityReadsMu.Unlock()
-				},
-			).EnqueueTo(q); err != nil {
-				g.priorityReadsMu.Lock()
+						// we must only allow for check-for-update:
+						g.priorityReads[0] = q
+						g.priorityReads[1] = nil
+						g.priorityReads[2] = nil
+						g.priorityReadsMu.Unlock()
+					},
+				).EnqueueTo(q)
+			}); err != nil {
 				log.Println(fmt.Errorf("alttp: update: error enqueuing snes write for update routine: %w", err))
 				g.updateLock.Lock()
 				g.abortUpdateGenerators()
@@ -768,11 +835,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				if errors.As(err, &termErr) {
 					log.Println("alttp: update: terminal error encountered; disconnecting from queue")
 					_ = termErr
-					g.queue = nil
+					g.clearQueue(q)
 				}
 				return
 			}
-			g.priorityReadsMu.Lock()
 		}
 	}
 

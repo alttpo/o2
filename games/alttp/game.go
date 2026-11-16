@@ -23,7 +23,9 @@ type Game struct {
 	rom *snes.ROM
 
 	// queue can be nil at any time
-	queue snes.Queue
+	// queue is replaced (or cleared on disconnect) by other goroutines; access it with getQueue/setQueue:
+	queueLock sync.Mutex
+	queue     snes.Queue
 	// client can be nil at any time
 	client games.Client
 	// configurationSystem will only be nil until provided
@@ -62,6 +64,13 @@ type Game struct {
 	readResponse     []snes.Response
 
 	readComplete chan []snes.Response
+
+	// readErrLock guards the read failure state, which backs off reads while the SNES returns errors (e.g. while an
+	// emulator has no game loaded) and collapses repeated identical errors in the log:
+	readErrLock      sync.Mutex
+	readBackoffUntil time.Time
+	readErr          string
+	readErrRepeats   int
 
 	lastReadCompleted time.Time
 	notFirstWRAMRead  bool
@@ -130,6 +139,8 @@ type Game struct {
 	// patchSignature is the signature in the ROM o2 patched, which the SNES must have in SRAM; see signature.go:
 	patchSignature   patchSignature
 	patchSignatureOK bool
+	// romCheckStart is when o2 started waiting for the SNES to return the patch signature:
+	romCheckStart time.Time
 	// readCycle counts read cycles, to read the patch signature periodically:
 	readCycle uint8
 
@@ -263,8 +274,20 @@ func (g *Game) FirstFrame() {
 	}
 }
 
-func (g *Game) ProvideQueue(queue snes.Queue) {
+func (g *Game) getQueue() snes.Queue {
+	g.queueLock.Lock()
+	defer g.queueLock.Unlock()
+	return g.queue
+}
+
+func (g *Game) setQueue(queue snes.Queue) {
+	g.queueLock.Lock()
+	defer g.queueLock.Unlock()
 	g.queue = queue
+}
+
+func (g *Game) ProvideQueue(queue snes.Queue) {
+	g.setQueue(queue)
 	// the SNES may be running a different ROM now:
 	g.resetPatchSignature()
 
