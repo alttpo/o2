@@ -93,6 +93,10 @@ func (g *Game) sendPackets() {
 		if err := g.SerializeSmallKeys(m); err != nil {
 			panic(err)
 		}
+		// heart pieces (delta based; shared with alttpo's Hearts.as):
+		if err := g.SerializeHearts(m); err != nil {
+			panic(err)
+		}
 		g.send(m)
 	}
 
@@ -154,7 +158,8 @@ func (g *Game) sendPackets() {
 	// Link's sprites for alttpo clients:
 	g.sendLinkSprites()
 
-	if g.SyncOverworld && g.monotonicFrameTime&31 == 16 {
+	if g.SyncOverworld && (g.monotonicFrameTime&31 == 16 || g.owFlagsSend) {
+		g.owFlagsSend = false
 		// overworld events; heart containers, overlays
 		m := g.makeBroadcastMessage()
 		err := g.SerializeSRAM(g.local, m, 0x280, 0x340)

@@ -147,6 +147,7 @@ type Player struct {
 	WRAM WRAMReadable
 
 	SmallKeys smallKeysRemote
+	Hearts    heartsRemote
 
 	// overworld map16 change log and underworld manipulable objects, sent to players in the same area or room:
 	Map16 map16Remote

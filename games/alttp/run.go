@@ -406,6 +406,10 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
 	// crystal switch state:
 	q = g.readEnqueue(q, 0xF5C172, 0x01, nil) // [$C172]
+	// the current overworld area's flags, to send them as soon as a heart piece is collected:
+	if area := g.wram[0x8A]; g.wram[0x1B] == 0 && area < 0xC0 {
+		q = g.readEnqueue(q, 0xF5F280+uint32(area), 0x01, nil) // [$F280+$8A]
+	}
 	// trap doors, manipulable object count, map16 change log index, star switch state and hole overlay:
 	q = g.readEnqueue(q, 0xF50466, 0x57, nil) // [$0466..$04BC]
 	// pull switch ($0642), hold switch ($0646) and chest positions ($06E0..$06EB) in the underworld:
@@ -596,6 +600,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				// back at the title, file select or loading screens; a different game may be loaded so re-read small
 				// key counts without attributing any changes to the local player and re-adopt the group's counts:
 				g.invalidateSmallKeys(true)
+				g.invalidateHearts(true)
 			}
 			if moduleStaging == 0x05 {
 				// game load:

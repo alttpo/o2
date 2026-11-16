@@ -220,6 +220,11 @@ func (p *alttpoPacket) smallKeyDeltas(session uint32, net [16]int16, value [16]u
 	return p
 }
 
+// heartDeltas follows alttpo's HeartsLocal::serialize (Hearts.as).
+func (p *alttpoPacket) heartDeltas(session uint32, net int16, value uint8) *alttpoPacket {
+	return p.u8(0x83).u32(session).u16(uint16(net)).u8(value)
+}
+
 // packet wraps the broadcast data in a protocol 04 packet as the server relays it.
 func (p *alttpoPacket) packet(t *testing.T) []byte {
 	t.Helper()
@@ -584,4 +589,54 @@ func TestAlttpoCompat_SmallKeyDeltasFromAlttpo(t *testing.T) {
 	send()
 	h.frames(8)
 	h.expectKeys("no change", 0)
+}
+
+// TestAlttpoCompat_HeartDeltasFromAlttpo verifies o2 applies heart deltas sent by alttpo, which sends message 0x83 in
+// its main packet after the small keys.
+func TestAlttpoCompat_HeartDeltasFromAlttpo(t *testing.T) {
+	h := newSKScenario(t, 1)
+	g := h.gs[0].g
+	h.onOverworldWithHearts(0, hpAreaA, 3<<3, 0)
+	h.frames(8)
+
+	var (
+		net   [16]int16
+		value [16]uint8
+		ts    [16]uint32
+	)
+	for k := range value {
+		value[k] = 0xFF
+	}
+
+	frame := uint8(0)
+	send := func(heartsNet int16, heartsValue uint8) {
+		frame++
+		p := newAlttpoPacket(3, frame)
+		p.location(0x09, 0xFF, uint32(hpAreaB), 0, 0)
+		p.smallKeyDeltas(0x12345678, net, value, ts)
+		p.heartDeltas(0x9ABCDEF0, heartsNet, heartsValue)
+		p.name("alttpo")
+		p.send(t, g)
+	}
+
+	// first message only establishes a baseline:
+	send(0, 12)
+	h.frames(8)
+	if name := g.players[3].Name(); name != "alttpo" {
+		t.Fatalf("expected parsing to continue past hearts; name = %q", name)
+	}
+	h.expectHearts("baseline", 3<<3, 0)
+
+	// alttpo player collects a heart piece, then a heart container:
+	send(1, 13)
+	h.frames(8)
+	h.expectHearts("alttpo heart piece", 3<<3, 1)
+	send(5, 17)
+	h.frames(8)
+	h.expectHearts("alttpo heart container", 4<<3, 1)
+
+	// repeated messages without changes don't apply anything:
+	send(5, 17)
+	h.frames(8)
+	h.expectHearts("no change", 4<<3, 1)
 }

@@ -3,7 +3,6 @@ package alttp
 import (
 	"fmt"
 	"o2/games"
-	"strings"
 
 	"github.com/alttpo/snes/asm"
 )
@@ -62,6 +61,7 @@ func (g *Game) initSync() {
 
 	// WRAM offsets for small keys, crystal switches, etc:
 	g.initSmallKeysSync()
+	g.initHeartsSync()
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
 	g.resetRoomState()
@@ -140,76 +140,7 @@ func (g *Game) initSync() {
 	g.NewSyncableVanillaItemBitsU8(0x368, &g.SyncDungeonItems, nil)
 	g.NewSyncableVanillaItemBitsU8(0x369, &g.SyncDungeonItems, nil)
 
-	// heart containers:
-	g.NewSyncableCustomU8(0x36C, &g.SyncHearts, func(s *games.SyncableCustomU8, newEmitter func() *asm.Emitter, index uint32) (isUpdated bool, a *asm.Emitter) {
-		g := s.SyncableGame
-		local := g.LocalSyncablePlayer()
-
-		localSRAM := local.ReadableMemory(games.SRAM)
-		if !localSRAM.IsFresh(0x36C) || !localSRAM.IsFresh(0x36B) {
-			return
-		}
-
-		initial := (localSRAM.ReadU8(0x36C) & ^uint8(7)) | (localSRAM.ReadU8(0x36B) & 3)
-
-		maxP := local
-		updated := initial
-		for _, p := range g.RemoteSyncablePlayers() {
-			pSRAM := p.ReadableMemory(games.SRAM)
-			v := (pSRAM.ReadU8(0x36C) & ^uint8(7)) | (pSRAM.ReadU8(0x36B) & 3)
-			if v > updated {
-				updated, maxP = v, p
-			}
-		}
-
-		if updated == initial {
-			// no change:
-			return
-		}
-
-		isUpdated, a = true, newEmitter()
-
-		// notify local player of new item received:
-		oldHearts := initial & ^uint8(7)
-		oldPieces := initial & uint8(3)
-		newHearts := updated & ^uint8(7)
-		newPieces := updated & uint8(3)
-
-		diffHearts := (newHearts + (newPieces << 1)) - (oldHearts + (oldPieces << 1))
-		fullHearts := diffHearts >> 3
-		pieces := (diffHearts & 7) >> 1
-
-		hc := &strings.Builder{}
-		if fullHearts == 1 {
-			hc.WriteString("1 new heart")
-		} else if fullHearts > 1 {
-			hc.WriteString(fmt.Sprintf("%d new hearts", fullHearts))
-		}
-		if fullHearts >= 1 && pieces >= 1 {
-			hc.WriteString(", ")
-		}
-
-		if pieces == 1 {
-			hc.WriteString("1 new heart piece")
-		} else if pieces > 0 {
-			hc.WriteString(fmt.Sprintf("%d new heart pieces", pieces))
-		}
-
-		received := hc.String()
-		s.Notification = fmt.Sprintf("got %s from %s", received, maxP.Name())
-		a.Comment(s.Notification + ":")
-
-		a.LDA_imm8_b(updated & ^uint8(7))
-		a.STA_long(localSRAM.BusAddress(0x36C))
-		a.LDA_imm8_b(updated & uint8(3))
-		a.STA_long(localSRAM.BusAddress(0x36B))
-
-		// write confirmation:
-		a.LDA_imm8_b(0x01)
-		a.STA_long(a.GetBase() + 0x02 + index)
-
-		return
-	})
+	// heart containers and heart pieces ($36B, $36C) are synced as deltas; see synchearts.go
 
 	// bombs capacity:
 	g.NewSyncableMaxU8(0x370, &g.SyncItems, nil, nil)
@@ -747,6 +678,11 @@ func (g *Game) initSync() {
 	g.overworld[0x3B].SyncMask = 0xDF
 	g.overworld[0x7B].SyncMask = 0xDF
 
+	// remove heart pieces and heart containers other players collected from our screen:
+	for i := range g.overworld {
+		g.overworld[i].OnUpdated = g.removeCollectedHeartSprites
+	}
+
 	// Pyramid bat crash: ([$7EF2DB] | 0x20)
 	g.overworld[0x5B].OnUpdated = func(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
 		if initial&0x20 == 0 && updated&0x20 == 0x20 {
@@ -757,7 +693,45 @@ func (g *Game) initSync() {
 				a.JSL(g.romFunctions[fnOverworldCreatePyramidHole])
 			}
 		}
+		g.removeCollectedHeartSprites(s, a, initial, updated)
 	}
+}
+
+// removeCollectedHeartSprites removes the heart piece ($EB) and heart container ($EA) sprites of the local player's
+// overworld area once another player collected it. Picking one up sets bit $40 of the area's flags at $7EF280 (which
+// SpritePrep_HeartContainer checks when the area loads), so the sprite would otherwise stay until the area reloads and
+// could be collected twice.
+func (g *Game) removeCollectedHeartSprites(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
+	const heartCollected = 0x40
+	if initial&heartCollected != 0 || updated&heartCollected == 0 {
+		return
+	}
+	if g.local.OverworldArea != s.Area {
+		return
+	}
+
+	lbl := fmt.Sprintf("ow%02x_heart", s.Area)
+	a.Comment("remove heart piece/container sprites if still in this overworld area:")
+	a.LDA_dp(0x1B)
+	a.BNE(lbl + "_done")
+	a.LDA_dp(0x8A)
+	a.CMP_imm8_b(uint8(s.Area))
+	a.BNE(lbl + "_done")
+	a.LDX_imm8_b(0x0F)
+	a.Label(lbl + "_loop")
+	a.LDA_abs_x(0x0DD0)
+	a.BEQ(lbl + "_next")
+	a.LDA_abs_x(0x0E20)
+	a.CMP_imm8_b(0xEB)
+	a.BEQ(lbl + "_kill")
+	a.CMP_imm8_b(0xEA)
+	a.BNE(lbl + "_next")
+	a.Label(lbl + "_kill")
+	a.STZ_abs_x(0x0DD0)
+	a.Label(lbl + "_next")
+	a.DEX()
+	a.BPL(lbl + "_loop")
+	a.Label(lbl + "_done")
 }
 
 func (g *Game) setUnderworldSyncMasks() {

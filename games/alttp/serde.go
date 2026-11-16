@@ -56,6 +56,7 @@ const (
 	MsgO2RunTimes MessageType = 0x80 // o2-only
 	MsgReset      MessageType = 0x81 // o2-only
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
+	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -89,6 +90,7 @@ func (g *Game) initSerde() {
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
+		MsgHearts:           g.DeserializeHearts,
 	}
 }
 

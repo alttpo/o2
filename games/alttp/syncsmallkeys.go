@@ -241,6 +241,8 @@ func (g *Game) readWRAM() {
 	}
 
 	g.readSmallKeys()
+	g.readHearts()
+	g.readOverworldFlags()
 	g.readCrystalSwitch()
 	g.readStarSwitch()
 	g.readRoomState()

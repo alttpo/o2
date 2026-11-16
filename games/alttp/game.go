@@ -120,6 +120,12 @@ type Game struct {
 	swordShield swordShieldGfx
 
 	smallKeys smallKeysLocal
+	hearts    heartsLocal
+
+	// overworld area flags ($7EF280..$7EF33F) last read, to send them as soon as they change:
+	owFlags      [0xC0]uint8
+	owFlagsKnown [0xC0]bool
+	owFlagsSend  bool
 
 	crystalSwitch crystalSwitchLocal
 	starSwitch    starSwitchLocal
@@ -260,6 +266,8 @@ func (g *Game) FirstFrame() {
 
 	// SNES state may have changed while disconnected; re-read small key counts without attributing changes:
 	g.invalidateSmallKeys(false)
+	g.invalidateHearts(false)
+	g.owFlagsKnown = [0xC0]bool{}
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
 	g.resetRoomState()

@@ -373,19 +373,6 @@ func TestAsmFrames_Vanilla_CustomItems(t *testing.T) {
 			wantUpdated:      false,
 			wantNotification: "",
 		},
-		{
-			name: "Hearts",
-			sram: []sramTest{
-				{
-					offset:        0x36C,
-					localValue:    3 << 3,
-					remoteValue:   4 << 3,
-					expectedValue: 4 << 3,
-				},
-			},
-			wantUpdated:      true,
-			wantNotification: "got 1 new heart from remote",
-		},
 	}
 
 	// convert legacy tests to frame tests:
