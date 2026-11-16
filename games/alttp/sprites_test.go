@@ -183,6 +183,35 @@ func TestLinkSprites_SentToAlttpo(t *testing.T) {
 	}
 }
 
+// TestLinkSprites_ReadAfterOAMCleared reads WRAM only while the OAM buffer is cleared, as at the start of a frame
+// after ClearOAMBuffer; Link's sprites are still sent from the copy the patched ROM made after the module drew them.
+func TestLinkSprites_ReadAfterOAMCleared(t *testing.T) {
+	h := newSpriteTestRig(t)
+	e := h.gs.e
+	var drawn [0x200]byte
+	copy(drawn[:], e.WRAM[0x0800:0x0A00])
+	clearOAM := func() {
+		for i := 0; i < 0x80; i++ {
+			e.WRAM[0x0800+i*4+1] = 0xF0
+		}
+	}
+	// the module draws Link's sprites during the emulated frame, and they are cleared again before o2 reads:
+	h.gs.beforeEmulate = func() { copy(e.WRAM[0x0800:0x0A00], drawn[:]) }
+	clearOAM()
+
+	var parsed alttpoParsed
+	for f := 0; f < 4; f++ {
+		p := h.frames(1)
+		if p.sprites != nil {
+			parsed.sprites = p.sprites
+		}
+		clearOAM()
+	}
+	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x64 {
+		t.Fatalf("expected Link's 3 sprites from OAM index $64; got %+v", parsed.sprites)
+	}
+}
+
 func TestLinkSprites_OAMMoves(t *testing.T) {
 	h := newSpriteTestRig(t)
 	h.frames(2)

@@ -109,11 +109,14 @@ more messages, which corrupted the rest of the packet.
   changed tiles whenever its sword or shield level changes, which overwrites alttpo's cached copies. ROM hacks that
   load sword/shield graphics some other way will show the vanilla graphics for that level.
 - **Sprite sampling is not frame-exact.** alttpo reads OAM and VRAM from the emulated PPU after the frame is done. o2
-  reads Link's OAM buffer (`$0800`, `$0A20`) and graphics DMA source addresses (`$0ACC..$0AD7`) from WRAM over USB,
-  which can catch the game mid-frame and occasionally send a mismatched pose for a frame. o2 locates Link's OAM entries
-  from the previous read of `$0352` and skips a frame whenever they move.
-- **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, and the crystal and star switch
-  states one more each, bringing a normal read cycle to 12 reads, which takes two FX Pak Pro VGET commands instead of
+  can't read WRAM at a chosen point in the frame, and reading the OAM buffer (`$0800`) directly races with the game's
+  `ClearOAMBuffer` at the start of every frame, which sets every entry's Y to `$F0` and made o2's Link disappear for
+  alttpo players. Instead, the patched ROM's frame trampoline copies `$0352`, Link's 12 OAM entries (`$0800`), their
+  extended attributes (`$0A20`) and the graphics DMA source addresses (`$0AC0..$0AD7`) to SRAM (`$707F80`) right after
+  `Module_MainRouting` returns, and o2 reads that copy. A read can still overlap the copy being written, which at worst
+  mixes two consecutive frames' entries for one frame.
+- **Extra reads per frame.** Sampling sprites adds one small SRAM read per frame, and the crystal and star switch
+  states one more each, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of
   one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to two
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.

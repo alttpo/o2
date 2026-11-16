@@ -490,6 +490,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		for i := range g.wramFresh {
 			g.wramFresh[i] = false
 		}
+		g.linkSprites.oamCopyFresh = false
 
 		// copy the read data into our view of memory:
 		for _, rsp := range rsps {
@@ -502,9 +503,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				}
 			}
 			// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
-			if start, end, ok := g.isReadSRAM(rsp); ok {
-				//copy(g.sram[start:end], rsp.Data)
-				_, _ = start, end
+			if _, _, ok := g.isReadSRAM(rsp); ok {
+				g.readSpriteResponse(rsp)
 			}
 		}
 

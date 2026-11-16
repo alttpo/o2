@@ -48,8 +48,10 @@ type linkSprite struct {
 }
 
 type linkSpriteSync struct {
-	// oamStart is the OAM index Link's sprites start at as of the last read; used to target the next OAM read:
-	oamStart uint8
+	// oamCopy is the last read of the copy of Link's OAM entries that the patched ROM writes to SRAM every frame;
+	// see linkOAMCopyAddr for the layout:
+	oamCopy      [linkOAMCopySize]byte
+	oamCopyFresh bool
 
 	// bank of LinkGraphics in ROM:
 	tileBank   uint8
@@ -70,7 +72,6 @@ type linkSpriteSync struct {
 
 func (g *Game) initSpriteSync() {
 	s := &g.linkSprites
-	s.oamStart = 0x64
 
 	// find LinkGraphics bank from `LDA.b #LinkGraphics>>16` at $00:8A01 in the NMI routine:
 	s.tileBank, s.tileBankOK = 0x10, true
@@ -100,14 +101,36 @@ func (g *Game) linkTile(absidx uint16) (tile []byte, ok bool) {
 	return g.rom.Contents[pak : pak+32], true
 }
 
-// enqueueSpriteReads adds the WRAM reads needed to sample Link's sprites. $0352 is read as part of another read.
+// linkOAMCopyPak is the FX Pak Pro address of the copy of Link's OAM entries in SRAM:
+var linkOAMCopyPak = func() uint32 {
+	pak, err := lorom.BusAddressToPak(linkOAMCopyAddr)
+	if err != nil {
+		panic(err)
+	}
+	return pak
+}()
+
+// enqueueSpriteReads adds the SRAM read needed to sample Link's sprites. The OAM buffer in WRAM is not read directly
+// since the game clears it at the start of every frame; the patched ROM copies Link's entries to SRAM instead.
 func (g *Game) enqueueSpriteReads(q []snes.Read) []snes.Read {
-	start := uint32(g.linkSprites.oamStart)
-	// Link's OAM entries in the OAM buffer:
-	q = g.readEnqueue(q, 0xF50800+start<<2, linkOAMCount<<2, nil)
-	// Link's OAM extended attributes (size, x bit 8) through Link's graphics DMA source addresses ($0ACC..$0AD7):
-	q = g.readEnqueue(q, 0xF50A20+start, uint8(0x0AD8-0x0A20-start), nil)
-	return q
+	return g.readEnqueue(q, linkOAMCopyPak, linkOAMCopySize, nil)
+}
+
+// readSpriteResponse keeps the copy of Link's OAM entries from an SRAM read response.
+func (g *Game) readSpriteResponse(rsp snes.Response) {
+	if rsp.Address != linkOAMCopyPak || len(rsp.Data) != linkOAMCopySize {
+		return
+	}
+	s := &g.linkSprites
+	copy(s.oamCopy[:], rsp.Data)
+	s.oamCopyFresh = true
+}
+
+// oamCopyDMAU16 reads a word of $0AC0..$0AD7 (sword, shield and Link's graphics DMA source addresses) from the copy
+// of Link's OAM entries, which matches the copied entries' tiles.
+func (s *linkSpriteSync) oamCopyDMAU16(addr uint32) uint16 {
+	o := linkOAMCopyDMA + addr - linkOAMCopyDMAWRAM
+	return uint16(s.oamCopy[o]) | uint16(s.oamCopy[o+1])<<8
 }
 
 // linkUniqTileIndex returns the unique tile index for the VRAM chr, or false if it is not one of Link's body tiles.
@@ -139,7 +162,7 @@ func (g *Game) linkUniqTileIndex(chr uint16) (uint16, bool) {
 		return 0, false
 	}
 
-	src := uint32(g.wramU16(ptr + chrY<<1))
+	src := uint32(g.linkSprites.oamCopyDMAU16(ptr + chrY<<1))
 	if src < 0x8000 {
 		return 0, false
 	}
@@ -152,7 +175,7 @@ func (g *Game) linkUniqTileIndex(chr uint16) (uint16, bool) {
 
 // swordShieldUniqTileIndex maps a sword or shield DMA source address in WRAM to a unique tile index.
 func (g *Game) swordShieldUniqTileIndex(ptr uint32, x uint32) (uint16, bool) {
-	src := uint32(g.wramU16(ptr)) + x<<5
+	src := uint32(g.linkSprites.oamCopyDMAU16(ptr)) + x<<5
 	if src < swordShieldWRAMStart || src >= swordShieldWRAMEnd {
 		return 0, false
 	}
@@ -167,21 +190,21 @@ func isLinkShadowChr(chr uint16) bool {
 	return (chr >= 0x6C && chr <= 0x6F) || (chr >= 0x7C && chr <= 0x7F)
 }
 
-// readLinkSprites samples Link's sprites from the WRAM just read. Called once per game frame while syncing.
+// readLinkSprites samples Link's sprites from the copy of Link's OAM entries just read. Called once per game frame
+// while syncing.
 func (g *Game) readLinkSprites() {
 	s := &g.linkSprites
 	if !s.tileBankOK {
 		return
 	}
-
-	start := uint8(g.wramU16(0x0352) >> 2)
-	oamAddr := 0x0800 + uint32(s.oamStart)<<2
-	if !g.wramFresh[0x0352] || !g.wramFresh[oamAddr] || !g.wramFresh[0x0A20+uint32(s.oamStart)] || !g.wramFresh[0x0AD7] {
+	if !s.oamCopyFresh {
 		return
 	}
-	if start != s.oamStart {
-		// Link's OAM entries moved; read from the new location next time:
-		s.oamStart = start
+
+	c := s.oamCopy[:]
+	start := uint16(c[linkOAMCopyStart]) | uint16(c[linkOAMCopyStart+1])<<8
+	if start&3 != 0 || start >= 0x200 {
+		// not a valid OAM buffer offset; SRAM may not have been written yet:
 		return
 	}
 
@@ -193,12 +216,16 @@ func (g *Game) readLinkSprites() {
 	}
 
 	s.sprites = s.sprites[:0]
-	for j := uint8(0); j < linkOAMCount; j++ {
-		i := (start + j) & 0x7F
-		o := 0x0800 + uint32(i)<<2
-		sp := linkSprite{index: i}
-		copy(sp.b[:4], g.wram[o:o+4])
-		sp.b[4] = g.wram[0x0A20+uint32(i)] & 0x03
+	for j := 0; j < linkOAMCount; j++ {
+		i := int(start>>2) + j
+		if i >= 0x80 {
+			// the copy is contiguous and does not wrap around to the start of the OAM buffer:
+			break
+		}
+		o := linkOAMCopyEntries + j<<2
+		sp := linkSprite{index: uint8(i)}
+		copy(sp.b[:4], c[o:o+4])
+		sp.b[4] = c[linkOAMCopyExt+j] & 0x03
 		sp.size = (sp.b[4] >> 1) & 1
 		sp.pal = (sp.b[3] >> 1) & 7
 
@@ -280,7 +307,7 @@ func (g *Game) sendLinkSprites() {
 	}
 	s.fresh = false
 
-	// debounce where we sampled OAM copy in WRAM when it was being blanked out
+	// debounce frames where Link has no sprites, e.g. when the copy was read while being written
 	if len(s.sprites) == 0 {
 		s.linkMissingFrames++
 		if s.linkMissingFrames < 2 {

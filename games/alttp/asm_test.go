@@ -9,7 +9,7 @@ import (
 func TestGame_initSync(t *testing.T) {
 	a := asm.NewEmitter(make([]byte, 0x200), true)
 
-	a.SetBase(preMainUpdateAAddr)
+	a.SetBase(updateBufAAddr)
 
 	{
 		a.Comment("check if in HC overworld:")

@@ -14,7 +14,12 @@ import (
 const testROMMainGameLoop = 0x00_8034
 const testROMDoFrame = 0x00_8051
 const testROMJSLMainRouting = 0x00_8056
-const testROMBreakPoint = 0x00_8100
+
+// testROMModuleRouting stands in for Module_MainRouting with just an RTL:
+const testROMModuleRouting = 0x00_8100
+
+// testROMBreakPoint is where a frame ends, after the patched frame hook returned:
+const testROMBreakPoint = 0x00_805A
 
 func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	rom, err = snes.NewROM("test.sfc", b)
@@ -74,11 +79,24 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	for a.PC() < testROMJSLMainRouting {
 		a.NOP()
 	}
-	a.JSL(testROMBreakPoint)
+	a.JSL(testROMModuleRouting)
+	if a.PC() != testROMBreakPoint {
+		panic(fmt.Errorf("frame breakpoint must be at %#06x", testROMBreakPoint))
+	}
+	a.STP()
 	if err = a.Finalize(); err != nil {
 		return
 	}
 	a.WriteTextTo(log.Writer())
+
+	// module routing:
+	pakAddr, err = lorom.BusAddressToPak(testROMModuleRouting)
+	a = asm.NewEmitter(rom.Slice(pakAddr, 1), true)
+	a.SetBase(testROMModuleRouting)
+	a.RTL()
+	if err = a.Finalize(); err != nil {
+		return
+	}
 
 	return
 }
@@ -143,7 +161,9 @@ func TestPatcher_ModuleTests(t *testing.T) {
 	}
 
 	_ = rom
-	a := asm.NewEmitter(e.SRAM[0x7D00:], false)
+	// write the update routine to buffer A and point the trampoline's JSR at it, like o2 does:
+	a := asm.NewEmitter(e.SRAM[updateBufAAddr&0x7FFF:], false)
+	e.SRAM[preMainJSRAddr&0x7FFF] = uint8(updateBufAAddr >> 8 & 0xFF)
 	// negative match case keeps $0F at #$00:
 	// positive match case sets  $0F to #$FF:
 	a.DEC_dp(0x0F)
@@ -164,7 +184,7 @@ func TestPatcher_ModuleTests(t *testing.T) {
 			e.CPU.SetFlags(0x30)
 			e.SetPC(0x008056)
 			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])
-			if !e.RunUntil(0x008100, 10_000) {
+			if !e.RunUntil(testROMModuleRouting, 10_000) {
 				t.Fatal("ran too long")
 			}
 			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])

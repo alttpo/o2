@@ -269,16 +269,23 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		rsps := make([]snes.Response, 0, len(q))
 		for i := range q {
 			address := q[i].Address
-			offs := address - 0xF50000
+			var data []byte
+			if address >= 0xF50000 {
+				offs := address - 0xF50000
+				data = system.WRAM[offs : offs+uint32(q[i].Size)]
+			} else {
+				offs := address - 0xE00000
+				data = system.SRAM[offs : offs+uint32(q[i].Size)]
+			}
 			rsps = append(rsps, snes.Response{
 				IsWrite: false,
 				Address: address,
 				Size:    q[i].Size,
-				Data:    system.WRAM[offs : offs+uint32(q[i].Size)],
+				Data:    data,
 				Extra:   nil,
 			})
 		}
-		// force to write update in SRAM to 0x7D00
+		// force to write the update routine to buffer A:
 		g.nextUpdateA = true
 		g.readMainComplete(rsps)
 

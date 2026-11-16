@@ -12,25 +12,61 @@ import (
 	"strings"
 )
 
+// SRAM layout in bank $70. $707400..$707FFF is free in vanilla and in z3randomizer based ROMs, which use
+// $700000..$705FFF:
+//
+//	$707400..$7077FF  update routine buffer A
+//	$707800..$707BFF  update routine buffer B
+//	$707C00..$707F7F  common code, copied from ROM by the patched init code:
+//	  $707C00           update stub: RTS, which the trampoline's JSR points at after a reset
+//	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
+//	  $707D00           map16 apply routine, called by generated map16 update routines
+//	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
 const (
-	preMainLen = 0x1E
-	// SRAM address of preMain routine called nearly every frame before `JSL GameModes`
-	preMainAddr        = uint32(0x708000 - preMainLen)
-	preMainJSRAddr     = uint32(0x707FFA)
-	preMainUpdateAAddr = uint32(0x707D00)
-	preMainUpdateBAddr = uint32(0x707E00)
-	// SRAM buffers that generated update routines are written to, alternately. The patched init code only puts RTS
-	// at preMainUpdateAAddr/preMainUpdateBAddr (where the trampoline's JSR points after a reset); the JSR is only
-	// pointed at one of these buffers after a routine was written there, so ROMs patched for the old 256-byte buffers
-	// work too. $707400..$707BFF is free in vanilla and in z3randomizer based ROMs, which use $700000..$705FFF.
+	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
+	// at one of these buffers after a routine was written there:
 	updateBufAAddr = uint32(0x707400)
 	updateBufBAddr = uint32(0x707800)
 	// updateBufSize is the size of each buffer and the maximum size of a generated update routine. Routines larger
 	// than 255 bytes are written in several chunks; the trampoline's JSR is only redirected after all of them:
 	updateBufSize = 0x400
+
+	// sramCodeAddr is where the patched init code copies the common code to:
+	sramCodeAddr = uint32(0x707C00)
+	sramCodeEnd  = linkOAMCopyAddr
+	// updateStubAddr is an RTS that the trampoline's JSR points at after a reset, until the first update routine is
+	// written. o2 only rewrites the high byte of the JSR's operand (a single byte write cannot be torn), so the low
+	// byte must be the same as the update buffers':
+	updateStubAddr = sramCodeAddr
+	// SRAM address of preMain routine called every frame instead of `JSL Module_MainRouting`:
+	preMainAddr = uint32(0x707C02)
+	// SRAM address of the high byte of the preMain routine's `JSR updateStubAddr` operand:
+	preMainJSRAddr = uint32(0x707C1A)
+	// map16ApplyAddr is the routine that generated map16 update routines JSR to; see emitMap16Apply:
+	map16ApplyAddr = uint32(0x707D00)
+
+	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
+	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
+	linkOAMCopyAddr = uint32(0x707F80)
+
 	// bus address of unused/garbage area in ROM (JP and US confirmed):
 	romGarbageStart = uint32(0x1BB1D7)
 	romGarbageEnd   = uint32(0x1BB800)
+)
+
+// layout of the copy of Link's OAM entries at linkOAMCopyAddr:
+const (
+	// $0352: byte offset of Link's first OAM entry in the OAM buffer at $0800:
+	linkOAMCopyStart = 0
+	// linkOAMCount entries copied from $0800+[$0352]: x, y, chr, attributes:
+	linkOAMCopyEntries = linkOAMCopyStart + 2
+	// linkOAMCount extended attributes copied from $0A20+[$0352]/4: size, x bit 8:
+	linkOAMCopyExt = linkOAMCopyEntries + linkOAMCount*4
+	// $0AC0..$0AD7: sword, shield and Link's graphics DMA source addresses for the copied entries' tiles:
+	linkOAMCopyDMA     = linkOAMCopyExt + linkOAMCount
+	linkOAMCopyDMAWRAM = 0x0AC0
+	linkOAMCopyDMASize = 0x0AD8 - linkOAMCopyDMAWRAM
+	linkOAMCopySize    = linkOAMCopyDMA + linkOAMCopyDMASize
 )
 
 type Patcher struct {
@@ -135,112 +171,56 @@ func (p *Patcher) Patch() (err error) {
 	}
 	gameModes := frameJSL[1:]
 
-	// we can't write to SRAM from this program because we only have access to the ROM contents,
-	// so we have to write an ASM routine to initialize what we want in SRAM before we call it.
-	// initialize the end of SRAM with the original JSL from the frameHook followed by RTL:
-
-	// Build a temporary assembler to write the routine that gets written to SRAM:
-	taMain := asm.NewEmitter(make([]byte, 0x200), true)
-	{
-		taMain.SetBase(preMainAddr)
-
-		// assume 8-bit mode for accumulator and index registers:
-		taMain.AssumeSEP(0x30)
-
-		taMain.Label("moduleCheck")
-		taMain.Comment("only update during safe modules:")
-		taMain.LDA_dp(0x10)
-		// >= $19    : bad
-		taMain.CMP_imm8_b(0x19)
-		taMain.BCS("syncExit")
-		// <= $06    : bad
-		taMain.CMP_imm8_b(0x07)
-		taMain.BCC("syncExit")
-		// == $08    : bad
-		taMain.CMP_imm8_b(0x08)
-		taMain.BEQ("syncExit")
-		// == $0A    : bad
-		taMain.CMP_imm8_b(0x0A)
-		taMain.BEQ("syncExit")
-		// == $14    : bad
-		taMain.CMP_imm8_b(0x14)
-		taMain.BEQ("syncExit")
-		// ok:
-		taMain.Label("linkCheck")
-
-		//taMain.Comment("don't update if Link is frozen:")
-		//taMain.LDA_abs(0x02E4)
-		//taMain.BNE("syncExit")
-
-		jsr := taMain.Label("syncStart")
-		if preMainJSRAddr != jsr+2 {
-			panic(fmt.Errorf("preMainJSRAddr expected to be $%06x but got $%06x", jsr+2, preMainJSRAddr))
-		}
-		taMain.JSR_abs(uint16(preMainUpdateAAddr & 0xFFFF))
-
-		// jsl to mainrouting that we patched over:
-		taMain.Label("syncExit")
-		taMain.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
-		taMain.RTL()
-
-		if taMain.Len()&1 != 0 {
-			taMain.NOP()
-		}
-
-		if err := taMain.Finalize(); err != nil {
-			return err
-		}
-		taMain.WriteTextTo(textBuf)
-		if taMain.Len() != preMainLen {
-			panic(fmt.Errorf("SRAM preMain assembled code length: $%02x (actual) != $%02x (expected)", taMain.Len(), preMainLen))
-		}
+	// we can't write to SRAM from this program because we only have access to the ROM contents, so the patched init
+	// code copies the common code (the update stub, the frame trampoline which ends with the original JSL from the
+	// frameHook, and the map16 apply routine) from ROM to SRAM with MVN:
+	fns := make(map[romFunction]uint32)
+	fillRomFunctions(p.rom, fns)
+	ta := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), true)
+	ta.SetBase(sramCodeAddr)
+	if err = p.emitSRAMCode(ta, gameModes, fns); err != nil {
+		return
 	}
-
-	// assemble the RTS instructions at the two A/B update routine locations:
-	taUpdateA := asm.NewEmitter(make([]byte, 0x200), true)
-	taUpdateA.SetBase(preMainUpdateAAddr)
-	taUpdateA.RTS()
-	taUpdateA.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
-	if err := taUpdateA.Finalize(); err != nil {
-		return err
-	}
-	taUpdateA.WriteTextTo(textBuf)
-	if taUpdateA.Len()%2 != 0 {
-		panic(fmt.Errorf("SRAM updateA assembled code length %#02x must be aligned to 16-bits", taUpdateA.Len()))
-	}
-
-	taUpdateB := asm.NewEmitter(make([]byte, 0x200), true)
-	taUpdateB.SetBase(preMainUpdateBAddr)
-	taUpdateB.RTS()
-	taUpdateB.NOP() // to make an even number of code bytes so that 16-bit copies work nicely
-	if err := taUpdateB.Finalize(); err != nil {
-		return err
-	}
-	taUpdateB.WriteTextTo(textBuf)
-	if taUpdateB.Len()%2 != 0 {
-		panic(fmt.Errorf("SRAM updateB assembled code length %#02x must be aligned to 16-bits", taUpdateB.Len()))
-	}
+	ta.WriteTextTo(textBuf)
 
 	// start writing at the end of the ROM after music data:
 	pcAddr, err = lorom.BusAddressToPak(initHook)
 	a = asm.NewEmitter(p.rom.Slice(pcAddr, romGarbageEnd-romGarbageStart), true)
 	a.SetBase(initHook)
-	a.REP(0x20)
-	p.asmCopyRoutine(taUpdateA.Bytes(), a, preMainUpdateAAddr)
-	p.asmCopyRoutine(taUpdateB.Bytes(), a, preMainUpdateBAddr)
-	p.asmCopyRoutine(taMain.Bytes(), a, preMainAddr)
-	a.SEP(0x20)
+	a.Comment("copy the common code to SRAM:")
+	a.PHP()
+	a.PHB()
+	a.REP(0x30)
+	a.LDX_imm16_w(0xFFFF) // source address; fixed up below
+	srcOperand := a.PC() - 2
+	a.LDY_imm16_w(uint16(sramCodeAddr & 0xFFFF))
+	a.LDA_imm16_w(uint16(ta.Len() - 1))
+	a.MVN(uint8(sramCodeAddr>>16), 0xFF) // source bank; fixed up below
+	srcBankOperand := a.PC() - 1
+	a.PLB()
+	a.PLP()
 	// append the original 802F code to our custom init hook:
 	a.EmitBytes(code802F)
 	// follow by `RTL`
 	// NOTE: in FastROM randomizer, this will never be reached because its 802F code JMLs back to 8034:
 	a.RTL()
+	// the common code to copy follows:
+	src := a.PC()
+	if src&0xFFFF+uint32(ta.Len()) > 0x10000 {
+		return fmt.Errorf("SRAM code at $%06x crosses a bank boundary", src)
+	}
+	a.Comment("common code for SRAM:")
+	a.EmitBytes(ta.Bytes())
 	if err := a.Finalize(); err != nil {
 		return err
 	}
+	code := a.Bytes()
+	code[srcOperand-initHook+0] = uint8(src)
+	code[srcOperand-initHook+1] = uint8(src >> 8)
+	code[srcBankOperand-initHook] = uint8(src >> 16)
 	a.WriteTextTo(textBuf)
 
-	// overwrite the frame hook with a JSL to the end of SRAM:
+	// overwrite the frame hook with a JSL to the SRAM trampoline:
 	pcAddr, err = lorom.BusAddressToPak(frameHook)
 	a = asm.NewEmitter(p.rom.Slice(pcAddr, 4), true)
 	a.SetBase(frameHook)
@@ -253,19 +233,102 @@ func (p *Patcher) Patch() (err error) {
 	return nil
 }
 
-func (p *Patcher) asmCopyRoutine(tc []byte, a *asm.Emitter, addr uint32) uint32 {
-	ln := len(tc)
-	if ln&1 != 0 {
-		panic("asm routine length must be a multiple of 2 bytes")
+// emitSRAMCode emits the common code that the patched init code copies to SRAM at sramCodeAddr.
+func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunction]uint32) (err error) {
+	// pad emits zero bytes up to addr, which must not be behind the PC:
+	pad := func(addr uint32) {
+		if a.PC() > addr {
+			panic(fmt.Errorf("SRAM code at $%06x overlaps $%06x", a.PC(), addr))
+		}
+		if n := addr - a.PC(); n > 0 {
+			a.EmitBytes(make([]byte, n))
+		}
 	}
 
-	// copy the assembled routine using LDA.w and STA.l instruction pairs, 16-bits at a time:
-	for i := 0; i < ln; i += 2 {
-		a.LDA_imm16_lh(tc[i], tc[i+1])
-		a.STA_long(addr)
-		addr += 2
+	// assume 8-bit mode for accumulator and index registers:
+	a.AssumeSEP(0x30)
+
+	if a.Label("updateStub") != updateStubAddr {
+		panic(fmt.Errorf("updateStubAddr expected to be $%06x but got $%06x", a.PC(), updateStubAddr))
 	}
-	return addr
+	a.RTS()
+
+	pad(preMainAddr)
+	a.Label("preMain")
+	a.Comment("only update during safe modules:")
+	a.LDA_dp(0x10)
+	// >= $19    : bad
+	a.CMP_imm8_b(0x19)
+	a.BCS("syncExit")
+	// <= $06    : bad
+	a.CMP_imm8_b(0x07)
+	a.BCC("syncExit")
+	// == $08    : bad
+	a.CMP_imm8_b(0x08)
+	a.BEQ("syncExit")
+	// == $0A    : bad
+	a.CMP_imm8_b(0x0A)
+	a.BEQ("syncExit")
+	// == $14    : bad
+	a.CMP_imm8_b(0x14)
+	a.BEQ("syncExit")
+
+	jsr := a.Label("syncStart")
+	if preMainJSRAddr != jsr+2 {
+		panic(fmt.Errorf("preMainJSRAddr expected to be $%06x but got $%06x", jsr+2, preMainJSRAddr))
+	}
+	a.JSR_abs(uint16(updateStubAddr & 0xFFFF))
+
+	// jsl to mainrouting that we patched over:
+	a.Label("syncExit")
+	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+
+	p.emitLinkOAMCopy(a)
+	a.RTL()
+
+	pad(map16ApplyAddr)
+	if err = emitMap16Apply(a, fns[fnOverworldDrawMap16Persist]); err != nil {
+		return
+	}
+
+	if err = a.Finalize(); err != nil {
+		return
+	}
+	return
+}
+
+// emitLinkOAMCopy copies Link's OAM entries to linkOAMCopyAddr for o2 to read. It runs right after the module drew
+// them. Reading them from the OAM buffer in WRAM races with the next frame's ClearOAMBuffer, which sets the Y
+// coordinates of all entries to $F0 and made Link disappear for alttpo players. o2 may still read the copy while it
+// is being written, which at worst mixes two consecutive frames' entries.
+func (p *Patcher) emitLinkOAMCopy(a *asm.Emitter) {
+	a.Comment("copy Link's OAM entries to SRAM before the next frame clears them:")
+	a.PHP()
+	a.PHB()
+	a.REP(0x30)
+	a.LDA_long(0x7E0352)
+	a.STA_long(linkOAMCopyAddr + linkOAMCopyStart)
+	a.CLC()
+	a.ADC_imm16_w(0x0800)
+	a.TAX()
+	a.LDY_imm16_w(uint16((linkOAMCopyAddr + linkOAMCopyEntries) & 0xFFFF))
+	a.LDA_imm16_w(linkOAMCount*4 - 1)
+	a.MVN(uint8(linkOAMCopyAddr>>16), 0x7E)
+	a.Comment("extended attributes; Y is now at the copy's extended attributes:")
+	a.LDA_long(0x7E0352)
+	a.LSR()
+	a.LSR()
+	a.CLC()
+	a.ADC_imm16_w(0x0A20)
+	a.TAX()
+	a.LDA_imm16_w(linkOAMCount - 1)
+	a.MVN(uint8(linkOAMCopyAddr>>16), 0x7E)
+	a.Comment("graphics DMA source addresses; Y is now at the copy's DMA source addresses:")
+	a.LDX_imm16_w(linkOAMCopyDMAWRAM)
+	a.LDA_imm16_w(linkOAMCopyDMASize - 1)
+	a.MVN(uint8(linkOAMCopyAddr>>16), 0x7E)
+	a.PLB()
+	a.PLP()
 }
 
 func (p *Patcher) readAt(busAddr uint32) {

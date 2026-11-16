@@ -84,8 +84,8 @@ func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
 		},
 		// finally, update the JSR instruction to point to the updated routine:
 		{
-			// JSR $7D00 | JSR $7E00
-			// update the $7D or $7E byte in the JSR instruction:
+			// JSR $7400 | JSR $7800
+			// update the $74 or $78 byte in the JSR instruction:
 			Address: targetJSR,
 			Size:    1,
 			Data:    []byte{uint8(targetSNES >> 8)},

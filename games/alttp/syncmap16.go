@@ -52,6 +52,8 @@ const (
 	map16MaxPerUpdate = 8
 	map16ChunkMax     = 0x40 // entries per message
 	map16AsmSkipped   = 0xFF
+	// map16TableEnd terminates the table passed to the map16 apply routine; tilemap offsets are even and < $2000:
+	map16TableEnd = uint16(0xFFFF)
 )
 
 type map16Entry struct {
@@ -365,11 +367,6 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	if !isOverworldModule(local.Module) || local.SubModule != 0 {
 		return
 	}
-	fnDraw, ok := g.romFunctions[fnOverworldDrawMap16Persist]
-	if !ok {
-		return
-	}
-
 	if !m.diagLogged {
 		// describe what we know of the remote players' logs once per area visit, to explain missing changes:
 		m.diagLogged = true
@@ -444,19 +441,51 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.Comment(fmt.Sprintf("map16 changes for area $%02x:", m.area))
 	a.BRA("m16_start")
 	table := a.PC()
+	a.EmitBytes([]byte{byte(m.area), byte(m.area >> 8)})
 	for _, e := range entries {
 		a.EmitBytes([]byte{byte(e.Pos), byte(e.Pos >> 8), byte(e.Tile), byte(e.Tile >> 8)})
 	}
+	a.EmitBytes(binary.LittleEndian.AppendUint16(nil, map16TableEnd))
 	a.Label("m16_start")
-	a.Comment("in the overworld module, submodule 0, in the same area:")
+	a.LDA_imm16_w(uint16(table))
+	a.JSR_abs(uint16(map16ApplyAddr & 0xFFFF))
+	emitReport(a, index)
+
+	return
+}
+
+// emitMap16Apply emits the routine at map16ApplyAddr in SRAM which applies a table of map16 changes. It is called by
+// generated map16 update routines in 16-bit mode (REP #$30) with JSR, with A = address of the table in bank $70:
+//
+//	dw area                ; $8A the changes are for
+//	dw pos, tile ...       ; tilemap offset ($7E2000,X) and map16 tile of each change
+//	dw map16TableEnd
+//
+// It returns A = the number of changes applied (it stops early when the VRAM stripe buffer is getting full), or
+// map16AsmSkipped if the player is no longer in the area in the overworld module, submodule 0. fnDraw is
+// Overworld_DrawMap16_Persist.
+func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
+	if a.Label("map16Apply") != map16ApplyAddr {
+		return fmt.Errorf("map16ApplyAddr expected to be $%06x but got $%06x", a.PC(), map16ApplyAddr)
+	}
+	bank := map16ApplyAddr & 0xFF0000
+
+	a.AssumeREP(0x30)
+	a.Comment("X = table address; in the overworld module, submodule 0, in the table's area:")
+	a.TAX()
 	a.LDA_dp(0x10)
 	a.CMP_imm16_w(0x0009)
 	a.BEQ("m16_module_ok")
 	a.CMP_imm16_w(0x000B)
-	asmBNEFar(a, "m16_skip", "m16_module_ok")
+	a.BNE_far("m16_skip")
+	a.Label("m16_module_ok")
 	a.LDA_dp(0x8A)
-	a.CMP_imm16_w(m.area)
-	asmBNEFar(a, "m16_skip", "m16_area_ok")
+	a.CMP_long_x(bank)
+	a.BNE_far("m16_skip")
+	a.Comment("X = first entry, also pushed to count the entries applied:")
+	a.INX()
+	a.INX()
+	a.PHX()
 	a.Comment("$06 = $0712 (0 in small areas, which are entirely in VRAM):")
 	a.LDA_abs(0x0712)
 	a.AND_imm16_w(0x00FF)
@@ -468,20 +497,22 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.LDA_dp(0x84)
 	a.AND_imm16_w(0x007E)
 	a.STA_dp(0x0A)
-	a.LDX_imm16_w(0)
 	a.Label("m16_loop")
-	a.Comment("stop when the VRAM stripe buffer is getting full:")
+	a.Comment("stop when the VRAM stripe buffer is getting full or at the end of the table:")
 	a.LDA_abs(0x1000)
 	a.CMP_imm16_w(0x0080)
 	a.BCS("m16_done")
+	a.LDA_long_x(bank + 0)
+	a.CMP_imm16_w(map16TableEnd)
+	a.BEQ("m16_done")
 	a.PHX()
-	a.LDA_long_x(table + 2)
+	a.LDA_long_x(bank + 2)
 	a.STA_dp(0x0E)
-	a.LDA_long_x(table + 0)
+	a.LDA_long_x(bank + 0)
 	a.TAX()
 	a.Comment("skip if the tilemap already has this tile:")
 	a.LDA_long_x(0x7E2000)
-	asmCMP_dp(a, 0x0E)
+	a.CMP_dp(0x0E)
 	a.BEQ("m16_next")
 	a.Comment("memorize the change like Overworld_MemorizeMap16Change if the log has room:")
 	a.LDA_abs(map16LogIndex)
@@ -490,11 +521,11 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.PHX()
 	a.TAX()
 	a.LDA_dp(0x0E)
-	asmSTA_long_x(a, map16LogTile)
+	a.STA_long_x(map16LogTile)
 	a.PLA()
-	asmSTA_long_x(a, map16LogPos)
-	asmINX(a)
-	asmINX(a)
+	a.STA_long_x(map16LogPos)
+	a.INX()
+	a.INX()
 	a.STX_abs(map16LogIndex)
 	a.TAX()
 	a.Label("m16_no_memo")
@@ -504,18 +535,18 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.Comment("large areas: draw if within 7 map16 rows/columns before or 23 after $84, which VRAM always holds:")
 	a.TXA()
 	a.AND_imm16_w(0x1F80)
-	asmSEC(a)
-	asmSBC_dp(a, 0x08)
+	a.SEC()
+	a.SBC_dp(0x08)
 	a.CLC()
-	asmADC_imm16(a, 7<<7)
+	a.ADC_imm16_w(7 << 7)
 	a.CMP_imm16_w(31 << 7)
 	a.BCS("m16_offscreen")
 	a.TXA()
 	a.AND_imm16_w(0x007E)
-	asmSEC(a)
-	asmSBC_dp(a, 0x0A)
+	a.SEC()
+	a.SBC_dp(0x0A)
 	a.CLC()
-	asmADC_imm16(a, 7<<1)
+	a.ADC_imm16_w(7 << 1)
 	a.CMP_imm16_w(31 << 1)
 	a.BCS("m16_offscreen")
 	a.Label("m16_draw")
@@ -528,25 +559,25 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	a.BRA("m16_next")
 	a.Label("m16_offscreen")
 	a.LDA_dp(0x0E)
-	asmSTA_long_x(a, 0x7E2000)
+	a.STA_long_x(0x7E2000)
 	a.Label("m16_next")
 	a.PLX()
-	asmINX(a)
-	asmINX(a)
-	asmINX(a)
-	asmINX(a)
-	asmCPX_imm16(a, uint16(len(entries)<<2))
-	a.BNE("m16_loop")
+	a.INX()
+	a.INX()
+	a.INX()
+	a.INX()
+	a.JMP_abs("m16_loop")
 	a.Label("m16_done")
-	a.Comment("report how many changes were applied:")
+	a.Comment("return how many changes were applied:")
 	a.TXA()
-	asmLSR(a)
-	asmLSR(a)
-	a.BRA("m16_report")
+	a.SEC()
+	a.SBC_sr(0x01)
+	a.LSR()
+	a.LSR()
+	a.PLX()
+	a.RTS()
 	a.Label("m16_skip")
 	a.LDA_imm16_w(map16AsmSkipped)
-	a.Label("m16_report")
-	emitReport(a, index)
-
-	return
+	a.RTS()
+	return nil
 }
