@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"sort"
 	"testing"
 
 	"github.com/alttpo/snes/emulator"
@@ -703,4 +704,70 @@ func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
 	if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
 		t.Errorf("expected a blob with core updates disabled outside dialogs; OAM[$7d] = % x", entry[:])
 	}
+}
+
+// Enemies and NPCs use the same shadows as bombs and thrown objects: shadows are only sent while one of those exists,
+// and only the ones just under it.
+func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
+	setOAM := func(e *emulator.System, i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	sent := func(h *skScenario) (chrs []uint8) {
+		list := append([]remoteSprite(nil), h.gs[0].g.players[1].Sprites.list...)
+		sort.Slice(list, func(i, j int) bool { return list[i].index < list[j].index })
+		for _, sp := range list {
+			// Link's own entries are at $64..$67:
+			if sp.index < 0x64 || sp.index > 0x6F {
+				chrs = append(chrs, sp.b[2])
+			}
+		}
+		return
+	}
+	enemyShadows := func(e *emulator.System) {
+		// an enemy's shadow far away and one right next to Link:
+		setOAM(e, 0x30, 0xA0, 0x90, 0x6C, 0x28, 0x00)
+		setOAM(e, 0x31, 0xA8, 0x90, 0x6C, 0x68, 0x00)
+		setOAM(e, 0x32, 0x58, 0x68, 0x6C, 0x28, 0x00)
+	}
+
+	t.Run("charging a spin attack", func(t *testing.T) {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		enemyShadows(e)
+		e.WRAM[0x0C4A+3] = 0x3C
+		setOAM(e, 0x10, 0x60, 0x50, 0x80, 0x04, 0x00)
+		h.frames(8)
+		if chrs := sent(h); len(chrs) != 1 || chrs[0] != 0x80 {
+			t.Errorf("expected only the sparkle to be sent; got chrs % x", chrs)
+		}
+	})
+
+	t.Run("thrown pot", func(t *testing.T) {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		enemyShadows(e)
+		e.WRAM[0x0DD0+5], e.WRAM[0x0E20+5] = 0x0B, 0xEC
+		// the pot in the air at ($C0, $40) and its shadow 20 pixels below:
+		setOAM(e, 0x20, 0xC0, 0x40, 0x44, 0x0C, 0x02)
+		setOAM(e, 0x21, 0xC0, 0x54, 0x6C, 0x28, 0x02)
+		h.frames(8)
+		if chrs := sent(h); len(chrs) != 2 || chrs[0] != 0x44 || chrs[1] != 0x6C {
+			t.Errorf("expected the pot and its shadow; got chrs % x", chrs)
+		}
+	})
+
+	t.Run("bomb", func(t *testing.T) {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		enemyShadows(e)
+		e.WRAM[0x0C4A+2] = 0x07
+		setOAM(e, 0x20, 0x20, 0x40, 0x6E, 0x22, 0x02)
+		setOAM(e, 0x21, 0x20, 0x4C, 0x6C, 0x28, 0x00)
+		setOAM(e, 0x22, 0x28, 0x4C, 0x6C, 0x68, 0x00)
+		h.frames(8)
+		if chrs := sent(h); len(chrs) != 3 || chrs[0] != 0x6E || chrs[1] != 0x6C || chrs[2] != 0x6C {
+			t.Errorf("expected the bomb and its shadow; got chrs % x", chrs)
+		}
+	})
 }

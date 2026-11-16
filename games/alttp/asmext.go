@@ -70,3 +70,13 @@ func emitBITImm16(a *asm.Emitter, imm uint16) {
 func emitEORImm8(a *asm.Emitter, imm uint8) {
 	emitRaw(a, fmt.Sprintf("eor.b #$%02x", imm), 0x49, imm)
 }
+
+// emitTSBAbs emits `TSB.w addr`.
+func emitTSBAbs(a *asm.Emitter, addr uint16) {
+	emitRaw(a, fmt.Sprintf("tsb.w $%04x", addr), 0x0C, uint8(addr), uint8(addr>>8))
+}
+
+// emitANDLong emits `AND.l addr`.
+func emitANDLong(a *asm.Emitter, addr uint32) {
+	emitRaw(a, fmt.Sprintf("and.l $%06x", addr), 0x2F, uint8(addr), uint8(addr>>8), uint8(addr>>16))
+}

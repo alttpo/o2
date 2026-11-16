@@ -279,6 +279,7 @@ func (g *Game) readLinkSprites() {
 	// captured sparkles, dust, projectiles and carried and thrown objects (see emitCaptureExtras): their tiles are
 	// static or in the common sprite sheets, which receivers draw from their own VRAM:
 	if n := int(c[linkOAMCopyExtras]) | int(c[linkOAMCopyExtras+1])<<8; n <= linkOAMExtrasMax*linkOAMExtraSize {
+		var extras []linkSprite
 		for o := linkOAMCopyExtras + 2; o < linkOAMCopyExtras+2+n; o += linkOAMExtraSize {
 			e := c[o : o+linkOAMExtraSize]
 			sp := linkSprite{index: e[5] & 0x7F}
@@ -287,6 +288,13 @@ func (g *Game) readLinkSprites() {
 			sp.size = (sp.b[4] >> 1) & 1
 			sp.pal = (sp.b[3] >> 1) & 7
 			sp.absidx = [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
+			extras = append(extras, sp)
+		}
+		for _, sp := range extras {
+			// enemies and NPCs on screen use the same shadows as bombs and thrown objects:
+			if isCaptureShadowChr(sp.b[2]) && !isNearShadowCaster(int(sp.b[0])|int(sp.b[4]&1)<<8, int(sp.b[1]), extras) {
+				continue
+			}
 			s.sprites = append(s.sprites, sp)
 		}
 	}

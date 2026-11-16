@@ -931,17 +931,20 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 // SRAM and ROM addresses of the capture tables and routine:
 const (
 	// captureTypesAddr is a table in SRAM of the ancilla types $00..$3F whose sprites are captured, built from
-	// captureAncillae by the init code:
+	// captureAncillae by the init code: 1 for most, 3 for captureShadowCasters:
 	captureTypesAddr = sramZeroAddr
-	// captureChrsAddr is a table in SRAM of the chrs $00..$FF that are captured, built from captureChrs:
+	// captureChrsAddr is a table in SRAM of the chrs $00..$FF that are captured, built from captureChrs: 1 for most,
+	// 2 for captureShadowChrs:
 	captureChrsAddr = captureTypesAddr + 0x40
+	// captureMaskAddr is the bits of captureChrsAddr captured this frame (u16; the high byte stays 0):
+	captureMaskAddr = sramZeroEnd - 2
 
 	// captureTypeListAddr and captureChrListAddr are the lists in ROM the init code builds the tables from, padded
 	// with their last entry:
 	captureTypeListAddr = uint32(0x1BB600)
-	captureTypeListSize = 0x20
+	captureTypeListSize = 0x18
 	captureChrListAddr  = captureTypeListAddr + captureTypeListSize
-	captureChrListSize  = 0x60
+	captureChrListSize  = 0x40
 	// captureExtrasAddr is the capture routine in ROM, called by the trampoline with JSL:
 	captureExtrasAddr = captureChrListAddr + captureChrListSize
 )
@@ -986,8 +989,6 @@ var captureChrs = []uint16{
 	0x53, 0x54,
 	// bomb and its explosion:
 	0x6E, 0x84, 0x86, 0x88, 0x8A, 0x8C, 0x9B,
-	// shadows of Link, bombs and thrown objects:
-	0x6C, 0x28, 0x38,
 	// Cane of Somaria blast, block, fizzle, split:
 	0x40, 0x41, 0x43, 0x50, 0x51, 0x52, 0xE9, 0xF9, 0xC4, 0xC5, 0xC6, 0xD2,
 	// carried and thrown bush, pot, rock, sign, large rock:
@@ -996,10 +997,53 @@ var captureChrs = []uint16{
 	0x48, 0x58, 0x59,
 }
 
-// isCaptureChr reports whether chr is one of captureChrs.
+// captureShadowChrs are the shadows under bombs, Cane of Somaria blocks and carried and thrown objects. Enemies and
+// NPCs use the same shadows, so they are only captured while one of those exists (captureShadowCasters, or a
+// carried or thrown sprite), and o2 only sends those just below one of them (see isNearShadowCaster).
+var captureShadowChrs = []uint16{0x6C, 0x28, 0x38}
+
+// captureShadowCasters are the ancilla types that cast those shadows: bombs and Cane of Somaria blocks:
+var captureShadowCasters = []uint8{0x07, 0x2C}
+
+// captureShadowCasterChrs are the chrs of the objects those shadows are under: bombs, Cane of Somaria blocks, bushes,
+// pots, rocks, signs:
+var captureShadowCasterChrs = []uint8{0x6E, 0xE9, 0x42, 0x44, 0x46, 0x4A}
+
+// isCaptureChr reports whether chr is one of captureChrs or captureShadowChrs.
 func isCaptureChr(chr uint8) bool {
-	for _, c := range captureChrs {
+	for _, c := range append(captureChrs, captureShadowChrs...) {
 		if uint16(chr) == c {
+			return true
+		}
+	}
+	return false
+}
+
+func isCaptureShadowChr(chr uint8) bool {
+	for _, c := range captureShadowChrs {
+		if uint16(chr) == c {
+			return true
+		}
+	}
+	return false
+}
+
+// isNearShadowCaster reports whether a captured shadow at x, y is just under one of the captured objects that cast
+// shadows; otherwise it belongs to an enemy or NPC on screen at the same time. Thrown objects fly up to about 32
+// pixels above their shadows.
+func isNearShadowCaster(x, y int, sprites []linkSprite) bool {
+	for _, o := range sprites {
+		isCaster := false
+		for _, c := range captureShadowCasterChrs {
+			if o.b[2] == c && o.b[3]&1 == 0 {
+				isCaster = true
+			}
+		}
+		if !isCaster {
+			continue
+		}
+		ox, oy := int(o.b[0])|int(o.b[4]&1)<<8, int(o.b[1])
+		if dx, dy := x-ox, y-oy; dx >= -24 && dx <= 24 && dy >= -8 && dy <= 56 {
 			return true
 		}
 	}
@@ -1050,6 +1094,17 @@ func emitInitCaptureTables(a *asm.Emitter) {
 		a.DEX()
 		a.BPL(loop)
 	}
+	a.Comment("shadows, and the ancillae that cast them:")
+	a.SEP(0x20)
+	a.LDA_imm8_b(0x02)
+	for _, c := range captureShadowChrs {
+		a.STA_abs(uint16((captureChrsAddr + uint32(c)) & 0xFFFF))
+	}
+	a.LDA_imm8_b(0x03)
+	for _, t := range captureShadowCasters {
+		a.STA_abs(uint16((captureTypesAddr + uint32(t)) & 0xFFFF))
+	}
+	a.REP(0x20)
 }
 
 // emitCaptureExtras emits the lists at captureTypeListAddr and captureChrListAddr and the routine at
@@ -1083,10 +1138,13 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.SBC_imm8_b(0x01)
 	a.STA_long(remoteTableAddr + rtCaptureTTL)
 
-	a.Comment("only while a captured ancilla exists:")
+	a.Comment("which chrs to capture (captureMaskAddr): 1 while a captured ancilla exists, 2 (shadows) while one that")
+	a.Comment("casts a shadow does:")
 	a.PEA(0x7070)
 	a.PLB()
 	a.PLB()
+	mask := uint16(captureMaskAddr & 0xFFFF)
+	a.STZ_abs(mask)
 	a.LDX_imm8_b(0x09)
 	a.Label("ce_ancilla")
 	a.LDA_long_x(0x7E0C4A)
@@ -1094,37 +1152,47 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.BCS("ce_next_ancilla")
 	a.TAY()
 	emitLDAAbsY(a, uint16(captureTypesAddr&0xFFFF))
-	a.BNE("ce_scan")
+	emitTSBAbs(a, mask)
 	a.Label("ce_next_ancilla")
 	a.DEX()
 	a.BPL("ce_ancilla")
-	a.Comment("or a carried sprite or thrown scenery:")
+	a.Comment("a carried sprite or thrown scenery (both, with shadows):")
 	a.LDX_imm8_b(0x0F)
 	a.Label("ce_sprite")
 	a.LDA_long_x(0x7E0DD0)
 	a.BEQ("ce_next_sprite")
 	a.CMP_imm8_b(0x0A)
-	a.BEQ("ce_scan")
+	a.BEQ("ce_sprite_found")
 	a.LDA_long_x(0x7E0E20)
 	a.CMP_imm8_b(0xEC)
-	a.BEQ("ce_scan")
+	a.BNE("ce_next_sprite")
+	a.Label("ce_sprite_found")
+	a.LDA_imm8_b(0x03)
+	emitTSBAbs(a, mask)
+	a.BRA("ce_sprites_done")
 	a.Label("ce_next_sprite")
 	a.DEX()
 	a.BPL("ce_sprite")
-	a.Comment("or thrown object debris:")
+	a.Label("ce_sprites_done")
+	a.LDA_abs(mask)
+	a.BNE("ce_scan")
+	a.Comment("thrown object debris:")
 	a.LDA_long(0x7E0FB4)
 	a.BEQ("ce_exit")
 	a.LDX_imm8_b(0x1D)
 	a.Label("ce_garnish")
 	a.LDA_long_x(0x7FF800)
 	a.CMP_imm8_b(0x16)
-	a.BEQ("ce_scan")
+	a.BEQ("ce_garnish_found")
 	a.DEX()
 	a.BPL("ce_garnish")
 	a.Label("ce_exit")
 	a.PLB()
 	a.PLP()
 	a.RTL()
+	a.Label("ce_garnish_found")
+	a.LDA_imm8_b(0x01)
+	emitTSBAbs(a, mask)
 
 	a.Label("ce_scan")
 	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
@@ -1134,6 +1202,11 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.REP(0x30)
 	a.LDY_imm16_w(0x01FC)
 	a.Label("ce_loop")
+	a.Comment("drawn this frame (most entries are not):")
+	emitLDAAbsY(a, 0x0800)
+	a.AND_imm16_w(0xFF00)
+	a.CMP_imm16_w(0xF000)
+	a.BEQ("ce_next")
 	a.Comment("a captured chr in name table 0:")
 	emitLDAAbsY(a, 0x0802)
 	emitBITImm16(a, 0x0100)
@@ -1141,12 +1214,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.AND_imm16_w(0x00FF)
 	a.TAX()
 	a.LDA_long_x(captureChrsAddr)
-	a.AND_imm16_w(0x00FF)
-	a.BEQ("ce_next")
-	a.Comment("drawn this frame:")
-	emitLDAAbsY(a, 0x0800)
-	a.AND_imm16_w(0xFF00)
-	a.CMP_imm16_w(0xF000)
+	emitANDLong(a, captureMaskAddr)
 	a.BEQ("ce_next")
 	a.Comment("not one of Link's own entries, which are copied already:")
 	a.TYA()

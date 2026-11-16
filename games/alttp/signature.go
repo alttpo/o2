@@ -87,6 +87,7 @@ func computePatchVersion() (v [4]byte) {
 		sramZeroAddr,
 		sramZeroEnd,
 		linkOAMExtrasMax,
+		captureMaskAddr,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 		romGarbageStart,
