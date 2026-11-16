@@ -368,3 +368,88 @@ func TestSmallKeysScenario_AbortedUpdate(t *testing.T) {
 	h.frames(skSettleFrames)
 	h.expectKeys("after next pickup", 2, 2)
 }
+
+// inInterface opens the menu, map or a text box (module $0E with the given submodule) from the current module.
+func (h *skScenario) inInterface(i int, subModule uint8, frozen bool) {
+	e := h.gs[i].e
+	e.WRAM[0x010C] = e.WRAM[skModule]
+	e.WRAM[skModule] = 0x0E
+	e.WRAM[skSubModule] = subModule
+	e.WRAM[0x02E4] = 0
+	if frozen {
+		// NPCs freeze Link while they talk:
+		e.WRAM[0x02E4] = 1
+	}
+}
+
+func TestSmallKeysScenario_PickupWhileInInterface(t *testing.T) {
+	tests := []struct {
+		name      string
+		subModule uint8
+		frozen    bool
+	}{
+		{"item menu", 0x01, false},
+		{"text box", 0x02, false},
+		{"NPC dialog", 0x02, true},
+		{"map", 0x07, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newSKScenario(t, 2)
+			h.inDungeon(0, 0)
+			h.onOverworld(1, 0)
+			h.frames(skSettleFrames)
+
+			h.inInterface(1, tt.subModule, tt.frozen)
+			h.frames(2)
+			h.gs[0].e.WRAM[skCurrentKeys] = 1
+			h.frames(skSettleFrames)
+			h.expectKeys("after g1 pickup while g2 is in the "+tt.name, 1, 1)
+		})
+	}
+}
+
+func TestSmallKeysScenario_UpdateInFlightWhenDialogOpens(t *testing.T) {
+	h := newSKScenario(t, 2)
+	h.inDungeon(0, 0)
+	h.onOverworld(1, 0)
+	h.frames(skSettleFrames)
+
+	// g1 picks up a key; g2 opens a dialog right after its update routine was written:
+	h.gs[0].e.WRAM[skCurrentKeys] = 1
+	g2 := h.gs[1]
+	fired := false
+	g2.beforeEmulate = func() {
+		if !fired && g2.g.updateStage > 0 {
+			fired = true
+			h.inInterface(1, 0x02, true)
+		}
+	}
+	h.frames(4)
+	if !fired {
+		t.Fatal("g2 never generated an update")
+	}
+	// the routine runs during the dialog and is confirmed without waiting for it to close:
+	h.frames(2)
+	if g2.g.updateStage != 0 {
+		t.Errorf("expected the update to be confirmed during the dialog; updateStage = %d", g2.g.updateStage)
+	}
+	h.expectKeys("after g1 pickup", 1, 1)
+}
+
+func TestSmallKeysScenario_NoUpdateWhileFrozenInGameplay(t *testing.T) {
+	h := newSKScenario(t, 2)
+	h.inDungeon(0, 0)
+	h.onOverworld(1, 0)
+	h.frames(skSettleFrames)
+
+	// g2 is frozen in a cutscene on the overworld:
+	h.gs[1].e.WRAM[0x02E4] = 1
+	h.gs[0].e.WRAM[skCurrentKeys] = 1
+	h.frames(skSettleFrames)
+	h.expectKeys("while g2 is frozen", 1, 0)
+
+	h.gs[1].e.WRAM[0x02E4] = 0
+	h.frames(skSettleFrames)
+	h.expectKeys("after g2 is unfrozen", 1, 1)
+}

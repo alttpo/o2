@@ -108,15 +108,17 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 			updated = false
 			return
 		}
+		// don't update during cutscenes, when Link is frozen:
+		if g.wramU8(0x02e4) != 0 {
+			updated = false
+			return
+		}
 	} else if module == 0x0e {
-		// menu/interface module is ok
+		// the menus, map and text boxes are ok. The patched ROM runs update routines in this module too, so updates
+		// don't wait for the player to close them. NPCs freeze Link ($02E4) while they talk, so that is ignored here;
+		// the generated routines check for the modules they need themselves.
 	} else {
 		// bad module:
-		updated = false
-		return
-	}
-	// don't update if Link is currently frozen:
-	if g.wramU8(0x02e4) != 0 {
 		updated = false
 		return
 	}
