@@ -47,7 +47,7 @@ Values match alttpo's `GameState::deserialize`.
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
-| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | head and body poses used to draw one remote player |
+| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield, shadow, sword sparkles and dash dust | head, body and shadow used to draw one remote player |
 | 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
@@ -98,8 +98,13 @@ more messages, which corrupted the rest of the packet.
 ## Remaining discrepancies (not fixed)
 
 - **alttpo players see only part of o2 players.** o2 sends Link's head, body and hands (tiles straight from ROM,
-  which includes custom Link sprites), sword and shield, and Link's shadow. Other sprites (items in use, effects, held
-  objects, followers) are not sent: their tiles only exist in VRAM, which o2 cannot read cheaply. Only sprite palettes
+  which includes custom Link sprites), sword and shield, Link's shadow, and the sparkles of charging a spin attack,
+  spinning and poking walls with the sword and the dust of dashing (ancillae `$0D`, `$1B`, `$1E`, `$26`, `$2A`,
+  `$2B`, `$3C`; chrs in the common sprite sheets, sent without tile data like the shadow, so receivers draw them from
+  their own VRAM). The trampoline finds those by scanning the OAM buffer for their chrs (up to 5 entries), only on
+  frames where one of those ancillae exists and while another player is in the same location. Other sprites (items
+  in use, effects, held objects, followers) are not sent: their tiles only exist in VRAM, which o2 cannot read
+  cheaply. Only sprite palettes
   5 (sword, shield) to 7 (Link) are sent. o2 also does not send sfx, ancillae, tilemaps, torches or PvP.
 - **o2 players see much less of other players than alttpo players do.** See "Drawing remote players" below.
 - **Sword and shield tiles are rebuilt from ROM.** The game decompresses sprite sheets `$5E`/`$5F` and converts the
@@ -423,10 +428,12 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 
 - **Only players in the same room or overworld area** (alttpo's `locations_equal`) and not in a bad module
   (alttpo's `is_it_a_bad_time`) are drawn, and only while the local player is in modules `$07`, `$09` or `$0B`.
+- **Switched off** with "Sync Sprites" in the web UI (on by default).
 - **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
   from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
-  custom sprite, and without sword, shield, items or shadow.
+  custom sprite, and without sword, shield or items. Their shadow (chr `$6C`, up to 2 sprites) is drawn under them
+  when they send it.
 - **VRAM:** the head and body are uploaded over chrs `$20..$23`/`$30..$33`, which followers and a few NPCs (Kiki, the
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
