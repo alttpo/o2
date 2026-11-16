@@ -438,7 +438,9 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 (`games/alttp/remotesprites.go`):
 
 - **Only players in the same room or overworld area** (alttpo's `locations_equal`) and not in a bad module
-  (alttpo's `is_it_a_bad_time`) are drawn, and only while the local player is in modules `$07`, `$09` or `$0B`.
+  (alttpo's `is_it_a_bad_time`) are drawn, and only while the local game draws the underworld or overworld sprites: modules `$07`, `$09`,
+  `$0B`, spotlight open/close (`$0F`/`$10`), boss victories (`$13`/`$16`), and dialogs and menus (`$0E`) except
+  while the dungeon map, overworld map or flute menu is shown (the same condition as `Module0E_Interface`).
 - **Switched off** with "Sync Sprites" in the web UI (on by default).
 - **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
@@ -452,7 +454,7 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
   neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
-  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0, the player is
+  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0 (except in dialogs and menus), the player is
   drawn as a blob instead.
 - **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 7) at their Link
   coordinates.
