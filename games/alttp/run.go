@@ -847,6 +847,9 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		}
 	}
 
+	// update the remote players the game draws:
+	g.writeRemoteSprites(now)
+
 	// send out any network updates:
 	g.sendPackets()
 

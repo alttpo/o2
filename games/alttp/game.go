@@ -121,6 +121,9 @@ type Game struct {
 	linkSprites linkSpriteSync
 	swordShield swordShieldGfx
 
+	// remote players drawn by the game; see remotesprites.go:
+	remoteSprites remoteSpritesLocal
+
 	smallKeys smallKeysLocal
 	hearts    heartsLocal
 

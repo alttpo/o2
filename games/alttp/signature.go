@@ -39,7 +39,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 1
+	patchFormat = 2
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -68,6 +68,13 @@ func computePatchVersion() (v [4]byte) {
 		preMainAddr,
 		preMainJSRAddr,
 		map16ApplyAddr,
+		remoteDrawAddr,
+		remoteDrawSpriteAddr,
+		remoteTableAddr,
+		remoteTableSize,
+		remoteStateAddr,
+		remoteStateSize,
+		nmiHookPatchAddr,
 		linkOAMCopyAddr,
 		linkOAMCopySize,
 		patchSignatureAddr,
@@ -82,6 +89,12 @@ func computePatchVersion() (v [4]byte) {
 	if err := (&Patcher{}).emitSRAMCode(a, []byte{0, 0, 0}, map[romFunction]uint32{}); err != nil {
 		panic(fmt.Errorf("alttp: patch version: %w", err))
 	}
+	h.Write(a.Bytes())
+
+	// the NMI hook in ROM, at a placeholder address:
+	a = asm.NewEmitter(make([]byte, 0x100), false)
+	a.SetBase(romGarbageStart)
+	emitNMIHook(a, []byte{0xA9, 0x10})
 	h.Write(a.Bytes())
 
 	copy(v[:], h.Sum(nil))

@@ -146,6 +146,9 @@ type Player struct {
 	SRAM SRAMShadow
 	WRAM WRAMReadable
 
+	// sprites last received in message 0x03/0x04:
+	Sprites remoteSprites
+
 	SmallKeys smallKeysRemote
 	Hearts    heartsRemote
 

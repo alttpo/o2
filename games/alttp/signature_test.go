@@ -138,7 +138,7 @@ func TestPatchSignature_InitOverwrites(t *testing.T) {
 	copy(gs.e.SRAM[o:o+patchSignatureSize], stale[:])
 
 	gs.e.CPU.Reset()
-	if !gs.e.RunUntil(testROMMainGameLoop, 0x1_000) {
+	if !gs.e.RunUntil(testROMMainGameLoop, 0x4_000) {
 		t.Fatalf("CPU did not reach the main loop after reset")
 	}
 	if got := patchSignature(gs.e.SRAM[o : o+patchSignatureSize]); got != gs.g.patchSignature {

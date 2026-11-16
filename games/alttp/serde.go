@@ -302,63 +302,15 @@ func (g *Game) DeserializeSfx(p *Player, r io.Reader) (err error) {
 }
 
 func (g *Game) DeserializeSprites1(p *Player, r io.Reader) (err error) {
-	var (
-		length uint8
-	)
-	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
-		return fmt.Errorf("error deserializing sprites: %w", err)
-	}
-
-	for i := uint8(0); i < length; i++ {
-		// OAM index (bit 7 = chr data follows) and 5 OAM table bytes (b4 bit 7 = palette data follows):
-		var spr [6]byte
-		if _, err = io.ReadFull(r, spr[:]); err != nil {
-			return fmt.Errorf("error deserializing sprite %d: %w", i, err)
-		}
-
-		// matches alttpo's Sprite::decodeOAMTableBytes; size is not decoded for disabled sprites:
-		size := (spr[5] >> 1) & 1
-		if spr[2] == 0xF0 {
-			size = 0
-		}
-
-		// uniq tile absolute indices:
-		n := 2
-		if size != 0 {
-			n = 8
-		}
-		if err = discard(r, n); err != nil {
-			return fmt.Errorf("error deserializing sprite %d uniqtile indices: %w", i, err)
-		}
-
-		if spr[0]&0x80 != 0 {
-			// sprite graphics data 4bpp; 1 or 4 chrs of 32 bytes each:
-			n = 32
-			if size != 0 {
-				n = 32 * 4
-			}
-			if err = discard(r, n); err != nil {
-				return fmt.Errorf("error deserializing sprite %d gfx: %w", i, err)
-			}
-		}
-		if spr[5]&0x80 != 0 {
-			// palette data:
-			if err = discard(r, 32); err != nil {
-				return fmt.Errorf("error deserializing sprite %d palette: %w", i, err)
-			}
-		}
-	}
-
-	return
+	return g.deserializeRemoteSprites(p, r, 0)
 }
 
 func (g *Game) DeserializeSprites2(p *Player, r io.Reader) (err error) {
-	var dummy [1]byte
-	if _, err = r.Read(dummy[:]); err != nil {
-		panic(fmt.Errorf("error deserializing sprite2: %w", err))
+	var start uint8
+	if start, err = readU8(r); err != nil {
+		return fmt.Errorf("error deserializing sprites continuation: %w", err)
 	}
-	// TODO: pass in start flag
-	return g.DeserializeSprites1(p, r)
+	return g.deserializeRemoteSprites(p, r, int(start))
 }
 
 func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {

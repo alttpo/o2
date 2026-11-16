@@ -89,6 +89,18 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 	}
 	a.WriteTextTo(log.Writer())
 
+	// NMI_DoUpdates code that the patcher looks for: the LinkGraphics bank and the NMI hook location:
+	for addr, code := range map[uint32][]byte{
+		linkGfxBankAddr:  {0xA9, 0x10},
+		nmiHookPatchAddr: nmiHookPatchExpected,
+	} {
+		pakAddr, err = lorom.BusAddressToPak(addr)
+		if err != nil {
+			return
+		}
+		copy(rom.Slice(pakAddr, uint32(len(code))), code)
+	}
+
 	// module routing:
 	pakAddr, err = lorom.BusAddressToPak(testROMModuleRouting)
 	a = asm.NewEmitter(rom.Slice(pakAddr, 1), true)

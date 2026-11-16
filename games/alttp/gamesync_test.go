@@ -326,7 +326,7 @@ func (gs *gameSync) runFrame(t testing.TB) {
 	// emulate a main loop iteration:
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
-	if !e.RunUntil(testROMBreakPoint, 0x1_000) {
+	if !e.RunUntil(testROMBreakPoint, 0x2_000) {
 		t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, e.CPU.PC)
 		return
 	}

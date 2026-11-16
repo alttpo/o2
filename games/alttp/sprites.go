@@ -24,7 +24,8 @@ import (
 // them in WRAM (see swordshield.go). Other sprites whose tiles are only in VRAM are not sent since o2 cannot read VRAM.
 // Link's shadow is sent without tile data, the same as alttpo does: receivers draw it with their own shadow tiles.
 //
-// o2 does not draw remote players, so incoming sprites and unique tiles are ignored.
+// Incoming sprites are only used to draw one remote player's head and body (see remotesprites.go); incoming unique
+// tiles are ignored.
 
 // linkOAMCount is the number of OAM entries reserved for Link, starting at OAM index ($0352 >> 2):
 const linkOAMCount = 12

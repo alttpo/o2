@@ -17,10 +17,14 @@ import (
 //
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
-//	$707C00..$707F7F  common code, copied from ROM by the patched init code:
+//	$707C00..$707F7F  common code and data, copied from ROM by the patched init code:
 //	  $707C00           update stub: RTS, which the trampoline's JSR points at after a reset
 //	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
-//	  $707D00           map16 apply routine, called by generated map16 update routines
+//	  $707C80           map16 apply routine, called by generated map16 update routines
+//	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
+//	  $707E50           remote sprites drawing subroutine for one sprite
+//	  $707F00..$707F4B  remote sprites table, written by o2 (zeroed on reset)
+//	  $707F50..$707F67  remote sprites state, written by the game code (zeroed on reset)
 //	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
@@ -44,7 +48,10 @@ const (
 	// SRAM address of the high byte of the preMain routine's `JSR updateStubAddr` operand:
 	preMainJSRAddr = uint32(0x707C1A)
 	// map16ApplyAddr is the routine that generated map16 update routines JSR to; see emitMap16Apply:
-	map16ApplyAddr = uint32(0x707D00)
+	map16ApplyAddr = uint32(0x707C80)
+	// remote sprites routines; see remotesprites.go:
+	remoteDrawAddr       = uint32(0x707D50)
+	remoteDrawSpriteAddr = uint32(0x707E50)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
@@ -223,6 +230,9 @@ func (p *Patcher) Patch() (err error) {
 	}
 	a.Comment("common code for SRAM:")
 	a.EmitBytes(ta.Bytes())
+	// the NMI hook runs from ROM:
+	nmiHook := a.PC()
+	emitNMIHook(a, linkGfxBankInstruction(p.rom))
 	if err := a.Finalize(); err != nil {
 		return err
 	}
@@ -250,6 +260,27 @@ func (p *Patcher) Patch() (err error) {
 		return err
 	}
 	a.WriteTextTo(textBuf)
+
+	// NMI hook in NMI_DoUpdates that uploads a remote player's head and body tiles; without it, remote players are only
+	// drawn as blobs (see Game.remoteBodyOK):
+	pcAddr, err = lorom.BusAddressToPak(nmiHookPatchAddr)
+	if err != nil {
+		return
+	}
+	nmiCode := p.rom.Slice(pcAddr, uint32(len(nmiHookPatchExpected)))
+	if bytes.Equal(nmiCode, nmiHookPatchExpected) {
+		a = asm.NewEmitter(nmiCode, true)
+		a.SetBase(nmiHookPatchAddr)
+		a.JSL(nmiHook)
+		a.NOP()
+		a.NOP()
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
+	} else {
+		log.Printf("alttp: patch: unexpected code at $%06x: % x; remote players are drawn without Link's graphics\n", nmiHookPatchAddr, nmiCode)
+	}
 
 	return nil
 }
@@ -300,17 +331,30 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	}
 	a.JSR_abs(uint16(updateStubAddr & 0xFFFF))
 
-	// jsl to mainrouting that we patched over:
 	a.Label("syncExit")
+	emitRemoteSave(a)
+
+	// jsl to mainrouting that we patched over:
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 
 	p.emitLinkOAMCopy(a)
+	a.Comment("draw remote players:")
+	a.JSR_abs(uint16(remoteDrawAddr & 0xFFFF))
 	a.RTL()
 
 	pad(map16ApplyAddr)
 	if err = emitMap16Apply(a, fns[fnOverworldDrawMap16Persist]); err != nil {
 		return
 	}
+
+	pad(remoteDrawAddr)
+	emitRemoteDraw(a)
+	pad(remoteDrawSpriteAddr)
+	emitRemoteDrawSprite(a)
+
+	// the remote sprites table and state start out zeroed (TTL 0, nothing to upload):
+	pad(remoteTableAddr)
+	pad(remoteStateAddr + remoteStateSize)
 
 	if err = a.Finalize(); err != nil {
 		return
