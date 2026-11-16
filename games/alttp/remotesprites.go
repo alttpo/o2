@@ -156,8 +156,11 @@ const remoteTTLFrames = 60
 // remoteTableRefresh is how often o2 rewrites an unchanged table to keep its TTL from running out:
 const remoteTableRefresh = 250 * time.Millisecond
 
-// remoteSpritesStale is how long received sprites are used to draw a remote player's body:
-const remoteSpritesStale = 500 * time.Millisecond
+// remoteSpritesStale is how long received sprites are used to draw a remote player. alttpo sends its sprites every
+// frame to the sector of the room or area it is actually in, so an alttpo player in the local player's (reported)
+// location that stops sending sprites has left it, even though its reported location stays on the old room or area
+// until a screen transition or warp finishes. alttpo also only draws remote players from the sprites it receives.
+const remoteSpritesStale = 250 * time.Millisecond
 
 // emitRemoteSave saves dma_var6/7 and sets them to the sentinel, before the module runs. A and X are 8-bit.
 func emitRemoteSave(a *asm.Emitter) {
@@ -744,6 +747,12 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		if p == local || p.TTL() <= 0 || p.isBadTimeToDraw() {
 			continue
 		}
+		// a player scrolling to another room or area, or warping to the other world (the game switches their area on
+		// the first frame of the warp, Module09_MirrorWarp), is leaving it; their reported location only changes once
+		// that finishes (canSampleLocation):
+		if p.isInScreenTransition() {
+			continue
+		}
 		if !locationsEqual(local.Location, p.Location) {
 			continue
 		}
@@ -751,8 +760,11 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		if !g.SyncSprites || len(players) >= remoteBlobMax {
 			continue
 		}
-		fresh := now.Sub(p.Sprites.received) < remoteSpritesStale
-		if bodyOK && body == nil && fresh {
+		// players that stopped sending sprites left the room or area:
+		if now.Sub(p.Sprites.received) >= remoteSpritesStale {
+			continue
+		}
+		if bodyOK && body == nil {
 			if body = remoteBodySprites(p.Sprites.list); body != nil {
 				players = append([]*Player{p}, players...)
 				continue

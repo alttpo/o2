@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/alttpo/snes/emulator"
 	"github.com/alttpo/snes/mapping/lorom"
@@ -770,4 +771,53 @@ func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
 			t.Errorf("expected the bomb and its shadow; got chrs % x", chrs)
 		}
 	})
+}
+
+// A remote player that leaves the room or area is not drawn, even though their reported location only changes once
+// their screen transition or warp finishes.
+func TestRemoteSpritesScenario_RemoteLeaving(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		module, submodule uint8
+		subsubmodule      uint8
+		overworld         bool
+	}{
+		{"warp tile", 0x09, 0x23, 0x00, true},
+		{"overworld scroll", 0x09, 0x02, 0x00, true},
+		{"underworld room scroll", 0x07, 0x02, 0x00, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRSScenario(t)
+			if tc.overworld {
+				for i := range h.gs {
+					h.inArea(i, 0x18)
+				}
+				h.setScroll(1, 0x1050, 0x0250, 0x1000, 0x0200)
+				h.setScroll(0, 0x1070, 0x0270, 0x1010, 0x0208)
+			}
+			h.frames(8)
+			h.expectOAM("before", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+			e := h.gs[1].e
+			e.WRAM[0x10], e.WRAM[0x11], e.WRAM[0xB0] = tc.module, tc.submodule, tc.subsubmodule
+			h.frames(4)
+			p := &h.gs[0].g.players[1]
+			if !locationsEqual(p.Location, h.gs[0].g.local.Location) {
+				t.Fatalf("the remote's reported location should still be the same: $%06x", p.Location)
+			}
+			h.expectOAMUnused("leaving", 0, 0x7F)
+		})
+	}
+
+	// sprites stop arriving (alttpo sends them to the sector it is actually in):
+	h := newRSScenario(t)
+	h.frames(8)
+	g := h.gs[0].g
+	if _, draw, _ := g.buildRemoteSpritesTable(time.Now()); !draw {
+		t.Fatalf("expected the remote player to be drawn")
+	}
+	g.players[1].Sprites.received = time.Now().Add(-remoteSpritesStale)
+	if _, draw, _ := g.buildRemoteSpritesTable(time.Now()); draw {
+		t.Errorf("drawn without recent sprites")
+	}
 }
