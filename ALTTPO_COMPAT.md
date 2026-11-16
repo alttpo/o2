@@ -74,6 +74,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
+| 0x83 | hearts (delta based) | yes (main packet) | yes, own packet (after 0x82) | used |
 
 Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
@@ -118,7 +119,7 @@ more messages, which corrupted the rest of the packet.
 - **Extra reads per frame.** Sampling sprites adds one small SRAM read per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of
   one. The 16-byte patch signature (`$707FF0`, see `games/alttp/signature.go`) is read with the SRAM reads and every
-  8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to two
+  8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld, and the current area's flags (`$7EF280+$8A`) one more; the manipulable objects add one read plus up to two
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
@@ -157,6 +158,43 @@ in message 0x82; alttpo no longer sends small keys as last-writer-wins entries i
   and catches up again without starting a new session.
 - **Timestamps** come from each client's estimate of the server clock (alttpo's `server_now()`, falling back to the
   local clock until a server message has been received).
+
+## Hearts
+
+o2 (`games/alttp/synchearts.go`) and alttpo (`Hearts.as`) share heart containers and heart pieces as deltas in message
+0x83, like small keys. They used to take the highest value of `$7EF36C` (health capacity) and `$7EF36B` (heart pieces),
+so two players collecting different heart pieces at about the same time ended up with only one of them.
+
+- **Message format (0x83).** `session u32`, `net i16` (heart pieces collected by that player this session, a heart
+  container counting as four), `value u8` (current count, `$FF` if unknown). o2 sends it in its own packet after 0x82;
+  alttpo sends it in its main packet after 0x82 (only when "Sync hearts" is enabled).
+- **The count** is `($7EF36C & $F8) / 2 + ($7EF36B & 3)`, at most 83 (20 hearts and 3 pieces).
+- **Local changes.** Sampled in modules `$07`/`$09`/`$0B` with submodule 0 while Link is not frozen (`$02E4` = 0).
+  The count is a high-water mark: collecting the 4th piece sets `$7EF36B` to 0 right away, but `$7EF36C` only goes
+  up by 8 once Link stops holding up the heart container, so decreases are ignored and only counts above the mark are
+  local changes. Sync writes raise the mark by the amount they added.
+- **Receiving.** Each remote `(player, session)` is tracked; the first message only records `net` as a baseline. After
+  that, increases of `net` from players on the same team are added to a pending amount. A player with no history this
+  session (new session, or back from the title/file select screens) catches up once by adopting the highest remote
+  value.
+- **Applying.** o2 adds the pending amount with a generated routine that reports the count it saw (confirmed
+  asynchronously); alttpo adds it between frames. Both clamp to 83 and leave the current health alone, like before.
+- **Not handled.** Two players collecting the *same* heart piece in the same moment both count it. The heart piece
+  removal below makes that unlikely.
+
+## Overworld heart pieces
+
+Picking up a heart piece (`$EB`) or heart container (`$EA`) on the overworld sets bit `$40` of the area's flags
+`$7EF280+$8A`. `SpritePrep_HeartContainer` checks it only when the area loads, so another player in the area kept seeing
+the heart piece (and could collect it again) until they left and came back.
+
+- **Sending.** Both send the overworld flags `$280..$33F` as soon as they change, besides every 32 frames. o2 reads
+  the current area's flags every frame for this; the rest only come with its SRAM reads every 8 frames.
+- **Applying.** alttpo applies received overworld flags right away instead of every 32 frames. Once bit `$40` of the
+  current area's flags is set, the area's `$EA`/`$EB` sprites are removed (`$0DD0` = 0): o2 does this in the update
+  routine that sets the bit, when the local player is in that area (checking `$1B` and `$8A` when it runs); alttpo
+  checks every frame in modules `$09`/`$0B`.
+- **Settings.** "Sync overworld" in both.
 
 ## Crystal switches
 
