@@ -37,6 +37,8 @@ type Game struct {
 	priorityReads   [3][]snes.Read
 
 	deserTable map[MessageType]DeserializeFunc
+	// unknown message types already logged, per player index and message type:
+	unknownMsgLogged map[uint32]struct{}
 
 	badVersionLogLimit uint8
 

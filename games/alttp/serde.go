@@ -179,8 +179,18 @@ func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 
 		deser, ok := g.deserTable[msgType]
 		if !ok {
-			// no way to know the length of an unknown message, so the rest of the packet is lost:
-			err = fmt.Errorf("alttp: unknown msgType %#02x", msgType)
+			// no way to know the length of an unknown message, so the rest of the packet is lost. Newer clients add
+			// message types at the end of their packets, so keep what was parsed so far and only log it once per player
+			// and message type:
+			key := uint32(p.Index())<<8 | uint32(msgType)
+			if _, logged := g.unknownMsgLogged[key]; !logged {
+				if g.unknownMsgLogged == nil {
+					g.unknownMsgLogged = make(map[uint32]struct{})
+				}
+				g.unknownMsgLogged[key] = struct{}{}
+				log.Printf("alttp: player[%02x]: ignoring unknown message type %#02x and the rest of its packet; is it a newer version?\n", uint8(p.Index()), uint8(msgType))
+			}
+			err = nil
 			break
 		}
 

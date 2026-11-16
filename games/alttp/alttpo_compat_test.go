@@ -640,3 +640,26 @@ func TestAlttpoCompat_HeartDeltasFromAlttpo(t *testing.T) {
 	h.frames(8)
 	h.expectHearts("no change", 4<<3, 1)
 }
+
+// TestAlttpoCompat_UnknownMessageTypeKeepsPacket verifies that a message type o2 does not know (e.g. one added by a newer
+// client at the end of its packet) does not fail the packet: the messages before it are kept.
+func TestAlttpoCompat_UnknownMessageTypeKeepsPacket(t *testing.T) {
+	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := gs.g
+
+	for frame := uint8(1); frame <= 3; frame++ {
+		p := newAlttpoPacket(3, frame)
+		p.name("newer")
+		p.u8(0xFE, 1, 2, 3)
+		p.send(t, g)
+	}
+	if name := g.players[3].Name(); name != "newer" {
+		t.Errorf("expected the name before the unknown message type to be kept; got %q", name)
+	}
+	if n := len(g.unknownMsgLogged); n != 1 {
+		t.Errorf("expected the unknown message type to be logged once; got %d entries", n)
+	}
+}
