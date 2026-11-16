@@ -51,7 +51,7 @@ const (
 	manipPos           = uint16(0x0540)
 	manipTiles         = uint16(0x0560)
 	manipSlots         = 16
-	manipProbesPerRead = 3
+	manipProbesPerRead = 2
 	manipAsmSkipped    = 0xFF
 	manipAttrBase      = uint8(0x70)
 	pushBlockTable     = uint32(0x7EF940)
@@ -82,9 +82,37 @@ type manipLocal struct {
 	slots [manipSlots]manipSlot
 
 	probeNext int
+	// skipReason is the last reason logged for not moving a push block like a remote player:
+	skipReason [manipSlots]string
 
 	// inflight is the update routine awaiting confirmation of execution, if any:
 	inflight *manipUpdate
+}
+
+// manipPushBlockResting reports whether a push block state is one a block ends up in after being pushed: $0000 (also
+// never pushed), $0005 (on a floor switch) or $FFFF (older versions of the sync).
+func manipPushBlockResting(t uint16) bool { return t == 0x0000 || t == 0x0005 || t == 0xFFFF }
+
+// objectAt returns the slot of a manipulable object still at pos that a push block cannot move onto, or -1.
+func (m *manipLocal) objectAt(pos uint16) int {
+	for k := 0; k < m.n; k++ {
+		s := &m.slots[k]
+		if s.Pos == pos && manipIsLiftable(s.Type) && !s.revealed {
+			return k
+		}
+	}
+	return -1
+}
+
+// skip logs why a remote player's push block move is not applied here, once per change of reason.
+func (m *manipLocal) skip(slot int, p *Player, reason string) {
+	if m.skipReason[slot] == reason {
+		return
+	}
+	m.skipReason[slot] = reason
+	if reason != "" {
+		log.Printf("alttp: manip: room $%03x slot %d: not moving block like player '%s': %s\n", m.room, slot, p.Name(), reason)
+	}
 }
 
 type manipRemoteSlot struct {
@@ -366,7 +394,7 @@ func (u *manipUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 		if it.move {
 			// the next read tells the actual state:
 			s.Pos = it.to
-			s.Type = 0xFFFF
+			s.Type = 0x0000
 			log.Printf("alttp: manip: update: room $%03x slot %d moved to $%04x from player '%s'\n", u.room, it.slot, it.to, it.player)
 		} else {
 			s.revealed = true
@@ -423,13 +451,28 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 			var it manipItem
 			cost := 0
 			if manipIsPushBlock(rs.Type) {
-				if rs.Type != 0 && rs.Type != 0xFFFF {
-					// still moving:
+				if rs.Pos == s.Pos {
+					m.skip(j, p, "")
 					continue
 				}
-				if s.Type != 0 || s.Pos != s.OrigPos || rs.Pos == s.Pos || !manipIsStep(s.Pos, rs.Pos) {
+				if !manipPushBlockResting(rs.Type) {
+					m.skip(j, p, fmt.Sprintf("remote block still moving (state $%04x)", rs.Type))
 					continue
 				}
+				if s.Type != 0 || s.Pos != s.OrigPos {
+					m.skip(j, p, fmt.Sprintf("local block state $%04x at $%04x (from $%04x), remote at $%04x", s.Type, s.Pos, s.OrigPos, rs.Pos))
+					continue
+				}
+				if !manipIsStep(s.Pos, rs.Pos) {
+					m.skip(j, p, fmt.Sprintf("remote block at $%04x is not one step from $%04x", rs.Pos, s.Pos))
+					continue
+				}
+				if k := m.objectAt(rs.Pos); k >= 0 {
+					// e.g. a hammer peg the remote player pounded that is still up here; reveal it first:
+					m.skip(j, p, fmt.Sprintf("slot %d still at $%04x", k, rs.Pos))
+					continue
+				}
+				m.skip(j, p, "")
 				it = manipItem{slot: j, move: true, to: rs.Pos, tiles: s.Tiles}
 				cost = 120
 			} else {
@@ -507,12 +550,28 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 		a.LDA_abs(manipPos + o)
 		a.CMP_imm16_w(s.Pos)
 		asmBNEFar(a, next, fmt.Sprintf("mn_unmoved_%d", k))
+		a.Comment("nothing else there (e.g. a hammer peg still up):")
+		a.LDA_long(attr)
+		a.AND_imm16_w(0x00F0)
+		a.CMP_imm16_w(uint16(manipAttrBase))
+		a.BNE(fmt.Sprintf("mn_free_%d", k))
+		a.JMP_abs(next)
+		a.Label(fmt.Sprintf("mn_free_%d", k))
 		a.Comment("draw what was under it:")
 		a.LDY_imm16_w(o)
 		emitJSRBank01(a, fnDraw, fnRTL)
 		a.LDA_imm16_w(it.to)
 		a.STA_abs(manipPos + o)
 		a.Comment("do what PushBlock_CheckForPit does:")
+		if it.to&0x4000 == 0 {
+			a.Comment("upper layer block pushed; push block door ($0B-$13) and chest ($3C) tags act on $0641:")
+			a.LDA_abs(0x0641)
+			asmEOR_imm16(a, 0x0001)
+			a.STA_abs(0x0641)
+			if roomHasTag(g.roomTags(), roomTagIsBlockDoor) {
+				emitOperateBlockDoor(a, fmt.Sprintf("mn_block_door_%d", k))
+			}
+		}
 		a.LDA_long(attr)
 		a.AND_imm16_w(0x00FF)
 		a.CMP_imm16_w(0x0020)
@@ -532,10 +591,12 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 		a.LDA_abs(0x0468)
 		asmEOR_imm16(a, 0x0001)
 		a.STA_abs(0x0466)
-		a.LDA_imm16_w(0x0000)
+		a.Comment("PushBlock_CheckForPit leaves $0004 and PushBlock_Main increments it:")
+		a.LDA_imm16_w(0x0005)
 		a.BRA(setType)
 		a.Label(notSwitch)
-		a.LDA_imm16_w(0xFFFF)
+		a.Comment("PushBlock_CheckForPit leaves $FFFF and PushBlock_Main increments it:")
+		a.LDA_imm16_w(0x0000)
 		a.Label(setType)
 		a.STA_abs(manipType + o)
 		a.Comment("draw the block at its new position:")
@@ -558,4 +619,30 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 	emitReport(a, index)
 
 	return
+}
+
+// emitOperateBlockDoor does what RoomTag_OperateBlockDoor does ($0468 = $0641 ^ 1, then move the shutters), unless
+// another submodule is running. The tag itself only runs while Link is in the quadrant it is for, which the player who
+// pushed the block always is but other players usually are not. 16-bit registers.
+func emitOperateBlockDoor(a *asm.Emitter, label string) {
+	a.Comment("operate the push block door like RoomTag_OperateBlockDoor:")
+	a.SEP(0x20)
+	a.LDA_dp(0x11)
+	a.BNE(label)
+	a.LDA_abs(0x0641)
+	a.Comment("eor.b #$01")
+	a.EmitBytes([]byte{0x49, 0x01})
+	a.CMP_long(0x7E0468)
+	a.BEQ(label)
+	a.STA_abs(0x0468)
+	a.LDA_imm8_b(0x25) // SFX3.25
+	a.STA_abs(0x012F)
+	a.LDA_imm8_b(0x05)
+	a.STA_dp(0x11)
+	a.REP(0x20)
+	a.STZ_abs(0x068E)
+	a.STZ_abs(0x0690)
+	a.SEP(0x20)
+	a.Label(label)
+	a.REP(0x20)
 }

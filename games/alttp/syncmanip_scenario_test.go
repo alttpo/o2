@@ -118,6 +118,10 @@ func (h *skScenario) pushBlock(i int, objx, to uint16) {
 	a := 0x12000 + manipAttrIndex(to)
 	e := h.gs[i].e
 	e.WRAM[a], e.WRAM[a+1], e.WRAM[a+0x40], e.WRAM[a+0x41] = 0x27, 0x27, 0x27, 0x27
+	// PushBlock_CheckForPit toggles $0641 for upper layer blocks:
+	if to&0x4000 == 0 {
+		e.WRAM[0x0641] ^= 1
+	}
 }
 
 func (h *skScenario) expectPotGone(when string, i int, objx uint16, tiles [4]uint16) {
@@ -232,8 +236,8 @@ func TestManipScenario_PushBlock(t *testing.T) {
 	if v := h.wramU16(1, uint32(manipPos)); v != mnBlockPos+4 {
 		t.Errorf("g2: expected block at $%04x; got $%04x", mnBlockPos+4, v)
 	}
-	if v := h.wramU16(1, uint32(manipType)); v != 0xFFFF {
-		t.Errorf("g2: expected block done moving; got $%04x", v)
+	if v := h.wramU16(1, uint32(manipType)); v != 0x0000 {
+		t.Errorf("g2: expected block done moving like PushBlock_Main leaves it ($0000); got $%04x", v)
 	}
 	for k, d := range []uint32{0x00, 0x80, 0x02, 0x82} {
 		if v := h.wramU16(1, 0x2000+uint32(mnBlockPos)+d); v != mnFloorTiles[k] {
@@ -246,6 +250,13 @@ func TestManipScenario_PushBlock(t *testing.T) {
 	if a := h.wramU16(1, 0x12000+manipAttrIndex(mnBlockPos+4)); a != 0x2727 {
 		t.Errorf("g2: expected block attributes $2727; got $%04x", a)
 	}
+	// the push block door tags ($0B-$13) open the trap doors from $0641:
+	if v := h.gs[1].e.WRAM[0x0641]; v != 1 {
+		t.Errorf("g2: expected $0641 toggled to 1 like g1's; got $%02x", v)
+	}
+	if v := h.gs[1].e.WRAM[0x0642]; v != 0 {
+		t.Errorf("g2: expected $0642 untouched; got $%02x", v)
+	}
 
 	// nothing moves afterwards:
 	h.settleStar(skSettleFrames * 4)
@@ -254,6 +265,9 @@ func TestManipScenario_PushBlock(t *testing.T) {
 	}
 	if v := h.wramU16(0, uint32(manipPos)); v != mnBlockPos+4 {
 		t.Errorf("g1: expected block to stay at $%04x; got $%04x", mnBlockPos+4, v)
+	}
+	if v0, v1 := h.gs[0].e.WRAM[0x0641], h.gs[1].e.WRAM[0x0641]; v0 != 1 || v1 != 1 {
+		t.Errorf("expected $0641 = 1 for both; got $%02x, $%02x", v0, v1)
 	}
 }
 
@@ -324,4 +338,104 @@ func TestAlttpoCompat_ManipFromAlttpo(t *testing.T) {
 	send(manipFlagRevealed | manipFlagTiles)
 	h.settleStar(skSettleFrames)
 	h.expectPotGone("alttpo lifted", 0, mnPotObjX, mnPotTiles)
+}
+
+// A push block door (RoomTag_OperateBlockDoor) only runs while Link is in its quadrant, so a block pushed by another
+// player must open the doors here right away; e.g. Ganon's Tower room $8B (NE block door).
+func TestManipScenario_PushBlockOpensBlockDoor(t *testing.T) {
+	h := newManipScenario(t, 2)
+	block := mnObj{0x0000, mnBlockObjX, mnBlockPos, mnFloorTiles}
+	for i := range h.gs {
+		h.loadRoom(i, mnRoom, block)
+		h.gs[i].e.WRAM[0xAF] = 0x0C // NE block door
+		h.gs[i].e.WRAM[roomDoorOffs] = 1
+	}
+	h.settleSubmodules(skSettleFrames, nil)
+
+	// g1 pushes the block in the NE quadrant; its tag opens its doors:
+	h.pushBlock(0, mnBlockObjX, mnBlockPos+4)
+	h.gs[0].e.WRAM[roomDoorOffs] = 0
+	opened := false
+	for f := 0; f < skSettleFrames && !opened; f++ {
+		h.frame()
+		e := h.gs[1].e.WRAM[:]
+		if e[skSubModule] == 0x05 {
+			opened = true
+			if e[roomDoorOffs] != 0 || wram16(e, 0x068E) != 0 || wram16(e, 0x0690) != 0 || e[0x012F] != 0x25 {
+				t.Errorf("g2: expected shutters to open; $0468 $%02x, $068E $%04x, $0690 $%04x, $012F $%02x",
+					e[roomDoorOffs], wram16(e, 0x068E), wram16(e, 0x0690), e[0x012F])
+			}
+			e[skSubModule] = 0
+		}
+	}
+	if !opened {
+		t.Fatalf("g2: expected the push block door to open")
+	}
+	h.settleSubmodules(skSettleFrames*2, nil)
+	h.expectDoors("block pushed", 0, 0)
+	if v := h.gs[1].e.WRAM[0x0641]; v != 1 {
+		t.Errorf("g2: expected $0641 = 1; got $%02x", v)
+	}
+}
+
+// A block in Ganon's Tower room $8B is surrounded by hammer pegs; it must not be moved onto a peg that is still up
+// here, only once the peg was pounded (which the remote player's reveal of it does).
+func TestManipScenario_PushBlockWaitsForPeg(t *testing.T) {
+	h := newManipScenario(t, 2)
+	peg := mnObj{0x4040, mnPotObjX, mnBlockPos + 4, mnFloorTiles}
+	block := mnObj{0x0000, mnBlockObjX, mnBlockPos, mnFloorTiles}
+	// g1's peg is already down (not part of its room any more for this test):
+	h.loadRoom(0, mnRoom, block)
+	h.loadRoom(1, mnRoom, peg, block)
+	h.settleStar(skSettleFrames)
+
+	h.pushBlock(0, mnBlockObjX, mnBlockPos+4)
+	h.settleStar(skSettleFrames)
+	o := h.slotOf(1, mnBlockObjX)
+	if v := h.wramU16(1, uint32(manipPos)+o); v != mnBlockPos {
+		t.Errorf("g2: expected the block to wait for the peg; at $%04x", v)
+	}
+
+	// even if o2 thinks the peg is gone, the update routine checks the attribute:
+	h.gs[1].g.manip.slots[0].revealed = true
+	h.settleStar(skSettleFrames)
+	if v := h.wramU16(1, uint32(manipPos)+o); v != mnBlockPos {
+		t.Errorf("g2: expected the block to wait for the peg's attribute; at $%04x", v)
+	}
+	if a := h.gs[1].e.WRAM[0x12000+manipAttrIndex(mnBlockPos+4)]; a != 0x70 {
+		t.Errorf("g2: expected the peg to stay; attribute $%02x", a)
+	}
+
+	// g2 pounds the peg:
+	h.liftPot(1, mnPotObjX)
+	h.settleStar(skSettleFrames)
+	if v := h.wramU16(1, uint32(manipPos)+o); v != mnBlockPos+4 {
+		t.Errorf("g2: expected the block at $%04x once the peg is down; got $%04x", mnBlockPos+4, v)
+	}
+}
+
+// A block pushed onto a floor switch ends up in state $0005, which the hold switch door tag looks for.
+func TestManipScenario_PushBlockOntoSwitch(t *testing.T) {
+	h := newManipScenario(t, 2)
+	block := mnObj{0x0000, mnBlockObjX, mnBlockPos, mnFloorTiles}
+	for i := range h.gs {
+		h.loadRoom(i, mnRoom, block)
+		h.gs[i].e.WRAM[0x12000+manipAttrIndex(mnBlockPos+4)] = 0x23 // floor switch
+		h.gs[i].e.WRAM[roomDoorOffs] = 1
+	}
+	h.settleStar(skSettleFrames)
+
+	h.pushBlock(0, mnBlockObjX, mnBlockPos+4)
+	h.setWRAMU16(0, uint32(manipType), 0x0005)
+	h.settleStar(skSettleFrames)
+
+	if v := h.wramU16(1, uint32(manipPos)); v != mnBlockPos+4 {
+		t.Errorf("g2: expected block at $%04x; got $%04x", mnBlockPos+4, v)
+	}
+	if v := h.wramU16(1, uint32(manipType)); v != 0x0005 {
+		t.Errorf("g2: expected block state $0005 on the switch; got $%04x", v)
+	}
+	if v := h.wramU16(1, 0x0466); v != 0 {
+		t.Errorf("g2: expected $0466 = $0468 ^ 1 = 0; got $%04x", v)
+	}
 }

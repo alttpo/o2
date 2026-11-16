@@ -47,18 +47,14 @@ func (g *Game) sendPackets() {
 	}
 
 	{
-		m := g.makeBroadcastMessage()
-		// current dungeon supertile door state:
-		if err := g.SerializeWRAM(local, m, 0x0400, 1); err != nil {
-			panic(err)
-		}
 		if g.SyncUnderworld {
+			m := g.makeBroadcastMessage()
 			// crystal switch state (shared with alttpo):
 			if err := g.SerializeCrystalSwitch(m); err != nil {
 				panic(err)
 			}
+			g.send(m)
 		}
-		g.send(m)
 	}
 
 	if g.SyncUnderworld && local.Module == 0x07 {
@@ -74,6 +70,9 @@ func (g *Game) sendPackets() {
 		}
 		// last, since older alttpo versions stop parsing at the first message type they don't know:
 		if err := g.SerializeRoomState(m); err != nil {
+			panic(err)
+		}
+		if err := g.SerializeRoomDoors(m); err != nil {
 			panic(err)
 		}
 		g.send(m)

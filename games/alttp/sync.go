@@ -65,15 +65,6 @@ func (g *Game) initSync() {
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
 	g.resetRoomState()
-	g.local.WRAM[0x0400] = &SyncableWRAM{
-		g:         g,
-		Offset:    0x0400,
-		Name:      "current dungeon supertile state",
-		Size:      2,
-		Timestamp: 0,
-		Value:     0xFFFF,
-		Fresh:     &g.wramFresh[0x0400],
-	}
 
 	// define syncable items:
 	if !g.isVTRandomizer() {
@@ -597,31 +588,6 @@ func (g *Game) initSync() {
 		}
 	}
 
-	{
-		// sync wram[$0400] for current dungeon supertile door state:
-		doorSync := games.NewSyncableBitU16(g, games.WRAM, 0x0400, &g.SyncUnderworld, [16]string{}, func(s *games.SyncableBitU16, a *asm.Emitter, initial, updated uint16) {
-			a.Comment("open door based on wram[$0400] bits")
-			g.openDoor(a, initial, updated)
-		})
-		// filter out players not in local player's current dungeon supertile:
-		doorSync.PlayerPredicate = func(sp games.SyncablePlayer) bool {
-			p := sp.(*Player)
-			// player must be in dungeon module:
-			if !p.IsDungeon() {
-				return false
-			}
-			if p.SubModule != 0 {
-				return false
-			}
-			// player must have same dungeon supertile as local:
-			if p.DungeonRoom != g.local.DungeonRoom {
-				return false
-			}
-			return true
-		}
-		g.NewSyncable(games.WRAM, 0x0400, doorSync)
-	}
-
 	// underworld rooms:
 	for room := uint16(0x000); room < 0x128; room++ {
 		g.underworld[room].InitFrom(g, room)
@@ -828,57 +794,24 @@ func (g *Game) openDoor(a *asm.Emitter, initial, updated uint16) bool {
 		return false
 	}
 
-	// only pay attention to the door bits changing:
-	initial &= 0xF000
-	updated &= 0xF000
-	if initial == updated {
-		return false
-	}
-
-	// determine which door opened (or the first door that opened if multiple?):
-	b := uint16(0x8000)
-	k := uint32(0)
-	for ; k < 4; k++ {
-		if updated&b != 0 {
-			break
+	// only pay attention to door bits that were set; $7EF000 keeps the bits of door slots 0-3, like $0400:
+	opened := uint8((updated &^ initial) >> 8)
+	for b := uint8(0x80); b >= 0x10; b >>= 1 {
+		if opened&b == 0 {
+			continue
 		}
-		b >>= 1
+		d, ok := g.roomKeyDoorFor(b)
+		if !ok {
+			continue
+		}
+		label := fmt.Sprintf("sram_door_%03x", g.local.DungeonRoom)
+		a.Comment("unlock the door if no other submodule is running:")
+		a.LDA_dp(0x11)
+		a.AND_imm16_w(0x00FF)
+		a.BNE(label)
+		emitUnlockDoor(a, d, label+"_unlock")
+		a.Label(label)
+		return true
 	}
-
-	// emit some asm to open this door locally:
-	k2 := k << 1
-	doorTilemapAddr := g.wramU16(0x19A0+k2) >> 1
-	doorType := g.wramU16(0x19C0 + k2)
-	kind := ""
-	switch doorType & 3 {
-	case 0: // up
-		doorTilemapAddr += 0x81
-		kind = "UP"
-		break
-	case 1: // down
-		doorTilemapAddr += 0x42
-		kind = "DOWN"
-		break
-	case 2: // left
-		doorTilemapAddr += 0x42
-		kind = "LEFT"
-		break
-	case 3: // right
-		doorTilemapAddr += 0x42
-		kind = "RIGHT"
-		break
-	}
-
-	a.Comment(fmt.Sprintf("open door[%d] %s", k, kind))
-	a.REP(0x30)
-	a.LDA_imm16_w(doorTilemapAddr)
-	a.STA_abs(0x068E)
-	a.LDA_imm16_w(0x0008) // TODO: confirm this value?
-	a.STA_abs(0x0690)
-	a.SEP(0x30)
-	// set door open submodule:
-	a.LDA_imm8_b(0x04)
-	a.STA_dp(0x11)
-	a.REP(0x30)
-	return true
+	return false
 }

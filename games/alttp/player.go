@@ -153,6 +153,7 @@ type Player struct {
 	Manip manipRemote
 	Star  starSwitchRemote
 	Room  roomStateRemote
+	Doors roomDoorsRemote
 
 	showJoinMessage bool
 

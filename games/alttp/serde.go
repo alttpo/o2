@@ -46,7 +46,8 @@ const (
 	MsgMap16            MessageType = 0x17 // overworld map16 change log, broadcastSector; see syncmap16.go
 	MsgManip            MessageType = 0x18 // underworld manipulable objects, broadcastSector; see syncmanip.go
 	MsgStarSwitch       MessageType = 0x19 // star switch state of a room, broadcastSector; see syncstar.go
-	MsgRoomState        MessageType = 0x1A // trap doors and key flags of a room, broadcastSector; see syncroom.go
+	MsgRoomState        MessageType = 0x1A // trap doors, chest and key flags of a room, broadcastSector; see syncroom.go
+	MsgRoomDoors        MessageType = 0x1B // key doors and switches of a room, broadcastSector; see syncroom.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -84,6 +85,7 @@ func (g *Game) initSerde() {
 		MsgManip:            g.DeserializeManip,
 		MsgStarSwitch:       g.DeserializeStarSwitch,
 		MsgRoomState:        g.DeserializeRoomState,
+		MsgRoomDoors:        g.DeserializeRoomDoors,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -225,6 +227,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		// room and area specific state received so far belongs to the previous location:
 		p.Star.valid = false
 		p.Room.valid = false
+		p.Doors.valid = false
 		p.Manip.reset()
 		p.Map16.reset(0)
 	}

@@ -239,8 +239,8 @@ func TestRoomStateScenario_KeyFlagsMerge(t *testing.T) {
 	h.gs[0].e.WRAM[roomFlagsOffs] |= roomFlagKey0
 	h.gs[1].e.WRAM[roomFlagsOffs] |= roomFlagKey1
 	h.settleRoom(skSettleFrames * 2)
-	// chest flags are left alone:
-	h.expectRoomFlags("both keys taken", 0x61, 0x62, 0x60)
+	// chest flags are merged too (there are no chests in this room to draw):
+	h.expectRoomFlags("both keys taken", 0x63, 0x63, 0x63)
 }
 
 func TestRoomStateScenario_ChestsNotSynced(t *testing.T) {

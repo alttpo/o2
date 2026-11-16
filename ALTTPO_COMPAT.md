@@ -23,7 +23,7 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state, room trap doors and key flags, overworld map16 changes and underworld manipulable objects (both), and sprites,
+state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and underworld manipulable objects (both), and sprites,
 torches and enemies (alttpo).
 Everything else is sent as broadcastAll.
 
@@ -48,7 +48,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
-| 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$0400`, `$C172`) | `$C172` used; others stored but unused |
+| 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
 | 0x08 | objects | no | no | reserved; not parsed by either |
@@ -69,7 +69,8 @@ Values match alttpo's `GameState::deserialize`.
 | 0x17 | overworld map16 changes | yes (per sector) | yes (per sector) | used |
 | 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
 | 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
-| 0x1A | room trap doors and key flags | yes (per sector) | yes (per sector) | used |
+| 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
+| 0x1B | room key doors and switches | yes (per sector) | yes (per sector) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -113,11 +114,9 @@ more messages, which corrupted the rest of the packet.
   from the previous read of `$0352` and skips a frame whenever they move.
 - **Extra reads per frame.** Sampling sprites adds two small WRAM reads per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 12 reads, which takes two FX Pak Pro VGET commands instead of
-  one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to three
-  one-byte attribute reads in the underworld (16 reads, still two VGET commands).
+  one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to two
+  one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
-- **Dungeon state WRAM:** o2 sends `$0400` (current dungeon supertile state, used for key doors between o2 players),
-  which alttpo discards.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
   test for one item; the rules were not compared item by item.
@@ -202,39 +201,76 @@ the previous room's overlay.
 - **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
 
-## Room trap doors and key flags
+## Room state: trap doors, chests, keys, key doors and switches
 
-o2 (`games/alttp/syncroom.go`) and alttpo (`RoomState.as`) share two pieces of underworld state that only live in
-WRAM while the room is loaded; the SRAM room flags (`$7EF000`) only pick them up when a player leaves the room, so
-players in the same room did not see each other open trap doors, and a key taken by one player could still be taken by
-the other.
+o2 (`games/alttp/syncroom.go`) and alttpo (`RoomState.as`) share underworld state that only lives in WRAM while the
+room is loaded. The SRAM room flags (`$7EF000`) only pick it up when a player leaves the room, so players in the same
+room did not see each other open trap doors, chests or key doors, and a key or chest item taken by one player could
+still be taken by the other.
 
 - **Trap doors** (`$0468`, 0 = open, 1 = closed). Room tags open or close the shutters by changing it, clearing
   `$068E`/`$0690` and switching to submodule `$05` (`OperateShutterDoors`), e.g. `RoomTag_SwitchTrigger_ToggleDoor`
-  for the switches hidden under pots in most rooms that have them, or the kill room tags. Room loads set it to 1, an
-  inter-room transition closes the shutters behind Link and an intra-room transition (submodule `$01`) opens and then
-  closes them.
-- **Key flags** (`$0403`, the room's chest/key/boss flags). Picking up a small or big key sprite (`$E4`/`$E5`) or a bonk
-  key (sprite `$3B` with `$0DC0` = 1, like the one on a Desert Palace torch) sets `$40` (key index 0) or `$20` (key
-  index 1), the index being the sprite's `$0CBA`. Key sprites remove themselves as soon as their flag is set; bonk keys
+  for the switches hidden under pots in most rooms that have them, the pull switch door tag or the kill room tags. Room
+  loads set it to 1, an inter-room transition closes the shutters behind Link and an intra-room transition (submodule
+  `$01`) opens and then closes them.
+- **Chest and key flags** (`$0403`, the room's chest/key/boss flags). Opening chest i (`OpenItemChest`) sets bit i
+  (chests 0-5, positions in `$06E0`). Picking up a small or big key sprite (`$E4`/`$E5`) or a bonk key (sprite `$3B`
+  with `$0DC0` = 1, like the one on a Desert Palace torch) sets `$40` (key index 0) or `$20` (key index 1, also chest
+  5's bit), the index being the sprite's `$0CBA`. Key sprites remove themselves as soon as their flag is set; bonk keys
   only check it when the room loads.
-- **Message 0x1A**, broadcastSector, last in the same packet as the star switch state (dropped whenever the sender's
-  location changes): `room u16`, `flags u8` (`$0403`), `doorTs u32`, `door u8` (`$0468`).
+- **Key doors** (`$0401`, the high byte of `$0400`). Unlocking door slot k (`UnlockKeyDoor_Main`, submodule `$04`)
+  sets `$80 >> (k & 7)`; bombed and dashed walls set their bits the same way. Only slots 0-3 are kept in `$7EF000`.
+- **Pull switches** (`$0642`). A pulled wall switch (and Swamp Palace's water switches) sets it; the pull switch door
+  (`$14`), pull switch exploding wall (`$28`) and water tags (`$18`-`$1A`) act on it once.
+- **Hold switches.** The hold switch door tag (`$16`) recomputes `$0468` every frame: open while Link stands on a floor
+  switch or a star tile, `$0646` is set (a Cane of Somaria block on a floor switch) or `$0642` is set (a statue on a
+  floor switch), closed otherwise.
+- **Message 0x1A**, broadcastSector: `room u16`, `flags u8` (`$0403`), `doorTs u32`, `door u8` (`$0468`). **Message
+  0x1B** follows it: `room u16`, `doors u8` (`$0401`), `switches u8` (bit 0: pressing a hold switch, bit 1: pulled a
+  switch), `pulledTs u32`. Both are last in the same packet as the star switch state (dropped whenever the sender's
+  location changes); older versions stop parsing at 0x1B.
 - **Sampling.** In the dungeon module while `$A0` stays the same. The baseline is taken in submodule 0 (after the room
   load), recording the time it was taken. A change of `$0468` seen in submodule 0, `$05` or `$17` (pressure plate) is
-  timestamped. A change of room, an intra-room transition or leaving the dungeon module (except for the menus) forgets
-  the state.
+  timestamped, as is the first pull (`$0642` set, or a water tag switching to submodule `$0B`-`$0D`, since water tags
+  take `$0642` back right away). A player holds a hold switch while its `$0468` is open in a hold switch room and its
+  `$0646` is not `$80`. A change of room, an intra-room transition or leaving the dungeon module (except for the menus)
+  forgets the state. o2 reads `$0641..$06EB` once per frame in the underworld for this (and reads one fewer
+  manipulable attribute per frame to keep the read count).
 - **Applying.** In submodule 0 of the dungeon module, from remote players on the same team in the same room whose
-  state was sampled there. Key flags `$40` (and `$20` when chests are synced, since it is also chest 5's flag) are OR'ed
-  into `$0403` and bonk keys of the new flags are removed (`$0DD0` cleared). Trap doors are last writer wins among
-  changes made after our own baseline, so only changes made while both players are in the room count; the winner's
-  state is written like a room tag does (`$0468`, clear `$068E`/`$0690`, SFX3 `$25`, submodule `$05`). Rooms with a
-  hold switch (`$16`), push block (`$0B`-`$13`) or torch puzzle (`$33`) door tag are skipped, since those tags recompute
-  `$0468` every frame from the local player's own switch, block or torches and would close the doors again.
-- **Settings.** o2 uses "Sync underworld" (and "Sync chests" for `$20`), alttpo "Sync tilemap" (and "Sync chests").
-- **Not synced.** Heart pieces in caves share the `$40`/`$20` flags but their sprites are not removed. Enemies are not
-  synced by o2, so a kill room opened by another player stays open even if its enemies are alive here, and keys
-  dropped by enemies get their index in the order they spawn, which can differ between players in rooms with two.
+  state was sampled there:
+  - Key flags `$40` (and, when chests are synced, `$20` and the chest bits) are OR'ed into `$0403`, and bonk keys of the
+    new flags are removed (`$0DD0` cleared). Small chests still closed here are drawn open like `OpenItemChest` does
+    (opened chest tiles in `$7E2000`, attributes `$2727` so they cannot be opened again, four VRAM stripes in `$1000`,
+    `$14` = 1), without giving their items; big chests and big key locks only get the flag. Chest bits wait while a tag
+    that hides the room's chests until it is solved is active (`$27`, `$29`-`$32`, `$3C`, `$3E`), and bit 3 is not
+    taken in water rooms, whose tags set it to remember the water was let out.
+  - A remote door bit whose slot here is a small or big key door (`$1980` type `$1C`-`$2B` except `$28`, `$2A`) that is
+    still locked (attribute `$F0 + slot` at `$7F2041 + $19A0/2`) is unlocked like the game does once the key was
+    used: `$068E` = that attribute index, `$0690` = 0, SFX3 `$14`, submodule `$04`. No key is used; the small key sync
+    takes care of the key count. One door per update; the trap doors wait for the next one.
+  - Trap doors are last writer wins among changes made after our own baseline, so only changes made while both players
+    are in the room count; the winner's state is written like a room tag does (`$0468`, clear `$068E`/`$0690`, SFX3
+    `$25`, submodule `$05`). Rooms with a hold switch (`$16`), push block (`$0B`-`$13`) or torch puzzle (`$33`) door tag
+    are skipped, since those tags recompute `$0468` every frame.
+  - Push block doors (`$0B`-`$13`) only open while Link is in the tag's quadrant. When another player is in the room,
+    `$0641` says the block was pushed (it may have been moved by sync while the doors were busy, e.g. closing behind a
+    player entering through them) and the doors are closed, they are opened like `RoomTag_OperateBlockDoor` does.
+  - A pull made after our baseline sets `$0642` = 1 once, so the room's tag opens the door, explodes the wall or lets
+    the water out here too.
+  - While any remote player holds a hold switch, `$0646` is set to `$80` (a somaria block only ever sets it to 1), which
+    holds the doors open here; it is cleared again once nobody does. Since a player whose `$0646` is `$80` does not
+    count as holding the switch, players do not keep each other's doors open forever. A local somaria block
+    recomputes `$0646` every frame and wins while it exists.
+- **Settings.** o2 uses "Sync underworld" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
+  "Sync chests").
+- **Not synced.** Heart pieces in caves share the `$40`/`$20` flags but their sprites are not removed. The pulled
+  lever sprite is not drawn pulled for other players. Enemies are not synced by o2, so a kill room opened by another
+  player stays open even if its enemies are alive here, and keys dropped by enemies get their index in the order they
+  spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
+  also trigger on lit torches.
+- **o2 only:** o2 used to send `$0400` in message 0x05 and unlock doors from it; that is replaced by message 0x1B. Door
+  bits received through the SRAM room flags of the current room (another player left it) unlock key doors the same
+  way.
 
 ## Overworld map16 changes
 
@@ -293,7 +329,8 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   pot, pounding a peg or lifting a big rock (all four quarters) calls `RoomDraw_16x16Single` (`$01D828` US, `$01D826`
   JP), which draws the replacement tiles and their attributes and leaves `$0500` alone; a pot may first replace its
   tiles with a hole or a switch it hid (`RevealPotItem`). A pushed block draws its replacement tiles, moves 16 pixels,
-  then either is drawn at the new position (tiles `$0922`/`$0932`/`$0923`/`$0933`, attribute `$27`, state `$FFFF`),
+  then either is drawn at the new position (tiles `$0922`/`$0932`/`$0923`/`$0933`, attribute `$27`, state `$0000` once `PushBlock_Main` increments the
+  `$FFFF` `PushBlock_CheckForPit` leaves),
   toggles the switch (`$0466`) under it, or falls into a pit, recording the room below (`$7EC000`) and position in
   the push block table.
 - **Message 0x18**, broadcastSector, in the same packet as the star switch state (dropped, like 0x17, whenever the
@@ -308,8 +345,14 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   attribute is still `$70+slot` here gets the remote's replacement tiles and `RoomDraw_16x16Single`, called through
   the RTL right before it (`PHK`, `PEA` return, `PEA` RTL-1, `JML`), since it ends with RTS. A remote push block that
   finished moving one step from where ours still stands untouched is moved here in one step: draw its replacement
-  tiles, move it, then do what `PushBlock_CheckForPit` does at the new position (pit: record it in the push block
-  table; switch: toggle `$0466`; otherwise draw the block with attribute `$27` and state `$FFFF`). Draws stop when the
+  tiles, move it, then do what `PushBlock_CheckForPit` does at the new position (toggle `$0641` for a block on the upper layer, which the
+  push block door tags `$0B`-`$13` and the chest tag `$3C` turn into opened trap doors or a revealed chest. The block door
+  tags only run while Link is in their quadrant, so the shutters are also operated right away like
+  `RoomTag_OperateBlockDoor` does, if no other submodule is running; pit: record it in the push block
+  table; switch: set `$0466` and state `$0005`, which the hold switch door tag looks for; otherwise draw the block
+  with attribute `$27` and state `$0000`). A remote block in state `$0000`, `$0005` or `$FFFF` (older versions) is done
+  moving. A block is not moved onto a spot still taken by another object here (attribute `$70`-`$7F`), e.g. a hammer
+  peg in Ganon's Tower room `$8B` that the remote player pounded but that is still up here; it waits for the peg. Draws stop when the
   VRAM stripe buffer passes `$68` (o2) or `$80` (alttpo) bytes.
 - **Not synced.** Items hidden under pots are not spawned for other players (only the player who lifts the pot gets
   them, so keys are not duplicated), the push animation is not shown, and bombable floors are left to the room flags in
