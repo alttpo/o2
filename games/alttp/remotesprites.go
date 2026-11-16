@@ -130,8 +130,9 @@ const (
 
 	// blob chrs, alternating every 8 frames:
 	remoteBlobChr0 = 0x64
-	// blob OAM attributes: priority 2 (like Link), palette 7 (Link's):
-	remoteBlobAttr = 0x2E
+	// blob OAM attributes: priority 2 and palette 4, as the game draws the blob (sprite $8F) that magic powder turns an
+	// enemy into (Sprite_GiveDamage sets its OAM flags to 8):
+	remoteBlobAttr = 0x28
 
 	// nmiHookPatchAddr is where NMI_DoUpdates sets up the animated tiles upload, right after uploading the follower
 	// and NPC tiles; patched with a JSL to the NMI hook:
@@ -206,7 +207,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.DEC_abs(tb(rtTTL))
 
 	a.Comment("only while the game draws the underworld or overworld sprites; the body only in submodule 0, where")
-	a.Comment("the NMI has time for it, except for dialogs and menus:")
+	a.Comment("the NMI has time for it, and in dialogs, which upload nothing else during NMI:")
 	a.LDA_long(0x7E0011)
 	a.STA_abs(st(rsBodyBlocked))
 	a.LDA_long(0x7E0010)
@@ -215,9 +216,12 @@ func emitRemoteDraw(a *asm.Emitter) {
 		a.BEQ("rd_module_ok")
 	}
 	a.CMP_imm8_b(0x0E)
-	a.BNE("rd_exit")
-	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu:")
-	a.STZ_abs(st(rsBodyBlocked))
+	a.BNE("rd_exit2")
+	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu; the body")
+	a.Comment("only in dialogs (submodule 2):")
+	a.LDA_long(0x7E0011)
+	emitEORImm8(a, 0x02)
+	a.STA_abs(st(rsBodyBlocked))
 	a.LDA_long(0x7E001B)
 	a.BEQ("rd_interface_ow")
 	a.LDA_long(0x7E0011)
@@ -227,7 +231,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.BEQ("rd_module_ok")
 	a.CMP_imm8_b(0x07)
 	a.BEQ("rd_module_ok")
-	a.BRA("rd_exit")
+	a.BRA("rd_exit2")
 	a.Label("rd_interface_ow")
 	a.LDA_long(0x7E0011)
 	a.CMP_imm8_b(0x07)
@@ -236,13 +240,17 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.BNE("rd_module_ok")
 	a.Label("rd_interface_map")
 	a.LDA_long(0x7E0200)
-	a.BNE("rd_exit")
+	a.BEQ("rd_module_ok")
+	a.Label("rd_exit2")
+	a.PLB()
+	a.PLP()
+	a.RTS()
 	a.Label("rd_module_ok")
 
 	a.Comment("only in the room or area the table was made for:")
 	a.LDA_long(0x7E001B)
 	emitCMPAbs(a, tb(rtIndoors))
-	a.BNE("rd_exit")
+	a.BNE("rd_exit2")
 	a.LDA_long(0x7E001B)
 	a.REP(0x30)
 	a.BEQ("rd_overworld")
@@ -252,7 +260,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.LDA_long(0x7E008A)
 	a.Label("rd_location")
 	emitCMPAbs(a, tb(rtLocation))
-	a.BNE("rd_exit")
+	a.BNE("rd_exit2")
 
 	a.Comment("local scroll offsets:")
 	a.LDA_long(0x7E00E2)
@@ -680,7 +688,9 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	var body []remoteSprite
 	bodyOK := g.remoteBodyOK()
 	for _, p := range remotes {
-		if p == local || p.TTL() <= 0 || !p.IsInGame() || p.isBadTimeToDraw() {
+		// alttpo's rule for remote players: IsInGame() can't be used since it depends on the module before a dialog or
+		// menu, which remote players don't send, and remote players would disappear during dialogs:
+		if p == local || p.TTL() <= 0 || p.isBadTimeToDraw() {
 			continue
 		}
 		if !locationsEqual(local.Location, p.Location) {

@@ -65,3 +65,8 @@ func emitCPYImm16(a *asm.Emitter, imm uint16) {
 func emitBITImm16(a *asm.Emitter, imm uint16) {
 	emitRaw(a, fmt.Sprintf("bit.w #$%04x", imm), 0x89, uint8(imm), uint8(imm>>8))
 }
+
+// emitEORImm8 emits `EOR.b #imm`.
+func emitEORImm8(a *asm.Emitter, imm uint8) {
+	emitRaw(a, fmt.Sprintf("eor.b #$%02x", imm), 0x49, imm)
+}

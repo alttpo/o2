@@ -574,16 +574,16 @@ func TestRemoteSpritesScenario_Modules(t *testing.T) {
 		{"underworld", false, 0x07, 0x00, 0, body},
 		{"underworld transition", false, 0x07, 0x02, 0, blob},
 		{"dialog", false, 0x0E, 0x02, 0, body},
-		{"item menu", false, 0x0E, 0x01, 0, body},
-		{"dungeon map opening", false, 0x0E, 0x03, 0, body},
+		{"item menu", false, 0x0E, 0x01, 0, blob},
+		{"dungeon map opening", false, 0x0E, 0x03, 0, blob},
 		{"dungeon map shown", false, 0x0E, 0x03, 1, nothing},
-		{"dungeon map closing", false, 0x0E, 0x03, 7, body},
+		{"dungeon map closing", false, 0x0E, 0x03, 7, blob},
 		{"spotlight open", false, 0x10, 0x01, 0, blob},
 		{"pendant victory", false, 0x13, 0x00, 0, body},
 		{"game over", false, 0x12, 0x00, 0, nothing},
 		{"overworld", true, 0x09, 0x00, 0, body},
 		{"overworld dialog", true, 0x0E, 0x02, 0, body},
-		{"overworld map opening", true, 0x0E, 0x07, 0, body},
+		{"overworld map opening", true, 0x0E, 0x07, 0, blob},
 		{"overworld map shown", true, 0x0E, 0x07, 1, nothing},
 		{"flute menu shown", true, 0x0E, 0x0A, 1, nothing},
 		{"special overworld", true, 0x0B, 0x00, 0, body},
@@ -622,4 +622,25 @@ func TestRemoteSpritesScenario_Modules(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Remote players in a dialog are still drawn: they don't send the module they were in before it, so o2 must not
+// require it to know they are in the game.
+func TestRemoteSpritesScenario_RemoteInDialog(t *testing.T) {
+	h := newRSScenario(t)
+	h.frames(8)
+	h.expectOAM("before", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+	e := h.gs[1].e
+	e.WRAM[0x010C] = e.WRAM[0x10]
+	e.WRAM[0x10], e.WRAM[0x11] = 0x0E, 0x02
+	h.frames(8)
+	h.expectShadow("in dialog", 0x40, 0x60)
+	h.expectOAM("in dialog", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("in dialog", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+
+	// but not on the overworld map:
+	e.WRAM[0x11] = 0x07
+	h.frames(8)
+	h.expectOAMUnused("on the map", 0, 0x7F)
 }
