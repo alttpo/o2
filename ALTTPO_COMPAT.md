@@ -261,11 +261,11 @@ still be taken by the other.
   - Push block doors (`$0B`-`$13`) only open while Link is in the tag's quadrant. When another player is in the room,
     `$0641` says the block was pushed (it may have been moved by sync while the doors were busy, e.g. closing behind a
     player entering through them) and the doors are closed, they are opened like `RoomTag_OperateBlockDoor` does.
-    **o2 only:** an intra-room transition through the trap door clears `$0641` (`UnderworldTransition_Intraroom_TriggerShutters`
+    An intra-room transition through the trap door clears `$0641` (`UnderworldTransition_Intraroom_TriggerShutters`
     calls `ResetThenCacheRoomEntryProperties`) and closes the shutters, while the block stays pushed and cannot be
     pushed again, which locks Link in (e.g. Ganon's Tower room `$8B` after another player pushed the block from the
-    other quadrant). When `$0641` was odd in the room before the transition and is 0 after it, o2 sets it back to 1
-    and opens the doors the same way, also when no other player is in the room.
+    other quadrant). When `$0641` was odd in the room before the transition and is 0 after it, both set it back to 1
+    and open the doors the same way, also when no other player is in the room.
   - A pull made after our baseline sets `$0642` = 1 once, so the room's tag opens the door, explodes the wall or lets
     the water out here too.
     In water rooms (`$18`-`$1A`) only while Link is in the quadrant the switch was pulled in (not where that player is now), which the game's
