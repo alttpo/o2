@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"io"
+	"o2/interfaces"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,12 @@ func TestPatchSignature_Timeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var notifications []string
+	h := gs.g.Notifications.Subscribe(interfaces.ObserverImpl(func(object interface{}) {
+		notifications = append(notifications, object.(string))
+	}))
+	defer gs.g.Notifications.Unsubscribe(h)
+
 	gs.g.resetPatchSignature()
 	start := gs.g.romCheckStart
 
@@ -174,5 +181,13 @@ func TestPatchSignature_Timeout(t *testing.T) {
 	gs.runFrame(t)
 	if !gs.g.ROMVerified {
 		t.Fatalf("expected the patched ROM to be verified; status: %s", gs.g.ROMStatus)
+	}
+
+	// both the failure and the later success go to the notification history:
+	if len(notifications) != 2 ||
+		!strings.HasPrefix(notifications[0], "ROM check failed: ") ||
+		!strings.HasPrefix(notifications[1], "ROM check passed: ") ||
+		!strings.Contains(notifications[1], patchVersionString()) {
+		t.Errorf("unexpected notifications: %q", notifications)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/snes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -188,6 +189,10 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 	notifications := make([]string, 0, 10)
 	notificationsObserver := interfaces.ObserverImpl(func(object interface{}) {
 		notification := object.(string)
+		if strings.HasPrefix(notification, "ROM check ") {
+			// ROM verification is covered by signature_test.go:
+			return
+		}
 		notifications = append(notifications, notification)
 		log.Printf("notification[%d]: '%s'\n", len(notifications)-1, notification)
 	})

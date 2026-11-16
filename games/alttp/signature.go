@@ -224,7 +224,10 @@ func (g *Game) checkPatchSignature(rsp snes.Response) {
 		)
 	default:
 		// magic, patch version and ROM all match:
-		g.setROMStatus(true, fmt.Sprintf("the SNES is running the O2 patched ROM (patch version %s)", patchVersionString()))
+		status = fmt.Sprintf("the SNES is running the O2 patched ROM (patch version %s)", patchVersionString())
+		if g.setROMStatus(true, status) {
+			g.PushNotification("ROM check passed: " + status)
+		}
 		return
 	}
 	if g.failROMCheck(status) {
