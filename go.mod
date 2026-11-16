@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	fyne.io/systray v1.10.0
-	github.com/alttpo/snes v0.0.0-20250404054731-644082b79cd3
+	github.com/alttpo/snes v0.0.0-20261116181553-d91674793906
 	github.com/alttpo/snes-devices v0.0.0-20261114222344-5b57803e09cb
 	github.com/gobwas/ws v1.4.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
