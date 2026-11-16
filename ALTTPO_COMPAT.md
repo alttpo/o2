@@ -23,7 +23,7 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and underworld manipulable objects (both), and sprites,
+state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and events and underworld manipulable objects (both), and sprites,
 torches and enemies (alttpo).
 Everything else is sent as broadcastAll.
 
@@ -71,6 +71,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
 | 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
 | 0x1B | room key doors and switches | yes (per sector) | yes (per sector) | used |
+| 0x1C | overworld entrance animations and other events | yes (per sector, own packet) | yes (per sector, own packet) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -137,7 +138,7 @@ more messages, which corrupted the rest of the packet.
 - **Extra reads per frame.** Sampling sprites adds one small SRAM read per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of
   one. The 16-byte patch signature (`$707FF0`, see `games/alttp/signature.go`) is read with the SRAM reads and every
-  8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld, and the current area's flags (`$7EF280+$8A`) one more; the manipulable objects add one read plus up to two
+  8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld, and the current area's flags (`$7EF280+$8A`) one more (and the sprite tables `$0D80..$0E2F` one more in the lumberjacks' area `$02`, for the overworld events); the manipulable objects add one read plus up to two
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
@@ -385,6 +386,52 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
 - **Regions.** Map16 tile numbers differ between US and JP ROMs (the cut grass tile is `$0DC5` in US and `$0DBF` in
   JP), so US and JP based players in the same area would draw each other's changes with the wrong tiles. The old sync
   had the same problem.
+
+## Overworld events
+
+o2 (`games/alttp/syncowevents.go`, `sync.go`) and alttpo (`OverworldEvents.as`) replay overworld changes made while
+another player is in the same area. The area flags (`$7EF280+area`, bit `$20` for overlays) are synced with the SRAM
+messages, but the game only loads an overlay with the area, and draws these changes with `Overworld_DrawMap16_Persist`
+or with sprites, which the map16 change log does not record, so players already in the area saw nothing until they
+left and came back.
+
+- **Entrance animations.** `$04C6` (1: Palace of Darkness (Kiki), 2: Skull Woods (fire rod), 3: Misery Mire, 4: Turtle
+  Rock (medallions), 5: Ganon's Tower (crystals)) makes `Module09_00_PlayerControl` run `Overworld_AnimateEntrance`
+  every frame until the animation clears it; it freezes Link, draws the entrance step by step and sets bit `$20` of the
+  area's flags (Turtle Rock and Ganon's Tower on the first frame, Misery Mire only after its rain, about 5 seconds in).
+  A receiver starts the same animation with `$04C6` = the sender's value and `$B0` = `$C8` = 0, except Skull Woods,
+  which it starts by calling `FireRodShot_BecomeSkullWoodsFire` (`$099C4F` US, `$099C3B` JP) so the fire is lit too
+  (it clears the receiver's ancillae 0-5, like the fire rod shot does for the sender). The medallion, Kiki and crystal
+  effects that come before are not replayed.
+- **Desert Palace statues.** Reading the tablet sets `$02F0`, which makes the statues (sprite `$57`) move apart until the
+  area reloads (`Sprite_ResetAll` clears it); nothing is saved. A receiver sets `$02F0` too.
+- **The lumberjacks' tree** (sprite `$3B` with `$0DC0` = 2, area `$02`) hops and falls apart in leaves when Link dashes
+  into it (`$0D80` = 1, `$0F80` = 20), revealing the hole under it until the area reloads. A receiver does the same to its
+  tree top if it still stands.
+- **Message 0x1C**, broadcastSector, in its own packet: `area u16` (`$8A`), `entrance u8` (`$04C6`), `flags u8` (bit 0:
+  desert statues released, bit 1: tree top dashed into, during this area visit). Sent every frame in overworld modules
+  `$09`/`$0B` (and `$0E`) while something is set and for 16 frames after, so receivers see it clear; receivers ignore
+  it once not refreshed for 500ms, and drop it when the sender's location changes.
+- **Sampling.** In submodule 0 of the overworld modules. The first sample in an area records whether bit `$20` of its
+  flags was set (the overlay was loaded with the area); a local entrance animation (`$04C6` set) counts as shown too.
+  o2 reads `$04C6` and `$02F0` with its other reads, and the sprite tables in area `$02` only.
+- **Applying.** In the overworld module `$09`, submodule 0, from remote players on the same team in the same area: the
+  entrance animation only if the overlay was not shown here, no animation runs and Link stands on the ground (`$5D`,
+  `$4D` and `$02E4` = 0), since the animation keeps him frozen where he is; it waits until he does. The statues and the
+  tree only once per area visit.
+- **Overlays without animation.** When the area flags received set bit `$20` of the local player's area while it is in
+  module `$09`, submodule 0, the overlay is drawn with the routine that draws it for the player who opened it:
+  `Overworld_AlterWeathervane` (`$1BC21D`, Kakariko weathervane, area `$18`), `OpenGargoylesDomain` (`$1BC264`,
+  Thieves' Town, area `$58`, also removing the grate sprite `$14`) and `CreatePyramidHole` (`$1BC2A7`, area `$5B`; o2
+  used to call it without checking the module). Otherwise the overlay shows the next time the area loads. The
+  weathervane explosion and the bird are not replayed (the bird activates the flute of whoever sees it).
+- **Agahnim's barrier** (sprite `$40`, area `$1B`) sets bit `$40` of the area's flags when destroyed, like heart pieces;
+  receivers in the area set its `$0DC0` to 4, which draws it destroyed and makes it harmless, like
+  `SpritePrep_AgahnimsBarrier` does when the area loads.
+- **Already synced.** Changes the game logs in the map16 change log are synced as map16 changes: the Turtle Rock pegs
+  (area `$07`), the hammer pegs (area `$62`), gravestones, rocks and bombable walls.
+- **Notifications.** o2 names the areas' overlay bits (e.g. "got Turtle Rock entrance from ...").
+- **Settings.** "Sync overworld" in both.
 
 ## Underworld manipulable objects
 
