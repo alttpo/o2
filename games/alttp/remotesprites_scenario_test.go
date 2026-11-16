@@ -41,10 +41,11 @@ func newRSScenario(t *testing.T) *skScenario {
 		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
 		e.WRAM[0x0A20+i] = ext
 	}
-	// head in front of the body (lower OAM index), body, then a shadow that is not drawn:
+	// head in front of the body (lower OAM index), body, then Link's shadow (two 8x8 sprites, the second flipped):
 	setOAM(0x64, 0x50, 0x58, 0x00, 0x2E, 0x02)
 	setOAM(0x65, 0x50, 0x60, 0x02, 0x6E, 0x02)
-	setOAM(0x66, 0x50, 0x68, 0x6C, 0x28, 0x02)
+	setOAM(0x66, 0x50, 0x68, 0x6C, 0x28, 0x00)
+	setOAM(0x67, 0x58, 0x68, 0x6C, 0x68, 0x00)
 	for k, v := range []uint16{0x8400, 0x8600, 0x9000, 0x9200, 0x9400, 0x9420} {
 		binary.LittleEndian.PutUint16(e.WRAM[0x0ACC+k*2:], v)
 	}
@@ -77,6 +78,13 @@ func (h *skScenario) expectOAM(when string, i, index int, entry [4]byte, ext uin
 	}
 }
 
+// expectShadow expects g2's shadow in g1's OAM[$7F] and OAM[$7E], at x (+8), y:
+func (h *skScenario) expectShadow(when string, x, y uint8) {
+	h.t.Helper()
+	h.expectOAM(when+": shadow", 0, 0x7F, [4]byte{x, y, 0x6C, 0x28}, 0x00)
+	h.expectOAM(when+": shadow", 0, 0x7E, [4]byte{x + 8, y, 0x6C, 0x68}, 0x00)
+}
+
 func (h *skScenario) expectOAMUnused(when string, i int, from int) {
 	h.t.Helper()
 	for index := from; index >= 0; index-- {
@@ -99,15 +107,16 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	if tb[rtTTL] == 0 || tb[rtIndoors] != 1 || binary.LittleEndian.Uint16(tb[rtLocation:]) != rsRoom {
 		t.Fatalf("unexpected table header % x", tb[:rtEntries])
 	}
-	if bodyEnd, end := binary.LittleEndian.Uint16(tb[rtBodyEnd:]), binary.LittleEndian.Uint16(tb[rtEnd:]); bodyEnd != 2*rtEntrySize || end != 3*rtEntrySize {
-		t.Fatalf("expected 2 body sprites and 1 blob; got entry offsets %d, %d", bodyEnd, end)
+	if shadowEnd, bodyEnd, end := binary.LittleEndian.Uint16(tb[rtShadowEnd:]), binary.LittleEndian.Uint16(tb[rtBodyEnd:]), binary.LittleEndian.Uint16(tb[rtEnd:]); shadowEnd != 2*rtEntrySize || bodyEnd != 4*rtEntrySize || end != 5*rtEntrySize {
+		t.Fatalf("expected 2 shadow sprites, 2 body sprites and 1 blob; got entry offsets %d, %d, %d", shadowEnd, bodyEnd, end)
 	}
 
 	// the body (drawn behind the head) gets chrs $20/$21/$30/$31, the head chrs $22/$23/$32/$33; screen coordinates
 	// are shifted by the difference in scroll offsets; the name table bit is cleared:
-	h.expectOAM("body", 0, 0x7F, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
-	h.expectOAM("head", 0, 0x7E, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
-	h.expectOAMUnused("no blob", 0, 0x7D)
+	h.expectShadow("in room", 0x40, 0x60)
+	h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("no blob", 0, 0x7B)
 
 	if en := h.remoteState(0, rsNMIEnable)[0]; en == 0 {
 		t.Errorf("NMI upload not enabled")
@@ -150,22 +159,24 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 
 	// the remote player moves 4 pixels right on its screen:
 	e := h.gs[1].e
-	e.WRAM[0x0800+0x64*4] += 4
-	e.WRAM[0x0800+0x65*4] += 4
+	for i := 0x64; i <= 0x67; i++ {
+		e.WRAM[0x0800+i*4] += 4
+	}
 	h.frames(4)
-	h.expectOAM("body moved", 0, 0x7F, [4]byte{0x44, 0x58, 0x20, 0x6E}, 0x02)
-	h.expectOAM("head moved", 0, 0x7E, [4]byte{0x44, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectShadow("moved", 0x44, 0x60)
+	h.expectOAM("body moved", 0, 0x7D, [4]byte{0x44, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head moved", 0, 0x7C, [4]byte{0x44, 0x50, 0x22, 0x2E}, 0x02)
 
 	// the local screen scrolls 8 pixels right and the game draws them in place right away:
 	h.setScroll(0, 0x1078, 0x0270, 0x1018, 0x0208)
 	h.frames(1)
-	h.expectOAM("scrolled", 0, 0x7F, [4]byte{0x3C, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("scrolled", 0, 0x7D, [4]byte{0x3C, 0x58, 0x20, 0x6E}, 0x02)
 	// 4 pixels off the left edge: x bit 8 set:
 	h.setScroll(0, 0x1078, 0x0270, 0x1058, 0x0208)
 	h.frames(1)
-	h.expectOAM("off the left edge", 0, 0x7F, [4]byte{0xFC, 0x58, 0x20, 0x6E}, 0x03)
+	h.expectOAM("off the left edge", 0, 0x7D, [4]byte{0xFC, 0x58, 0x20, 0x6E}, 0x03)
 	// entirely off screen: not drawn:
-	h.setScroll(0, 0x1078, 0x0270, 0x1068, 0x0208)
+	h.setScroll(0, 0x1078, 0x0270, 0x1078, 0x0208)
 	h.frames(1)
 	h.expectOAMUnused("off screen", 0, 0x7F)
 }
@@ -187,8 +198,9 @@ func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
 		if frame&8 != 0 {
 			chr += 2
 		}
-		h.expectOAM("blob", 0, 0x7F, [4]byte{0x40, 0x50, chr, remoteBlobAttr}, 0x02)
-		h.expectOAMUnused("only the blob", 0, 0x7E)
+		h.expectShadow("blob", 0x40, 0x60)
+		h.expectOAM("blob", 0, 0x7D, [4]byte{0x40, 0x50, chr, remoteBlobAttr}, 0x02)
+		h.expectOAMUnused("only the shadow and blob", 0, 0x7C)
 	}
 	if en := h.remoteState(0, rsNMIEnable)[0]; en != 0 {
 		t.Errorf("NMI upload enabled")
@@ -207,7 +219,7 @@ func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
 func TestRemoteSpritesScenario_OtherRoom(t *testing.T) {
 	h := newRSScenario(t)
 	h.frames(8)
-	h.expectOAM("same room", 0, 0x7F, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("same room", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 
 	// g1 walks into another room; the game itself notices before o2 does:
 	e := h.gs[0].e
@@ -229,7 +241,7 @@ func TestRemoteSpritesScenario_OtherRoom(t *testing.T) {
 	// the remote player follows:
 	h.inRoom(1, rsOtherRoom)
 	h.frames(8)
-	h.expectOAM("same room again", 0, 0x7F, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("same room again", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 }
 
 // When o2 stops updating the table, the game stops drawing remote players once its TTL runs out.
@@ -252,7 +264,7 @@ func TestRemoteSpritesScenario_TTL(t *testing.T) {
 	for f := 0; f < int(ttl); f++ {
 		emulate()
 	}
-	h.expectOAM("last frame", 0, 0x7F, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("last frame", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 	emulate()
 	h.expectOAMUnused("TTL ran out", 0, 0x7F)
 }
@@ -365,11 +377,95 @@ func TestRemoteSpritesScenario_ThirdPlayerIsBlob(t *testing.T) {
 	h.setScroll(2, 0x1030, 0x0230, 0x1000, 0x0200)
 	h.frames(8)
 
-	h.expectOAM("body", 0, 0x7F, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
-	h.expectOAM("head", 0, 0x7E, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
-	entry, ext := h.oamEntry(0, 0x7D)
+	h.expectShadow("3 players", 0x40, 0x60)
+	h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	entry, ext := h.oamEntry(0, 0x7B)
 	if entry[0] != 0x20 || entry[1] != 0x30 || entry[2]&^2 != remoteBlobChr0 || entry[3] != remoteBlobAttr || ext != 0x02 {
-		t.Errorf("g3's blob: OAM[$7d] = % x ext %02x", entry[:], ext)
+		t.Errorf("g3's blob: OAM[$7b] = % x ext %02x", entry[:], ext)
 	}
-	h.expectOAMUnused("nothing else", 0, 0x7C)
+	h.expectOAMUnused("nothing else", 0, 0x7A)
+}
+
+// With SyncSprites off nothing is drawn, but the local player's sparkles and dust are still captured for others.
+func TestRemoteSpritesScenario_SyncSpritesOff(t *testing.T) {
+	h := newRSScenario(t)
+	h.frames(8)
+	h.expectOAM("on", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+	h.gs[0].g.SyncSprites = false
+	h.frames(2)
+	h.expectOAMUnused("off", 0, 0x7F)
+	tb := h.gs[0].e.SRAM[remoteTableAddr&0x7FFF:]
+	if tb[rtTTL] != 0 || tb[rtCaptureTTL] == 0 {
+		t.Errorf("TTL %d, capture TTL %d; expected 0 and non-zero", tb[rtTTL], tb[rtCaptureTTL])
+	}
+
+	h.gs[0].g.SyncSprites = true
+	h.frames(2)
+	h.expectOAM("on again", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+}
+
+// Sword sparkles and dash dust are sent along with Link's sprites while one of their ancillae exists.
+func TestRemoteSpritesScenario_SendsSparklesAndDust(t *testing.T) {
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	// dash dust in ancilla region A, one tile off the left edge:
+	setOAM(0x10, 0x48, 0x70, 0xCF, 0x04, 0x00)
+	setOAM(0x11, 0xFC, 0x72, 0xA9, 0x04, 0x01)
+	// not captured: another chr in the common sheet, a 16x16 sprite and a sprite name table 1:
+	setOAM(0x12, 0x40, 0x70, 0x84, 0x04, 0x00)
+	setOAM(0x13, 0x40, 0x70, 0xDF, 0x04, 0x02)
+	setOAM(0x14, 0x40, 0x70, 0xCF, 0x05, 0x00)
+
+	received := func() (extras []remoteSprite) {
+		for _, sp := range h.gs[0].g.players[1].Sprites.list {
+			if sp.b[2] >= 0x80 {
+				extras = append(extras, sp)
+			}
+		}
+		return
+	}
+
+	h.frames(8)
+	if extras := received(); len(extras) != 0 {
+		t.Fatalf("captured without a dust ancilla: %+v", extras)
+	}
+
+	// a dash dust ancilla in slot 3:
+	e.WRAM[0x0C4A+3] = 0x1E
+	h.frames(4)
+	extras := received()
+	if len(extras) != 2 {
+		t.Fatalf("expected 2 dust sprites; got %+v", extras)
+	}
+	// the OAM is scanned from the end:
+	for i, x := range []remoteSprite{
+		{index: 0x11, b: [5]uint8{0xFC, 0x72, 0xA9, 0x04, 0x01}},
+		{index: 0x10, b: [5]uint8{0x48, 0x70, 0xCF, 0x04, 0x00}},
+	} {
+		sp := extras[i]
+		if sp.index != x.index || sp.b != x.b || sp.size != 0 || sp.absidx[0] != noUniqTile {
+			t.Errorf("dust sprite %d: %+v; expected %+v", i, sp, x)
+		}
+	}
+
+	// the ancilla is gone:
+	e.WRAM[0x0C4A+3] = 0
+	h.frames(4)
+	if extras := received(); len(extras) != 0 {
+		t.Errorf("captured after the ancilla is gone: %+v", extras)
+	}
+
+	// nobody else in the room: not captured:
+	e.WRAM[0x0C4A+3] = 0x3C
+	h.inRoom(0, rsOtherRoom)
+	h.frames(8)
+	if n := e.SRAM[(linkOAMCopyAddr+linkOAMCopyExtras)&0x7FFF]; n != 0 {
+		t.Errorf("captured %d bytes with nobody in the room", n)
+	}
 }

@@ -77,6 +77,9 @@ func computePatchVersion() (v [4]byte) {
 		nmiHookPatchAddr,
 		linkOAMCopyAddr,
 		linkOAMCopySize,
+		linkOAMCopyReadSize,
+		captureTypesAddr,
+		captureExtrasAddr,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 		romGarbageStart,
@@ -91,9 +94,10 @@ func computePatchVersion() (v [4]byte) {
 	}
 	h.Write(a.Bytes())
 
-	// the NMI hook in ROM, at a placeholder address:
-	a = asm.NewEmitter(make([]byte, 0x100), false)
-	a.SetBase(romGarbageStart)
+	// the routines in ROM; the NMI hook at a placeholder address:
+	a = asm.NewEmitter(make([]byte, 0x200), false)
+	a.SetBase(captureTypesAddr)
+	emitCaptureExtras(a)
 	emitNMIHook(a, []byte{0xA9, 0x10})
 	h.Write(a.Bytes())
 

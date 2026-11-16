@@ -22,7 +22,8 @@ import (
 //   - One remote player is drawn with Link's head and body, the two 16x16 sprites whose tiles come from LinkGraphics in
 //     ROM. alttpo and o2 send the pose as "unique tile" indices (see sprites.go), which are offsets into LinkGraphics,
 //     so the tiles can be copied from the local ROM: the remote player's pose is shown with the local player's Link
-//     graphics. Sword, shield, items and shadow are not drawn.
+//     graphics. Link's shadow (chr $6C, from the common sprite sheet) is drawn under it when the remote player sends
+//     it. Sword, shield and items are not drawn.
 //   - Every other remote player in the same location is drawn as a single 16x16 sprite at their coordinates, chr $64
 //     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet.
 //
@@ -42,6 +43,8 @@ import (
 // OAM coordinate plus the scroll offset `BG2 scroll - shake offset`) and converted to screen coordinates with the
 // local scroll offsets every frame, so remote players don't wobble when the local screen scrolls.
 //
+// Drawing is switched off with Game.SyncSprites; o2 then writes an empty table.
+//
 // o2 writes the table at remoteTableAddr whenever it changes, and at least every remoteTableRefresh. The game counts its
 // TTL down every frame and stops drawing when it reaches zero, so remote players disappear when o2 stops updating it.
 // The table also holds the location it was made for, which the game compares with the current room or area so that
@@ -53,28 +56,34 @@ const (
 
 	// frames left to draw the table, counted down every frame:
 	rtTTL = 0
+	// frames left to capture the local player's sparkles and dust for o2 to send (see emitCaptureExtras), counted down
+	// every frame; o2 keeps it up while any remote player is in the same location:
+	rtCaptureTTL = 1
 	// $1B (1 = underworld) and $A0 (underworld room) or $8A (overworld area) the table is for:
-	rtIndoors  = 1
-	rtLocation = 2
-	// byte offsets into rtEntries: the end of the body sprites (0 if none) and the end of all entries:
-	rtBodyEnd = 4
-	rtEnd     = 6
+	rtIndoors  = 2
+	rtLocation = 4
+	// byte offsets into rtEntries: the end of the shadow sprites, the end of the body sprites and the end of all
+	// entries:
+	rtShadowEnd = 6
+	rtBodyEnd   = 8
+	rtEnd       = 10
 	// LinkGraphics DMA source addresses: top row of chrs $20/$21, $22/$23, bottom row of chrs $30/$31, $32/$33:
-	rtSrc = 8
-	// sprites to draw in order, each drawn behind the ones before: world x, world y, chr, attributes. Up to 2 body
-	// sprites (chrs $20 and $22) are followed by one blob per player (chr $64), starting with the body's player, whose
-	// blob is only drawn when the body can't be:
-	rtEntries      = 16
-	rtEntrySize    = 6
-	remoteBlobMax  = 8
-	remoteEntryMax = 2 + remoteBlobMax
+	rtSrc = 12
+	// sprites to draw in order, each drawn in front of the ones before: world x, world y, chr, attributes, size ($02 for
+	// 16x16). Up to 2 shadow sprites (chr $6C) and 2 body sprites (chrs $20 and $22) of one player are followed by one
+	// blob per player (chr $64), starting with the body's player, whose blob is only drawn when the body can't be:
+	rtEntries       = 20
+	rtEntrySize     = 7
+	remoteShadowMax = 2
+	remoteBlobMax   = 8
+	remoteEntryMax  = remoteShadowMax + 2 + remoteBlobMax
 
 	remoteTableSize = rtEntries + remoteEntryMax*rtEntrySize
 )
 
 // SRAM layout of the remote sprites state, written by the game code:
 const (
-	remoteStateAddr = remoteTableAddr + remoteTableSize + 4
+	remoteStateAddr = remoteTableAddr + remoteTableSize
 
 	// dma_var6 and dma_var7 saved before the module runs:
 	rsSaved6 = 0
@@ -112,6 +121,9 @@ const (
 	// VRAM word addresses of the top and bottom rows of chrs $20..$23:
 	remoteBodyVRAMTop    = 0x4200
 	remoteBodyVRAMBottom = 0x4300
+
+	// Link's shadow:
+	remoteShadowChr = 0x6C
 
 	// blob chrs, alternating every 8 frames:
 	remoteBlobChr0 = 0x64
@@ -236,6 +248,19 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.LDY_imm16_w(0x0000)
 	a.STZ_abs(st(rsAnim))
 
+	a.Comment("shadows:")
+	a.Label("rd_shadow_loop")
+	a.TYA()
+	emitCMPAbs(a, tb(rtShadowEnd))
+	a.BCS("rd_shadows_done")
+	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.TAY()
+	a.BRA("rd_shadow_loop")
+	a.Label("rd_shadows_done")
+
 	a.Comment("draw the body if there is one, nothing else uses chrs $20..$23, and it's safe to upload them:")
 	a.SEP(0x20)
 	a.LDA_abs(st(rsFree))
@@ -246,8 +271,9 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.LDA_long(0x7E0710)
 	a.BNE("rd_no_body")
 	a.REP(0x20)
-	a.LDA_abs(tb(rtBodyEnd))
-	a.BEQ("rd_blobs")
+	a.TYA()
+	emitCMPAbs(a, tb(rtBodyEnd))
+	a.BCS("rd_blobs")
 	a.Label("rd_body_loop")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
@@ -292,7 +318,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 }
 
-// emitRemoteDrawSprite emits the subroutine that draws the 16x16 sprite of the table entry at offset Y into the first
+// emitRemoteDrawSprite emits the subroutine that draws the sprite of the table entry at offset Y into the first
 // unused OAM entry below offset X, and updates X. Called with A, X and Y 16-bit and DB = $70; preserves Y.
 func emitRemoteDrawSprite(a *asm.Emitter) {
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
@@ -341,7 +367,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.STA_long_x(0x7E0800)
 	a.LDA_abs(st(rsTmpSY))
 	a.STA_long_x(0x7E0801)
-	a.Comment("extended attributes: 16x16, x bit 8:")
+	a.Comment("extended attributes: size, x bit 8:")
 	a.REP(0x20)
 	a.PHX()
 	a.TXA()
@@ -351,7 +377,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX + 1))
 	a.AND_imm8_b(0x01)
-	a.ORA_imm8_b(0x02)
+	emitORAAbsY(a, tb(rtEntries+6))
 	a.STA_long_x(0x7E0A20)
 	a.REP(0x20)
 	a.PLX()
@@ -535,6 +561,25 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	return
 }
 
+// remoteShadowSprites returns up to two sprites of Link's shadow (chr $6C) from a remote player's sprites, ordered by
+// OAM index.
+func remoteShadowSprites(list []remoteSprite) (shadow []remoteSprite) {
+	sorted := make([]remoteSprite, len(list))
+	copy(sorted, list)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
+
+	for _, sp := range sorted {
+		if sp.b[1] == 0xF0 || sp.b[2] != remoteShadowChr || sp.b[3]&1 != 0 {
+			continue
+		}
+		shadow = append(shadow, sp)
+		if len(shadow) == remoteShadowMax {
+			break
+		}
+	}
+	return
+}
+
 // isBadTimeToDraw reports whether a player is in a module where alttpo doesn't draw or show them; same as alttpo's
 // GameState::is_it_a_bad_time.
 func (p *Player) isBadTimeToDraw() bool {
@@ -575,17 +620,14 @@ func (g *Game) remoteBodyOK() bool {
 	return c[0] == 0x22 && target >= romGarbageStart && target < romGarbageEnd
 }
 
-// buildRemoteSpritesTable makes the remote sprites table for the local player's current location, with rtTTL = 0.
-func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte) {
+// buildRemoteSpritesTable makes the remote sprites table for the local player's current location, with both TTLs 0.
+// draw reports whether there is anything to draw; capture whether any remote player is in the same location (and
+// would see the local player's sparkles and dust).
+func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, draw, capture bool) {
 	local := g.local
 	if local == nil || !local.IsInGame() || local.isBadTimeToDraw() {
 		return
 	}
-
-	if local.Location&0x010000 != 0 {
-		t[rtIndoors] = 1
-	}
-	binary.LittleEndian.PutUint16(t[rtLocation:], uint16(local.Location))
 
 	remotes := append([]*Player(nil), g.RemotePlayers()...)
 	sort.Slice(remotes, func(i, j int) bool { return remotes[i].Index() < remotes[j].Index() })
@@ -595,13 +637,14 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte) 
 	var body []remoteSprite
 	bodyOK := g.remoteBodyOK()
 	for _, p := range remotes {
-		if len(players) >= remoteBlobMax {
-			break
-		}
 		if p == local || p.TTL() <= 0 || !p.IsInGame() || p.isBadTimeToDraw() {
 			continue
 		}
 		if !locationsEqual(local.Location, p.Location) {
+			continue
+		}
+		capture = true
+		if !g.SyncSprites || len(players) >= remoteBlobMax {
 			continue
 		}
 		if bodyOK && body == nil && now.Sub(p.Sprites.received) < remoteSpritesStale {
@@ -613,21 +656,24 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte) 
 		players = append(players, p)
 	}
 	if len(players) == 0 {
-		// nothing to draw; a zero TTL is enough:
-		return [remoteTableSize]byte{}
+		return
 	}
+	draw = true
+
+	if local.Location&0x010000 != 0 {
+		t[rtIndoors] = 1
+	}
+	binary.LittleEndian.PutUint16(t[rtLocation:], uint16(local.Location))
 
 	o := rtEntries
-	entry := func(x, y uint16, chr, attr uint8) {
+	entry := func(x, y uint16, chr, attr, size uint8) {
 		binary.LittleEndian.PutUint16(t[o+0:], x)
 		binary.LittleEndian.PutUint16(t[o+2:], y)
-		t[o+4], t[o+5] = chr, attr
+		t[o+4], t[o+5], t[o+6] = chr, attr, size<<1
 		o += rtEntrySize
 	}
-
-	for j := range body {
-		// the body sprite in front (lowest OAM index) is drawn last, into a lower OAM index:
-		sp := body[len(body)-1-j]
+	// world coordinates of a remote sprite:
+	world := func(p *Player, sp remoteSprite) (uint16, uint16) {
 		x := int(sp.b[0]) | int(sp.b[4]&1)<<8
 		if x >= 0x100 {
 			x -= 0x200
@@ -636,20 +682,36 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte) 
 		if y >= 0xE0 {
 			y -= 0x100
 		}
-		p := players[0]
-		entry(uint16(int(p.XOffs)+x), uint16(int(p.YOffs)+y), uint8(remoteBodyChr+2*j), sp.b[3]&^1)
-		binary.LittleEndian.PutUint16(t[rtSrc+2*j:], 0x8000+sp.absidx[0]<<5)
-		binary.LittleEndian.PutUint16(t[rtSrc+4+2*j:], 0x8000+sp.absidx[2]<<5)
+		return uint16(int(p.XOffs) + x), uint16(int(p.YOffs) + y)
 	}
-	if len(body) == 1 {
-		copy(t[rtSrc+2:rtSrc+4], t[rtSrc+0:rtSrc+2])
-		copy(t[rtSrc+6:rtSrc+8], t[rtSrc+4:rtSrc+6])
+
+	if body != nil {
+		p := players[0]
+		// Link's shadow, behind everything else:
+		for _, sp := range remoteShadowSprites(p.Sprites.list) {
+			x, y := world(p, sp)
+			entry(x, y, sp.b[2], sp.b[3], sp.size)
+		}
+		binary.LittleEndian.PutUint16(t[rtShadowEnd:], uint16(o-rtEntries))
+
+		for j := range body {
+			// the body sprite in front (lowest OAM index) is drawn last, into a lower OAM index:
+			sp := body[len(body)-1-j]
+			x, y := world(p, sp)
+			entry(x, y, uint8(remoteBodyChr+2*j), sp.b[3]&^1, 1)
+			binary.LittleEndian.PutUint16(t[rtSrc+2*j:], 0x8000+sp.absidx[0]<<5)
+			binary.LittleEndian.PutUint16(t[rtSrc+4+2*j:], 0x8000+sp.absidx[2]<<5)
+		}
+		if len(body) == 1 {
+			copy(t[rtSrc+2:rtSrc+4], t[rtSrc+0:rtSrc+2])
+			copy(t[rtSrc+6:rtSrc+8], t[rtSrc+4:rtSrc+6])
+		}
 	}
 	binary.LittleEndian.PutUint16(t[rtBodyEnd:], uint16(o-rtEntries))
 
 	// a blob over each player's lower 16 pixels:
 	for _, p := range players {
-		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr)
+		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, 1)
 	}
 	binary.LittleEndian.PutUint16(t[rtEnd:], uint16(o-rtEntries))
 	return
@@ -657,9 +719,10 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte) 
 
 // remoteTableCounts returns the number of players and body sprites in a remote sprites table.
 func remoteTableCounts(t *[remoteTableSize]byte) (players, body int) {
+	shadowEnd := int(binary.LittleEndian.Uint16(t[rtShadowEnd:]))
 	bodyEnd := int(binary.LittleEndian.Uint16(t[rtBodyEnd:]))
 	end := int(binary.LittleEndian.Uint16(t[rtEnd:]))
-	return (end - bodyEnd) / rtEntrySize, bodyEnd / rtEntrySize
+	return (end - bodyEnd) / rtEntrySize, (bodyEnd - shadowEnd) / rtEntrySize
 }
 
 // remoteTablePak is the FX Pak Pro address of the remote sprites table:
@@ -671,7 +734,7 @@ var remoteTablePak = func() uint32 {
 	return pak
 }()
 
-// writeRemoteSprites writes the remote sprites table to SRAM when it changed or its TTL needs refreshing.
+// writeRemoteSprites writes the remote sprites table to SRAM when it changed or its TTLs need refreshing.
 func (g *Game) writeRemoteSprites(now time.Time) {
 	if !g.ROMVerified || g.IsResetting() {
 		return
@@ -682,18 +745,23 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 	}
 
 	s := &g.remoteSprites
-	t := g.buildRemoteSpritesTable(now)
-	players, body := remoteTableCounts(&t)
-	empty := players == 0
+	t, draw, capture := g.buildRemoteSpritesTable(now)
+	if capture {
+		// only for comparing with the last write; the game counts it down:
+		t[rtCaptureTTL] = 1
+	}
 	if s.writtenOK && t == s.written {
-		if empty || now.Sub(s.writtenTime) < remoteTableRefresh {
+		if !(draw || capture) || now.Sub(s.writtenTime) < remoteTableRefresh {
 			return
 		}
 	}
 
 	data := t
-	if !empty {
+	if draw {
 		data[rtTTL] = remoteTTLFrames
+	}
+	if capture {
+		data[rtCaptureTTL] = remoteTTLFrames
 	}
 	if err := g.enqueueUnlocked(func() error {
 		return q.MakeWriteCommands(
@@ -704,8 +772,174 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 		log.Printf("alttp: remote sprites: error enqueuing snes write: %v\n", err)
 		return
 	}
+	players, body := remoteTableCounts(&t)
 	if lastPlayers, lastBody := remoteTableCounts(&s.written); !s.writtenOK || lastPlayers != players || lastBody != body {
 		log.Printf("alttp: remote sprites: drawing %d players (%d body sprites)\n", players, body)
 	}
 	s.written, s.writtenOK, s.writtenTime = t, true, now
+}
+
+// Sword sparkles and dash dust
+//
+// alttpo players see everything o2 sends of the local player (see sprites.go). Besides Link's own OAM entries, o2 sends
+// the sparkles of charging a spin attack, spinning and poking walls with the sword, and the dust of dashing. They are
+// ancillae, drawn into whichever OAM entries the ancilla OAM regions hand out, so the trampoline finds them by their
+// chrs (all in the common sprite sheets, which receivers draw from their own VRAM) and copies up to linkOAMExtrasMax
+// of them to SRAM after the copy of Link's entries. The scan of the OAM buffer only runs on frames where one of those
+// ancillae exists and while o2 keeps rtCaptureTTL up because a remote player is in the same location.
+
+// SRAM code and ROM addresses of the capture routine:
+const (
+	// captureTypesAddr is a table in ROM of the ancilla types $00..$3F whose sprites are captured:
+	captureTypesAddr = uint32(0x1BB600)
+	// captureChrsAddr is a table in ROM of the chrs $80..$FF that are captured:
+	captureChrsAddr = captureTypesAddr + 0x40
+	// captureExtrasAddr is the capture routine in ROM, called by the trampoline with JSL:
+	captureExtrasAddr = captureChrsAddr + 0x80
+)
+
+// captureAncillae are the ancilla types whose sprites are captured:
+var captureAncillae = []uint8{
+	0x0D, // spin attack fully charged spark
+	0x1B, // sword tapping (poking) a wall
+	0x1E, // dash dust
+	0x26, // sword swing sparkle (stabbing with the tempered sword or better)
+	0x2A, // spin attack sparkle
+	0x2B, // spin attack sparkle
+	0x3C, // spin attack charging sparkle
+}
+
+// captureChrs are the chrs those ancillae draw with (8x8, name table 0):
+var captureChrs = []uint16{0x80, 0x81, 0x82, 0x83, 0x90, 0x92, 0x93, 0xA9, 0xB7, 0xB9, 0xCF, 0xD7, 0xDF}
+
+// emitCaptureExtras emits the ancilla type table at captureTypesAddr, the chr table at captureChrsAddr and the routine at captureExtrasAddr that copies
+// the sparkle and dust OAM entries to linkOAMCopyAddr + linkOAMCopyExtras. Called with JSL with A and X 8-bit;
+// preserves P and DB.
+func emitCaptureExtras(a *asm.Emitter) {
+	if a.PC() != captureTypesAddr {
+		panic(fmt.Errorf("captureTypesAddr expected to be $%06x but got $%06x", a.PC(), captureTypesAddr))
+	}
+	var types [0x40]byte
+	for _, t := range captureAncillae {
+		types[t] = 1
+	}
+	a.Comment("ancilla types whose sprites are captured:")
+	a.EmitBytes(types[:])
+	var chrs [0x80]byte
+	for _, c := range captureChrs {
+		chrs[c-0x80] = 1
+	}
+	a.Comment("chrs $80..$FF that are captured:")
+	a.EmitBytes(chrs[:])
+
+	if a.Label("captureExtras") != captureExtrasAddr {
+		panic(fmt.Errorf("captureExtrasAddr expected to be $%06x but got $%06x", a.PC(), captureExtrasAddr))
+	}
+	// the extras in SRAM are accessed with absolute addressing while DB = $70:
+	ex := func(o uint32) uint16 { return uint16((linkOAMCopyAddr + linkOAMCopyExtras + o) & 0xFFFF) }
+
+	a.PHP()
+	a.PHB()
+	a.SEP(0x30)
+	a.LDA_imm8_b(0x00)
+	a.STA_long(linkOAMCopyAddr + linkOAMCopyExtras)
+	a.Comment("only while a remote player is in the same location:")
+	a.LDA_long(remoteTableAddr + rtCaptureTTL)
+	a.BEQ("ce_exit")
+	a.SEC()
+	a.SBC_imm8_b(0x01)
+	a.STA_long(remoteTableAddr + rtCaptureTTL)
+
+	a.Comment("only while a sparkle or dust ancilla exists:")
+	a.PHK()
+	a.PLB()
+	a.LDX_imm8_b(0x09)
+	a.Label("ce_type")
+	a.LDA_long_x(0x7E0C4A)
+	a.CMP_imm8_b(0x40)
+	a.BCS("ce_next_type")
+	a.TAY()
+	emitLDAAbsY(a, uint16(captureTypesAddr&0xFFFF))
+	a.BNE("ce_scan")
+	a.Label("ce_next_type")
+	a.DEX()
+	a.BPL("ce_type")
+	a.Label("ce_exit")
+	a.PLB()
+	a.PLP()
+	a.RTL()
+
+	a.Label("ce_scan")
+	a.Comment("DB = $70 for the extras; X = OAM buffer offset; Y = extras offset:")
+	a.PEA(0x7070)
+	a.PLB()
+	a.PLB()
+	a.REP(0x30)
+	a.LDY_imm16_w(0x0000)
+	a.LDX_imm16_w(0x01FC)
+	a.Label("ce_loop")
+	a.Comment("chr $80..$FF in name table 0:")
+	a.LDA_long_x(0x7E0802)
+	a.AND_imm16_w(0x0180)
+	a.CMP_imm16_w(0x0080)
+	a.BNE("ce_next")
+	a.Comment("one of the captured chrs:")
+	a.LDA_long_x(0x7E0802)
+	a.PHX()
+	a.AND_imm16_w(0x007F)
+	a.TAX()
+	a.LDA_long_x(captureChrsAddr)
+	a.PLX()
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("ce_next")
+	a.Comment("drawn this frame:")
+	a.LDA_long_x(0x7E0801)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x00F0)
+	a.BEQ("ce_next")
+	a.Comment("8x8 only; extended attributes are at $0A20 + X/4:")
+	a.PHX()
+	a.TXA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.SEP(0x20)
+	a.LDA_long_x(0x7E0A20)
+	a.CMP_imm8_b(0x02)
+	a.BCS("ce_skip")
+	emitSTAAbsY(a, ex(1+4))
+	a.TXA()
+	a.ASL()
+	emitORAAbsY(a, ex(1+4))
+	emitSTAAbsY(a, ex(1+4))
+	a.REP(0x20)
+	a.PLX()
+	a.LDA_long_x(0x7E0800)
+	emitSTAAbsY(a, ex(1+0))
+	a.LDA_long_x(0x7E0802)
+	emitSTAAbsY(a, ex(1+2))
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(linkOAMExtraSize)
+	a.TAY()
+	emitCPYImm16(a, linkOAMExtrasMax*linkOAMExtraSize)
+	a.BCS("ce_done")
+	a.BRA("ce_next")
+	a.Label("ce_skip")
+	a.REP(0x20)
+	a.PLX()
+	a.Label("ce_next")
+	a.DEX()
+	a.DEX()
+	a.DEX()
+	a.DEX()
+	a.BPL("ce_loop")
+	a.Label("ce_done")
+	a.SEP(0x20)
+	a.TYA()
+	a.STA_abs(ex(0))
+	a.PLB()
+	a.PLP()
+	a.RTL()
+	a.AssumeSEP(0x30)
 }

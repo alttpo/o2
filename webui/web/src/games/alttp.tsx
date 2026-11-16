@@ -20,6 +20,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncOverworld, setsyncOverworld] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
+    const [syncSprites, setsyncSprites] = useState(true);
 
     const [notifHistory, setNotifHistory] = useState([] as TimestampedNotification[]);
     const historyTextarea = useRef(null);
@@ -47,6 +48,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncOverworld(game.syncOverworld);
         setsyncChests(game.syncChests);
         setsyncTunicColor(game.syncTunicColor);
+        setsyncSprites(game.syncSprites);
     }, [game]);
 
     useEffect(() => {
@@ -240,6 +242,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            checked={syncChests}
                            onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
                     />Sync Chests
+                </label></div>
+
+                <div><label for="syncSprites"
+                       title="Show other players in the same room or area">
+                    <input type="checkbox"
+                           id="syncSprites"
+                           checked={syncSprites}
+                           onChange={setField.bind(this, sendGameCommand, setsyncSprites, "syncSprites", getTargetChecked)}
+                    />Sync Sprites
                 </label></div>
             </div>
         </div>

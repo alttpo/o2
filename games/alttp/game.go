@@ -177,6 +177,8 @@ type Game struct {
 	SyncChests       bool   `json:"syncChests"`
 	lastSyncChests   bool
 	SyncTunicColor   bool `json:"syncTunicColor"`
+	// SyncSprites draws remote players in the same room or area; see remotesprites.go:
+	SyncSprites bool `json:"syncSprites"`
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {
@@ -213,6 +215,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		SyncOverworld:    true,
 		SyncChests:       true,
 		lastSyncChests:   false,
+		SyncSprites:      true,
 	}
 
 	g.patchSignature, g.patchSignatureOK = readPatchSignature(rom)
@@ -278,6 +281,8 @@ func (g *Game) FirstFrame() {
 	g.resetRoomState()
 	g.resetMap16()
 	g.resetManip()
+	// rewrite the remote sprites table:
+	g.remoteSprites = remoteSpritesLocal{}
 
 	// initialize WRAM:
 	for i := range g.wram {

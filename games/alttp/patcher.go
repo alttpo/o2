@@ -22,10 +22,11 @@ import (
 //	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
 //	  $707C80           map16 apply routine, called by generated map16 update routines
 //	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
-//	  $707E50           remote sprites drawing subroutine for one sprite
-//	  $707F00..$707F4B  remote sprites table, written by o2 (zeroed on reset)
-//	  $707F50..$707F67  remote sprites state, written by the game code (zeroed on reset)
+//	  $707E70           remote sprites drawing subroutine for one sprite
+//	  $707F00..$707F67  remote sprites table, written by o2 (zeroed on reset)
+//	  $707F68..$707F7F  remote sprites state, written by the game code (zeroed on reset)
 //	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
+//	$707FD6..$707FEF  the local player's sword sparkle and dash dust OAM entries, written by the trampoline every frame
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
@@ -51,7 +52,7 @@ const (
 	map16ApplyAddr = uint32(0x707C80)
 	// remote sprites routines; see remotesprites.go:
 	remoteDrawAddr       = uint32(0x707D50)
-	remoteDrawSpriteAddr = uint32(0x707E50)
+	remoteDrawSpriteAddr = uint32(0x707E70)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
@@ -75,6 +76,12 @@ const (
 	linkOAMCopyDMAWRAM = 0x0AC0
 	linkOAMCopyDMASize = 0x0AD8 - linkOAMCopyDMAWRAM
 	linkOAMCopySize    = linkOAMCopyDMA + linkOAMCopyDMASize
+	// sword sparkle and dash dust OAM entries (see emitCaptureExtras): byte length, then up to linkOAMExtrasMax
+	// entries of x, y, chr, attributes, OAM index << 1 | x bit 8 (all 8x8):
+	linkOAMCopyExtras   = linkOAMCopySize
+	linkOAMExtrasMax    = 5
+	linkOAMExtraSize    = 5
+	linkOAMCopyReadSize = linkOAMCopyExtras + 1 + linkOAMExtrasMax*linkOAMExtraSize
 )
 
 type Patcher struct {
@@ -230,7 +237,14 @@ func (p *Patcher) Patch() (err error) {
 	}
 	a.Comment("common code for SRAM:")
 	a.EmitBytes(ta.Bytes())
-	// the NMI hook runs from ROM:
+	// routines that run from ROM:
+	if a.PC() > captureTypesAddr {
+		return fmt.Errorf("SRAM code copy at $%06x overlaps ROM routines at $%06x", a.PC(), captureTypesAddr)
+	}
+	for a.PC() < captureTypesAddr {
+		a.EmitBytes([]byte{0})
+	}
+	emitCaptureExtras(a)
 	nmiHook := a.PC()
 	emitNMIHook(a, linkGfxBankInstruction(p.rom))
 	if err := a.Finalize(); err != nil {
@@ -338,6 +352,8 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 
 	p.emitLinkOAMCopy(a)
+	a.Comment("copy sparkles and dust for o2 to send:")
+	a.JSL(captureExtrasAddr)
 	a.Comment("draw remote players:")
 	a.JSR_abs(uint16(remoteDrawAddr & 0xFFFF))
 	a.RTL()

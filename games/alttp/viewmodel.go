@@ -294,6 +294,7 @@ type setFieldArgs struct {
 	SyncOverworld    *bool `json:"syncOverworld"`
 	SyncChests       *bool `json:"syncChests"`
 	SyncTunicColor   *bool `json:"syncTunicColor"`
+	SyncSprites      *bool `json:"syncSprites"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -340,6 +341,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncTunicColor != nil {
 		g.SyncTunicColor = *f.SyncTunicColor
+		g.clean = false
+	}
+	if f.SyncSprites != nil {
+		g.SyncSprites = *f.SyncSprites
 		g.clean = false
 	}
 	if f.PlayerColor != nil {

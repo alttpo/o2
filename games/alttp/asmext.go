@@ -41,7 +41,22 @@ func emitORAAbs(a *asm.Emitter, addr uint16) {
 	emitRaw(a, fmt.Sprintf("ora.w $%04x", addr), 0x0D, uint8(addr), uint8(addr>>8))
 }
 
+// emitORAAbsY emits `ORA.w addr,Y`.
+func emitORAAbsY(a *asm.Emitter, addr uint16) {
+	emitRaw(a, fmt.Sprintf("ora.w $%04x,Y", addr), 0x19, uint8(addr), uint8(addr>>8))
+}
+
 // emitLDAAbsY emits `LDA.w addr,Y`.
 func emitLDAAbsY(a *asm.Emitter, addr uint16) {
 	emitRaw(a, fmt.Sprintf("lda.w $%04x,Y", addr), 0xB9, uint8(addr), uint8(addr>>8))
+}
+
+// emitSTAAbsY emits `STA.w addr,Y`.
+func emitSTAAbsY(a *asm.Emitter, addr uint16) {
+	emitRaw(a, fmt.Sprintf("sta.w $%04x,Y", addr), 0x99, uint8(addr), uint8(addr>>8))
+}
+
+// emitCPYImm16 emits `CPY.w #imm`.
+func emitCPYImm16(a *asm.Emitter, imm uint16) {
+	emitRaw(a, fmt.Sprintf("cpy.w #$%04x", imm), 0xC0, uint8(imm), uint8(imm>>8))
 }
