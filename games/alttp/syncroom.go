@@ -151,6 +151,24 @@ type roomStateLocal struct {
 
 	// inflight is the update routine awaiting confirmation of execution, if any:
 	inflight *roomStateUpdate
+
+	// block remembers the push block door's block across intra-room transitions:
+	block roomBlockLocal
+}
+
+// roomBlockLocal remembers that the block of a push block door room was pushed ($0641 odd). An intra-room transition
+// (UnderworldTransition_Intraroom_TriggerShutters -> ResetThenCacheRoomEntryProperties) clears $0641 and closes the
+// shutters while the block stays where it was pushed, so RoomTag_OperateBlockDoor keeps the doors closed and a player
+// coming back through the trap door is locked in with a block that cannot be pushed again. Sync makes this likely: a
+// block pushed by another player in the same room is moved here, usually while Link is in another quadrant.
+type roomBlockLocal struct {
+	room uint16
+	// pushed is true once $0641 was seen odd in room:
+	pushed bool
+	// transition is true while an intra-room transition (submodule $01) runs after the block was pushed:
+	transition bool
+	// cleared is true when an intra-room transition cleared $0641 after it was pushed:
+	cleared bool
 }
 
 // resetRoomState forgets the room state; it is re-read from the SNES as a baseline.
@@ -160,6 +178,28 @@ func (g *Game) resetRoomState() {
 		rs.inflight.cancelled = true
 	}
 	*rs = roomStateLocal{}
+}
+
+// readRoomBlock tracks whether the push block door's block was pushed in the current room; see roomBlockLocal.
+func (g *Game) readRoomBlock(room uint16) {
+	rb := &g.roomState.block
+	if rb.room != room {
+		*rb = roomBlockLocal{room: room}
+	}
+	if !roomHasTag(g.roomTags(), roomTagIsBlockDoor) || !g.wramFresh[roomBlockOffs] {
+		return
+	}
+	switch g.local.SubModule {
+	case 0x00:
+		if g.wram[roomBlockOffs]&1 != 0 {
+			rb.pushed, rb.transition, rb.cleared = true, false, false
+		} else if rb.transition {
+			rb.transition, rb.cleared = false, true
+			log.Printf("alttp: room: local: intra-room transition cleared the pushed block\n")
+		}
+	case 0x01:
+		rb.transition = rb.pushed
+	}
 }
 
 // roomTags returns the room's two tags ($AE, $AF).
@@ -266,6 +306,7 @@ func (g *Game) readRoomState() {
 	if local.Module != 0x07 {
 		// left the dungeon module:
 		rs.valid = false
+		rs.block = roomBlockLocal{}
 		return
 	}
 	if !g.wramFresh[0xA0] || !g.wramFresh[0xA1] {
@@ -275,6 +316,9 @@ func (g *Game) readRoomState() {
 	if rs.valid && (rs.room != room || local.SubModule == 0x01) {
 		// a room or intra-room transition; the game resets the shutters:
 		rs.valid = false
+	}
+	if rs.inflight == nil {
+		g.readRoomBlock(room)
 	}
 	if rs.inflight != nil {
 		// wait for the update to confirm:
@@ -300,6 +344,7 @@ func (g *Game) readRoomState() {
 			door:  door,
 			doors: g.wram[roomDoorsOffs],
 			since: timestampFromTime(g.ServerSNESTimestamp()),
+			block: rs.block,
 		}
 		rs.pulled = roomHasTag(tags, roomTagIsPull) && g.wram[roomPullOffs] != 0
 		rs.pulledQuad = roomQuadrant(local)
@@ -441,7 +486,8 @@ type roomStateUpdate struct {
 	pullTs   uint32
 	pullFrom *Player
 
-	blockDoor bool // push block door opened from $0641
+	blockDoor    bool // push block door opened from $0641
+	blockRestore bool // $0641 set again after an intra-room transition cleared it
 
 	hold     bool // $0646 set to roomHoldRemote
 	holdOff  bool // $0646 cleared
@@ -488,6 +534,10 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 		rs.pulledQuad = u.pullFrom.Doors.pulledQuad
 		log.Printf("alttp: room: update: pulled switch from player '%s'\n", u.pullFrom.Name())
 		g.PushNotification(fmt.Sprintf("pulled switch from %s", u.pullFrom.Name()))
+	}
+	if u.blockRestore {
+		rs.block.cleared = false
+		log.Printf("alttp: room: update: restored the pushed block after an intra-room transition\n")
 	}
 	if u.blockDoor {
 		log.Printf("alttp: room: update: opened push block door\n")
@@ -612,6 +662,12 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		g.wram[roomBlockOffs]&1 != 0 && rs.door != 0 {
 		u.blockDoor = true
 	}
+	// an intra-room transition cleared $0641 and closed the shutters, but the block is still pushed; take it back:
+	if rb := &rs.block; u.keyDoorBit == 0 && !u.blockDoor && rb.cleared && rb.room == rs.room &&
+		roomHasTag(tags, roomTagIsBlockDoor) && g.wramFresh[roomBlockOffs] && g.wram[roomBlockOffs]&1 == 0 &&
+		rs.door != 0 {
+		u.blockDoor, u.blockRestore = true, true
+	}
 
 	// trap doors; a key door being unlocked or a push block door uses the submodule this time:
 	if winner, door, ts := g.roomDoorWinner(remotes); winner != nil {
@@ -734,6 +790,13 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		emitUnlockDoor(a, keyDoor, "rm_door")
 		a.SEP(0x30)
 	} else if u.blockDoor {
+		if u.blockRestore {
+			a.Comment("the intra-room transition cleared $0641 (ResetThenCacheRoomEntryProperties); the block is still pushed:")
+			a.LDA_abs(roomBlockOffs)
+			a.BNE("rm_block_set")
+			a.INC_abs(roomBlockOffs)
+			a.Label("rm_block_set")
+		}
 		a.Comment("open the push block door like RoomTag_OperateBlockDoor once the block was pushed:")
 		a.LDA_abs(roomBlockOffs)
 		a.AND_imm8_b(0x01)

@@ -334,6 +334,60 @@ func TestRoomDoorsScenario_BlockDoorReopensAfterEntering(t *testing.T) {
 	h.expectDoors("g2 alone", 1, 1)
 }
 
+// intraroomTransition does what an intra-room transition through a trap door does: UnderworldTransition_Intraroom_
+// TriggerShutters clears $0641 (ResetThenCacheRoomEntryProperties) and closes the shutters behind Link.
+func (h *skScenario) intraroomTransition(i int) {
+	e := h.gs[i].e
+	e.WRAM[skSubModule] = 0x01
+	h.settleSubmodules(2, nil)
+	e.WRAM[roomBlockOffs] = 0
+	e.WRAM[roomDoorOffs] = 1
+	e.WRAM[0x068E] = 0
+	e.WRAM[0x0690] = 0
+	e.WRAM[skSubModule] = 0x05
+}
+
+// Coming back through the trap door of a push block door room (e.g. Ganon's Tower room $8B) clears $0641 and closes the
+// shutters while the block stays pushed (here by another player in another quadrant), so RoomTag_OperateBlockDoor
+// keeps Link locked in; $0641 is restored and the doors are opened again.
+func TestRoomDoorsScenario_BlockDoorReopensAfterIntraroomTransition(t *testing.T) {
+	h := newSSScenario(t, 2)
+	h.loadRoomState(0, rmRoom, 0x0C, 0) // NE block door
+	h.loadRoomState(1, rmRoom, 0x0C, 0)
+	for i := range h.gs {
+		h.gs[i].e.WRAM[roomBlockOffs] = 1
+		h.gs[i].e.WRAM[roomDoorOffs] = 0
+	}
+	h.settleSubmodules(skSettleFrames, nil)
+	h.expectDoors("block pushed", 0, 0)
+
+	h.intraroomTransition(1)
+	h.settleSubmodules(skSettleFrames*2, nil)
+	h.expectDoors("g2 came back through the trap door", 0, 0)
+	if v := h.gs[1].e.WRAM[roomBlockOffs]; v != 1 {
+		t.Errorf("g2: expected $0641 = 1; got $%02x", v)
+	}
+
+	// also alone in the room, since the block cannot be pushed again:
+	h.loadRoomState(0, rmOtherRoom, 0x0C, 0)
+	h.intraroomTransition(1)
+	h.settleSubmodules(skSettleFrames*2, nil)
+	h.expectDoors("g2 alone came back through the trap door", 1, 0)
+
+	// a block that was never pushed is left alone (g2 re-enters the room):
+	h.loadRoomState(1, rmOtherRoom+1, 0x0C, 0)
+	h.settleSubmodules(skSettleFrames, nil)
+	h.loadRoomState(1, rmRoom, 0x0C, 0)
+	h.gs[1].e.WRAM[roomBlockOffs] = 0
+	h.settleSubmodules(skSettleFrames, nil)
+	h.intraroomTransition(1)
+	h.settleSubmodules(skSettleFrames*2, nil)
+	h.expectDoors("g2 block not pushed", 1, 1)
+	if v := h.gs[1].e.WRAM[roomBlockOffs]; v != 0 {
+		t.Errorf("g2: expected $0641 = 0; got $%02x", v)
+	}
+}
+
 // Swamp Palace room $37 fills with water when its switch is pulled (RoomTag_WaterOn). The flood only finishes with the
 // camera in the quadrant of the switch, so a pull is only replayed once Link is in the quadrant of the player who
 // pulled it; otherwise the game hangs in submodule $0C.
