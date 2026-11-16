@@ -66,6 +66,10 @@ export interface ServerViewModel {
 export interface GameViewModel {
     isCreated: boolean;
     gameName: string;
+    // set once the SNES is confirmed to be running the ROM that O2 patched:
+    romVerified?: boolean;
+    // why the ROM is not verified, or that it is:
+    romStatus?: string;
 }
 
 export interface GameALTTPViewModel extends GameViewModel {

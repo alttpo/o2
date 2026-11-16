@@ -127,14 +127,23 @@ type Game struct {
 	reset         resetState
 	resetRequests chan struct{}
 
+	// patchSignature is the signature in the ROM o2 patched, which the SNES must have in SRAM; see signature.go:
+	patchSignature   patchSignature
+	patchSignatureOK bool
+	// readCycle counts read cycles, to read the patch signature periodically:
+	readCycle uint8
+
 	colorPendingUpdate int
 	colorUpdatedTo     uint16
 	last15             uint8
 
 	// serializable ViewModel:
-	clean            bool
-	IsCreated        bool   `json:"isCreated"`
-	GameName         string `json:"gameName"`
+	clean     bool
+	IsCreated bool   `json:"isCreated"`
+	GameName  string `json:"gameName"`
+	// ROMVerified is set once the SNES is confirmed to be running the ROM o2 patched; ROMStatus explains why not:
+	ROMVerified      bool   `json:"romVerified"`
+	ROMStatus        string `json:"romStatus"`
 	PlayerColor      uint16 `json:"playerColor"`
 	SyncItems        bool   `json:"syncItems"`
 	SyncDungeonItems bool   `json:"syncDungeonItems"`
@@ -183,6 +192,9 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		SyncChests:       true,
 		lastSyncChests:   false,
 	}
+
+	g.patchSignature, g.patchSignatureOK = readPatchSignature(rom)
+	g.ROMStatus = romStatusWaiting
 
 	g.initSerde()
 	g.fillRomFunctions()
@@ -253,6 +265,8 @@ func (g *Game) FirstFrame() {
 
 func (g *Game) ProvideQueue(queue snes.Queue) {
 	g.queue = queue
+	// the SNES may be running a different ROM now:
+	g.resetPatchSignature()
 
 	g.FirstFrame()
 }

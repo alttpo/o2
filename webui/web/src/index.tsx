@@ -106,6 +106,9 @@ const App = () => {
 
     const vm = viewModel;
 
+    const romGo = (vm.game?.isCreated && vm.game?.romVerified) || false;
+    const romStatus = vm.game?.isCreated ? (vm.game?.romStatus || "") : "select a game ROM";
+
     return (
         <Fragment>
             <div id="main-wrapper">
@@ -137,8 +140,9 @@ const App = () => {
                             <div style="flex: 1 0 0%">
                                 <span>Server:&nbsp;</span>{vm.server?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
                             </div>
-                            <div style="flex: 1 0 0%">
-                                <span>ROM:&nbsp;</span>{vm.game?.isCreated ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            <div style="flex: 1 0 0%" title={romStatus}>
+                                <span>ROM:&nbsp;</span>{romGo ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                                {!romGo && romStatus && <div style="color: red; font-size: smaller">{romStatus}</div>}
                             </div>
                             <div style="flex: 0 0 15%">
                                 <a href="/log.txt" style="float: right">Download Logs</a>

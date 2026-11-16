@@ -22,6 +22,7 @@ import (
 //	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
 //	  $707D00           map16 apply routine, called by generated map16 update routines
 //	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
+//	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
 	// at one of these buffers after a routine was written there:
@@ -79,8 +80,14 @@ func NewPatcher(rom *snes.ROM) *Patcher {
 	return &Patcher{rom: rom}
 }
 
-// Patch patches the ROM for O2 support
+// Patch patches the ROM for O2 support.
+//
+// NOTE: increment patchFormat (signature.go) for any change to the init code or frame hook emitted here; changes to
+// the code copied to SRAM (emitSRAMCode) and to the SRAM layout constants change the patch version automatically.
 func (p *Patcher) Patch() (err error) {
+	// identify the ROM before it is modified:
+	signature := makePatchSignature(p.rom.Contents)
+
 	// free bytes in JP 1.0 rom:
 	// $00:89C2 - 30 bytes
 	// $00:E892 - 30 bytes
@@ -185,7 +192,7 @@ func (p *Patcher) Patch() (err error) {
 
 	// start writing at the end of the ROM after music data:
 	pcAddr, err = lorom.BusAddressToPak(initHook)
-	a = asm.NewEmitter(p.rom.Slice(pcAddr, romGarbageEnd-romGarbageStart), true)
+	a = asm.NewEmitter(p.rom.Slice(pcAddr, patchSignatureROMAddr-romGarbageStart), true)
 	a.SetBase(initHook)
 	a.Comment("copy the common code to SRAM:")
 	a.PHP()
@@ -197,6 +204,11 @@ func (p *Patcher) Patch() (err error) {
 	a.LDA_imm16_w(uint16(ta.Len() - 1))
 	a.MVN(uint8(sramCodeAddr>>16), 0xFF) // source bank; fixed up below
 	srcBankOperand := a.PC() - 1
+	a.Comment("copy the patch signature to SRAM:")
+	a.LDX_imm16_w(uint16(patchSignatureROMAddr & 0xFFFF))
+	a.LDY_imm16_w(uint16(patchSignatureAddr & 0xFFFF))
+	a.LDA_imm16_w(patchSignatureSize - 1)
+	a.MVN(uint8(patchSignatureAddr>>16), uint8(patchSignatureROMAddr>>16))
 	a.PLB()
 	a.PLP()
 	// append the original 802F code to our custom init hook:
@@ -219,6 +231,14 @@ func (p *Patcher) Patch() (err error) {
 	code[srcOperand-initHook+1] = uint8(src >> 8)
 	code[srcBankOperand-initHook] = uint8(src >> 16)
 	a.WriteTextTo(textBuf)
+
+	// write the patch signature:
+	pcAddr, err = lorom.BusAddressToPak(patchSignatureROMAddr)
+	if err != nil {
+		return
+	}
+	copy(p.rom.Slice(pcAddr, patchSignatureSize), signature[:])
+	textBuf.WriteString(fmt.Sprintf("patch signature at $%06x: % x\n", patchSignatureROMAddr, signature[:]))
 
 	// overwrite the frame hook with a JSL to the SRAM trampoline:
 	pcAddr, err = lorom.BusAddressToPak(frameHook)

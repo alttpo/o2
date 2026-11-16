@@ -13,6 +13,10 @@ func (g *Game) sendPackets() {
 	if g.IsResetting() {
 		return
 	}
+	// don't send state read from a ROM other than the one we patched:
+	if !g.ROMVerified {
+		return
+	}
 
 	local := g.local
 

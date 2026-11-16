@@ -117,7 +117,8 @@ more messages, which corrupted the rest of the packet.
   mixes two consecutive frames' entries for one frame.
 - **Extra reads per frame.** Sampling sprites adds one small SRAM read per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of
-  one. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to two
+  one. The 16-byte patch signature (`$707FF0`, see `games/alttp/signature.go`) is read with the SRAM reads and every
+  8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld; the manipulable objects add one read plus up to two
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own

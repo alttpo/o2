@@ -339,6 +339,8 @@ func (g *Game) enqueueSRAMRead(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F0FE, 0xFE, nil) // [$F0FE..$F1FB]
 	q = g.readEnqueue(q, 0xF5F1FC, 0x54, nil) // [$F1FC..$F24F]
 	q = g.readEnqueue(q, 0xF5F280, 0xC0, nil) // [$F280..$F33F]
+	// the patch signature, to make sure the SNES is still running the ROM we patched:
+	q = g.enqueuePatchSignatureRead(q)
 	return q
 }
 
@@ -393,6 +395,13 @@ func (g *Game) queueReads(q []snes.Read) []snes.Read {
 	} else {
 		// normally read just WRAM data:
 		q = g.enqueueWRAMReads(q)
+
+		// the SRAM reads include the patch signature, but they only happen while syncing; read the signature until
+		// it matches, and then periodically in case a different ROM was loaded:
+		g.readCycle++
+		if !g.ROMVerified || g.readCycle&7 == 0 {
+			q = g.enqueuePatchSignatureRead(q)
+		}
 	}
 
 	return q
@@ -430,6 +439,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			submoduleStaging = int(val)
 		}
 		// ignore SRAM for staging.
+		g.checkPatchSignature(rsp)
 
 		// handle update routine check:
 		if g.updateStage > 0 {
@@ -560,6 +570,10 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		doSync := true
 		if _, ok := modulesOKForSync[uint8(moduleStaging)]; !ok {
 			// bad module:
+			doSync = false
+		}
+		if !g.ROMVerified {
+			// the SNES is not running the ROM we patched:
 			doSync = false
 		}
 

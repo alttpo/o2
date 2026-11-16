@@ -17,6 +17,10 @@ func (g *Game) updateWRAM() (writes []snes.Write, ok bool) {
 	if !g.local.IsInGame() {
 		return
 	}
+	// never write update routines to SRAM unless the SNES is running the ROM we patched:
+	if !g.ROMVerified {
+		return
+	}
 
 	q := g.queue
 	if q == nil {
