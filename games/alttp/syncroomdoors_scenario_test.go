@@ -333,3 +333,66 @@ func TestRoomDoorsScenario_BlockDoorReopensAfterEntering(t *testing.T) {
 	h.settleSubmodules(skSettleFrames*2, nil)
 	h.expectDoors("g2 alone", 1, 1)
 }
+
+// Swamp Palace room $37 fills with water when its switch is pulled (RoomTag_WaterOn). The flood only finishes with the
+// camera in the quadrant of the switch, so a pull is only replayed once Link is in the quadrant of the player who
+// pulled it; otherwise the game hangs in submodule $0C.
+func TestRoomDoorsScenario_WaterSwitchWaitsForQuadrant(t *testing.T) {
+	h := newSSScenario(t, 2)
+	h.loadRoomState(0, rmRoom, 0, 0)
+	h.loadRoomState(1, rmRoom, 0, 0)
+	for i := range h.gs {
+		h.gs[i].e.WRAM[0xAF] = 0x19 // RoomTag_WaterOn
+	}
+	// g1 at the switch in the north half; g2 in the south half:
+	h.setScroll(0, 0x0E78, 0x0C80, 0x0E00, 0x0C00)
+	h.setScroll(1, 0x0E78, 0x0D80, 0x0E00, 0x0D00)
+	h.settleSubmodules(skSettleFrames, nil)
+
+	h.gs[0].e.WRAM[roomPullOffs] = 1
+	h.settleSubmodules(skSettleFrames*2, nil)
+	if v := h.gs[1].e.WRAM[roomPullOffs]; v != 0 {
+		t.Errorf("g2: expected the pull to wait while in another quadrant; $0642 = $%02x", v)
+	}
+
+	// g1 walks down to g2; what counts is where the switch was pulled, not where g1 is now:
+	h.setScroll(0, 0x0E78, 0x0D80, 0x0E00, 0x0D00)
+	h.settleSubmodules(skSettleFrames*2, nil)
+	if v := h.gs[1].e.WRAM[roomPullOffs]; v != 0 {
+		t.Errorf("g2: expected the pull to wait for the switch's quadrant, not g1's; $0642 = $%02x", v)
+	}
+
+	// g2 walks up into the switch's quadrant:
+	h.setScroll(1, 0x0E78, 0x0CC0, 0x0E00, 0x0C00)
+	h.settleSubmodules(skSettleFrames*2, nil)
+	if v := h.gs[1].e.WRAM[roomPullOffs]; v != 1 {
+		t.Errorf("g2: expected the pull once in the same quadrant; $0642 = $%02x", v)
+	}
+}
+
+// The fill and drain tags set $0403 bit 3 when done; sharing it makes the room load filled (or drained) for the other
+// players next time. The water gate tags check the bit to decide whether to open, so it is not shared there.
+func TestRoomDoorsScenario_WaterFlag(t *testing.T) {
+	for _, tc := range []struct {
+		tag  uint8
+		want uint8
+	}{
+		{0x19, roomFlagWater}, // RoomTag_WaterOn
+		{0x18, roomFlagWater}, // RoomTag_WaterOff
+		{0x1A, 0},             // RoomTag_WaterGate
+	} {
+		h := newSSScenario(t, 2)
+		h.loadRoomState(0, rmRoom, 0, 0)
+		h.loadRoomState(1, rmRoom, 0, 0)
+		for i := range h.gs {
+			h.gs[i].e.WRAM[0xAF] = tc.tag
+		}
+		h.settleSubmodules(skSettleFrames, nil)
+		h.gs[0].e.WRAM[roomFlagsOffs] |= roomFlagWater
+		h.gs[0].e.WRAM[0xAF] = 0
+		h.settleSubmodules(skSettleFrames, nil)
+		if f := h.gs[1].e.WRAM[roomFlagsOffs]; f != tc.want {
+			t.Errorf("tag $%02x: g2: expected flags $%02x; got $%02x", tc.tag, tc.want, f)
+		}
+	}
+}

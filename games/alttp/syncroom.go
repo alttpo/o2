@@ -32,7 +32,8 @@ import (
 //     (a statue on a floor switch), closed otherwise.
 //
 // Message 0x1A (`room u16`, `flags u8` ($0403), `doorTs u32`, `door u8` ($0468)) and message 0x1B (`room u16`,
-// `doors u8` ($0401), `switches u8` (bit 0: pressing a hold switch, bit 1: pulled a switch), `pulledTs u32`) are sent
+// `doors u8` ($0401), `switches u8` (bit 0: pressing a hold switch, bit 1: pulled a switch, bits 2/3: the switch was pulled in the east/south
+// quadrant), `pulledTs u32`) are sent
 // in a broadcastSector packet to the current room's sector, only once they were sampled in that room. Both are shared
 // with alttpo (RoomState.as).
 //
@@ -119,6 +120,8 @@ type roomDoorsRemote struct {
 	hold     bool
 	pulled   bool
 	pulledTs uint32
+	// pulledQuad is the quadrant the switch was pulled in (roomQuadrant):
+	pulledQuad uint8
 }
 
 // roomStateLocal tracks the local player's room state.
@@ -139,8 +142,9 @@ type roomStateLocal struct {
 	// hold is true while the local player presses a hold switch (not counting $0646 set for remote players):
 	hold bool
 	// pulled is true once a switch was pulled in this room; pulledTs is when (0 if already pulled at the baseline):
-	pulled   bool
-	pulledTs uint32
+	pulled     bool
+	pulledTs   uint32
+	pulledQuad uint8
 	// holdWritten is true once $0646 was set for remote players; it is not set again while they keep pressing, since a
 	// local somaria block clears it every frame:
 	holdWritten bool
@@ -175,7 +179,8 @@ func (g *Game) roomSyncedFlags() uint8 {
 		// the tag draws the chests closed when it reveals them; wait until it did:
 		mask &^= roomFlagChests
 	}
-	if roomHasTag(tags, roomTagIsWater) {
+	if roomHasTag(tags, roomTagIsWaterGate) {
+		// the water gate tags check the bit to know whether the gate was opened already; leave it to them:
 		mask &^= roomFlagWater
 	}
 	return mask
@@ -204,6 +209,11 @@ func roomTagIsHold(tag uint8) bool { return tag == 0x16 }
 // roomTagIsWater reports whether a room tag is one of the water tags (RoomTag_WaterOff/On/Gate, RoomTag_DamGate).
 func roomTagIsWater(tag uint8) bool { return tag >= 0x18 && tag <= 0x1B }
 
+// roomTagIsWaterGate reports whether a room tag is RoomTag_WaterGate or RoomTag_DamGate, which use $0403 bit 3 to
+// remember the gate was opened. The fill and drain tags set it too but only act on $0642; with the bit set the room
+// loads filled or drained (RoomDraw_WaterOverlay*, RoomDraw_EmptyWaterFace).
+func roomTagIsWaterGate(tag uint8) bool { return tag == 0x1A || tag == 0x1B }
+
 // roomTagIsPull reports whether a room tag acts once on $0642 set by a pull switch.
 func roomTagIsPull(tag uint8) bool {
 	switch tag {
@@ -218,6 +228,11 @@ func roomTagIsPull(tag uint8) bool {
 // roomTagHidesChests reports whether a room tag hides the room's chests until it reveals them (RoomDraw_Chest).
 func roomTagHidesChests(tag uint8) bool {
 	return tag == 0x27 || tag == 0x3C || tag == 0x3E || (tag >= 0x29 && tag < 0x33)
+}
+
+// roomQuadrant returns a player's quadrant in the room: bit 0 east (bit 8 of X), bit 1 south (bit 8 of Y).
+func roomQuadrant(p *Player) uint8 {
+	return uint8(p.X>>8)&1 | (uint8(p.Y>>8)&1)<<1
 }
 
 // roomIsKeyDoorType reports whether a door type ($1980 & $FE) is a small key or big key door (see
@@ -287,6 +302,7 @@ func (g *Game) readRoomState() {
 			since: timestampFromTime(g.ServerSNESTimestamp()),
 		}
 		rs.pulled = roomHasTag(tags, roomTagIsPull) && g.wram[roomPullOffs] != 0
+		rs.pulledQuad = roomQuadrant(local)
 		rs.hold = g.localHolds(tags, door)
 		return
 	}
@@ -297,6 +313,7 @@ func (g *Game) readRoomState() {
 		if g.wram[roomPullOffs] != 0 || water {
 			rs.pulled = true
 			rs.pulledTs = g.nowTs()
+			rs.pulledQuad = roomQuadrant(local)
 			log.Printf("alttp: room: local: pulled switch\n")
 		}
 	}
@@ -468,6 +485,7 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	if u.pull {
 		rs.pulled = true
 		rs.pulledTs = u.pullTs
+		rs.pulledQuad = u.pullFrom.Doors.pulledQuad
 		log.Printf("alttp: room: update: pulled switch from player '%s'\n", u.pullFrom.Name())
 		g.PushNotification(fmt.Sprintf("pulled switch from %s", u.pullFrom.Name()))
 	}
@@ -565,7 +583,12 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 			}
 		}
 		if hasPull && !rs.pulled && !u.pull && d.pulled && d.pulledTs > rs.since {
-			u.pull, u.pullTs, u.pullFrom = true, d.pulledTs, p
+			// the water tags flood or drain the quadrant the camera is in, which only works out when Link is where the
+			// switch was pulled (e.g. Underworld_FloodSwampWater_CoverFloor never ends with the camera in another
+			// quadrant); wait until Link is in the quadrant the switch was pulled in:
+			if !roomHasTag(tags, roomTagIsWater) || roomQuadrant(local) == d.pulledQuad {
+				u.pull, u.pullTs, u.pullFrom = true, d.pulledTs, p
+			}
 		}
 		if d.hold && !wantHold {
 			wantHold, u.holdFrom = true, p
@@ -670,6 +693,18 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	if u.pull {
 		a.Comment(fmt.Sprintf("switch pulled by %s:", u.pullFrom.Name()))
+		if roomHasTag(tags, roomTagIsWater) {
+			q := u.pullFrom.Doors.pulledQuad
+			a.Comment("Link still in the quadrant the switch was pulled in:")
+			a.LDA_dp(0x23)
+			a.AND_imm8_b(0x01)
+			a.CMP_imm8_b(q & 1)
+			asmBNEFar(a, "rm_skip", "rm_pull_x_ok")
+			a.LDA_dp(0x21)
+			a.AND_imm8_b(0x01)
+			a.CMP_imm8_b(q >> 1)
+			asmBNEFar(a, "rm_skip", "rm_pull_y_ok")
+		}
 		a.LDA_abs(roomPullOffs)
 		a.BNE("rm_pulled")
 		a.LDA_imm8_b(0x01)
@@ -866,7 +901,7 @@ func (g *Game) SerializeRoomDoors(w io.Writer) (err error) {
 		switches |= 0x01
 	}
 	if rs.pulled {
-		switches |= 0x02
+		switches |= 0x02 | rs.pulledQuad<<2
 	}
 	b := []byte{uint8(MsgRoomDoors), uint8(rs.room), uint8(rs.room >> 8), rs.doors, switches}
 	b = binary.LittleEndian.AppendUint32(b, rs.pulledTs)
@@ -885,12 +920,13 @@ func (g *Game) DeserializeRoomDoors(p *Player, r io.Reader) (err error) {
 		return fmt.Errorf("error deserializing room doors: %w", err)
 	}
 	p.Doors = roomDoorsRemote{
-		valid:    true,
-		room:     m.Room,
-		doors:    m.Doors,
-		hold:     m.Switches&0x01 != 0,
-		pulled:   m.Switches&0x02 != 0,
-		pulledTs: m.PulledTs,
+		valid:      true,
+		room:       m.Room,
+		doors:      m.Doors,
+		hold:       m.Switches&0x01 != 0,
+		pulled:     m.Switches&0x02 != 0,
+		pulledTs:   m.PulledTs,
+		pulledQuad: (m.Switches >> 2) & 3,
 	}
 	return nil
 }

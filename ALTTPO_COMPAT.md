@@ -227,7 +227,7 @@ still be taken by the other.
   floor switch), closed otherwise.
 - **Message 0x1A**, broadcastSector: `room u16`, `flags u8` (`$0403`), `doorTs u32`, `door u8` (`$0468`). **Message
   0x1B** follows it: `room u16`, `doors u8` (`$0401`), `switches u8` (bit 0: pressing a hold switch, bit 1: pulled a
-  switch), `pulledTs u32`. Both are last in the same packet as the star switch state (dropped whenever the sender's
+  switch, bits 2/3: it was pulled in the east/south quadrant), `pulledTs u32`. Both are last in the same packet as the star switch state (dropped whenever the sender's
   location changes); older versions stop parsing at 0x1B.
 - **Sampling.** In the dungeon module while `$A0` stays the same. The baseline is taken in submodule 0 (after the room
   load), recording the time it was taken. A change of `$0468` seen in submodule 0, `$05` or `$17` (pressure plate) is
@@ -243,7 +243,9 @@ still be taken by the other.
     (opened chest tiles in `$7E2000`, attributes `$2727` so they cannot be opened again, four VRAM stripes in `$1000`,
     `$14` = 1), without giving their items; big chests and big key locks only get the flag. Chest bits wait while a tag
     that hides the room's chests until it is solved is active (`$27`, `$29`-`$32`, `$3C`, `$3E`), and bit 3 is not
-    taken in water rooms, whose tags set it to remember the water was let out.
+    taken in water gate rooms (`$1A`/`$1B`), whose tags check it to know whether the gate was opened. The fill and drain
+    tags (`$18`/`$19`) set it too but only act on `$0642`; sharing it there makes the room load filled or drained
+    (`RoomDraw_WaterOverlay*`, `RoomDraw_EmptyWaterFace`) when another player enters it next.
   - A remote door bit whose slot here is a small or big key door (`$1980` type `$1C`-`$2B` except `$28`, `$2A`) that is
     still locked (attribute `$F0 + slot` at `$7F2041 + $19A0/2`) is unlocked like the game does once the key was
     used: `$068E` = that attribute index, `$0690` = 0, SFX3 `$14`, submodule `$04`. No key is used; the small key sync
@@ -257,6 +259,12 @@ still be taken by the other.
     player entering through them) and the doors are closed, they are opened like `RoomTag_OperateBlockDoor` does.
   - A pull made after our baseline sets `$0642` = 1 once, so the room's tag opens the door, explodes the wall or lets
     the water out here too.
+    In water rooms (`$18`-`$1A`) only while Link is in the quadrant the switch was pulled in (not where that player is now), which the game's
+    flood/drain routines assume: `Underworld_FloodSwampWater_CoverFloor` fills until `$068A` reaches
+    `$0688 - $E8 - $24`, which with the camera in another quadrant (`$E8` 256 pixels off) is never reached, hanging the
+    game in submodule `$0C` (e.g. Swamp Palace room `$37` with one player south of the switch). The pull stays pending
+    until Link walks into that quadrant. A player who stays in another quadrant gets the water bit (see above) and sees the room filled
+    or drained once it reloads; the water is drawn while the room loads, so it cannot be shown live from there.
   - While any remote player holds a hold switch, `$0646` is set to `$80` (a somaria block only ever sets it to 1), which
     holds the doors open here; it is cleared again once nobody does. Since a player whose `$0646` is `$80` does not
     count as holding the switch, players do not keep each other's doors open forever. A local somaria block
