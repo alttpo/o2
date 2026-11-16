@@ -276,14 +276,15 @@ func (g *Game) readLinkSprites() {
 		s.sprites = append(s.sprites, sp)
 	}
 
-	// sword sparkles and dash dust: their tiles are in the common sprite sheets (chrs $80..$FF), which receivers draw
-	// from their own VRAM:
-	if n := int(c[linkOAMCopyExtras]); n <= linkOAMExtrasMax*linkOAMExtraSize {
-		for o := linkOAMCopyExtras + 1; o < linkOAMCopyExtras+1+n; o += linkOAMExtraSize {
+	// captured sparkles, dust, projectiles and carried and thrown objects (see emitCaptureExtras): their tiles are
+	// static or in the common sprite sheets, which receivers draw from their own VRAM:
+	if n := int(c[linkOAMCopyExtras]) | int(c[linkOAMCopyExtras+1])<<8; n <= linkOAMExtrasMax*linkOAMExtraSize {
+		for o := linkOAMCopyExtras + 2; o < linkOAMCopyExtras+2+n; o += linkOAMExtraSize {
 			e := c[o : o+linkOAMExtraSize]
-			sp := linkSprite{index: e[4] >> 1, size: 0}
+			sp := linkSprite{index: e[5] & 0x7F}
 			copy(sp.b[:4], e[:4])
-			sp.b[4] = e[4] & 1
+			sp.b[4] = e[4] & 3
+			sp.size = (sp.b[4] >> 1) & 1
 			sp.pal = (sp.b[3] >> 1) & 7
 			sp.absidx = [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
 			s.sprites = append(s.sprites, sp)

@@ -78,11 +78,11 @@ func (h *skScenario) expectOAM(when string, i, index int, entry [4]byte, ext uin
 	}
 }
 
-// expectShadow expects g2's shadow in g1's OAM[$7F] and OAM[$7E], at x (+8), y:
+// expectShadow expects g2's shadow in g1's OAM[$7E] and OAM[$7F] (drawn back to front), at x (+8), y:
 func (h *skScenario) expectShadow(when string, x, y uint8) {
 	h.t.Helper()
-	h.expectOAM(when+": shadow", 0, 0x7F, [4]byte{x, y, 0x6C, 0x28}, 0x00)
-	h.expectOAM(when+": shadow", 0, 0x7E, [4]byte{x + 8, y, 0x6C, 0x68}, 0x00)
+	h.expectOAM(when+": shadow", 0, 0x7E, [4]byte{x, y, 0x6C, 0x28}, 0x00)
+	h.expectOAM(when+": shadow", 0, 0x7F, [4]byte{x + 8, y, 0x6C, 0x68}, 0x00)
 }
 
 func (h *skScenario) expectOAMUnused(when string, i int, from int) {
@@ -417,10 +417,12 @@ func TestRemoteSpritesScenario_SendsSparklesAndDust(t *testing.T) {
 	// dash dust in ancilla region A, one tile off the left edge:
 	setOAM(0x10, 0x48, 0x70, 0xCF, 0x04, 0x00)
 	setOAM(0x11, 0xFC, 0x72, 0xA9, 0x04, 0x01)
-	// not captured: another chr in the common sheet, a 16x16 sprite and a sprite name table 1:
-	setOAM(0x12, 0x40, 0x70, 0x84, 0x04, 0x00)
-	setOAM(0x13, 0x40, 0x70, 0xDF, 0x04, 0x02)
-	setOAM(0x14, 0x40, 0x70, 0xCF, 0x05, 0x00)
+	// not captured: another chr in the common sheet, a chr in name table 1, and chrs that are DMA'd every frame (the
+	// sword, a follower):
+	setOAM(0x12, 0x40, 0x70, 0x85, 0x04, 0x00)
+	setOAM(0x13, 0x40, 0x70, 0xCF, 0x05, 0x00)
+	setOAM(0x14, 0x40, 0x70, 0x05, 0x04, 0x00)
+	setOAM(0x15, 0x40, 0x70, 0x20, 0x04, 0x02)
 
 	received := func() (extras []remoteSprite) {
 		for _, sp := range h.gs[0].g.players[1].Sprites.list {
@@ -488,12 +490,69 @@ func TestRemoteSpritesScenario_ElevatedShadowAndDust(t *testing.T) {
 	setOAM(0x11, 0x50, 0x72, 0xA9, 0x04, 0x00)
 	h.frames(8)
 
-	h.expectOAM("shadow", 0, 0x7F, [4]byte{0x40, 0x70, 0x28, 0x28}, 0x00)
-	h.expectOAM("shadow", 0, 0x7E, [4]byte{0x48, 0x70, 0x28, 0x68}, 0x00)
-	// effects are sent from the end of the OAM buffer and drawn ordered by OAM index:
-	h.expectOAM("dust", 0, 0x7D, [4]byte{0x38, 0x68, 0xCF, 0x04}, 0x00)
-	h.expectOAM("dust", 0, 0x7C, [4]byte{0x40, 0x6A, 0xA9, 0x04}, 0x00)
-	h.expectOAM("body", 0, 0x7B, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
-	h.expectOAM("head", 0, 0x7A, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	// drawn back to front by the sender's OAM index:
+	h.expectOAM("shadow", 0, 0x7F, [4]byte{0x48, 0x70, 0x28, 0x68}, 0x00)
+	h.expectOAM("shadow", 0, 0x7E, [4]byte{0x40, 0x70, 0x28, 0x28}, 0x00)
+	h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	// the dust has lower OAM indices than Link on g2, so it is drawn in front of him:
+	h.expectOAM("dust", 0, 0x7B, [4]byte{0x40, 0x6A, 0xA9, 0x04}, 0x00)
+	h.expectOAM("dust", 0, 0x7A, [4]byte{0x38, 0x68, 0xCF, 0x04}, 0x00)
 	h.expectOAMUnused("nothing else", 0, 0x79)
+}
+
+// Carried and thrown objects, projectiles and debris are sent while whatever draws them exists, and drawn by o2.
+func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(e *emulator.System)
+		chr   uint8
+		ext   uint8
+	}{
+		{"carried pot", func(e *emulator.System) { e.WRAM[0x0DD0+5] = 0x0A }, 0x44, 0x02},
+		{"thrown rock", func(e *emulator.System) { e.WRAM[0x0DD0+5], e.WRAM[0x0E20+5] = 0x0B, 0xEC }, 0x46, 0x02},
+		{"pot debris", func(e *emulator.System) { e.WRAM[0x0FB4], e.WRAM[0x1F800+7] = 0x16, 0x16 }, 0x58, 0x00},
+		{"arrow", func(e *emulator.System) { e.WRAM[0x0C4A+0] = 0x09 }, 0x2A, 0x00},
+		{"boomerang", func(e *emulator.System) { e.WRAM[0x0C4A+1] = 0x05 }, 0x26, 0x02},
+		{"bomb", func(e *emulator.System) { e.WRAM[0x0C4A+2] = 0x07 }, 0x6E, 0x02},
+		{"fire rod shot", func(e *emulator.System) { e.WRAM[0x0C4A+4] = 0x02 }, 0x8D, 0x00},
+		{"somaria block", func(e *emulator.System) { e.WRAM[0x0C4A+5] = 0x2C }, 0xE9, 0x02},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRSScenario(t)
+			e := h.gs[1].e
+			copy(e.WRAM[0x0800+0x20*4:], []byte{0x60, 0x40, tc.chr, 0x0C})
+			e.WRAM[0x0A20+0x20] = tc.ext
+			tc.setup(e)
+
+			h.frames(8)
+			var got []remoteSprite
+			for _, sp := range h.gs[0].g.players[1].Sprites.list {
+				if sp.b[2] == tc.chr {
+					got = append(got, sp)
+				}
+			}
+			if len(got) != 1 || got[0].index != 0x20 || got[0].size != tc.ext>>1 {
+				t.Fatalf("expected chr $%02x at OAM index $20 to be sent; got %+v", tc.chr, got)
+			}
+			// drawn in front of Link like on g2 (lower OAM index), relative to g1's scroll:
+			h.expectShadow("drawn", 0x40, 0x60)
+			h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+			h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+			h.expectOAM("drawn", 0, 0x7B, [4]byte{0x50, 0x38, tc.chr, 0x0C}, tc.ext)
+		})
+	}
+
+	// without anything drawing them, they are not sent:
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	copy(e.WRAM[0x0800+0x20*4:], []byte{0x60, 0x40, 0x44, 0x0C})
+	e.WRAM[0x0A20+0x20] = 0x02
+	h.frames(8)
+	for _, sp := range h.gs[0].g.players[1].Sprites.list {
+		if sp.b[2] == 0x44 {
+			t.Errorf("sent a pot nobody carries: %+v", sp)
+		}
+	}
+	h.expectShadow("nothing else", 0x40, 0x60)
 }

@@ -53,7 +53,7 @@ import (
 
 // SRAM layout of the remote sprites table, written by o2:
 const (
-	remoteTableAddr = uint32(0x707EE8)
+	remoteTableAddr = uint32(0x706200)
 
 	// frames left to draw the table, counted down every frame:
 	rtTTL = 0
@@ -63,23 +63,24 @@ const (
 	// $1B (1 = underworld) and $A0 (underworld room) or $8A (overworld area) the table is for:
 	rtIndoors  = 2
 	rtLocation = 4
-	// byte offsets into rtEntries: the end of the shadow and effect sprites, the end of the body sprites and the end
-	// of all entries:
+	// byte offsets into rtEntries: the end of the extra sprites behind the body, the end of the body sprites, the end
+	// of the blobs and the end of the extra sprites in front of everything else:
 	rtExtrasEnd = 6
 	rtBodyEnd   = 8
 	rtEnd       = 10
 	// LinkGraphics DMA source addresses: top row of chrs $20/$21, $22/$23, bottom row of chrs $30/$31, $32/$33:
-	rtSrc = 12
+	rtSrc      = 12
+	rtFrontEnd = 20
 	// sprites to draw in order, each drawn in front of the ones before: world x, world y, chr, attributes, size ($02 for
-	// 16x16). Up to 2 shadow sprites, remoteEffectMax sparkle and dust sprites and 2 body sprites (chrs $20 and $22)
-	// of one player are followed by one blob per player (chr $64), starting with the body's player, whose blob is only
-	// drawn when the body can't be:
-	rtEntries       = 20
-	rtEntrySize     = 7
-	remoteShadowMax = 2
-	remoteEffectMax = 4
-	remoteBlobMax   = 6
-	remoteEntryMax  = remoteShadowMax + remoteEffectMax + 2 + remoteBlobMax
+	// 16x16). Extra sprites (shadows, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) the
+	// remote player draws behind Link and 2 body sprites (chrs $20 and $22) are followed by one blob per player (chr
+	// $64), starting with the body's player, whose blob is only drawn when the body can't be, and the extra sprites the
+	// remote player draws in front of Link; up to remoteExtraMax extras in all:
+	rtEntries      = 22
+	rtEntrySize    = 7
+	remoteExtraMax = 14
+	remoteBlobMax  = 8
+	remoteEntryMax = remoteExtraMax + 2 + remoteBlobMax
 
 	remoteTableSize = rtEntries + remoteEntryMax*rtEntrySize
 )
@@ -303,13 +304,27 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_blob_loop")
 	a.TYA()
 	emitCMPAbs(a, tb(rtEnd))
-	a.BCS("rd_done")
+	a.BCS("rd_front")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
 	a.TAY()
 	a.BRA("rd_blob_loop")
+
+	a.Comment("extra sprites in front:")
+	a.Label("rd_front")
+	a.STZ_abs(st(rsAnim))
+	a.Label("rd_front_loop")
+	a.TYA()
+	emitCMPAbs(a, tb(rtFrontEnd))
+	a.BCS("rd_done")
+	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.TAY()
+	a.BRA("rd_front_loop")
 
 	a.Label("rd_done")
 	a.PLB()
@@ -561,44 +576,23 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	return
 }
 
-// isRemoteShadowChr reports whether chr is one of Link's shadow tiles: $6C on the ground, $28 and $38 while recoiling
-// or jumping off a ledge (kLinkShadows_Chardata).
-func isRemoteShadowChr(chr uint8) bool {
-	return chr == 0x6C || chr == 0x28 || chr == 0x38
-}
-
-// isRemoteEffectChr reports whether chr is a sword sparkle or dash dust tile.
-func isRemoteEffectChr(chr uint8) bool {
-	for _, c := range captureChrs {
-		if uint16(chr) == c {
-			return true
-		}
-	}
-	return false
-}
-
-// remoteExtraSprites returns up to remoteShadowMax 8x8 shadow sprites followed by up to remoteEffectMax 8x8 sparkle
-// and dust sprites from a remote player's sprites, each ordered by OAM index.
-func remoteExtraSprites(list []remoteSprite) (extras []remoteSprite) {
+// remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow, sparkles, dust, projectiles,
+// carried and thrown objects; see captureChrs) from a remote player's sprites, ordered by OAM index.
+func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
 	sorted := make([]remoteSprite, len(list))
 	copy(sorted, list)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
 
-	var effects []remoteSprite
-	shadows := 0
 	for _, sp := range sorted {
-		if sp.b[1] == 0xF0 || sp.size != 0 || sp.b[3]&1 != 0 {
+		if len(extras) >= max {
+			break
+		}
+		if sp.b[1] == 0xF0 || sp.b[3]&1 != 0 || !isCaptureChr(sp.b[2]) {
 			continue
 		}
-		switch chr := sp.b[2]; {
-		case isRemoteShadowChr(chr) && shadows < remoteShadowMax:
-			extras = append(extras, sp)
-			shadows++
-		case isRemoteEffectChr(chr) && len(effects) < remoteEffectMax:
-			effects = append(effects, sp)
-		}
+		extras = append(extras, sp)
 	}
-	return append(extras, effects...)
+	return
 }
 
 // isBadTimeToDraw reports whether a player is in a module where alttpo doesn't draw or show them; same as alttpo's
@@ -653,10 +647,9 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	remotes := append([]*Player(nil), g.RemotePlayers()...)
 	sort.Slice(remotes, func(i, j int) bool { return remotes[i].Index() < remotes[j].Index() })
 
-	// players to draw, the one drawn with Link's head and body first; extras is the shadow, sparkles and dust of the
-	// first player with recent sprites, preferably the body's:
+	// players to draw, the one drawn with Link's head and body first:
 	var players []*Player
-	var body, extras []remoteSprite
+	var body []remoteSprite
 	bodyOK := g.remoteBodyOK()
 	for _, p := range remotes {
 		if p == local || p.TTL() <= 0 || !p.IsInGame() || p.isBadTimeToDraw() {
@@ -672,14 +665,6 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		fresh := now.Sub(p.Sprites.received) < remoteSpritesStale
 		if bodyOK && body == nil && fresh {
 			if body = remoteBodySprites(p.Sprites.list); body != nil {
-				players = append([]*Player{p}, players...)
-				extras = remoteExtraSprites(p.Sprites.list)
-				continue
-			}
-		}
-		if body == nil && extras == nil && fresh {
-			// until a player with a body turns up:
-			if extras = remoteExtraSprites(p.Sprites.list); extras != nil {
 				players = append([]*Player{p}, players...)
 				continue
 			}
@@ -716,11 +701,33 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		return uint16(int(p.XOffs) + x), uint16(int(p.YOffs) + y)
 	}
 
-	// shadow, sparkles and dust, behind the body:
-	for _, sp := range extras {
-		x, y := world(players[0], sp)
-		entry(x, y, sp.b[2], sp.b[3], sp.size)
+	// every player's shadow, sparkles, dust, projectiles and carried and thrown objects; those the body's player
+	// draws in front of Link (with a lower OAM index than the body) are drawn after everything else:
+	type extra struct {
+		p  *Player
+		sp remoteSprite
 	}
+	var behind, front []extra
+	for _, p := range players {
+		if now.Sub(p.Sprites.received) >= remoteSpritesStale {
+			continue
+		}
+		for _, sp := range remoteExtraSprites(p.Sprites.list, remoteExtraMax-len(behind)-len(front)) {
+			if body != nil && p == players[0] && sp.index < body[0].index {
+				front = append(front, extra{p, sp})
+			} else {
+				behind = append(behind, extra{p, sp})
+			}
+		}
+	}
+	// the sprite in front (lowest OAM index) is drawn last, into a lower OAM index:
+	extras := func(list []extra) {
+		for j := len(list) - 1; j >= 0; j-- {
+			x, y := world(list[j].p, list[j].sp)
+			entry(x, y, list[j].sp.b[2], list[j].sp.b[3], list[j].sp.size)
+		}
+	}
+	extras(behind)
 	binary.LittleEndian.PutUint16(t[rtExtrasEnd:], uint16(o-rtEntries))
 
 	if body != nil {
@@ -745,6 +752,9 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, 1)
 	}
 	binary.LittleEndian.PutUint16(t[rtEnd:], uint16(o-rtEntries))
+
+	extras(front)
+	binary.LittleEndian.PutUint16(t[rtFrontEnd:], uint16(o-rtEntries))
 	return
 }
 
@@ -810,70 +820,173 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 	s.written, s.writtenOK, s.writtenTime = t, true, now
 }
 
-// Sword sparkles and dash dust
+// Captured sprites: sword sparkles, dash dust, projectiles, carried and thrown objects
 //
 // alttpo players see everything o2 sends of the local player (see sprites.go). Besides Link's own OAM entries, o2 sends
-// the sparkles of charging a spin attack, spinning and poking walls with the sword, and the dust of dashing. They are
-// ancillae, drawn into whichever OAM entries the ancilla OAM regions hand out, so the trampoline finds them by their
-// chrs (all in the common sprite sheets, which receivers draw from their own VRAM) and copies up to linkOAMExtrasMax
-// of them to SRAM after the copy of Link's entries. The scan of the OAM buffer only runs on frames where one of those
-// ancillae exists and while o2 keeps rtCaptureTTL up because a remote player is in the same location.
+// the sparkles of charging a spin attack, spinning and poking walls with the sword, the dust of dashing, Link's
+// projectiles (arrows, boomerang, bombs, fire and ice rod shots, sword beams, Cane of Somaria blocks and blasts, and
+// their impacts) and the objects he carries and throws (pots, bushes, rocks, signs and their debris). These are
+// ancillae, sprites and garnishes drawn into whichever OAM entries the game hands out, so the trampoline finds them by
+// their chrs and copies up to linkOAMExtrasMax of them to SRAM after the copy of Link's entries.
+//
+// Only chrs in sprite page 0 (name table 0, chrs $000..$0FF) that no NMI DMA overwrites are captured: Link's, his
+// items' and the bird's tiles ($00..$1F), and the follower and NPC tiles ($20..$25, $30..$35) change every frame. The
+// rest of the first sheet ($26..$2F, $36..$3F) is static, and $40..$FF are the common sprite sheets, which are loaded
+// per area and the same for everyone in that area. Receivers draw them from their own VRAM.
+//
+// The scan of the OAM buffer only runs on frames where one of those ancillae, a carried (state $0A) or thrown
+// scenery ($EC) sprite, or thrown object debris (garnish $16) exists, and while o2 keeps rtCaptureTTL up because a
+// remote player is in the same location. Matching chrs from other sprites on screen at the same time (e.g. an
+// enemy's explosion) are captured too, like alttpo does.
 
-// SRAM code and ROM addresses of the capture routine:
+// SRAM and ROM addresses of the capture tables and routine:
 const (
-	// captureTypesAddr is a table in ROM of the ancilla types $00..$3F whose sprites are captured:
-	captureTypesAddr = uint32(0x1BB600)
-	// captureChrsAddr is a table in ROM of the chrs $80..$FF that are captured:
+	// captureTypesAddr is a table in SRAM of the ancilla types $00..$3F whose sprites are captured, built from
+	// captureAncillae by the init code:
+	captureTypesAddr = sramZeroAddr
+	// captureChrsAddr is a table in SRAM of the chrs $00..$FF that are captured, built from captureChrs:
 	captureChrsAddr = captureTypesAddr + 0x40
+
+	// captureTypeListAddr and captureChrListAddr are the lists in ROM the init code builds the tables from, padded
+	// with their last entry:
+	captureTypeListAddr = uint32(0x1BB600)
+	captureTypeListSize = 0x20
+	captureChrListAddr  = captureTypeListAddr + captureTypeListSize
+	captureChrListSize  = 0x60
 	// captureExtrasAddr is the capture routine in ROM, called by the trampoline with JSL:
-	captureExtrasAddr = captureChrsAddr + 0x80
+	captureExtrasAddr = captureChrListAddr + captureChrListSize
 )
 
 // captureAncillae are the ancilla types whose sprites are captured:
 var captureAncillae = []uint8{
+	0x01, // Cane of Somaria blast
+	0x02, // fire rod shot
+	0x04, // sword beam hit
+	0x05, // boomerang
+	0x06, // boomerang and hookshot wall hit
+	0x07, // bomb, including carried and thrown
+	0x09, // arrow
+	0x0A, // arrow stuck in a wall
+	0x0B, // ice rod shot
+	0x0C, // sword beam
 	0x0D, // spin attack fully charged spark
+	0x11, // ice rod wall hit
+	0x13, // ice rod sparkle
 	0x1B, // sword tapping (poking) a wall
 	0x1E, // dash dust
 	0x26, // sword swing sparkle (stabbing with the tempered sword or better)
 	0x2A, // spin attack sparkle
 	0x2B, // spin attack sparkle
+	0x2C, // Cane of Somaria block, including carried and thrown
+	0x2D, // Cane of Somaria block fizzle
+	0x2E, // Cane of Somaria block splitting into blasts
 	0x3C, // spin attack charging sparkle
 }
 
-// captureChrs are the chrs those ancillae draw with (8x8, name table 0):
-var captureChrs = []uint16{0x80, 0x81, 0x82, 0x83, 0x90, 0x92, 0x93, 0xA9, 0xB7, 0xB9, 0xCF, 0xD7, 0xDF}
+// captureChrs are the page 0 chrs those draw with; none are subject to per-frame DMA:
+var captureChrs = []uint16{
+	// sword sparkles, wall hits, sword beam, ice rod:
+	0x80, 0x81, 0x82, 0x83, 0x90, 0x92, 0x93, 0xB6, 0xB7, 0xB9, 0xD7,
+	// dash dust, ice rod spread:
+	0xA9, 0xCF, 0xDF,
+	// boomerang, arrows:
+	0x26, 0x2A, 0x2B, 0x2C, 0x2D, 0x3A, 0x3B, 0x3C, 0x3D,
+	// fire rod shot:
+	0x8D, 0x8E, 0x9C, 0x9D, 0xA0, 0xA2,
+	// sword beam hit:
+	0x53, 0x54,
+	// bomb and its explosion:
+	0x6E, 0x84, 0x86, 0x88, 0x8A, 0x8C, 0x9B,
+	// shadows of Link, bombs and thrown objects:
+	0x6C, 0x28, 0x38,
+	// Cane of Somaria blast, block, fizzle, split:
+	0x40, 0x41, 0x43, 0x50, 0x51, 0x52, 0xE9, 0xF9, 0xC4, 0xC5, 0xC6, 0xD2,
+	// carried and thrown bush, pot, rock, sign, large rock:
+	0x42, 0x44, 0x46, 0x4A,
+	// their debris:
+	0x48, 0x58, 0x59,
+}
 
-// emitCaptureExtras emits the ancilla type table at captureTypesAddr, the chr table at captureChrsAddr and the routine at captureExtrasAddr that copies
-// the sparkle and dust OAM entries to linkOAMCopyAddr + linkOAMCopyExtras. Called with JSL with A and X 8-bit;
-// preserves P and DB.
+// isCaptureChr reports whether chr is one of captureChrs.
+func isCaptureChr(chr uint8) bool {
+	for _, c := range captureChrs {
+		if uint16(chr) == c {
+			return true
+		}
+	}
+	return false
+}
+
+// captureLists returns the ROM lists of captureAncillae and captureChrs, padded with their last entries.
+func captureLists() (types [captureTypeListSize]byte, chrs [captureChrListSize]byte) {
+	if len(captureAncillae) > len(types) || len(captureChrs) > len(chrs) {
+		panic("capture lists too long")
+	}
+	for i := range types {
+		types[i] = captureAncillae[min(i, len(captureAncillae)-1)]
+	}
+	for i := range chrs {
+		chrs[i] = uint8(captureChrs[min(i, len(captureChrs)-1)])
+	}
+	return
+}
+
+// emitInitCaptureTables emits the init code that zeroes sramZeroAddr..sramZeroEnd and builds the capture tables
+// there. Runs with A, X and Y 16-bit.
+func emitInitCaptureTables(a *asm.Emitter) {
+	a.Comment("zero the capture tables, the copy of Link's OAM entries and the remote sprites table and state:")
+	a.LDA_imm16_w(0x0000)
+	a.STA_long(sramZeroAddr)
+	a.LDX_imm16_w(uint16(sramZeroAddr & 0xFFFF))
+	a.LDY_imm16_w(uint16((sramZeroAddr + 1) & 0xFFFF))
+	a.LDA_imm16_w(uint16(sramZeroEnd - sramZeroAddr - 2))
+	a.MVN(uint8(sramZeroAddr>>16), uint8(sramZeroAddr>>16))
+	a.Comment("build the capture tables; DB = $70 after MVN:")
+	for _, l := range []struct {
+		list, size, table uint32
+	}{
+		{captureTypeListAddr, captureTypeListSize, captureTypesAddr},
+		{captureChrListAddr, captureChrListSize, captureChrsAddr},
+	} {
+		loop := fmt.Sprintf("init_capture_%06x", l.table)
+		a.LDX_imm16_w(uint16(l.size - 1))
+		a.Label(loop)
+		a.LDA_long_x(l.list)
+		a.AND_imm16_w(0x00FF)
+		a.TAY()
+		a.SEP(0x20)
+		a.LDA_imm8_b(0x01)
+		emitSTAAbsY(a, uint16(l.table&0xFFFF))
+		a.REP(0x20)
+		a.DEX()
+		a.BPL(loop)
+	}
+}
+
+// emitCaptureExtras emits the lists at captureTypeListAddr and captureChrListAddr and the routine at
+// captureExtrasAddr that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras. Called with JSL with A
+// and X 8-bit; preserves P and DB.
 func emitCaptureExtras(a *asm.Emitter) {
-	if a.PC() != captureTypesAddr {
-		panic(fmt.Errorf("captureTypesAddr expected to be $%06x but got $%06x", a.PC(), captureTypesAddr))
+	if a.PC() != captureTypeListAddr {
+		panic(fmt.Errorf("captureTypeListAddr expected to be $%06x but got $%06x", a.PC(), captureTypeListAddr))
 	}
-	var types [0x40]byte
-	for _, t := range captureAncillae {
-		types[t] = 1
-	}
+	types, chrs := captureLists()
 	a.Comment("ancilla types whose sprites are captured:")
 	a.EmitBytes(types[:])
-	var chrs [0x80]byte
-	for _, c := range captureChrs {
-		chrs[c-0x80] = 1
-	}
-	a.Comment("chrs $80..$FF that are captured:")
+	a.Comment("chrs that are captured:")
 	a.EmitBytes(chrs[:])
 
 	if a.Label("captureExtras") != captureExtrasAddr {
 		panic(fmt.Errorf("captureExtrasAddr expected to be $%06x but got $%06x", a.PC(), captureExtrasAddr))
 	}
-	// the extras in SRAM are accessed with absolute addressing while DB = $70:
-	ex := func(o uint32) uint16 { return uint16((linkOAMCopyAddr + linkOAMCopyExtras + o) & 0xFFFF) }
+	ex := linkOAMCopyAddr + linkOAMCopyExtras
 
 	a.PHP()
 	a.PHB()
+	a.REP(0x30)
+	a.LDA_imm16_w(0x0000)
+	a.STA_long(ex)
 	a.SEP(0x30)
-	a.LDA_imm8_b(0x00)
-	a.STA_long(linkOAMCopyAddr + linkOAMCopyExtras)
 	a.Comment("only while a remote player is in the same location:")
 	a.LDA_long(remoteTableAddr + rtCaptureTTL)
 	a.BEQ("ce_exit")
@@ -881,94 +994,112 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.SBC_imm8_b(0x01)
 	a.STA_long(remoteTableAddr + rtCaptureTTL)
 
-	a.Comment("only while a sparkle or dust ancilla exists:")
-	a.PHK()
+	a.Comment("only while a captured ancilla exists:")
+	a.PEA(0x7070)
+	a.PLB()
 	a.PLB()
 	a.LDX_imm8_b(0x09)
-	a.Label("ce_type")
+	a.Label("ce_ancilla")
 	a.LDA_long_x(0x7E0C4A)
 	a.CMP_imm8_b(0x40)
-	a.BCS("ce_next_type")
+	a.BCS("ce_next_ancilla")
 	a.TAY()
 	emitLDAAbsY(a, uint16(captureTypesAddr&0xFFFF))
 	a.BNE("ce_scan")
-	a.Label("ce_next_type")
+	a.Label("ce_next_ancilla")
 	a.DEX()
-	a.BPL("ce_type")
+	a.BPL("ce_ancilla")
+	a.Comment("or a carried sprite or thrown scenery:")
+	a.LDX_imm8_b(0x0F)
+	a.Label("ce_sprite")
+	a.LDA_long_x(0x7E0DD0)
+	a.BEQ("ce_next_sprite")
+	a.CMP_imm8_b(0x0A)
+	a.BEQ("ce_scan")
+	a.LDA_long_x(0x7E0E20)
+	a.CMP_imm8_b(0xEC)
+	a.BEQ("ce_scan")
+	a.Label("ce_next_sprite")
+	a.DEX()
+	a.BPL("ce_sprite")
+	a.Comment("or thrown object debris:")
+	a.LDA_long(0x7E0FB4)
+	a.BEQ("ce_exit")
+	a.LDX_imm8_b(0x1D)
+	a.Label("ce_garnish")
+	a.LDA_long_x(0x7FF800)
+	a.CMP_imm8_b(0x16)
+	a.BEQ("ce_scan")
+	a.DEX()
+	a.BPL("ce_garnish")
 	a.Label("ce_exit")
 	a.PLB()
 	a.PLP()
 	a.RTL()
 
 	a.Label("ce_scan")
-	a.Comment("DB = $70 for the extras; X = OAM buffer offset; Y = extras offset:")
-	a.PEA(0x7070)
+	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
+	a.PEA(0x7E7E)
 	a.PLB()
 	a.PLB()
 	a.REP(0x30)
-	a.LDY_imm16_w(0x0000)
-	a.LDX_imm16_w(0x01FC)
+	a.LDY_imm16_w(0x01FC)
 	a.Label("ce_loop")
-	a.Comment("chr $80..$FF in name table 0:")
-	a.LDA_long_x(0x7E0802)
-	a.AND_imm16_w(0x0180)
-	a.CMP_imm16_w(0x0080)
+	a.Comment("a captured chr in name table 0:")
+	emitLDAAbsY(a, 0x0802)
+	emitBITImm16(a, 0x0100)
 	a.BNE("ce_next")
-	a.Comment("one of the captured chrs:")
-	a.LDA_long_x(0x7E0802)
-	a.PHX()
-	a.AND_imm16_w(0x007F)
+	a.AND_imm16_w(0x00FF)
 	a.TAX()
 	a.LDA_long_x(captureChrsAddr)
-	a.PLX()
 	a.AND_imm16_w(0x00FF)
 	a.BEQ("ce_next")
 	a.Comment("drawn this frame:")
-	a.LDA_long_x(0x7E0801)
-	a.AND_imm16_w(0x00FF)
-	a.CMP_imm16_w(0x00F0)
+	emitLDAAbsY(a, 0x0800)
+	a.AND_imm16_w(0xFF00)
+	a.CMP_imm16_w(0xF000)
 	a.BEQ("ce_next")
-	a.Comment("8x8 only; extended attributes are at $0A20 + X/4:")
+	a.Comment("not one of Link's own entries, which are copied already:")
+	a.TYA()
+	a.SEC()
+	emitSBCAbs(a, 0x0352)
+	a.CMP_imm16_w(linkOAMCount * 4)
+	a.BCC("ce_next")
+	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index:")
+	a.LDA_long(ex)
+	a.TAX()
+	emitLDAAbsY(a, 0x0800)
+	a.STA_long_x(ex + 2 + 0)
+	emitLDAAbsY(a, 0x0802)
+	a.STA_long_x(ex + 2 + 2)
 	a.PHX()
-	a.TXA()
+	a.TYA()
 	a.LSR()
 	a.LSR()
 	a.TAX()
-	a.SEP(0x20)
-	a.LDA_long_x(0x7E0A20)
-	a.CMP_imm8_b(0x02)
-	a.BCS("ce_skip")
-	emitSTAAbsY(a, ex(1+4))
-	a.TXA()
-	a.ASL()
-	emitORAAbsY(a, ex(1+4))
-	emitSTAAbsY(a, ex(1+4))
-	a.REP(0x20)
+	a.LDA_abs_x(0x0A20)
+	a.AND_imm16_w(0x0003)
 	a.PLX()
-	a.LDA_long_x(0x7E0800)
-	emitSTAAbsY(a, ex(1+0))
-	a.LDA_long_x(0x7E0802)
-	emitSTAAbsY(a, ex(1+2))
+	a.STA_long_x(ex + 2 + 4)
 	a.TYA()
+	a.LSR()
+	a.LSR()
+	a.SEP(0x20)
+	a.STA_long_x(ex + 2 + 5)
+	a.REP(0x20)
+	a.TXA()
 	a.CLC()
 	a.ADC_imm16_w(linkOAMExtraSize)
-	a.TAY()
-	emitCPYImm16(a, linkOAMExtrasMax*linkOAMExtraSize)
+	a.STA_long(ex)
+	a.CMP_imm16_w(linkOAMExtrasMax * linkOAMExtraSize)
 	a.BCS("ce_done")
-	a.BRA("ce_next")
-	a.Label("ce_skip")
-	a.REP(0x20)
-	a.PLX()
 	a.Label("ce_next")
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.DEX()
+	a.DEY()
+	a.DEY()
+	a.DEY()
+	a.DEY()
 	a.BPL("ce_loop")
 	a.Label("ce_done")
-	a.SEP(0x20)
-	a.TYA()
-	a.STA_abs(ex(0))
 	a.PLB()
 	a.PLP()
 	a.RTL()

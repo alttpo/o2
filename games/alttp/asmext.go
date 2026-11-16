@@ -60,3 +60,8 @@ func emitSTAAbsY(a *asm.Emitter, addr uint16) {
 func emitCPYImm16(a *asm.Emitter, imm uint16) {
 	emitRaw(a, fmt.Sprintf("cpy.w #$%04x", imm), 0xC0, uint8(imm), uint8(imm>>8))
 }
+
+// emitBITImm16 emits `BIT.w #imm`.
+func emitBITImm16(a *asm.Emitter, imm uint16) {
+	emitRaw(a, fmt.Sprintf("bit.w #$%04x", imm), 0x89, uint8(imm), uint8(imm>>8))
+}

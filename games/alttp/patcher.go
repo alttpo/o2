@@ -12,21 +12,22 @@ import (
 	"strings"
 )
 
-// SRAM layout in bank $70. $707400..$707FFF is free in vanilla and in z3randomizer based ROMs, which use
-// $700000..$705FFF:
+// SRAM layout in bank $70. $706000..$707FFF is free in vanilla, which uses $700000..$701FFF, and in z3randomizer
+// based ROMs, which use $700000..$705FFF (their save backup is $704000..$705FFF):
 //
+//	$706000..$7062FF  zeroed by the patched init code on reset:
+//	  $706000           capture tables: ancilla types ($40 bytes) and chrs ($100 bytes); see emitCaptureExtras
+//	  $706140..$7061F8  copy of Link's OAM entries and the local player's captured sparkles, dust, projectiles and
+//	                    carried and thrown objects, written by the trampoline every frame
+//	  $706200..$7062D7  remote sprites table (written by o2) and state (written by the game code)
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
-//	$707C00..$707F7F  common code and data, copied from ROM by the patched init code:
+//	$707C00..$707F7F  common code, copied from ROM by the patched init code:
 //	  $707C00           update stub: RTS, which the trampoline's JSR points at after a reset
 //	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
 //	  $707C80           map16 apply routine, called by generated map16 update routines
 //	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
-//	  $707E70           remote sprites drawing subroutine for one sprite
-//	  $707EE8..$707F5D  remote sprites table, written by o2 (zeroed on reset)
-//	  $707F5E..$707F75  remote sprites state, written by the game code (zeroed on reset)
-//	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
-//	$707FD6..$707FEF  the local player's sword sparkle and dash dust OAM entries, written by the trampoline every frame
+//	  $707E80           remote sprites drawing subroutine for one sprite
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
@@ -39,7 +40,7 @@ const (
 
 	// sramCodeAddr is where the patched init code copies the common code to:
 	sramCodeAddr = uint32(0x707C00)
-	sramCodeEnd  = linkOAMCopyAddr
+	sramCodeEnd  = uint32(0x707F80)
 	// updateStubAddr is an RTS that the trampoline's JSR points at after a reset, until the first update routine is
 	// written. o2 only rewrites the high byte of the JSR's operand (a single byte write cannot be torn), so the low
 	// byte must be the same as the update buffers':
@@ -52,11 +53,15 @@ const (
 	map16ApplyAddr = uint32(0x707C80)
 	// remote sprites routines; see remotesprites.go:
 	remoteDrawAddr       = uint32(0x707D50)
-	remoteDrawSpriteAddr = uint32(0x707E70)
+	remoteDrawSpriteAddr = uint32(0x707E80)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
-	linkOAMCopyAddr = uint32(0x707F80)
+	linkOAMCopyAddr = uint32(0x706140)
+
+	// sramZeroAddr..sramZeroEnd is zeroed by the patched init code on reset:
+	sramZeroAddr = uint32(0x706000)
+	sramZeroEnd  = uint32(0x706300)
 
 	// bus address of unused/garbage area in ROM (JP and US confirmed):
 	romGarbageStart = uint32(0x1BB1D7)
@@ -76,12 +81,12 @@ const (
 	linkOAMCopyDMAWRAM = 0x0AC0
 	linkOAMCopyDMASize = 0x0AD8 - linkOAMCopyDMAWRAM
 	linkOAMCopySize    = linkOAMCopyDMA + linkOAMCopyDMASize
-	// sword sparkle and dash dust OAM entries (see emitCaptureExtras): byte length, then up to linkOAMExtrasMax
-	// entries of x, y, chr, attributes, OAM index << 1 | x bit 8 (all 8x8):
+	// captured OAM entries (see emitCaptureExtras): byte length (u16), then up to linkOAMExtrasMax entries of x, y,
+	// chr, attributes, extended attributes (size << 1 | x bit 8), OAM index, and a spare byte:
 	linkOAMCopyExtras   = linkOAMCopySize
-	linkOAMExtrasMax    = 5
-	linkOAMExtraSize    = 5
-	linkOAMCopyReadSize = linkOAMCopyExtras + 1 + linkOAMExtrasMax*linkOAMExtraSize
+	linkOAMExtrasMax    = 16
+	linkOAMExtraSize    = 6
+	linkOAMCopyReadSize = linkOAMCopyExtras + 2 + linkOAMExtrasMax*linkOAMExtraSize + 1
 )
 
 type Patcher struct {
@@ -223,6 +228,7 @@ func (p *Patcher) Patch() (err error) {
 	a.LDY_imm16_w(uint16(patchSignatureAddr & 0xFFFF))
 	a.LDA_imm16_w(patchSignatureSize - 1)
 	a.MVN(uint8(patchSignatureAddr>>16), uint8(patchSignatureROMAddr>>16))
+	emitInitCaptureTables(a)
 	a.PLB()
 	a.PLP()
 	// append the original 802F code to our custom init hook:
@@ -238,10 +244,10 @@ func (p *Patcher) Patch() (err error) {
 	a.Comment("common code for SRAM:")
 	a.EmitBytes(ta.Bytes())
 	// routines that run from ROM:
-	if a.PC() > captureTypesAddr {
-		return fmt.Errorf("SRAM code copy at $%06x overlaps ROM routines at $%06x", a.PC(), captureTypesAddr)
+	if a.PC() > captureTypeListAddr {
+		return fmt.Errorf("SRAM code copy at $%06x overlaps ROM routines at $%06x", a.PC(), captureTypeListAddr)
 	}
-	for a.PC() < captureTypesAddr {
+	for a.PC() < captureTypeListAddr {
 		a.EmitBytes([]byte{0})
 	}
 	emitCaptureExtras(a)
@@ -367,10 +373,6 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	emitRemoteDraw(a)
 	pad(remoteDrawSpriteAddr)
 	emitRemoteDrawSprite(a)
-
-	// the remote sprites table and state start out zeroed (TTL 0, nothing to upload):
-	pad(remoteTableAddr)
-	pad(remoteStateAddr + remoteStateSize)
 
 	if err = a.Finalize(); err != nil {
 		return
