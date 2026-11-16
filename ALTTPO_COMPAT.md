@@ -47,7 +47,7 @@ Values match alttpo's `GameState::deserialize`.
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
-| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | parsed, ignored |
+| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield and shadow | head and body poses used to draw one remote player |
 | 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
@@ -100,8 +100,8 @@ more messages, which corrupted the rest of the packet.
 - **alttpo players see only part of o2 players.** o2 sends Link's head, body and hands (tiles straight from ROM,
   which includes custom Link sprites), sword and shield, and Link's shadow. Other sprites (items in use, effects, held
   objects, followers) are not sent: their tiles only exist in VRAM, which o2 cannot read cheaply. Only sprite palettes
-  5 (sword, shield) to 7 (Link) are sent. o2 also does not send sfx, ancillae, tilemaps, torches or PvP. o2 does not
-  draw anyone.
+  5 (sword, shield) to 7 (Link) are sent. o2 also does not send sfx, ancillae, tilemaps, torches or PvP.
+- **o2 players see much less of other players than alttpo players do.** See "Drawing remote players" below.
 - **Sword and shield tiles are rebuilt from ROM.** The game decompresses sprite sheets `$5E`/`$5F` and converts the
   current sword/shield to 4bpp in WRAM `$7E9000..$947F` (`DecompressSwordGraphics`, `DecompressShieldGraphics`); o2
   runs the same decompression and conversion on its ROM copy (verified byte for byte against the game's routines on
@@ -414,3 +414,29 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
 - **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".
+
+## Drawing remote players
+
+alttpo draws every sprite a remote player sends, with their own graphics and palettes, on top of the emulated
+picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simplified version
+(`games/alttp/remotesprites.go`):
+
+- **Only players in the same room or overworld area** (alttpo's `locations_equal`) and not in a bad module
+  (alttpo's `is_it_a_bad_time`) are drawn, and only while the local player is in modules `$07`, `$09` or `$0B`.
+- **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
+  LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
+  from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
+  custom sprite, and without sword, shield, items or shadow.
+- **VRAM:** the head and body are uploaded over chrs `$20..$23`/`$30..$33`, which followers and a few NPCs (Kiki, the
+  crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
+  (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
+  neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
+  the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0, the player is
+  drawn as a blob instead.
+- **Everyone else** is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 7) at their Link
+  coordinates.
+- **OAM:** sprites go into unused OAM entries (Y = `$F0`) searched from the end of the buffer, behind all of the
+  game's own sprites. Positions use alttpo's convention (OAM coordinate + `BG2 scroll - shake offset` of the sender)
+  and are converted with the local scroll offsets by the game every frame.
+- **Updates:** o2 writes a small table to SRAM (`$707F00`) when it changes and at least every 250ms. The game counts
+  its TTL (60 frames) down and stops drawing remote players when it runs out, e.g. when o2 disconnects.
