@@ -111,7 +111,9 @@ more messages, which corrupted the rest of the packet.
   buffer against a chr whitelist (`captureChrs`) after excluding Link's own entries, only on frames where one of
   the ancillae (`captureAncillae`), a carried sprite (state `$0A`), thrown scenery (sprite `$EC`) or thrown object
   debris (garnish `$16`) exists, and only while another player is in the same location. Matching chrs from
-  enemies on screen at the same time are sent too, as alttpo does. Checking for those objects costs a few hundred
+  enemies on screen at the same time are sent too, as alttpo does, except shadows (`$6C`, `$28`, `$38`), which
+  every enemy and NPC has: they are only captured while a bomb, Cane of Somaria block or carried or thrown object
+  exists, and o2 only sends the ones just under one of those (within 24 pixels to the side, 8 above to 56 below). Checking for those objects costs a few hundred
   cycles per frame while someone is in the same location; the scan of the OAM buffer (up to about 5,000 cycles)
   only runs while one exists. alttpo draws remote sprites only with palettes the remote player sent, so o2 sends
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
