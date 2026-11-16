@@ -63,8 +63,8 @@ type linkSpriteSync struct {
 	fresh             bool
 	linkMissingFrames int
 
-	// sprite palettes 5 (sword, shield) through 7 (Link):
-	palettes [3][32]byte
+	// sprite palettes 0 through 7 ($7EC600..$7EC6FF; color 0 of palette 0 is not read, it is transparent anyway):
+	palettes [8][32]byte
 
 	// unique tiles already broadcast and tiles waiting to be broadcast:
 	sent    [swordShieldTileEnd]bool
@@ -187,8 +187,10 @@ func (g *Game) swordShieldUniqTileIndex(ptr uint32, x uint32) (uint16, bool) {
 	return idx, true
 }
 
+// isLinkShadowChr reports whether chr is one of Link's shadow tiles: $6C on the ground, $28 or $38 while recoiling or
+// jumping off a ledge (kLinkShadows_Chardata). They are static tiles that receivers have in their own VRAM.
 func isLinkShadowChr(chr uint16) bool {
-	return (chr >= 0x6C && chr <= 0x6F) || (chr >= 0x7C && chr <= 0x7F)
+	return (chr >= 0x6C && chr <= 0x6F) || (chr >= 0x7C && chr <= 0x7F) || chr == 0x28 || chr == 0x38
 }
 
 // readLinkSprites samples Link's sprites from the copy of Link's OAM entries just read. Called once per game frame
@@ -288,9 +290,9 @@ func (g *Game) readLinkSprites() {
 		}
 	}
 
-	if g.wramFresh[0xC6A0] {
+	if g.wramFresh[0xC601] {
 		for k := range s.palettes {
-			o := 0xC6A0 + k<<5
+			o := 0xC600 + k<<5
 			copy(s.palettes[k][:], g.wram[o:o+32])
 		}
 	}
@@ -360,8 +362,8 @@ func (g *Game) SerializeUniqTiles(w io.Writer, absidx []uint16) (err error) {
 	return
 }
 
-// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each of sprite palettes
-// 5-7 is sent along with the first sprite that uses it.
+// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each sprite palette is
+// sent along with the first sprite that uses it: alttpo draws remote sprites only with the palettes they sent.
 func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 	s := &g.linkSprites
 	_ = binary.Write(w, binary.LittleEndian, uint8(MsgSprites1))
@@ -370,7 +372,7 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 	var paletteSent [8]bool
 	for _, sp := range sprites {
 		b4 := sp.b[4]
-		sendPalette := !paletteSent[sp.pal] && sp.pal >= 5
+		sendPalette := !paletteSent[sp.pal]
 		if sendPalette {
 			b4 |= 0x80
 			paletteSent[sp.pal] = true
@@ -384,7 +386,7 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 			_ = binary.Write(w, binary.LittleEndian, idx)
 		}
 		if sendPalette {
-			_, _ = w.Write(s.palettes[sp.pal-5][:])
+			_, _ = w.Write(s.palettes[sp.pal][:])
 		}
 	}
 }

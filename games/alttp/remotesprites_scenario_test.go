@@ -107,7 +107,7 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	if tb[rtTTL] == 0 || tb[rtIndoors] != 1 || binary.LittleEndian.Uint16(tb[rtLocation:]) != rsRoom {
 		t.Fatalf("unexpected table header % x", tb[:rtEntries])
 	}
-	if shadowEnd, bodyEnd, end := binary.LittleEndian.Uint16(tb[rtShadowEnd:]), binary.LittleEndian.Uint16(tb[rtBodyEnd:]), binary.LittleEndian.Uint16(tb[rtEnd:]); shadowEnd != 2*rtEntrySize || bodyEnd != 4*rtEntrySize || end != 5*rtEntrySize {
+	if shadowEnd, bodyEnd, end := binary.LittleEndian.Uint16(tb[rtExtrasEnd:]), binary.LittleEndian.Uint16(tb[rtBodyEnd:]), binary.LittleEndian.Uint16(tb[rtEnd:]); shadowEnd != 2*rtEntrySize || bodyEnd != 4*rtEntrySize || end != 5*rtEntrySize {
 		t.Fatalf("expected 2 shadow sprites, 2 body sprites and 1 blob; got entry offsets %d, %d, %d", shadowEnd, bodyEnd, end)
 	}
 
@@ -468,4 +468,32 @@ func TestRemoteSpritesScenario_SendsSparklesAndDust(t *testing.T) {
 	if n := e.SRAM[(linkOAMCopyAddr+linkOAMCopyExtras)&0x7FFF]; n != 0 {
 		t.Errorf("captured %d bytes with nobody in the room", n)
 	}
+}
+
+// While recoiling or jumping off a ledge, Link's shadow is drawn with chr $28; o2 sends it and draws it for remote
+// players, along with their dash dust.
+func TestRemoteSpritesScenario_ElevatedShadowAndDust(t *testing.T) {
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	// recoiling: the shadow is $28 and Link is in the air above it:
+	setOAM(0x66, 0x50, 0x78, 0x28, 0x28, 0x00)
+	setOAM(0x67, 0x58, 0x78, 0x28, 0x68, 0x00)
+	// dash dust from an ancilla:
+	e.WRAM[0x0C4A+3] = 0x1E
+	setOAM(0x10, 0x48, 0x70, 0xCF, 0x04, 0x00)
+	setOAM(0x11, 0x50, 0x72, 0xA9, 0x04, 0x00)
+	h.frames(8)
+
+	h.expectOAM("shadow", 0, 0x7F, [4]byte{0x40, 0x70, 0x28, 0x28}, 0x00)
+	h.expectOAM("shadow", 0, 0x7E, [4]byte{0x48, 0x70, 0x28, 0x68}, 0x00)
+	// effects are sent from the end of the OAM buffer and drawn ordered by OAM index:
+	h.expectOAM("dust", 0, 0x7D, [4]byte{0x38, 0x68, 0xCF, 0x04}, 0x00)
+	h.expectOAM("dust", 0, 0x7C, [4]byte{0x40, 0x6A, 0xA9, 0x04}, 0x00)
+	h.expectOAM("body", 0, 0x7B, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7A, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("nothing else", 0, 0x79)
 }

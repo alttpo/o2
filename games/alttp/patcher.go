@@ -23,8 +23,8 @@ import (
 //	  $707C80           map16 apply routine, called by generated map16 update routines
 //	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
 //	  $707E70           remote sprites drawing subroutine for one sprite
-//	  $707F00..$707F67  remote sprites table, written by o2 (zeroed on reset)
-//	  $707F68..$707F7F  remote sprites state, written by the game code (zeroed on reset)
+//	  $707EE8..$707F5D  remote sprites table, written by o2 (zeroed on reset)
+//	  $707F5E..$707F75  remote sprites state, written by the game code (zeroed on reset)
 //	$707F80..$707FD5  copy of Link's OAM entries, written by the trampoline every frame
 //	$707FD6..$707FEF  the local player's sword sparkle and dash dust OAM entries, written by the trampoline every frame
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go

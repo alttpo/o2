@@ -418,8 +418,9 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.enqueueMap16Reads(q)
 	q = g.enqueueManipReads(q)
 
-	// sprite palettes 5 (sword, shield), 6 and 7 (Link):
-	q = g.readEnqueue(q, 0xF5C6A0, 0x60, nil)
+	// sprite palettes 0..7 (Link, sword and shield, sparkles, dust, shadow); color 0 of palette 0 is transparent and
+	// not read, so this fits in a single read:
+	q = g.readEnqueue(q, 0xF5C601, 0xFF, nil)
 
 	// Link's sprites; this pushes the read cycle beyond a single FX Pak Pro batch of 8 reads:
 	q = g.enqueueSpriteReads(q)

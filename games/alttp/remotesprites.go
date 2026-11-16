@@ -22,8 +22,9 @@ import (
 //   - One remote player is drawn with Link's head and body, the two 16x16 sprites whose tiles come from LinkGraphics in
 //     ROM. alttpo and o2 send the pose as "unique tile" indices (see sprites.go), which are offsets into LinkGraphics,
 //     so the tiles can be copied from the local ROM: the remote player's pose is shown with the local player's Link
-//     graphics. Link's shadow (chr $6C, from the common sprite sheet) is drawn under it when the remote player sends
-//     it. Sword, shield and items are not drawn.
+//     graphics. Sword, shield and items are not drawn.
+//   - The shadow (chr $6C on the ground, $28 or $38 while recoiling or jumping off a ledge), sword sparkles and dash
+//     dust (captureChrs) that the same player sends are drawn too, from the local static and common sprite sheets.
 //   - Every other remote player in the same location is drawn as a single 16x16 sprite at their coordinates, chr $64
 //     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet.
 //
@@ -52,7 +53,7 @@ import (
 
 // SRAM layout of the remote sprites table, written by o2:
 const (
-	remoteTableAddr = uint32(0x707F00)
+	remoteTableAddr = uint32(0x707EE8)
 
 	// frames left to draw the table, counted down every frame:
 	rtTTL = 0
@@ -62,21 +63,23 @@ const (
 	// $1B (1 = underworld) and $A0 (underworld room) or $8A (overworld area) the table is for:
 	rtIndoors  = 2
 	rtLocation = 4
-	// byte offsets into rtEntries: the end of the shadow sprites, the end of the body sprites and the end of all
-	// entries:
-	rtShadowEnd = 6
+	// byte offsets into rtEntries: the end of the shadow and effect sprites, the end of the body sprites and the end
+	// of all entries:
+	rtExtrasEnd = 6
 	rtBodyEnd   = 8
 	rtEnd       = 10
 	// LinkGraphics DMA source addresses: top row of chrs $20/$21, $22/$23, bottom row of chrs $30/$31, $32/$33:
 	rtSrc = 12
 	// sprites to draw in order, each drawn in front of the ones before: world x, world y, chr, attributes, size ($02 for
-	// 16x16). Up to 2 shadow sprites (chr $6C) and 2 body sprites (chrs $20 and $22) of one player are followed by one
-	// blob per player (chr $64), starting with the body's player, whose blob is only drawn when the body can't be:
+	// 16x16). Up to 2 shadow sprites, remoteEffectMax sparkle and dust sprites and 2 body sprites (chrs $20 and $22)
+	// of one player are followed by one blob per player (chr $64), starting with the body's player, whose blob is only
+	// drawn when the body can't be:
 	rtEntries       = 20
 	rtEntrySize     = 7
 	remoteShadowMax = 2
-	remoteBlobMax   = 8
-	remoteEntryMax  = remoteShadowMax + 2 + remoteBlobMax
+	remoteEffectMax = 4
+	remoteBlobMax   = 6
+	remoteEntryMax  = remoteShadowMax + remoteEffectMax + 2 + remoteBlobMax
 
 	remoteTableSize = rtEntries + remoteEntryMax*rtEntrySize
 )
@@ -121,9 +124,6 @@ const (
 	// VRAM word addresses of the top and bottom rows of chrs $20..$23:
 	remoteBodyVRAMTop    = 0x4200
 	remoteBodyVRAMBottom = 0x4300
-
-	// Link's shadow:
-	remoteShadowChr = 0x6C
 
 	// blob chrs, alternating every 8 frames:
 	remoteBlobChr0 = 0x64
@@ -248,10 +248,10 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.LDY_imm16_w(0x0000)
 	a.STZ_abs(st(rsAnim))
 
-	a.Comment("shadows:")
+	a.Comment("shadows, sparkles and dust:")
 	a.Label("rd_shadow_loop")
 	a.TYA()
-	emitCMPAbs(a, tb(rtShadowEnd))
+	emitCMPAbs(a, tb(rtExtrasEnd))
 	a.BCS("rd_shadows_done")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
@@ -561,23 +561,44 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	return
 }
 
-// remoteShadowSprites returns up to two sprites of Link's shadow (chr $6C) from a remote player's sprites, ordered by
-// OAM index.
-func remoteShadowSprites(list []remoteSprite) (shadow []remoteSprite) {
+// isRemoteShadowChr reports whether chr is one of Link's shadow tiles: $6C on the ground, $28 and $38 while recoiling
+// or jumping off a ledge (kLinkShadows_Chardata).
+func isRemoteShadowChr(chr uint8) bool {
+	return chr == 0x6C || chr == 0x28 || chr == 0x38
+}
+
+// isRemoteEffectChr reports whether chr is a sword sparkle or dash dust tile.
+func isRemoteEffectChr(chr uint8) bool {
+	for _, c := range captureChrs {
+		if uint16(chr) == c {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteExtraSprites returns up to remoteShadowMax 8x8 shadow sprites followed by up to remoteEffectMax 8x8 sparkle
+// and dust sprites from a remote player's sprites, each ordered by OAM index.
+func remoteExtraSprites(list []remoteSprite) (extras []remoteSprite) {
 	sorted := make([]remoteSprite, len(list))
 	copy(sorted, list)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
 
+	var effects []remoteSprite
+	shadows := 0
 	for _, sp := range sorted {
-		if sp.b[1] == 0xF0 || sp.b[2] != remoteShadowChr || sp.b[3]&1 != 0 {
+		if sp.b[1] == 0xF0 || sp.size != 0 || sp.b[3]&1 != 0 {
 			continue
 		}
-		shadow = append(shadow, sp)
-		if len(shadow) == remoteShadowMax {
-			break
+		switch chr := sp.b[2]; {
+		case isRemoteShadowChr(chr) && shadows < remoteShadowMax:
+			extras = append(extras, sp)
+			shadows++
+		case isRemoteEffectChr(chr) && len(effects) < remoteEffectMax:
+			effects = append(effects, sp)
 		}
 	}
-	return
+	return append(extras, effects...)
 }
 
 // isBadTimeToDraw reports whether a player is in a module where alttpo doesn't draw or show them; same as alttpo's
@@ -632,9 +653,10 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	remotes := append([]*Player(nil), g.RemotePlayers()...)
 	sort.Slice(remotes, func(i, j int) bool { return remotes[i].Index() < remotes[j].Index() })
 
-	// players to draw, the one drawn with Link's head and body first:
+	// players to draw, the one drawn with Link's head and body first; extras is the shadow, sparkles and dust of the
+	// first player with recent sprites, preferably the body's:
 	var players []*Player
-	var body []remoteSprite
+	var body, extras []remoteSprite
 	bodyOK := g.remoteBodyOK()
 	for _, p := range remotes {
 		if p == local || p.TTL() <= 0 || !p.IsInGame() || p.isBadTimeToDraw() {
@@ -647,8 +669,17 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		if !g.SyncSprites || len(players) >= remoteBlobMax {
 			continue
 		}
-		if bodyOK && body == nil && now.Sub(p.Sprites.received) < remoteSpritesStale {
+		fresh := now.Sub(p.Sprites.received) < remoteSpritesStale
+		if bodyOK && body == nil && fresh {
 			if body = remoteBodySprites(p.Sprites.list); body != nil {
+				players = append([]*Player{p}, players...)
+				extras = remoteExtraSprites(p.Sprites.list)
+				continue
+			}
+		}
+		if body == nil && extras == nil && fresh {
+			// until a player with a body turns up:
+			if extras = remoteExtraSprites(p.Sprites.list); extras != nil {
 				players = append([]*Player{p}, players...)
 				continue
 			}
@@ -685,15 +716,15 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		return uint16(int(p.XOffs) + x), uint16(int(p.YOffs) + y)
 	}
 
+	// shadow, sparkles and dust, behind the body:
+	for _, sp := range extras {
+		x, y := world(players[0], sp)
+		entry(x, y, sp.b[2], sp.b[3], sp.size)
+	}
+	binary.LittleEndian.PutUint16(t[rtExtrasEnd:], uint16(o-rtEntries))
+
 	if body != nil {
 		p := players[0]
-		// Link's shadow, behind everything else:
-		for _, sp := range remoteShadowSprites(p.Sprites.list) {
-			x, y := world(p, sp)
-			entry(x, y, sp.b[2], sp.b[3], sp.size)
-		}
-		binary.LittleEndian.PutUint16(t[rtShadowEnd:], uint16(o-rtEntries))
-
 		for j := range body {
 			// the body sprite in front (lowest OAM index) is drawn last, into a lower OAM index:
 			sp := body[len(body)-1-j]
@@ -719,7 +750,7 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 
 // remoteTableCounts returns the number of players and body sprites in a remote sprites table.
 func remoteTableCounts(t *[remoteTableSize]byte) (players, body int) {
-	shadowEnd := int(binary.LittleEndian.Uint16(t[rtShadowEnd:]))
+	shadowEnd := int(binary.LittleEndian.Uint16(t[rtExtrasEnd:]))
 	bodyEnd := int(binary.LittleEndian.Uint16(t[rtBodyEnd:]))
 	end := int(binary.LittleEndian.Uint16(t[rtEnd:]))
 	return (end - bodyEnd) / rtEntrySize, (bodyEnd - shadowEnd) / rtEntrySize

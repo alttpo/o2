@@ -381,3 +381,31 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 		}
 	}
 }
+
+// alttpo draws remote sprites only with palettes the remote player sent, so every palette used is sent: Link's,
+// the shadow's and the dash dust's.
+func TestLinkSprites_PalettesSentForEffects(t *testing.T) {
+	h := newSpriteTestRig(t)
+	e := h.gs.e
+	for i := 0; i < 0x100; i++ {
+		e.WRAM[0xC600+i] = uint8(i)
+	}
+	e.WRAM[0x0C4A+3] = 0x1E
+	copy(e.WRAM[0x0800+0x10*4:], []byte{0x68, 0x70, 0xCF, 0x04})
+	e.WRAM[0x0A20+0x10] = 0
+	// pretend a remote player is in the same location:
+	h.gs.beforeEmulate = func() { e.SRAM[(remoteTableAddr+rtCaptureTTL)&0x7FFF] = 2 }
+	parsed := h.frames(4)
+
+	pal := map[uint8][]byte{}
+	for _, sp := range parsed.sprites {
+		if sp.palette != nil {
+			pal[(sp.b[4]>>1)&7] = sp.palette
+		}
+	}
+	for _, p := range []uint8{2, 4, 7} {
+		if expected := e.WRAM[0xC600+int(p)*32 : 0xC620+int(p)*32]; !bytes.Equal(pal[p], expected) {
+			t.Errorf("palette %d: sent % x; expected % x", p, pal[p], expected)
+		}
+	}
+}
