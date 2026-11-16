@@ -47,7 +47,7 @@ Values match alttpo's `GameState::deserialize`.
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
 | 0x02 | sfx | yes | no | parsed, ignored |
-| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield, shadow, sword sparkles and dash dust | head, body and shadow used to draw one remote player |
+| 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield, shadow, sword sparkles and dash dust | head, body, shadow, sparkles and dust used to draw one remote player |
 | 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
@@ -101,7 +101,10 @@ more messages, which corrupted the rest of the packet.
   which includes custom Link sprites), sword and shield, Link's shadow, and the sparkles of charging a spin attack,
   spinning and poking walls with the sword and the dust of dashing (ancillae `$0D`, `$1B`, `$1E`, `$26`, `$2A`,
   `$2B`, `$3C`; chrs in the common sprite sheets, sent without tile data like the shadow, so receivers draw them from
-  their own VRAM). The trampoline finds those by scanning the OAM buffer for their chrs (up to 5 entries), only on
+  their own VRAM). The shadow is chr `$6C` on the ground and `$28`/`$38` while recoiling or jumping off a ledge.
+  alttpo draws remote sprites only with palettes the remote player sent, so o2 sends every OBJ palette its sprites
+  use (it used to send only palettes 5-7, which made sparkles and dust black), read from `$7EC601..$7EC6FF` (color 0
+  of palette 0 is transparent and not read). The trampoline finds those by scanning the OAM buffer for their chrs (up to 5 entries), only on
   frames where one of those ancillae exists and while another player is in the same location. Other sprites (items
   in use, effects, held objects, followers) are not sent: their tiles only exist in VRAM, which o2 cannot read
   cheaply. Only sprite palettes
@@ -432,18 +435,20 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 - **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
   from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
-  custom sprite, and without sword, shield or items. Their shadow (chr `$6C`, up to 2 sprites) is drawn under them
-  when they send it.
+  custom sprite, and without sword, shield or items.
+- **Shadow, sparkles and dust** of the same player (or, without a body, of the first player with recent sprites) are
+  drawn from the local static and common sprite sheets with the local palettes: up to 2 8x8 shadow sprites (chr
+  `$6C`, or `$28`/`$38` in the air) and up to 4 8x8 sparkle and dust sprites, behind the body.
 - **VRAM:** the head and body are uploaded over chrs `$20..$23`/`$30..$33`, which followers and a few NPCs (Kiki, the
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
   neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
   the 256 bytes right after the game's own upload of those chrs. Otherwise, and outside submodule 0, the player is
   drawn as a blob instead.
-- **Everyone else** is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 7) at their Link
+- **Everyone else** (up to 6 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 7) at their Link
   coordinates.
 - **OAM:** sprites go into unused OAM entries (Y = `$F0`) searched from the end of the buffer, behind all of the
   game's own sprites. Positions use alttpo's convention (OAM coordinate + `BG2 scroll - shake offset` of the sender)
   and are converted with the local scroll offsets by the game every frame.
-- **Updates:** o2 writes a small table to SRAM (`$707F00`) when it changes and at least every 250ms. The game counts
+- **Updates:** o2 writes a small table to SRAM (`$707EE8`) when it changes and at least every 250ms. The game counts
   its TTL (60 frames) down and stops drawing remote players when it runs out, e.g. when o2 disconnects.
