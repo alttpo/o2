@@ -48,6 +48,7 @@ const (
 	MsgStarSwitch       MessageType = 0x19 // star switch state of a room, broadcastSector; see syncstar.go
 	MsgRoomState        MessageType = 0x1A // trap doors, chest and key flags of a room, broadcastSector; see syncroom.go
 	MsgRoomDoors        MessageType = 0x1B // key doors and switches of a room, broadcastSector; see syncroom.go
+	MsgOwEvents         MessageType = 0x1C // overworld entrance animations and other events, broadcastSector; see syncowevents.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -87,6 +88,7 @@ func (g *Game) initSerde() {
 		MsgStarSwitch:       g.DeserializeStarSwitch,
 		MsgRoomState:        g.DeserializeRoomState,
 		MsgRoomDoors:        g.DeserializeRoomDoors,
+		MsgOwEvents:         g.DeserializeOwEvents,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -242,6 +244,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		p.Doors.valid = false
 		p.Manip.reset()
 		p.Map16.reset(0)
+		p.OwEvents.valid = false
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.X); err != nil {

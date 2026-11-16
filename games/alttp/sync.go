@@ -678,29 +678,83 @@ func (g *Game) initSync() {
 	g.overworld[0x3B].SyncMask = 0xDF
 	g.overworld[0x7B].SyncMask = 0xDF
 
-	// remove heart pieces and heart containers other players collected from our screen:
+	// remove heart pieces and heart containers other players collected from our screen, and Agahnim's barrier:
 	for i := range g.overworld {
 		g.overworld[i].OnUpdated = g.removeCollectedHeartSprites
 	}
 
-	// Pyramid bat crash: ([$7EF2DB] | 0x20)
-	g.overworld[0x5B].OnUpdated = func(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
-		if initial&0x20 == 0 && updated&0x20 == 0x20 {
-			if g.local.OverworldArea == 0x5B {
-				notification := "create pyramid hole:"
-				a.Comment(notification)
-				g.PushNotification(notification)
-				a.JSL(g.romFunctions[fnOverworldCreatePyramidHole])
-			}
+	// draw overlays other players opened while we are in the area:
+	for _, o := range []overlayEvent{
+		// the weathervane in Kakariko Village, blown up by playing the flute next to it:
+		{area: 0x18, fn: fnOverworldAlterWeathervane, notification: "weathervane destroyed"},
+		// the Thieves' Town entrance, opened by pulling the grate (sprite $14):
+		{area: 0x58, fn: fnOverworldOpenGargoylesDomain, sprite: 0x14, notification: "Thieves' Town opened"},
+		// the pyramid hole, opened by the bat crash:
+		{area: 0x5B, fn: fnOverworldCreatePyramidHole, notification: "pyramid hole opened"},
+	} {
+		o := o
+		g.overworld[o.area].OnUpdated = func(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
+			g.drawOpenedOverlay(o, a, initial, updated)
+			g.removeCollectedHeartSprites(s, a, initial, updated)
 		}
-		g.removeCollectedHeartSprites(s, a, initial, updated)
 	}
+}
+
+// overlayEvent is an overworld overlay drawn by a routine that sets bit $20 of the area's flags, without animation.
+type overlayEvent struct {
+	area         uint16
+	fn           romFunction
+	sprite       uint8 // sprite type to remove once opened, if not 0
+	notification string
+}
+
+// drawOpenedOverlay draws the area's overlay with its routine when another player set bit $20 of the area's flags while
+// the local player is in the area. The overlay is otherwise only loaded with the area, the next time it is entered.
+func (g *Game) drawOpenedOverlay(o overlayEvent, a *asm.Emitter, initial, updated uint8) {
+	const overlay = 0x20
+	if initial&overlay != 0 || updated&overlay == 0 {
+		return
+	}
+	if g.local.OverworldArea != o.area || g.local.Location&0x010000 != 0 {
+		return
+	}
+	fn, ok := g.romFunctions[o.fn]
+	if !ok {
+		return
+	}
+
+	lbl := fmt.Sprintf("ow%02x_overlay", o.area)
+	a.Comment(o.notification + " if still in this overworld area, in submodule 0:")
+	a.LDA_dp(0x10)
+	a.CMP_imm8_b(0x09)
+	a.BNE(lbl + "_done")
+	a.LDA_dp(0x11)
+	a.BNE(lbl + "_done")
+	a.LDA_dp(0x1B)
+	a.BNE(lbl + "_done")
+	a.LDA_dp(0x8A)
+	a.CMP_imm8_b(uint8(o.area))
+	a.BNE(lbl + "_done")
+	a.JSL(fn)
+	if o.sprite != 0 {
+		a.LDX_imm8_b(0x0F)
+		a.Label(lbl + "_loop")
+		a.LDA_abs_x(0x0E20)
+		a.CMP_imm8_b(o.sprite)
+		a.BNE(lbl + "_next")
+		a.STZ_abs_x(0x0DD0)
+		a.Label(lbl + "_next")
+		a.DEX()
+		a.BPL(lbl + "_loop")
+	}
+	a.Label(lbl + "_done")
 }
 
 // removeCollectedHeartSprites removes the heart piece ($EB) and heart container ($EA) sprites of the local player's
 // overworld area once another player collected it. Picking one up sets bit $40 of the area's flags at $7EF280 (which
 // SpritePrep_HeartContainer checks when the area loads), so the sprite would otherwise stay until the area reloads and
-// could be collected twice.
+// could be collected twice. Destroying Agahnim's barrier (sprite $40, at Hyrule Castle) with the Master Sword sets the
+// same bit, which SpritePrep_AgahnimsBarrier checks to draw it destroyed ($0DC0 = 4, which also makes it harmless).
 func (g *Game) removeCollectedHeartSprites(s *syncableOverworld, a *asm.Emitter, initial, updated uint8) {
 	const heartCollected = 0x40
 	if initial&heartCollected != 0 || updated&heartCollected == 0 {
@@ -711,7 +765,7 @@ func (g *Game) removeCollectedHeartSprites(s *syncableOverworld, a *asm.Emitter,
 	}
 
 	lbl := fmt.Sprintf("ow%02x_heart", s.Area)
-	a.Comment("remove heart piece/container sprites if still in this overworld area:")
+	a.Comment("remove heart piece/container sprites and destroy the barrier if still in this overworld area:")
 	a.LDA_dp(0x1B)
 	a.BNE(lbl + "_done")
 	a.LDA_dp(0x8A)
@@ -725,7 +779,12 @@ func (g *Game) removeCollectedHeartSprites(s *syncableOverworld, a *asm.Emitter,
 	a.CMP_imm8_b(0xEB)
 	a.BEQ(lbl + "_kill")
 	a.CMP_imm8_b(0xEA)
+	a.BEQ(lbl + "_kill")
+	a.CMP_imm8_b(0x40)
 	a.BNE(lbl + "_next")
+	a.LDA_imm8_b(0x04)
+	a.STA_abs_x(0x0DC0)
+	a.BRA(lbl + "_next")
 	a.Label(lbl + "_kill")
 	a.STZ_abs_x(0x0DD0)
 	a.Label(lbl + "_next")

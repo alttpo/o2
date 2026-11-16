@@ -158,6 +158,8 @@ type Player struct {
 	Star  starSwitchRemote
 	Room  roomStateRemote
 	Doors roomDoorsRemote
+	// overworld entrance animations and other events (see syncowevents.go):
+	OwEvents owEventsRemote
 
 	showJoinMessage bool
 

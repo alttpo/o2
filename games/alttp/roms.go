@@ -16,6 +16,13 @@ const (
 	fnLoadSpriteGfx
 	fnOverworldFinishMirrorWarp
 	fnOverworldCreatePyramidHole
+	// Overworld_AlterWeathervane and OpenGargoylesDomain: draw the destroyed weathervane (area $18) and the opened
+	// Thieves' Town entrance (area $58) and set bit $20 of the area's flags; JSL, RTL, return in 8-bit mode:
+	fnOverworldAlterWeathervane
+	fnOverworldOpenGargoylesDomain
+	// FireRodShot_BecomeSkullWoodsFire: lights the fire around the Skull Woods entrance (ancilla $34) and starts its
+	// entrance animation ($04C6 = 2); JSL in 8-bit mode:
+	fnSkullWoodsFire
 	fnResetSpriteProperties
 	fnToggleStarTileGraphics
 	// Overworld_DrawMap16_Persist: A = map16 tile, X = tilemap offset, 16-bit A/X/Y; writes $7E2000,X and queues a
@@ -61,6 +68,9 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnLoadSpriteGfx] = 0x00FC62
 	fns[fnOverworldFinishMirrorWarp] = 0x02B260
 	fns[fnOverworldCreatePyramidHole] = 0x1BC2A7
+	fns[fnOverworldAlterWeathervane] = 0x1BC21D
+	fns[fnOverworldOpenGargoylesDomain] = 0x1BC264
+	fns[fnSkullWoodsFire] = 0x099C4F
 	fns[fnResetSpriteProperties] = 0x0DB871
 	fns[fnToggleStarTileGraphics] = 0x00FDA7
 	fns[fnOverworldDrawMap16Persist] = 0x1BC97C
@@ -78,6 +88,9 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnLoadSpriteGfx] = 0x00FC62
 	fns[fnOverworldFinishMirrorWarp] = 0x02B186
 	fns[fnOverworldCreatePyramidHole] = 0x1BC2A7
+	fns[fnOverworldAlterWeathervane] = 0x1BC21D
+	fns[fnOverworldOpenGargoylesDomain] = 0x1BC264
+	fns[fnSkullWoodsFire] = 0x099C3B
 	fns[fnResetSpriteProperties] = 0x0DB871
 	fns[fnToggleStarTileGraphics] = 0x00FDA7
 	fns[fnOverworldDrawMap16Persist] = 0x1BC97C

@@ -85,6 +85,8 @@ func (g *Game) sendPackets() {
 	if g.SyncOverworld {
 		// the overworld map16 change log is area specific; send it only to players in the same area:
 		g.sendMap16()
+		// overworld entrance animations and other events, in their own packet:
+		g.sendOwEvents()
 	}
 
 	{

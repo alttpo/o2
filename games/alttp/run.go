@@ -397,7 +397,7 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 
 	// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
 	q = g.readEnqueue(q, 0xF50100, 0x36, nil) // [$0100..$0135]
-	q = g.readEnqueue(q, 0xF502E0, 0x08, nil) // [$02E0..$02E7]
+	q = g.readEnqueue(q, 0xF502E0, 0x11, nil) // [$02E0..$02F0]; $02F0 = desert statues released
 	q = g.readEnqueue(q, 0xF50352, 0xCE, nil) // [$0352..$041F]; $0352 = Link's OAM buffer offset
 	// $1980..19E9 for reading underworld door state (19A0)
 	q = g.readEnqueue(q, 0xF51980, 0x6A, nil) // [$1980..$19E9]
@@ -410,12 +410,14 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	if area := g.wram[0x8A]; g.wram[0x1B] == 0 && area < 0xC0 {
 		q = g.readEnqueue(q, 0xF5F280+uint32(area), 0x01, nil) // [$F280+$8A]
 	}
-	// trap doors, manipulable object count, map16 change log index, star switch state and hole overlay:
-	q = g.readEnqueue(q, 0xF50466, 0x57, nil) // [$0466..$04BC]
+	// trap doors, manipulable object count, map16 change log index, star switch state and hole overlay, and the
+	// overworld entrance animation:
+	q = g.readEnqueue(q, 0xF50466, 0x61, nil) // [$0466..$04C6]
 	// pull switch ($0642), hold switch ($0646) and chest positions ($06E0..$06EB) in the underworld:
 	q = g.enqueueRoomReads(q)
 	// overworld map16 change log and underworld manipulable objects:
 	q = g.enqueueMap16Reads(q)
+	q = g.enqueueOwEventReads(q)
 	q = g.enqueueManipReads(q)
 
 	// sprite palettes 0..7 (Link, sword and shield, sparkles, dust, shadow); color 0 of palette 0 is transparent and

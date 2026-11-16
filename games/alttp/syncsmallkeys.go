@@ -247,6 +247,7 @@ func (g *Game) readWRAM() {
 	g.readStarSwitch()
 	g.readRoomState()
 	g.readMap16()
+	g.readOwEvents()
 	g.readManip()
 
 	now := g.ServerSNESTimestamp()

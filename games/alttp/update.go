@@ -319,6 +319,20 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		if g.SyncOverworld {
+			if u, ta := g.generateOwEventsUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.owEvents.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
+		}
+
+		if g.SyncOverworld {
 			newEmitter := func() *asm.Emitter { return a.Clone(tmp[:]) }
 
 			for i := range g.overworld {

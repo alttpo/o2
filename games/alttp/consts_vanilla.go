@@ -428,29 +428,27 @@ var (
 	}
 
 	overworldBitNames = map[uint16][8]string{
-		0x005b: {
-			"",
-			"",
-			"",
-			"",
-			"",
-			"pyramid hole",
-			"",
-			"",
-		},
+		0x0018: {"", "", "", "", "", "weathervane", "", ""},
+		0x001b: {"", "", "", "", "", "", "Agahnim's barrier", ""},
+		0x0040: {"", "", "", "", "", "Skull Woods entrance", "", ""},
+		0x0043: {"", "", "", "", "", "Ganon's Tower entrance", "", ""},
+		0x0047: {"", "", "", "", "", "Turtle Rock entrance", "", ""},
+		0x0058: {"", "", "", "", "", "Thieves' Town entrance", "", ""},
+		0x005b: {"", "", "", "", "", "pyramid hole", "", ""},
+		0x005e: {"", "", "", "", "", "Palace of Darkness entrance", "", ""},
+		0x0070: {"", "", "", "", "", "Misery Mire entrance", "", ""},
 	}
 
 	overworldBitVerbs = map[uint16][8]string{
-		0x005b: {
-			"",
-			"",
-			"",
-			"",
-			"",
-			"opened",
-			"",
-			"",
-		},
+		0x0018: {"", "", "", "", "", "destroyed", "", ""},
+		0x001b: {"", "", "", "", "", "", "destroyed", ""},
+		0x0040: {"", "", "", "", "", "opened", "", ""},
+		0x0043: {"", "", "", "", "", "opened", "", ""},
+		0x0047: {"", "", "", "", "", "opened", "", ""},
+		0x0058: {"", "", "", "", "", "opened", "", ""},
+		0x005b: {"", "", "", "", "", "opened", "", ""},
+		0x005e: {"", "", "", "", "", "opened", "", ""},
+		0x0070: {"", "", "", "", "", "opened", "", ""},
 	}
 
 	vanillaBottleItemNames = []string{"Shroom", "Empty Bottle", "Red Potion", "Green Potion", "Blue Potion", "Fairy", "Bee", "Good Bee"}
