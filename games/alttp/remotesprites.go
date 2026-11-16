@@ -108,8 +108,10 @@ const (
 	rsAnim = 20
 	// blob animation for this frame:
 	rsBlobAnim = 22
+	// non-zero when the body must not be drawn in this module and submodule:
+	rsBodyBlocked = 24
 
-	remoteStateSize = 24
+	remoteStateSize = 26
 )
 
 // VRAM and OAM constants:
@@ -203,13 +205,37 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_ttl_ok")
 	a.DEC_abs(tb(rtTTL))
 
-	a.Comment("only in the underworld, overworld and special overworld modules:")
+	a.Comment("only while the game draws the underworld or overworld sprites; the body only in submodule 0, where")
+	a.Comment("the NMI has time for it, except for dialogs and menus:")
+	a.LDA_long(0x7E0011)
+	a.STA_abs(st(rsBodyBlocked))
 	a.LDA_long(0x7E0010)
+	for _, m := range []uint8{0x07, 0x09, 0x0B, 0x0F, 0x10, 0x13, 0x16} {
+		a.CMP_imm8_b(m)
+		a.BEQ("rd_module_ok")
+	}
+	a.CMP_imm8_b(0x0E)
+	a.BNE("rd_exit")
+	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu:")
+	a.STZ_abs(st(rsBodyBlocked))
+	a.LDA_long(0x7E001B)
+	a.BEQ("rd_interface_ow")
+	a.LDA_long(0x7E0011)
+	a.CMP_imm8_b(0x03)
+	a.BNE("rd_module_ok")
+	a.LDA_long(0x7E0200)
+	a.BEQ("rd_module_ok")
 	a.CMP_imm8_b(0x07)
 	a.BEQ("rd_module_ok")
-	a.CMP_imm8_b(0x09)
-	a.BEQ("rd_module_ok")
-	a.CMP_imm8_b(0x0B)
+	a.BRA("rd_exit")
+	a.Label("rd_interface_ow")
+	a.LDA_long(0x7E0011)
+	a.CMP_imm8_b(0x07)
+	a.BEQ("rd_interface_map")
+	a.CMP_imm8_b(0x0A)
+	a.BNE("rd_module_ok")
+	a.Label("rd_interface_map")
+	a.LDA_long(0x7E0200)
 	a.BNE("rd_exit")
 	a.Label("rd_module_ok")
 
@@ -267,7 +293,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.LDA_abs(st(rsFree))
 	a.CMP_imm8_b(0x02)
 	a.BNE("rd_no_body")
-	a.LDA_long(0x7E0011)
+	a.LDA_abs(st(rsBodyBlocked))
 	a.BNE("rd_no_body")
 	a.LDA_long(0x7E0710)
 	a.BNE("rd_no_body")
@@ -640,7 +666,9 @@ func (g *Game) remoteBodyOK() bool {
 // would see the local player's sparkles and dust).
 func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, draw, capture bool) {
 	local := g.local
-	if local == nil || !local.IsInGame() || local.isBadTimeToDraw() {
+	// the game itself stops drawing while the overworld map is shown (see emitRemoteDraw), so the mode 7 map does not
+	// count as a bad time for the local player; it keeps drawing remote players while the map opens and closes:
+	if local == nil || !local.IsInGame() || (local.isBadTimeToDraw() && !(local.Module == 0x0E && local.SubModule == 0x07)) {
 		return
 	}
 

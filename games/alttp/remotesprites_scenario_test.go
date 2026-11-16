@@ -556,3 +556,70 @@ func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
 	}
 	h.expectShadow("nothing else", 0x40, 0x60)
 }
+
+// Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus;
+// the body only where the NMI has time for it.
+func TestRemoteSpritesScenario_Modules(t *testing.T) {
+	const (
+		nothing = iota
+		blob
+		body
+	)
+	for _, tc := range []struct {
+		name                       string
+		overworld                  bool
+		module, submodule, mapMode uint8
+		expected                   int
+	}{
+		{"underworld", false, 0x07, 0x00, 0, body},
+		{"underworld transition", false, 0x07, 0x02, 0, blob},
+		{"dialog", false, 0x0E, 0x02, 0, body},
+		{"item menu", false, 0x0E, 0x01, 0, body},
+		{"dungeon map opening", false, 0x0E, 0x03, 0, body},
+		{"dungeon map shown", false, 0x0E, 0x03, 1, nothing},
+		{"dungeon map closing", false, 0x0E, 0x03, 7, body},
+		{"spotlight open", false, 0x10, 0x01, 0, blob},
+		{"pendant victory", false, 0x13, 0x00, 0, body},
+		{"game over", false, 0x12, 0x00, 0, nothing},
+		{"overworld", true, 0x09, 0x00, 0, body},
+		{"overworld dialog", true, 0x0E, 0x02, 0, body},
+		{"overworld map opening", true, 0x0E, 0x07, 0, body},
+		{"overworld map shown", true, 0x0E, 0x07, 1, nothing},
+		{"flute menu shown", true, 0x0E, 0x0A, 1, nothing},
+		{"special overworld", true, 0x0B, 0x00, 0, body},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRSScenario(t)
+			if tc.overworld {
+				for i := range h.gs {
+					h.inArea(i, 0x18)
+					h.gs[i].e.WRAM[0x0AE8], h.gs[i].e.WRAM[0x0AEA] = rsVar6, rsVar7
+				}
+				h.setScroll(1, 0x1050, 0x0250, 0x1000, 0x0200)
+				h.setScroll(0, 0x1070, 0x0270, 0x1010, 0x0208)
+			}
+			h.frames(8)
+			h.expectOAM("in game", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+			// the module the local player was in before the interface:
+			e := h.gs[0].e
+			e.WRAM[0x010C] = e.WRAM[0x10]
+			e.WRAM[0x10], e.WRAM[0x11], e.WRAM[0x0200] = tc.module, tc.submodule, tc.mapMode
+			h.frames(4)
+
+			switch tc.expected {
+			case nothing:
+				h.expectOAMUnused("nothing", 0, 0x7F)
+			case blob:
+				h.expectShadow("blob", 0x40, 0x60)
+				if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
+					t.Errorf("expected a blob; OAM[$7d] = % x", entry[:])
+				}
+			case body:
+				h.expectShadow("body", 0x40, 0x60)
+				h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+				h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+			}
+		})
+	}
+}

@@ -27,7 +27,7 @@ import (
 //	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
 //	  $707C80           map16 apply routine, called by generated map16 update routines
 //	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
-//	  $707E80           remote sprites drawing subroutine for one sprite
+//	  $707EC0           remote sprites drawing subroutine for one sprite
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
@@ -53,7 +53,7 @@ const (
 	map16ApplyAddr = uint32(0x707C80)
 	// remote sprites routines; see remotesprites.go:
 	remoteDrawAddr       = uint32(0x707D50)
-	remoteDrawSpriteAddr = uint32(0x707E80)
+	remoteDrawSpriteAddr = uint32(0x707EC0)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
