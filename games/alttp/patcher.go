@@ -20,7 +20,6 @@ import (
 //	  $706000           capture tables: ancilla types ($40 bytes) and chrs ($100 bytes); see emitCaptureExtras
 //	  $706140..$70620E  copy of Link's OAM entries and the local player's captured sparkles, dust, projectiles and
 //	                    carried and thrown objects and sound effects, written by the trampoline every frame
-//	  $706210..$7062E5  remote sprites table (written by o2) and state (written by the game code)
 //	  $7062F0..$7062F3  the player's colors for Link's palette (written by o2); see linkcolor.go
 //	  $7062F4..$7062FC  remote sound effects for the game to play (written by o2); see sfx.go
 //	$706300..$706605  remote map16 changes staged for area loads (written by o2; both tables are emptied by the
@@ -28,6 +27,8 @@ import (
 //	$706610..$706A15  remote manipulable objects staged for room loads (written by o2), and
 //	$706A20..$706A67  the pending list and scratch of the room load hook; see manipstage.go
 //	$706A70..$706AB9  enemies drawing their death this frame and scratch of the capture routine; see remotesprites.go
+//	$706AC0..$706BBE  remote sprites table (written by o2; zeroed by the init code); see remotesprites.go
+//	$706BC0..$706C47  remote sprites state (written by the game code; zeroed by the init code)
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
 //	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
@@ -103,9 +104,6 @@ const (
 	linkOAMCopySfx      = linkOAMCopyScroll + 4
 	linkOAMCopyReadSize = linkOAMCopySfx + sfxLocalSize
 )
-
-// the copy must end before the remote sprites table:
-const _ = remoteTableAddr - (linkOAMCopyAddr + linkOAMCopyReadSize)
 
 type Patcher struct {
 	rom *snes.ROM
@@ -258,8 +256,8 @@ func (p *Patcher) Patch() (err error) {
 	}
 	a.WriteTextTo(textBuf)
 
-	// NMI hooks in NMI_DoUpdates that upload a remote player's head and body tiles; without them, remote players are
-	// only drawn as blobs (see Game.remoteBodyOK):
+	// NMI hooks in NMI_DoUpdates that upload a remote player's head, body, sword and shield tiles; without them,
+	// remote players are only drawn as blobs (see Game.remoteBodyOK):
 	hooks := []struct {
 		addr     uint32
 		expected []byte
@@ -386,7 +384,6 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw, ma
 	a.JSL(callUpdateAddr)
 
 	a.Label("syncExit")
-	emitRemoteSave(a)
 
 	// jsl to mainrouting that we patched over:
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
@@ -429,6 +426,11 @@ type patchROM struct {
 	// remote players drawing routines, called by preMain; see emitRemoteDrawRoutines:
 	remoteDraw     romBlock
 	remoteDrawAddr uint32
+	// their tables and the routines they call, in blocks small enough to fit the free ROM; see emitRemoteChrSlots,
+	// emitRemoteDrawTables, emitRemoteDrawBody, emitRemoteScanSlots, emitRemoteAllocSlots, emitRemoteSlottedChr,
+	// emitRemoteDrawList and emitRemoteUploadList:
+	remoteChrSlotsSmall, remoteChrSlotsLarge, remoteTables                                    romBlock
+	remoteDrawBody, remoteScan, remoteAlloc, remoteSlottedChr, remoteDrawSprite, remoteUpload romBlock
 	// the lists the init code builds the capture tables from; see emitInitCaptureTables:
 	typeList romBlock
 	chrList  romBlock
@@ -437,6 +439,8 @@ type patchROM struct {
 	// the NMI hooks; see emitNMIHooks:
 	nmiHooks                  romBlock
 	nmiHookLate, nmiHookEarly uint32
+	// called by the NMI hooks; see emitNMIUpload:
+	nmiUpload romBlock
 	// the hook in Overworld_HandleOverlaysAndBombDoors that applies staged map16 changes, and the routine it jumps to
 	// when done if a randomizer had hooked the same instructions (0: it runs them itself); see emitMap16StageHook:
 	map16StageHook romBlock
@@ -455,6 +459,11 @@ type patchROM struct {
 type patchRoutine struct {
 	block *romBlock
 	emit  func(a *asm.Emitter) error
+}
+
+// remoteDrawTables returns the addresses of the remote sprites tables.
+func (r *patchROM) remoteDrawTables() remoteDrawTables {
+	return remoteDrawTablesAt(r.remoteChrSlotsSmall.addr, r.remoteChrSlotsLarge.addr, r.remoteTables.addr)
 }
 
 func (r *patchROM) blocks() (b []*romBlock) {
@@ -494,7 +503,43 @@ func (r *patchROM) routines() []patchRoutine {
 			return emitMap16Apply(a, r.fnDrawMap16)
 		}},
 		{&r.remoteDraw, func(a *asm.Emitter) error {
-			r.remoteDrawAddr = emitRemoteDrawRoutines(a)
+			r.remoteDrawAddr = emitRemoteDraw(a, r.remoteDrawBody.addr)
+			return nil
+		}},
+		{&r.remoteDrawBody, func(a *asm.Emitter) error {
+			emitRemoteDrawBody(a, r.remoteAlloc.addr, r.remoteDrawSprite.addr, r.remoteUpload.addr)
+			return nil
+		}},
+		{&r.remoteChrSlotsSmall, func(a *asm.Emitter) error {
+			emitRemoteChrSlots(a, false)
+			return nil
+		}},
+		{&r.remoteChrSlotsLarge, func(a *asm.Emitter) error {
+			emitRemoteChrSlots(a, true)
+			return nil
+		}},
+		{&r.remoteTables, func(a *asm.Emitter) error {
+			emitRemoteDrawTables(a)
+			return nil
+		}},
+		{&r.remoteScan, func(a *asm.Emitter) error {
+			emitRemoteScanSlots(a, r.remoteDrawTables())
+			return nil
+		}},
+		{&r.remoteAlloc, func(a *asm.Emitter) error {
+			emitRemoteAllocSlots(a, r.remoteDrawTables(), r.remoteScan.addr)
+			return nil
+		}},
+		{&r.remoteSlottedChr, func(a *asm.Emitter) error {
+			emitRemoteSlottedChr(a, r.remoteDrawTables())
+			return nil
+		}},
+		{&r.remoteDrawSprite, func(a *asm.Emitter) error {
+			emitRemoteDrawList(a, r.remoteSlottedChr.addr)
+			return nil
+		}},
+		{&r.remoteUpload, func(a *asm.Emitter) error {
+			emitRemoteUploadList(a)
 			return nil
 		}},
 		{&r.typeList, func(a *asm.Emitter) error {
@@ -512,7 +557,11 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.nmiHooks, func(a *asm.Emitter) error {
-			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.linkGfxBankIns)
+			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.nmiUpload.addr)
+			return nil
+		}},
+		{&r.nmiUpload, func(a *asm.Emitter) error {
+			emitNMIUpload(a, r.linkGfxBankIns)
 			return nil
 		}},
 		{&r.map16StageHook, func(a *asm.Emitter) error {
@@ -563,6 +612,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.Comment("copy the patch signature to SRAM:")
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
 	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
+	emitRemoteInit(a)
 	emitMap16StageInit(a)
 	emitManipStageInit(a)
 	a.PLB()
@@ -588,6 +638,16 @@ func (r *patchROM) measure() (err error) {
 	r.preMain.name = "preMain"
 	r.map16Apply.name = "map16Apply"
 	r.remoteDraw.name = "remoteDraw"
+	r.remoteChrSlotsSmall.name = "remote 8x8 chr slots"
+	r.remoteChrSlotsLarge.name = "remote 16x16 chr slots"
+	r.remoteTables.name = "remote sprites tables"
+	r.remoteScan.name = "remote slots scan"
+	r.remoteAlloc.name = "remote slots"
+	r.remoteSlottedChr.name = "remote slotted chr"
+	r.remoteDrawSprite.name = "remote draw list"
+	r.remoteDrawBody.name = "remote draw body"
+	r.remoteUpload.name = "remote uploads"
+	r.nmiUpload.name = "NMI upload"
 	r.typeList.name = "capture type list"
 	r.chrList.name = "capture chr list"
 	r.captureExtras.name = "captureExtras"

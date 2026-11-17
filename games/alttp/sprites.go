@@ -24,8 +24,9 @@ import (
 // them in WRAM (see swordshield.go). Other sprites whose tiles are only in VRAM are not sent since o2 cannot read VRAM.
 // Link's shadow is sent without tile data, the same as alttpo does: receivers draw it with their own shadow tiles.
 //
-// Incoming sprites are only used to draw one remote player's head and body (see remotesprites.go); incoming unique
-// tiles are ignored.
+// Incoming sprites are used to draw remote players (see remotesprites.go): one with Link's head, body, sword and shield,
+// whose tiles are taken from the local ROM and WRAM. Incoming unique tiles are ignored; tiles sent inline with the
+// sprites are only used to find alttpo players' sword and shield poses.
 
 // linkOAMCount is the number of OAM entries reserved for Link, starting at OAM index ($0352 >> 2):
 const linkOAMCount = 12

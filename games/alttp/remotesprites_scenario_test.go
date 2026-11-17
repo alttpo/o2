@@ -73,6 +73,28 @@ func (h *skScenario) remoteState(i int, o uint32) []byte {
 	return h.gs[i].e.SRAM[(remoteStateAddr+o)&0x7FFF:]
 }
 
+// nmiRows returns the rows of chrs remoteDraw listed for g's NMI hooks to upload: VRAM address, source address and
+// partWRAM if the source is in WRAM.
+func (h *skScenario) nmiRows(i int) (rows [][3]uint16) {
+	n := int(binary.LittleEndian.Uint16(h.remoteState(i, rsNMILen)))
+	l := h.remoteState(i, rsNMIList)
+	for o := 0; o < n; o += nmiRowSize {
+		v := binary.LittleEndian.Uint16(l[o:])
+		rows = append(rows, [3]uint16{v & 0x7FFF, binary.LittleEndian.Uint16(l[o+2:]), (v >> 15) * partWRAM})
+	}
+	return
+}
+
+// expectBlob expects a blob at screen (x, y) in g1's OAM[index] and its shadow in OAM[index+1], behind it.
+func (h *skScenario) expectBlob(when string, index int, x, y uint8) {
+	h.t.Helper()
+	h.expectOAM(when+": blob shadow", 0, index+1, [4]byte{x, y + remoteShadowYOffs, remoteShadowChr, remoteBlobAttr}, 0x02)
+	entry, ext := h.oamEntry(0, index)
+	if entry[0] != x || entry[1] != y || entry[2]&^2 != remoteBlobChr0 || entry[3] != remoteBlobAttr || ext != 0x02 {
+		h.t.Errorf("%s: blob: g1 OAM[$%02x] = % x ext %02x", when, index, entry[:], ext)
+	}
+}
+
 func (h *skScenario) expectOAM(when string, i, index int, entry [4]byte, ext uint8) {
 	h.t.Helper()
 	if actual, actualExt := h.oamEntry(i, index); actual != entry || actualExt != ext {
@@ -109,8 +131,15 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	if tb[rtTTL] == 0 || tb[rtIndoors] != 1 || binary.LittleEndian.Uint16(tb[rtLocation:]) != rsRoom {
 		t.Fatalf("unexpected table header % x", tb[:rtEntries])
 	}
-	if shadowEnd, bodyEnd, end := binary.LittleEndian.Uint16(tb[rtExtrasEnd:]), binary.LittleEndian.Uint16(tb[rtBodyEnd:]), binary.LittleEndian.Uint16(tb[rtEnd:]); shadowEnd != 2*rtEntrySize || bodyEnd != 4*rtEntrySize || end != 5*rtEntrySize {
-		t.Fatalf("expected 2 shadow sprites, 2 body sprites and 1 blob; got entry offsets %d, %d, %d", shadowEnd, bodyEnd, end)
+	var ends [5]uint16
+	for k, f := range []int{rtExtrasEnd, rtSlottedEnd, rtP0BlobEnd, rtEnd, rtFrontEnd} {
+		ends[k] = binary.LittleEndian.Uint16(tb[f:]) / rtEntrySize
+	}
+	if ends != [5]uint16{2, 4, 6, 6, 6} {
+		t.Fatalf("expected 2 shadow sprites, 2 body sprites and a blob and its shadow; got entry ends %d", ends)
+	}
+	if parts, required := binary.LittleEndian.Uint16(tb[rtParts:]), tb[rtRequired]; parts != 2 || required != 2 {
+		t.Fatalf("expected 2 parts, both required; got %d, %d", parts, required)
 	}
 
 	// the body (drawn behind the head) gets chrs $20/$21/$30/$31, the head chrs $22/$23/$32/$33; screen coordinates
@@ -120,15 +149,11 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
 	h.expectOAMUnused("no blob", 0, 0x7B)
 
-	if en := h.remoteState(0, rsNMIEnable)[0]; en == 0 {
-		t.Errorf("NMI upload not enabled")
-	}
-	var src [4]uint16
-	for k := range src {
-		src[k] = binary.LittleEndian.Uint16(h.remoteState(0, rsNMISrc+uint32(k)*2))
-	}
-	if expected := [4]uint16{0x9000, 0x8400, 0x9200, 0x8600}; src != expected {
-		t.Errorf("NMI sources %04x; expected %04x", src, expected)
+	// the body's rows into chrs $20/$21 and $30/$31, the head's into $22/$23 and $32/$33, from LinkGraphics:
+	if rows, expected := h.nmiRows(0), [][3]uint16{
+		{0x4200, 0x9000, 0}, {0x4300, 0x9200, 0}, {0x4220, 0x8400, 0}, {0x4320, 0x8600, 0},
+	}; !equalRows(rows, expected) {
+		t.Errorf("NMI rows %04x; expected %04x", rows, expected)
 	}
 
 	// dma_var6/7 are as the game left them:
@@ -181,15 +206,38 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	h.setScroll(0, 0x1078, 0x0270, 0x1078, 0x0208)
 	h.frames(1)
 	h.expectOAMUnused("off screen", 0, 0x7F)
+	// and not uploaded:
+	if rows := h.nmiRows(0); len(rows) != 0 {
+		t.Errorf("uploads %04x while off screen", rows)
+	}
+	if vram := runNMIHook(t, h.gs[0].e, h.gs[0].g); len(vram.writes) != 0 {
+		t.Errorf("NMI hook uploaded %d words while off screen", len(vram.writes))
+	}
 }
 
-// setModuleDrawsFollower makes g1's module set dma_var6 to $20 like a follower or NPC does, and draw an OAM entry
-// (x = $00, y = $20) with chr and the size in ext, unless chr is 0: LDA #$20 : STA $0AE8 : LDA #chr : STA $0802 :
-// LDA #$20 : STA $0801 : LDA #ext : STA $0A20 : RTL
-func (h *skScenario) setModuleDrawsFollower(chr, ext uint8) {
+func equalRows(a, b [][3]uint16) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// setModuleDraws makes g1's module set dma_var6 to $20 like a follower or NPC does, and draw OAM entries $00, $01...
+// (x = $00, y = $20) with the chrs and sizes in ext: LDA #$20 : STA $0AE8 : (LDA #chr : STA $0802+i*4 : LDA #$20 :
+// STA $0801+i*4 : LDA #ext : STA $0A20+i)... : RTL
+func (h *skScenario) setModuleDraws(sprites ...[2]uint8) {
 	code := []byte{0xA9, 0x20, 0x8D, 0xE8, 0x0A}
-	if chr != 0 {
-		code = append(code, 0xA9, chr, 0x8D, 0x02, 0x08, 0xA9, 0x20, 0x8D, 0x01, 0x08, 0xA9, ext, 0x8D, 0x20, 0x0A)
+	for i, sp := range sprites {
+		o, x := uint16(0x0800+i*4), uint16(0x0A20+i)
+		code = append(code,
+			0xA9, sp[0], 0x8D, uint8(o+2), uint8((o+2)>>8),
+			0xA9, 0x20, 0x8D, uint8(o+1), uint8((o+1)>>8),
+			0xA9, sp[1], 0x8D, uint8(x), uint8(x>>8))
 	}
 	code = append(code, 0x6B)
 	for i, b := range code {
@@ -197,10 +245,49 @@ func (h *skScenario) setModuleDrawsFollower(chr, ext uint8) {
 	}
 }
 
-// When a visible follower or NPC uses chrs $20..$23 the remote player is drawn as a blob and nothing is uploaded.
-func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
+// expectBodyIn expects g2's body and head in g1's OAM[$7D] and OAM[$7C] with the chrs of the slots they got.
+func (h *skScenario) expectBodyIn(when string, bodyChr, headChr uint8) {
+	h.t.Helper()
+	h.expectOAM(when+": body", 0, 0x7D, [4]byte{0x40, 0x58, bodyChr, 0x6E}, 0x02)
+	h.expectOAM(when+": head", 0, 0x7C, [4]byte{0x40, 0x50, headChr, 0x2E}, 0x02)
+}
+
+// When a visible follower or NPC uses chrs $22/$23/$32/$33 the body and head get the next free VRAM slots; only the
+// rows of those are uploaded.
+func TestRemoteSpritesScenario_BodyInFreeSlots(t *testing.T) {
 	h := newRSScenario(t)
-	h.setModuleDrawsFollower(0x22, 0x02)
+	h.setModuleDraws([2]uint8{0x22, 0x02})
+	h.frames(8)
+	h.expectShadow("follower", 0x40, 0x60)
+	h.expectBodyIn("follower", 0x20, 0x24)
+	h.expectOAM("follower", 0, 0x00, [4]byte{0x00, 0x20, 0x22, 0x00}, 0x02)
+	if used := h.remoteState(0, rsUsed)[0]; used != 0x02 {
+		t.Errorf("slots in use $%02x; expected $02", used)
+	}
+	if rows, expected := h.nmiRows(0), [][3]uint16{
+		{0x4200, 0x9000, 0}, {0x4300, 0x9200, 0}, {0x4240, 0x8400, 0}, {0x4340, 0x8600, 0},
+	}; !equalRows(rows, expected) {
+		t.Errorf("NMI rows %04x; expected %04x", rows, expected)
+	}
+	vram := runNMIHook(t, h.gs[0].e, h.gs[0].g)
+	for _, w := range vram.writes {
+		if w >= 0x4220 && w < 0x4240 || w >= 0x4320 && w < 0x4340 {
+			t.Errorf("NMI hook overwrote the follower's chrs at VRAM $%04x", w)
+		}
+	}
+	// the game's own upload of chrs $20..$23 is left as it is set:
+	if v6, v7 := h.gs[0].e.WRAM[0x0AE8], h.gs[0].e.WRAM[0x0AEA]; v6 != 0x20 || v7 != rsVar7 {
+		t.Errorf("dma_var6/7 = $%02x/$%02x; expected $20/$%02x", v6, v7, rsVar7)
+	}
+}
+
+// Only when fewer than two VRAM slots are free is the remote player drawn as a blob, with a shadow under it, and
+// nothing is uploaded.
+func TestRemoteSpritesScenario_BlobWhenNoFreeSlots(t *testing.T) {
+	h := newRSScenario(t)
+	// sprites showing every slot but chrs $07..: $20, $22, $24 (8x8), $0C, $09 and $05 (8x8 chr $15):
+	h.setModuleDraws([2]uint8{0x20, 0x02}, [2]uint8{0x33, 0x00}, [2]uint8{0x24, 0x00}, [2]uint8{0x0B, 0x02},
+		[2]uint8{0x0A, 0x00}, [2]uint8{0x15, 0x00})
 	h.frames(8)
 
 	// blob at g2's coordinates ($1050, $0250 + 8) relative to g1's scroll ($1010, $0208):
@@ -212,73 +299,91 @@ func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
 			chr += 2
 		}
 		h.expectShadow("blob", 0x40, 0x60)
-		h.expectOAM("blob", 0, 0x7D, [4]byte{0x40, 0x50, chr, remoteBlobAttr}, 0x02)
-		for index := 0x7C; index > 0; index-- {
+		h.expectOAM("blob shadow", 0, 0x7D, [4]byte{0x40, 0x50 + remoteShadowYOffs, remoteShadowChr, remoteBlobAttr}, 0x02)
+		h.expectOAM("blob", 0, 0x7C, [4]byte{0x40, 0x50, chr, remoteBlobAttr}, 0x02)
+		for index := 0x7B; index > 5; index-- {
 			if entry, _ := h.oamEntry(0, index); entry[1] != 0xF0 {
-				t.Errorf("only the shadow, blob and follower: g1 OAM[$%02x] = % x; expected unused", index, entry[:])
+				t.Errorf("only the shadows, blob and module's sprites: g1 OAM[$%02x] = % x; expected unused", index, entry[:])
 			}
 		}
-		h.expectOAM("follower", 0, 0x00, [4]byte{0x00, 0x20, 0x22, 0x00}, 0x02)
 	}
-	if en := h.remoteState(0, rsNMIEnable)[0]; en != 0 {
-		t.Errorf("NMI upload enabled")
+	if used := h.remoteState(0, rsUsed)[0]; used != 0x3F {
+		t.Errorf("slots in use $%02x; expected $3f", used)
 	}
-	if v6, v7 := h.gs[0].e.WRAM[0x0AE8], h.gs[0].e.WRAM[0x0AEA]; v6 != 0x20 || v7 != rsVar7 {
-		t.Errorf("dma_var6/7 = $%02x/$%02x; expected $20/$%02x", v6, v7, rsVar7)
+	if rows := h.nmiRows(0); len(rows) != 0 {
+		t.Errorf("NMI rows %04x; expected none", rows)
 	}
 	vram := runNMIHook(t, h.gs[0].e, h.gs[0].g)
 	if len(vram.writes) != 0 {
-		t.Errorf("NMI hook uploaded %d bytes", len(vram.writes))
+		t.Errorf("NMI hook uploaded %d words", len(vram.writes))
 	}
 }
 
-// Something that sets dma_var6/7 without drawing those chrs (Kiki keeps setting them after it fled out of view on the
-// Palace of Darkness area) doesn't keep the remote player from being drawn with Link's head and body. Sprites that
-// only show other chrs don't either, while any sprite showing one of chrs $20..$23/$30..$33 does.
-func TestRemoteSpritesScenario_BodyWhenChrsSetButNotShown(t *testing.T) {
+// While core updates are disabled, Link's own chrs are not handed out: the game won't upload them again before Link
+// may show them.
+func TestRemoteSpritesScenario_NoLinkSlotsWhileCoreUpdatesDisabled(t *testing.T) {
+	h := newRSScenario(t)
+	// the follower slots are in use:
+	h.setModuleDraws([2]uint8{0x20, 0x02}, [2]uint8{0x22, 0x02}, [2]uint8{0x24, 0x00})
+	h.frames(8)
+	h.expectBodyIn("core updates", 0x0C, 0x09)
+
+	g1 := h.gs[0]
+	clearOAM := g1.beforeEmulate
+	g1.beforeEmulate = func() {
+		clearOAM()
+		g1.e.WRAM[0x0710] = 1
+	}
+	h.frames(2)
+	h.expectBlob("core updates disabled", 0x7C, 0x40, 0x50)
+}
+
+// The slots that sprites in the OAM buffer show, 8x8 or 16x16 (which also show the chrs right of and below theirs),
+// are not handed out; the body and head get the first two free ones.
+func TestRemoteSpritesScenario_SlotsInUse(t *testing.T) {
 	for _, c := range []struct {
-		name        string
-		chr, ext    uint8
-		expectsBody bool
+		name     string
+		chr, ext uint8
+		used     uint8
 	}{
-		{"nothing drawn", 0x00, 0x00, true},
-		{"8x8 chr $24", 0x24, 0x00, true},
-		{"8x8 chr $1F", 0x1F, 0x00, true},
-		{"8x8 chr $40", 0x40, 0x00, true},
-		{"16x16 chr $02", 0x02, 0x02, true},
-		{"16x16 chr $04", 0x04, 0x02, true},
-		{"16x16 chr $34", 0x34, 0x02, true},
-		{"16x16 chr $40", 0x40, 0x02, true},
-		{"8x8 chr $20", 0x20, 0x00, false},
-		{"8x8 chr $33", 0x33, 0x00, false},
-		{"16x16 chr $20", 0x20, 0x02, false},
-		{"16x16 chr $12", 0x12, 0x02, false},
-		{"16x16 chr $1F", 0x1F, 0x02, false},
-		{"16x16 chr $33", 0x33, 0x02, false},
+		{"nothing drawn", 0x00, 0x00, 0x00},
+		{"8x8 chr $24", 0x24, 0x00, 0x04},
+		{"8x8 chr $1F", 0x1F, 0x00, 0x00},
+		{"8x8 chr $40", 0x40, 0x00, 0x00},
+		{"16x16 chr $02", 0x02, 0x02, 0x00},
+		{"16x16 chr $04", 0x04, 0x02, 0x20},
+		{"16x16 chr $34", 0x34, 0x02, 0x04},
+		{"16x16 chr $40", 0x40, 0x02, 0x00},
+		{"8x8 chr $20", 0x20, 0x00, 0x01},
+		{"8x8 chr $33", 0x33, 0x00, 0x02},
+		{"16x16 chr $20", 0x20, 0x02, 0x01},
+		{"16x16 chr $12", 0x12, 0x02, 0x02},
+		{"16x16 chr $1F", 0x1F, 0x02, 0x01},
+		{"16x16 chr $33", 0x33, 0x02, 0x06},
+		{"8x8 chr $0A", 0x0A, 0x00, 0x10},
+		{"16x16 chr $0B", 0x0B, 0x02, 0x08},
+		{"8x8 chr $18", 0x18, 0x00, 0x40},
+		{"16x16 chr $08", 0x08, 0x02, 0x50},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			h := newRSScenario(t)
-			h.setModuleDrawsFollower(c.chr, c.ext)
+			if c.chr != 0 {
+				h.setModuleDraws([2]uint8{c.chr, c.ext})
+			} else {
+				h.setModuleDraws()
+			}
 			h.frames(8)
 			h.expectShadow(c.name, 0x40, 0x60)
-			if c.expectsBody {
-				h.expectOAM(c.name, 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
-				h.expectOAM(c.name, 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
-				if en := h.remoteState(0, rsNMIEnable)[0]; en == 0 {
-					t.Errorf("NMI upload disabled")
-				}
-			} else {
-				if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
-					t.Errorf("expected a blob; OAM[$7d] = % x", entry[:])
-				}
-				if en := h.remoteState(0, rsNMIEnable)[0]; en != 0 {
-					t.Errorf("NMI upload enabled")
+			if used := h.remoteState(0, rsUsed)[0]; used != c.used {
+				t.Errorf("slots in use $%02x; expected $%02x", used, c.used)
+			}
+			var free []uint8
+			for i, chr := range remoteSlots {
+				if c.used&(1<<i) == 0 {
+					free = append(free, chr)
 				}
 			}
-			// the game's own upload of chrs $20..$23 is left as it is set:
-			if v6 := h.gs[0].e.WRAM[0x0AE8]; v6 != 0x20 {
-				t.Errorf("dma_var6 = $%02x; expected $20", v6)
-			}
+			h.expectBodyIn(c.name, free[0], free[1])
 		})
 	}
 }
@@ -467,11 +572,8 @@ func TestRemoteSpritesScenario_ThirdPlayerIsBlob(t *testing.T) {
 	h.expectShadow("3 players", 0x40, 0x60)
 	h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 	h.expectOAM("head", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
-	entry, ext := h.oamEntry(0, 0x7B)
-	if entry[0] != 0x20 || entry[1] != 0x30 || entry[2]&^2 != remoteBlobChr0 || entry[3] != remoteBlobAttr || ext != 0x02 {
-		t.Errorf("g3's blob: OAM[$7b] = % x ext %02x", entry[:], ext)
-	}
-	h.expectOAMUnused("nothing else", 0, 0x7A)
+	h.expectBlob("g3", 0x7A, 0x20, 0x30)
+	h.expectOAMUnused("nothing else", 0, 0x79)
 }
 
 // With SyncSprites off nothing is drawn, but the local player's sparkles and dust are still captured for others.
@@ -708,9 +810,7 @@ func TestRemoteSpritesScenario_Modules(t *testing.T) {
 				h.expectOAMUnused("nothing", 0, 0x7F)
 			case blob:
 				h.expectShadow("blob", 0x40, 0x60)
-				if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
-					t.Errorf("expected a blob; OAM[$7d] = % x", entry[:])
-				}
+				h.expectBlob("blob", 0x7C, 0x40, 0x50)
 			case body:
 				h.expectShadow("body", 0x40, 0x60)
 				h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
@@ -781,13 +881,36 @@ func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
 		t.Errorf("DMA source banks not restored to $7E")
 	}
 
+	// the next frame of the dialog: the tiles are still in VRAM:
+	h.frames(1)
+	if vram := runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr); len(vram.writes) != 0 {
+		t.Errorf("early hook uploaded %d words already in VRAM", len(vram.writes))
+	}
+	// the remote player's body changes pose; only its rows are uploaded:
+	binary.LittleEndian.PutUint16(h.gs[1].e.WRAM[0x0AD0:], 0x9800)
+	binary.LittleEndian.PutUint16(h.gs[1].e.WRAM[0x0AD2:], 0x9A00)
+	h.frames(4)
+	vram = runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr)
+	if len(vram.writes) != 0x40 {
+		t.Errorf("early hook uploaded %d words; expected the body's $40", len(vram.writes))
+	}
+	for _, c := range []struct {
+		vram uint16
+		src  uint16
+	}{{0x4200, 0x9800}, {0x4300, 0x9A00}} {
+		if actual := vram.bytes(c.vram, 0x40); !bytes.Equal(actual, rom(c.src)) {
+			t.Errorf("new pose: VRAM $%04x = % x; expected LinkGraphics $%04x", c.vram, actual, c.src)
+		}
+	}
+
 	// with core updates enabled the early hook leaves the upload to the late hook:
 	e.WRAM[0x0710] = 0
 	if vram := runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr); len(vram.writes) != 0 {
 		t.Errorf("early hook uploaded %d words with core updates enabled", len(vram.writes))
 	}
 
-	// outside of dialogs too, e.g. while a room loads during a transition, the early hook uploads the body:
+	// outside of dialogs too, e.g. while a room loads during a transition, the early hook uploads the body; the game
+	// uploaded its own tiles over it since:
 	g1.beforeEmulate = func() {
 		clearOAM()
 		e.WRAM[0x0710] = 1
@@ -800,7 +923,7 @@ func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
 	for _, c := range []struct {
 		vram uint16
 		src  uint16
-	}{{0x4200, 0x9000}, {0x4220, 0x8400}, {0x4300, 0x9200}, {0x4320, 0x8600}} {
+	}{{0x4200, 0x9800}, {0x4220, 0x8400}, {0x4300, 0x9A00}, {0x4320, 0x8600}} {
 		if actual := vram.bytes(c.vram, 0x40); !bytes.Equal(actual, rom(c.src)) {
 			t.Errorf("room load: VRAM $%04x = % x; expected LinkGraphics $%04x", c.vram, actual, c.src)
 		}
@@ -954,12 +1077,15 @@ func TestRemoteSpritesScenario_NoSpritesNoBlob(t *testing.T) {
 	}
 	h.expectOAMUnused("invisible", 0, 0x7F)
 
-	// the same while the body can't be drawn (a follower uses chrs $20..$23), where a visible player is a blob:
-	for i, b := range []byte{0xA9, 0x20, 0x8D, 0xE8, 0x0A, 0x6B} {
-		h.gs[0].e.Bus.EaWrite(testROMModuleRouting+uint32(i), b)
-	}
+	// the same while the body can't be drawn (no free VRAM slots), where a visible player is a blob:
+	h.setModuleDraws([2]uint8{0x20, 0x02}, [2]uint8{0x22, 0x02}, [2]uint8{0x24, 0x02}, [2]uint8{0x0C, 0x02},
+		[2]uint8{0x09, 0x02}, [2]uint8{0x05, 0x02})
 	h.frames(8)
-	h.expectOAMUnused("invisible with chrs in use", 0, 0x7F)
+	for index := 0x7F; index > 5; index-- {
+		if entry, _ := h.oamEntry(0, index); entry[1] != 0xF0 {
+			t.Errorf("invisible with chrs in use: g1 OAM[$%02x] = % x; expected unused", index, entry[:])
+		}
+	}
 }
 
 // A remote player that leaves the room or area is not drawn, even though their reported location only changes once
@@ -1079,5 +1205,142 @@ func TestRemoteSpritesScenario_EnemyDeathNotSent(t *testing.T) {
 		if len(got) != 1 || got[0] != 0x21 {
 			t.Errorf("state $%02x: expected only the $9B away from the enemy (OAM $21) to be sent; got %02x", state, got)
 		}
+	}
+}
+
+// setTestSwordShield gives every player a sword and shield with distinct tiles, in o2's copy and in WRAM $7E9000 (where
+// the game keeps them), as if the game and o2 had built them from the ROM.
+func (h *skScenario) setTestSwordShield() (tiles [swordShieldTileCount << 5]byte) {
+	for i := range tiles {
+		tiles[i] = uint8(i*7 + i>>5)
+	}
+	for _, gs := range h.gs {
+		s := &gs.g.swordShield
+		s.ok, s.swordOK, s.shieldOK = true, true, true
+		s.swordLevel, s.shieldLevel = 1, 1
+		s.tiles = tiles
+		gs.e.WRAM[0xF359], gs.e.WRAM[0xF35A] = 1, 1
+		copy(gs.e.WRAM[0x9000:], tiles[:])
+	}
+	return
+}
+
+// A remote o2 player's sword and shield are drawn in their pose (unique tiles $380..$3A3) with the local player's
+// sword and shield tiles from WRAM, uploaded into free VRAM slots like the head and body; only the rows the sprites
+// show are uploaded.
+func TestRemoteSpritesScenario_SwordAndShield(t *testing.T) {
+	h := newRSScenario(t)
+	h.setTestSwordShield()
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	// the sword as two 8x8 sprites from chrs $05 and $15, the shield as a 16x16 sprite from chr $07, behind Link:
+	setOAM(0x68, 0x48, 0x50, 0x05, 0x26, 0x00)
+	setOAM(0x69, 0x48, 0x58, 0x15, 0x26, 0x00)
+	setOAM(0x6A, 0x58, 0x58, 0x07, 0x26, 0x02)
+	// the poses: sword tiles 3 and 15, shield tiles $1A and $20 (the bottom row is $C0 bytes after the top row):
+	for k, v := range []uint16{0x9060, 0x91E0, 0x9340, 0x9400} {
+		binary.LittleEndian.PutUint16(e.WRAM[0x0AC0+k*2:], v)
+	}
+	h.frames(8)
+
+	// back to front: the shadow, the shield, the sword, the body and the head:
+	h.expectShadow("sword and shield", 0x40, 0x60)
+	h.expectOAM("shield", 0, 0x7D, [4]byte{0x48, 0x50, 0x0C, 0x26}, 0x02)
+	h.expectOAM("sword bottom", 0, 0x7C, [4]byte{0x38, 0x50, 0x34, 0x26}, 0x00)
+	h.expectOAM("sword top", 0, 0x7B, [4]byte{0x38, 0x48, 0x24, 0x26}, 0x00)
+	h.expectOAM("body", 0, 0x7A, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x79, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("nothing else", 0, 0x78)
+
+	if rows, expected := h.nmiRows(0), [][3]uint16{
+		{0x4200, 0x9000, 0}, {0x4300, 0x9200, 0}, {0x4220, 0x8400, 0}, {0x4320, 0x8600, 0},
+		{0x4240, 0x9060, partWRAM}, {0x4340, 0x91E0, partWRAM}, {0x40C0, 0x9340, partWRAM}, {0x41C0, 0x9400, partWRAM},
+	}; !equalRows(rows, expected) {
+		t.Errorf("NMI rows %04x; expected %04x", rows, expected)
+	}
+	g1 := h.gs[0]
+	vram := runNMIHook(t, g1.e, g1.g)
+	for _, c := range []struct {
+		vram uint16
+		src  uint32
+	}{{0x4240, 0x9060}, {0x4340, 0x91E0}, {0x40C0, 0x9340}, {0x41C0, 0x9400}} {
+		if actual, expected := vram.bytes(c.vram, 0x40), g1.e.WRAM[c.src:c.src+0x40]; !bytes.Equal(actual, expected) {
+			t.Errorf("VRAM $%04x = % x; expected WRAM $7E%04x = % x", c.vram, actual, c.src, expected)
+		}
+	}
+	if vram.dmaBank(0) != 0x7E {
+		t.Errorf("DMA source bank not restored to $7E: $%02x", vram.dmaBank(0))
+	}
+
+	// only the top row of the sword shows:
+	setOAM(0x69, 0x48, 0xF0, 0x15, 0x26, 0x00)
+	h.frames(8)
+	if rows := h.nmiRows(0); len(rows) != 7 || rows[4] != [3]uint16{0x4240, 0x9060, partWRAM} || rows[5][0] != 0x40C0 {
+		t.Errorf("NMI rows %04x; expected only the sword's top row", rows)
+	}
+
+	// o2 has no tiles of the local player's shield (e.g. no shield; items sync, so the remote player has none either):
+	// the remote player's isn't drawn:
+	g1.g.swordShield.shieldOK = false
+	h.frames(8)
+	h.expectOAM("sword top", 0, 0x7D, [4]byte{0x38, 0x48, 0x24, 0x26}, 0x00)
+	h.expectOAM("body", 0, 0x7C, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7B, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("no shield", 0, 0x7A)
+}
+
+// alttpo sends the sword and shield tiles themselves (once per chr and packet) instead of unique tile indices; o2 finds
+// the pose by looking the tiles up in its copy of the local player's tiles.
+func TestRemoteSpritesScenario_AlttpoSwordPose(t *testing.T) {
+	h := newRSScenario(t)
+	tiles := h.setTestSwordShield()
+	g := h.gs[0].g
+	tile := func(i int) (d [32]byte) { copy(d[:], tiles[i<<5:]); return }
+	none := [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
+	sword := func(index, chr uint8, gfx *[32]byte) remoteSprite {
+		sp := remoteSprite{index: index, b: [5]uint8{0x48, 0x50, chr, 0x26, 0}, absidx: none}
+		if gfx != nil {
+			sp.gfx[0], sp.hasGfx = *gfx, true
+		}
+		return sp
+	}
+	t3, t4, t15, t9 := tile(3), tile(4), tile(15), tile(9)
+
+	// chrs $05 and $06 show tiles 3 and 4, chr $15 tile 15; a second sprite of chr $05 comes without tiles:
+	parts, sprites := g.remoteEquipment([]remoteSprite{
+		sword(0x10, 0x05, &t3), sword(0x11, 0x06, &t4), sword(0x12, 0x15, &t15), sword(0x13, 0x05, nil),
+	})
+	if len(parts) != 1 || parts[0] != (remotePart{src: [2]uint16{0x9060, 0x91E0}, flags: partWRAM | partTopRow | partBottomRow}) {
+		t.Errorf("parts %+v; expected the sword from $9060 and $91E0", parts)
+	}
+	if len(sprites) != 4 || sprites[0].off != 0x00 || sprites[1].off != 0x01 || sprites[2].off != 0x10 || sprites[3].off != 0x00 {
+		t.Errorf("sprites %+v", sprites)
+	}
+
+	// chrs $05 and $06 that aren't next to each other in the local tiles: not the local player's sword:
+	if parts, _ := g.remoteEquipment([]remoteSprite{sword(0x10, 0x05, &t3), sword(0x11, 0x06, &t9)}); len(parts) != 0 {
+		t.Errorf("parts %+v; expected none", parts)
+	}
+	// tiles that aren't the local player's at all:
+	var other [32]byte
+	for i := range other {
+		other[i] = 0xA5
+	}
+	if parts, _ := g.remoteEquipment([]remoteSprite{sword(0x10, 0x05, &other)}); len(parts) != 0 {
+		t.Errorf("parts %+v; expected none", parts)
+	}
+
+	// the tiles are kept when the sprites are received:
+	msg := []byte{1, 0x85, 0x48, 0x50, 0x05, 0x26, 0x00, 0xFF, 0xFF}
+	msg = append(msg, t3[:]...)
+	p := &g.players[1]
+	if err := g.deserializeRemoteSprites(p, bytes.NewReader(msg), 0); err != nil {
+		t.Fatal(err)
+	}
+	if sp := p.Sprites.list[0]; !sp.hasGfx || sp.gfx[0] != t3 || sp.index != 0x05 || sp.absidx[0] != noUniqTile {
+		t.Errorf("received %+v", sp)
 	}
 }

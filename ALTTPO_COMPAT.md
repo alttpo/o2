@@ -733,35 +733,48 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 - **One player gets Link's head and body:** the two 16x16 sprites of message 0x03/0x04 whose unique tiles are all
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
   from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
-  custom sprite, and without sword, shield or items.
+  custom sprite, and without items.
+- **The same player's sword and shield** are drawn in their pose with the local player's sword and shield tiles,
+  which the game keeps in WRAM `$7E9000..$7E947F`. o2 sends the pose as unique tiles `$380..$3A3` (offsets into that
+  buffer); alttpo sends the 4bpp tiles themselves along with the sprites (once per chr and packet), and o2 finds them
+  in its own copy of the local player's tiles (see "Sword and shield tiles are rebuilt from ROM" above). A sword or
+  shield the local player doesn't have tiles for is not drawn, nor is an alttpo player's whose tiles differ from the
+  local player's (a different sword or shield, or a custom sprite); an o2 player's different sword or shield is drawn
+  as the local player's.
 - **Shadows, ripples and grass under Link, sparkles, dust, projectiles and carried and thrown objects** of every drawn player with recent
   sprites (the chrs o2 captures itself, see above) are drawn from the local static and common sprite sheets with
-  the local palettes, up to 14 sprites. Those the body's player draws with a lower OAM index than Link are drawn in
-  front of the body, the others behind it.
-- **VRAM:** the head and body are uploaded over chrs `$20..$23`/`$30..$33`, which followers and a few NPCs (Kiki, the
-  crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
-  (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
-  neither was written, or no sprite in the OAM buffer shows chrs `$20..$23`/`$30..$33` (8x8, or 16x16 covering them)
-  although one was, nothing visible uses those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
-  the 256 bytes right after the game's own upload of those chrs. While the game disables its own sprite uploads
-  (`$0710` != 0: a dialog rendering text, `Text_Render`, room and area loads, warps), a second NMI hook at the start
-  of `NMI_DoUpdates` (`$0089E2`) uploads the body instead. The body is drawn in every submodule (room transitions,
-  doors, staircases, spotlights, menus): the 256 bytes are small next to the game's own uploads of up to `$9C0`
-  bytes per frame, which it skips while `$0710` is set. o2 used to draw a blob for the body's player outside
-  submodule 0 and dialogs, without having measured that the NMI lacked time. The body's player is only drawn as a
-  blob while a follower or NPC visibly draws with chrs `$20..$23`, or if the ROM's NMI hooks are missing. o2 used to
-  draw a blob whenever `dma_var6/7` was written, but Kiki keeps writing them after it fled out of view on the Palace
-  of Darkness area (`Kiki_Flee` calls `SpriteDraw_Kiki`, which sets them, every frame while the sprite is alive),
-  which left the only remote player as a blob there.
+  the local palettes, up to 14 sprites (fewer with many players: the table holds 31 sprites in all). Those the body's
+  player draws with a lower OAM index than Link are drawn in front of the body, the others behind it.
+- **VRAM:** the head, body, sword and shield are each 2x2 chrs (a "part") that NMI hooks upload into a VRAM slot:
+  chrs that `NMI_DoUpdates` uploads itself on every frame with core updates enabled, so that overwriting one that
+  nothing shows is harmless. The slots, in the order they are handed out, are the follower and NPC chrs `$20`, `$22`
+  (`dma_var6/7`, used by followers, Kiki, the crystal maidens, the old mountain man, the returning smithy and Blind's
+  maiden form) and `$24` (from `$7EBD40`), and Link's own item chrs `$0C` and `$09`, sword chrs `$05` and shield chrs
+  `$07`. After the module ran, the trampoline scans the OAM buffer for the slots any sprite shows (8x8, or 16x16
+  covering them) and hands the others out to the parts, head and body first. If those two don't both get a slot,
+  the player is drawn as a blob; a sword or shield without a slot is not drawn. o2 used to upload only the head and
+  body, over chrs `$20..$23` only, and drew a blob whenever a follower or NPC visibly used them. Kiki keeps setting
+  `dma_var6/7` after it fled out of view on the Palace of Darkness area (`Kiki_Flee` calls `SpriteDraw_Kiki` every
+  frame while the sprite is alive), which is why the slots go by what the OAM buffer shows rather than by what was
+  written to `dma_var6/7`. The scan costs up to about 3,300 cycles per frame, only while a body is drawn.
+- **Uploads only as needed:** a part is only uploaded when one of its sprites is on screen this frame, and only the
+  rows of chrs (top, bottom) its sprites show: 64 bytes per row, at most 512 bytes for all four parts (the game's own
+  uploads are up to `$9C0` bytes per frame). The late NMI hook (`$008B50`) uploads right after the game's own uploads
+  of those chrs. While the game disables its own sprite uploads (`$0710` != 0: a dialog rendering text,
+  `Text_Render`, room and area loads, warps), the early NMI hook (`$0089E2`) uploads instead, and skips rows that are
+  still in VRAM from the last upload (the game doesn't overwrite the slots on those frames); Link's own chrs aren't
+  handed out then, since the game won't upload them again before Link may show them. The body is drawn in every
+  submodule (room transitions, doors, staircases, spotlights, menus).
 - **Players without Link's head or body** in their sprites (Link is invisible, e.g. flickering after a warp; alttpo
   still sends Link's shadow then, o2 sends nothing) are not drawn at all, not even as a blob or a shadow, so the
   flicker doesn't alternate between Link and a blob. The "drawing N players" log line is only written once the counts
   hold for half a second.
 - **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 4
-  like the blob magic powder turns enemies into) at their Link
-  coordinates.
+  like the blob magic powder turns enemies into) at their Link coordinates, with a 16x16 shadow (chr `$6C`) 10 pixels
+  below it, as `SpriteDraw_Shadow` draws under enemies.
 - **OAM:** sprites go into unused OAM entries (Y = `$F0`) searched from the end of the buffer, behind all of the
   game's own sprites. Positions use alttpo's convention (OAM coordinate + `BG2 scroll - shake offset` of the sender)
   and are converted with the local scroll offsets by the game every frame.
-- **Updates:** o2 writes a small table to SRAM (`$706200`) when it changes and at least every 250ms. The game counts
+- **Updates:** o2 writes a table of at most 255 bytes (a single FX Pak Pro VPUT, so the game never draws half of an
+  update) to SRAM (`$706AC0`) when it changes and at least every 250ms. The game counts
   its TTL (60 frames) down and stops drawing remote players when it runs out, e.g. when o2 disconnects.

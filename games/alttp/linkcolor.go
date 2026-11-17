@@ -35,8 +35,8 @@ const (
 	wramTranslucencySwap = uint32(0x7E0ABD)
 )
 
-// the color must be between the remote sprites state and the capture mask, in the area zeroed on reset:
-const _ = linkColorAddr - (remoteStateAddr + remoteStateSize)
+// the color must be between the copy of Link's OAM entries and the capture mask, in the area zeroed on reset:
+const _ = linkColorAddr - (linkOAMCopyAddr + linkOAMCopyReadSize)
 const _ = captureMaskAddr - (linkColorAddr + linkColorSize)
 
 // linkDarkColor makes the dark tunic and cap color from the light one: 75% as bright.

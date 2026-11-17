@@ -1,10 +1,12 @@
 package alttp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"math/bits"
 	"o2/snes"
 	"sort"
 	"time"
@@ -22,22 +24,28 @@ import (
 //   - One remote player is drawn with Link's head and body, the two 16x16 sprites whose tiles come from LinkGraphics in
 //     ROM. alttpo and o2 send the pose as "unique tile" indices (see sprites.go), which are offsets into LinkGraphics,
 //     so the tiles can be copied from the local ROM: the remote player's pose is shown with the local player's Link
-//     graphics. Sword, shield and items are not drawn.
+//     graphics.
+//   - The same player's sword and shield are drawn in their pose with the local player's sword and shield tiles, which
+//     the game keeps in WRAM $7E9000..$7E947F (see swordshield.go). o2 sends the pose as unique tile indices
+//     $380..$3A3, offsets into that buffer; alttpo sends the tiles themselves, which o2 finds in its own copy of the
+//     buffer. A sword or shield the local player doesn't have (or a different one, for alttpo players) is not drawn.
 //   - The shadow (chr $6C on the ground, $28 or $38 while recoiling or jumping off a ledge), sword sparkles and dash
 //     dust (captureChrs) that the same player sends are drawn too, from the local static and common sprite sheets.
 //   - Every other remote player in the same location is drawn as a single 16x16 sprite at their coordinates, chr $64
-//     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet.
+//     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet, with a 16x16 shadow
+//     (chr $6C) under it like the game draws under enemies.
 //
-// VRAM: Link and the items he uses have their tiles uploaded every frame by NMI_DoUpdates into the first sprite sheet,
-// chrs $00..$3F. Enemies and NPCs use the static sprite sheets that are loaded per area (chrs $40..$1FF), except for
-// followers (Zelda, the old man, the bomb...) and a few NPC sprites with large animations (Kiki, the crystal maidens,
-// the old mountain man, the returning smithy, Blind's maiden form) which share chrs $20..$23 and $30..$33: whoever draws
-// sets the graphics to upload there in dma_var6 ($0AE8, chrs $20,$21,$30,$31) and dma_var7 ($0AEA, chrs $22,$23,$32,$33)
-// and the game uploads them every frame whether or not anything uses them. That is exactly room for two 16x16 sprites.
-// The frame trampoline sets both variables to a sentinel before the module runs and restores them afterwards; if both
-// still hold the sentinel, or no sprite in the OAM buffer shows any of those chrs (something set them without drawing
-// itself, like Kiki after it fled out of view), the remote player's head and body are uploaded over them in the same
-// NMI, right after the game's own upload. Otherwise the remote player is drawn as a blob instead.
+// VRAM: the head, body, sword and shield are each a "part" of 2x2 chrs that a NMI hook uploads into a VRAM slot. The
+// slots (remoteSlots) are chrs that the game itself uploads in every NMI with core updates enabled: Link's sword,
+// shield and item chrs and the chrs that followers (Zelda, the old man, the bomb...) and a few NPC sprites with large
+// animations (Kiki, the crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use. Each
+// frame, after the module drew everything, the game scans the OAM buffer for the slots that any sprite shows and
+// hands the rest out to the parts; overwriting a slot that nothing shows is harmless, since the game uploads its own
+// tiles there again in the next NMI. If the head and body don't both get a slot, the player is drawn as a blob; a sword
+// or shield without a slot is not drawn. Only parts that are drawn on screen are uploaded, and only the rows of chrs
+// their sprites show. While the game disables its own uploads ($0710 != 0: dialogs rendering text, room and area
+// loads), Link's own chrs are not handed out (Link may show them again before the game uploads them), and rows that
+// are still in VRAM from the last upload are not uploaded again.
 //
 // OAM: after the module drew everything (and before NMI_PrepareSprites packs the extended attributes), the trampoline
 // fills unused OAM entries (Y = $F0, as ClearOAMBuffer leaves them) from the end of the OAM buffer, so remote players
@@ -50,11 +58,12 @@ import (
 // o2 writes the table at remoteTableAddr whenever it changes, and at least every remoteTableRefresh. The game counts its
 // TTL down every frame and stops drawing when it reaches zero, so remote players disappear when o2 stops updating it.
 // The table also holds the location it was made for, which the game compares with the current room or area so that
-// nothing is drawn in the wrong place while o2 catches up with a room change.
+// nothing is drawn in the wrong place while o2 catches up with a room change. The table is at most 255 bytes, so it is
+// written with a single FX Pak Pro VPUT and the game never draws half of an update.
 
-// SRAM layout of the remote sprites table, written by o2:
+// SRAM layout of the remote sprites table, written by o2 (zeroed by the init code):
 const (
-	remoteTableAddr = uint32(0x706210)
+	remoteTableAddr = uint32(0x706AC0)
 
 	// frames left to draw the table, counted down every frame:
 	rtTTL = 0
@@ -62,79 +71,138 @@ const (
 	// every frame; o2 keeps it up while any remote player is in the same location:
 	rtCaptureTTL = 1
 	// $1B (1 = underworld) and $A0 (underworld room) or $8A (overworld area) the table is for:
-	rtIndoors  = 2
+	rtIndoors = 2
+	// the number of parts, starting with the first, that must all get a VRAM slot for the slotted sprites to be drawn
+	// (Link's head and body); 0 if there are none:
+	rtRequired = 3
 	rtLocation = 4
-	// byte offsets into rtEntries: the end of the extra sprites behind the body, the end of the body sprites, the end
-	// of the blobs and the end of the extra sprites in front of everything else:
-	rtExtrasEnd = 6
-	rtBodyEnd   = 8
-	rtEnd       = 10
-	// LinkGraphics DMA source addresses: top row of chrs $20/$21, $22/$23, bottom row of chrs $30/$31, $32/$33:
-	rtSrc      = 12
-	rtFrontEnd = 20
-	// sprites to draw in order, each drawn in front of the ones before: world x, world y, chr, attributes, size ($02 for
-	// 16x16). Extra sprites (shadows, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) the
-	// remote player draws behind Link and 2 body sprites (chrs $20 and $22) are followed by one blob per player (chr
-	// $64), starting with the body's player, whose blob is only drawn when the body can't be, and the extra sprites the
-	// remote player draws in front of Link; up to remoteExtraMax extras in all:
-	rtEntries      = 22
-	rtEntrySize    = 7
+	// byte offsets into rtEntries of the end of each list of sprites, drawn in this order, each in front of the ones
+	// before:
+	//
+	//   - the extra sprites (shadows, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) the
+	//     remote players draw behind Link;
+	//   - the slotted sprites: the head, body, sword and shield of the first player, drawn if the required parts got a
+	//     VRAM slot;
+	//   - otherwise that player's shadow and blob;
+	//   - every other player's shadow and blob;
+	//   - the extra sprites the first player draws in front of Link.
+	rtExtrasEnd  = 6
+	rtSlottedEnd = 8
+	rtP0BlobEnd  = 10
+	rtEnd        = 12
+	rtFrontEnd   = 14
+	// the number of parts (u16):
+	rtParts = 16
+	// per part, the DMA source addresses of its top and bottom row of chrs:
+	rtPartSrc = 18
+	// per part, partTopRow, partBottomRow and partWRAM:
+	rtPartFlags = rtPartSrc + remotePartMax*4
+	// sprites to draw: world x, world y, chr, attributes, and entrySize16, entrySlotted and entryBlobAnim:
+	rtEntries   = rtPartFlags + remotePartMax
+	rtEntrySize = 7
+
+	remotePartMax  = 4
 	remoteExtraMax = 14
 	remoteBlobMax  = 8
-	remoteEntryMax = remoteExtraMax + 2 + remoteBlobMax
+	remoteEntryMax = (0xFF - rtEntries) / rtEntrySize
 
 	remoteTableSize = rtEntries + remoteEntryMax*rtEntrySize
 )
 
-// SRAM layout of the remote sprites state, written by the game code:
+// part flags:
 const (
-	remoteStateAddr = remoteTableAddr + remoteTableSize
-
-	// dma_var6 and dma_var7 saved before the module runs:
-	rsSaved6 = 0
-	rsSaved7 = 1
-	// non-zero when the NMI hook should upload the body tiles from rsNMISrc:
-	rsNMIEnable = 2
-	// 2 when neither dma_var6 nor dma_var7 was set by the module this frame, or no sprite drawn shows chrs $20..$23:
-	rsFree = 3
-	// copy of rtSrc for the NMI hook, consistent with the sprites drawn this frame:
-	rsNMISrc = 4
-	// local scroll offsets: BG2 scroll ($E2, $E8) - shake offsets ($011A, $011C):
-	rsScrollX = 12
-	rsScrollY = 14
-	// screen coordinates of the sprite being drawn:
-	rsTmpSX = 16
-	rsTmpSY = 18
-	// ORed into the chr of the sprites being drawn; 0 or 2 for blobs, alternating every 8 frames:
-	rsAnim = 20
-	// blob animation for this frame:
-	rsBlobAnim = 22
-
-	remoteStateSize = 24
+	// the sprites show the top or bottom row of the part's chrs, which is uploaded:
+	partTopRow    = 0x01
+	partBottomRow = 0x02
+	// the part's tiles are in WRAM bank $7E (the sword and shield), else in LinkGraphics:
+	partWRAM = 0x80
 )
+
+// entry flags:
+const (
+	// a 16x16 sprite:
+	entrySize16 = 0x02
+	// the chr is relative to a part's VRAM slot: bits 6-7 are the part and bits 0 and 4 the chr in its 2x2 chrs:
+	entrySlotted = 0x40
+	// a blob, whose chr alternates every 8 frames:
+	entryBlobAnim = 0x80
+)
+
+// SRAM layout of the remote sprites state, written by the game code (zeroed by the init code):
+const (
+	remoteStateAddr = remoteTableAddr + 0x100
+
+	// local scroll offsets: BG2 scroll ($E2, $E8) - shake offsets ($011A, $011C):
+	rsScrollX = 0
+	rsScrollY = 2
+	// screen coordinates of the sprite being drawn:
+	rsTmpSX = 4
+	rsTmpSY = 6
+	// added to the chr of blobs: 0 or 2, alternating every 8 frames:
+	rsBlobAnim = 8
+	// scratch:
+	rsTmpChr   = 10
+	rsTmpAdd   = 12
+	rsTmpPart  = 14
+	rsTmpExt   = 16
+	rsTmpShift = 18
+	rsTmpVRAM  = 20
+	rsTmpFlags = 22
+	rsTmpEnd   = rsBodyOK + 2
+	// bits of the slots that sprites in the OAM buffer show this frame:
+	rsUsed = 24
+	// bits of the parts drawn on screen this frame:
+	rsDrawnParts = 26
+	// non-zero if the required parts got a VRAM slot:
+	rsBodyOK = 28
+	// per part, the first chr of the slot it got this frame, $FF if none:
+	rsPartSlot = rsTmpEnd + 2
+	// the byte length of the list of rows for the NMI hooks to upload (u16):
+	rsNMILen = rsPartSlot + remotePartMax
+	// 0 while the late NMI hook uploads, 1 while the early one does (u16):
+	rsNMIMode = rsNMILen + 2
+	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
+	// DMA source address:
+	rsNMIList = rsNMIMode + 2
+	// the byte length of rsCache (u16), and the last rows the NMI hooks uploaded, in the same format as rsNMIList; rows
+	// still in VRAM while the game doesn't upload its own (core updates disabled) are not uploaded again:
+	rsCacheLen = rsNMIList + remoteUploadMax*nmiRowSize
+	rsCache    = rsCacheLen + 2
+
+	remoteStateSize = rsCache + remoteUploadMax*nmiRowSize
+
+	remoteUploadMax = remotePartMax * 2
+	nmiRowSize      = 4
+)
+
+// the table and state are between the capture routine's list of dying enemies and the update routine buffers:
+const _ = remoteTableAddr - captureDyingEnd
+const _ = remoteStateAddr - (remoteTableAddr + remoteTableSize)
+const _ = updateBufAAddr - (remoteStateAddr + remoteStateSize)
+
+// remoteSlots are the first chrs of the VRAM slots (2x2 chrs: chr, chr+1, chr+$10, chr+$11) that parts are uploaded
+// to, in the order they are handed out. NMI_DoUpdates uploads all of them every frame while core updates are enabled:
+// the follower and NPC chrs from dma_var6 ($0AE8), dma_var7 ($0AEA) and $7EBD40, Link's item chrs ($0AD8, $0AC8), and
+// his sword ($0AC0) and shield ($0AC4).
+var remoteSlots = []uint8{0x20, 0x22, 0x24, 0x0C, 0x09, 0x05, 0x07}
+
+// remoteLinkSlots are the bits of the slots that hold Link's own chrs:
+const remoteLinkSlots = 0x78
 
 // VRAM and OAM constants:
 const (
-	// dma_var6 and dma_var7 in WRAM; the game only ever writes their low bytes:
-	wramDMAVar6 = 0x7E0AE8
-	wramDMAVar7 = 0x7E0AEA
-	// dmaVarSentinel is never a value the game writes to dma_var6/7 (they are multiples of $20):
-	dmaVarSentinel = 0xFF
-
-	// remoteBodyChr is the first of the chrs that the body sprites are uploaded to:
-	remoteBodyChr = 0x20
-	// VRAM word addresses of the top and bottom rows of chrs $20..$23:
-	remoteBodyVRAMTop    = 0x4200
-	remoteBodyVRAMBottom = 0x4300
-
 	// blob chrs, alternating every 8 frames:
 	remoteBlobChr0 = 0x64
 	// blob OAM attributes: priority 2 and palette 4, as the game draws the blob (sprite $8F) that magic powder turns an
 	// enemy into (Sprite_GiveDamage sets its OAM flags to 8):
 	remoteBlobAttr = 0x28
+	// the 16x16 shadow under a blob, 10 pixels below it, as SpriteDraw_Shadow draws it under enemies (attributes
+	// `flags & $30 | 8`, the same as the blob's):
+	remoteShadowChr   = 0x6C
+	remoteShadowYOffs = 10
 
-	// nmiHookPatchAddr is where NMI_DoUpdates sets up the animated tiles upload, right after uploading the follower
-	// and NPC tiles; patched with a JSL to the NMI hook:
+	// nmiHookPatchAddr is where NMI_DoUpdates sets up the animated tiles upload, right after uploading Link's, his
+	// items' and the follower and NPC tiles; patched with a JSL to the NMI hook:
 	nmiHookPatchAddr = uint32(0x008B50)
 	// nmiEarlyPatchAddr is at the start of NMI_DoUpdates, before it checks whether core updates are disabled; patched
 	// with a JSL to the early NMI hook:
@@ -161,29 +229,83 @@ const remoteTableRefresh = 250 * time.Millisecond
 // until a screen transition or warp finishes. alttpo also only draws remote players from the sprites it receives.
 const remoteSpritesStale = 250 * time.Millisecond
 
-// emitRemoteSave saves dma_var6/7 and sets them to the sentinel, before the module runs. A and X are 8-bit.
-func emitRemoteSave(a *asm.Emitter) {
-	a.Comment("save dma_var6/7 and set them to a sentinel to see if anything draws with chrs $20..$23 this frame:")
-	a.LDA_long(wramDMAVar6)
-	a.STA_long(remoteStateAddr + rsSaved6)
-	a.LDA_long(wramDMAVar7)
-	a.STA_long(remoteStateAddr + rsSaved7)
-	a.LDA_imm8_b(dmaVarSentinel)
-	a.STA_long(wramDMAVar6)
-	a.STA_long(wramDMAVar7)
+// remoteSlotChrTables returns, for each chr $00..$3F, the bits of the slots in remoteSlots that an 8x8 sprite and a
+// 16x16 sprite with that chr show. A 16x16 sprite also shows the chr right of its own (wrapping in the row) and the
+// two below. No slot has chrs from $40 on.
+func remoteSlotChrTables() (small, large [0x40]byte) {
+	touch := func(c int) (m byte) {
+		for i, s := range remoteSlots {
+			if b := int(s); c == b || c == b+1 || c == b+0x10 || c == b+0x11 {
+				m |= 1 << i
+			}
+		}
+		return
+	}
+	for c := 0; c < 0x40; c++ {
+		right := c&0xF0 | (c+1)&0x0F
+		small[c] = touch(c)
+		large[c] = touch(c) | touch(right) | touch(c+0x10) | touch(right+0x10)
+	}
+	return
 }
 
-// emitRemoteDrawRoutines emits remoteDrawSprite and then remoteDraw, which calls it with JSR, and returns the address
-// of remoteDraw. They run from any bank.
-func emitRemoteDrawRoutines(a *asm.Emitter) (remoteDraw uint32) {
-	drawSprite := emitRemoteDrawSprite(a)
-	return emitRemoteDraw(a, uint16(drawSprite))
+// remoteDrawTables are the addresses of the ROM tables the drawing routines use, in three blocks so that they fit
+// the free ROM:
+type remoteDrawTables struct {
+	// remoteSlotChrTables:
+	chrSlotsSmall, chrSlotsLarge uint32
+	// per slot, its first chr:
+	slotChrs uint32
+	// per part, its bit:
+	partBits uint32
 }
 
-// emitRemoteDraw emits the routine that the trampoline calls with JSL after the module ran. It restores dma_var6/7 and
-// draws the remote sprites table into the OAM buffer, with the routine at drawSprite in the same bank. Called with A
-// and X 8-bit; preserves P and DB.
-func emitRemoteDraw(a *asm.Emitter, drawSprite uint16) (addr uint32) {
+// remoteDrawTablesAt returns the addresses of the tables that emitRemoteChrSlots emits at small and large and that
+// emitRemoteDrawTables emits at base.
+func remoteDrawTablesAt(small, large, base uint32) (t remoteDrawTables) {
+	t.chrSlotsSmall, t.chrSlotsLarge = small, large
+	t.slotChrs = base
+	t.partBits = t.slotChrs + uint32(len(remoteSlots))
+	return
+}
+
+// emitRemoteChrSlots emits the slots shown by 8x8 (large = false) or 16x16 sprites of each chr.
+func emitRemoteChrSlots(a *asm.Emitter, large bool) {
+	small, big := remoteSlotChrTables()
+	if large {
+		a.Comment("slots shown by 16x16 sprites of each chr:")
+		a.EmitBytes(big[:])
+	} else {
+		a.Comment("slots shown by 8x8 sprites of each chr:")
+		a.EmitBytes(small[:])
+	}
+}
+
+// emitRemoteDrawTables emits the small ROM tables of remoteDrawTables.
+func emitRemoteDrawTables(a *asm.Emitter) {
+	a.Comment("first chr of each slot:")
+	a.EmitBytes(remoteSlots)
+	a.Comment("bit of each part:")
+	for i := 0; i < remotePartMax; i++ {
+		a.EmitBytes([]byte{1 << i})
+	}
+}
+
+// emitRaw3 emits an instruction with a 16-bit operand that asm.Emitter has no method for.
+func emitRaw3(a *asm.Emitter, op uint8, operand uint16) {
+	a.EmitBytes([]byte{op, uint8(operand), uint8(operand >> 8)})
+}
+
+// adcAbs emits `ADC.w addr`.
+func adcAbs(a *asm.Emitter, addr uint16) { emitRaw3(a, 0x6D, addr) }
+
+// lsrAbs emits `LSR.w addr`.
+func lsrAbs(a *asm.Emitter, addr uint16) { emitRaw3(a, 0x4E, addr) }
+
+// emitRemoteDraw emits the routine that the trampoline calls with JSL after the module ran. While the game draws
+// sprites in the room or area the remote sprites table was made for, it draws the table into the OAM buffer with the
+// routine at body (see emitRemoteDrawBody). Called with A and X 8-bit; preserves P and DB. It runs from any bank.
+func emitRemoteDraw(a *asm.Emitter, body uint32) (addr uint32) {
 	// the table and state are accessed with absolute addressing while DB = $70:
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
@@ -196,20 +318,9 @@ func emitRemoteDraw(a *asm.Emitter, drawSprite uint16) (addr uint32) {
 	a.PLB()
 	a.SEP(0x30)
 
-	a.Comment("restore dma_var6/7 if nothing set them; X counts the ones still free:")
-	a.LDX_imm8_b(0x00)
-	for i, v := range []uint32{wramDMAVar6, wramDMAVar7} {
-		next := fmt.Sprintf("rd_var%d", i)
-		a.LDA_long(v)
-		a.CMP_imm8_b(dmaVarSentinel)
-		a.BNE(next)
-		a.LDA_abs(st(rsSaved6 + uint32(i)))
-		a.STA_long(v)
-		a.INX()
-		a.Label(next)
-	}
-	a.STX_abs(st(rsFree))
-	a.STZ_abs(st(rsNMIEnable))
+	a.Comment("nothing for the NMI hooks to upload unless parts are drawn:")
+	a.STZ_abs(st(rsNMILen))
+	a.STZ_abs(st(rsNMILen + 1))
 
 	a.Comment("count down the table's TTL:")
 	a.LDA_abs(tb(rtTTL))
@@ -269,8 +380,25 @@ func emitRemoteDraw(a *asm.Emitter, drawSprite uint16) (addr uint32) {
 	a.Label("rd_location")
 	a.CMP_abs(tb(rtLocation))
 	a.BNE("rd_exit2")
+	a.JSL(body)
+	a.PLB()
+	a.PLP()
+	a.RTL()
+	a.AssumeSEP(0x30)
+	return
+}
 
-	emitRemoteChrsVisible(a, st(rsFree))
+// emitRemoteDrawBody emits the routine that draws the remote sprites table into the OAM buffer with the routines at
+// alloc (emitRemoteAllocSlots) and drawList (emitRemoteDrawList), and lists the rows of chrs for the NMI hooks to
+// upload with the routine at upload (emitRemoteUploadList). Called with JSL with A, X and Y 16-bit and DB = $70;
+// clobbers them.
+func emitRemoteDrawBody(a *asm.Emitter, alloc, drawList, upload uint32) {
+	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
+	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
+
+	a.Label("remoteDrawBody")
+	a.AssumeREP(0x30)
+	a.JSL(alloc)
 
 	a.Comment("local scroll offsets:")
 	a.LDA_long(0x7E00E2)
@@ -287,162 +415,284 @@ func emitRemoteDraw(a *asm.Emitter, drawSprite uint16) (addr uint32) {
 	a.LSR()
 	a.LSR()
 	a.STA_abs(st(rsBlobAnim))
+	a.STZ_abs(st(rsDrawnParts))
 
 	a.Comment("X = OAM buffer offset to search down from; Y = table entry offset:")
 	a.LDX_imm16_w(0x0200)
 	a.LDY_imm16_w(0x0000)
-	a.STZ_abs(st(rsAnim))
-
-	a.Comment("shadows, sparkles and dust:")
-	a.Label("rd_shadow_loop")
-	a.TYA()
-	a.CMP_abs(tb(rtExtrasEnd))
-	a.BCS("rd_shadows_done")
-	a.JSR_abs(drawSprite)
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.BRA("rd_shadow_loop")
-	a.Label("rd_shadows_done")
-
-	a.Comment("draw the body if there is one and nothing else uses chrs $20..$23; the late NMI hook uploads them while")
-	a.Comment("core NMI updates are enabled, the early one while they are disabled:")
-	a.SEP(0x20)
-	a.LDA_abs(st(rsFree))
-	a.CMP_imm8_b(0x02)
-	a.BNE("rd_no_body")
-	a.REP(0x20)
-	a.TYA()
-	a.CMP_abs(tb(rtBodyEnd))
-	a.BCS("rd_blobs")
-	a.Label("rd_body_loop")
-	a.JSR_abs(drawSprite)
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.CMP_abs(tb(rtBodyEnd))
-	a.BCC("rd_body_loop")
-	a.Comment("skip the body player's blob; carry is set:")
-	a.ADC_imm16_w(rtEntrySize - 1)
-	a.TAY()
-	a.Comment("let the NMI hook upload the body tiles:")
-	for i := uint32(0); i < 8; i += 2 {
-		a.LDA_abs(tb(rtSrc + i))
-		a.STA_abs(st(rsNMISrc + i))
+	drawUntil := func(end uint32) {
+		a.LDA_abs(tb(end))
+		a.JSL(drawList)
 	}
-	a.INC_abs(st(rsNMIEnable))
-	a.BRA("rd_blobs")
+	a.Comment("extra sprites behind Link:")
+	drawUntil(rtExtrasEnd)
+	a.Comment("the head, body, sword and shield if the head and body got VRAM slots, else the player's shadow and blob:")
+	a.LDA_abs(st(rsBodyOK))
+	a.BEQ("rdb_no_body")
+	drawUntil(rtSlottedEnd)
+	a.LDY_abs(tb(rtP0BlobEnd))
+	a.BRA("rdb_blobs")
+	a.Label("rdb_no_body")
+	a.LDY_abs(tb(rtSlottedEnd))
+	a.Label("rdb_blobs")
+	a.Comment("the other players' shadows and blobs, and the extra sprites in front of Link:")
+	drawUntil(rtFrontEnd)
 
-	a.Label("rd_no_body")
-	a.REP(0x20)
-	a.LDY_abs(tb(rtBodyEnd))
-
-	a.Label("rd_blobs")
-	a.LDA_abs(st(rsBlobAnim))
-	a.STA_abs(st(rsAnim))
-	a.Label("rd_blob_loop")
-	a.TYA()
-	a.CMP_abs(tb(rtEnd))
-	a.BCS("rd_front")
-	a.JSR_abs(drawSprite)
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.BRA("rd_blob_loop")
-
-	a.Comment("extra sprites in front:")
-	a.Label("rd_front")
-	a.STZ_abs(st(rsAnim))
-	a.Label("rd_front_loop")
-	a.TYA()
-	a.CMP_abs(tb(rtFrontEnd))
-	a.BCS("rd_done")
-	a.JSR_abs(drawSprite)
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.BRA("rd_front_loop")
-
-	a.Label("rd_done")
-	a.PLB()
-	a.PLP()
+	a.JSL(upload)
 	a.RTL()
 	a.AssumeSEP(0x30)
-	return
 }
 
-// emitRemoteChrsVisible sets rsFree to 2 when dma_var6/7 were set this frame but no sprite in the OAM buffer shows
-// any of chrs $20..$23 or $30..$33: whatever set them isn't visible, e.g. Kiki keeps setting them every frame after
-// it fled out of view on the Palace of Darkness area, and its upload can be overwritten. Called with A, X and Y
-// 16-bit; leaves them 16-bit and clobbers A and X.
-func emitRemoteChrsVisible(a *asm.Emitter, rsFreeAbs uint16) {
-	a.Comment("chrs $20..$23/$30..$33 are also free if dma_var6/7 were set but no sprite drawn this frame shows them:")
-	a.SEP(0x20)
-	a.LDA_abs(rsFreeAbs)
-	a.CMP_imm8_b(0x02)
-	a.BEQ("rd_chrs_done")
+// emitRemoteScanSlots emits the routine that sets rsUsed to the slots that sprites in the OAM buffer show, and, while
+// core updates are disabled, Link's own slots: the game doesn't upload Link's chrs then, and he may show them again
+// before it does. Called with JSL with A, X and Y 16-bit and DB = $70; clobbers A and X.
+func emitRemoteScanSlots(a *asm.Emitter, t remoteDrawTables) {
+	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
+
+	a.Label("remoteScanSlots")
+	a.AssumeREP(0x30)
+	a.STZ_abs(st(rsUsed))
 	a.LDX_imm16_w(0x01FC)
-	a.Label("rd_chrs_loop")
-	a.LDA_long_x(0x7E0801)
-	a.CMP_imm8_b(0xF0)
-	a.BEQ("rd_chrs_next")
-	a.Comment("first name table only:")
-	a.LDA_long_x(0x7E0803)
-	a.LSR()
-	a.BCS("rd_chrs_next")
-	a.Comment("chr $20..$23 or $30..$33:")
+	a.Label("rs_loop")
+	a.LDA_long_x(0x7E0800)
+	a.AND_imm16_w(0xFF00)
+	a.CMP_imm16_w(0xF000)
+	a.BEQ("rs_next")
+	a.Comment("chrs $00..$3F of the first name table:")
 	a.LDA_long_x(0x7E0802)
-	a.AND_imm8_b(0xEC)
-	a.CMP_imm8_b(0x20)
-	a.BEQ("rd_chrs_done")
-	a.Comment("a 16x16 sprite also shows the chrs right of (wrapping in the row) and below its own: rows $1x..$3x,")
-	a.Comment("columns 0..3 and $F:")
-	a.LDA_long_x(0x7E0802)
-	a.CLC()
-	a.ADC_imm8_b(0x01)
-	a.AND_imm8_b(0x0F)
-	a.CMP_imm8_b(0x05)
-	a.BCS("rd_chrs_next")
-	a.LDA_long_x(0x7E0802)
-	a.SEC()
-	a.SBC_imm8_b(0x10)
-	a.CMP_imm8_b(0x30)
-	a.BCS("rd_chrs_next")
-	a.REP(0x20)
+	a.BIT_imm16_w(0x01C0)
+	a.BNE("rs_next")
+	a.AND_imm16_w(0x003F)
+	a.STA_abs(st(rsTmpChr))
 	a.PHX()
 	a.TXA()
 	a.LSR()
 	a.LSR()
 	a.TAX()
-	a.SEP(0x20)
 	a.LDA_long_x(0x7E0A20)
+	a.AND_imm16_w(0x0002)
+	a.BEQ("rs_small")
+	a.LDX_abs(st(rsTmpChr))
+	a.LDA_long_x(t.chrSlotsLarge)
+	a.BRA("rs_slots")
+	a.Label("rs_small")
+	a.LDX_abs(st(rsTmpChr))
+	a.LDA_long_x(t.chrSlotsSmall)
+	a.Label("rs_slots")
 	a.PLX()
-	a.AND_imm8_b(0x02)
-	a.BNE("rd_chrs_done")
-	a.Label("rd_chrs_next")
+	a.AND_imm16_w(0x00FF)
+	a.TSB_abs(st(rsUsed))
+	a.Label("rs_next")
 	a.DEX()
 	a.DEX()
 	a.DEX()
 	a.DEX()
-	a.BPL("rd_chrs_loop")
-	a.LDA_imm8_b(0x02)
-	a.STA_abs(rsFreeAbs)
-	a.Label("rd_chrs_done")
-	a.REP(0x20)
+	a.BPL("rs_loop")
+
+	a.LDA_long(0x7E0710)
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("rs_done")
+	a.LDA_imm16_w(remoteLinkSlots)
+	a.TSB_abs(st(rsUsed))
+	a.Label("rs_done")
+	a.RTL()
+	a.AssumeSEP(0x30)
 }
 
-// emitRemoteDrawSprite emits the subroutine that draws the sprite of the table entry at offset Y into the first
-// unused OAM entry below offset X, and updates X. Called with A, X and Y 16-bit and DB = $70; preserves Y.
-func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
+// emitRemoteAllocSlots emits the routine that hands out the VRAM slots that no sprite shows (found by the routine at
+// scan; see emitRemoteScanSlots) to the parts, in order, and sets rsBodyOK if the required parts all got one. Called
+// with JSL with A, X and Y 16-bit and DB = $70; clobbers them.
+func emitRemoteAllocSlots(a *asm.Emitter, t remoteDrawTables, scan uint32) {
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
 
-	addr = a.Label("remoteDrawSprite")
+	a.Label("remoteAllocSlots")
 	a.AssumeREP(0x30)
+	a.Comment("no part has a VRAM slot yet:")
+	a.LDA_imm16_w(0xFFFF)
+	for i := uint32(0); i < remotePartMax; i += 2 {
+		a.STA_abs(st(rsPartSlot + i))
+	}
+	a.STZ_abs(st(rsBodyOK))
+	a.LDA_abs(tb(rtParts))
+	a.BEQ("ra_done")
+	a.JSL(scan)
+
+	a.Comment("hand out the free slots to the parts in order; X = part, Y = slot:")
+	a.LDA_abs(st(rsUsed))
+	a.STA_abs(st(rsTmpShift))
+	a.LDX_imm16_w(0x0000)
+	a.LDY_imm16_w(0x0000)
+	a.Label("ra_alloc")
+	a.TXA()
+	a.CMP_abs(tb(rtParts))
+	a.BCS("ra_alloc_done")
+	a.CPY_imm16_w(uint16(len(remoteSlots)))
+	a.BCS("ra_alloc_done")
+	a.LDA_abs(st(rsTmpShift))
+	a.LSR()
+	a.STA_abs(st(rsTmpShift))
+	a.BCS("ra_alloc_next")
+	a.SEP(0x20)
+	a.PHX()
+	a.EmitBytes([]byte{0xBB}) // TYX
+	a.LDA_long_x(t.slotChrs)
+	a.PLX()
+	a.STA_abs_x(st(rsPartSlot))
+	a.REP(0x20)
+	a.INX()
+	a.Label("ra_alloc_next")
+	a.INY()
+	a.BRA("ra_alloc")
+
+	a.Label("ra_alloc_done")
+	a.Comment("X parts got a slot; the body is drawn if the required ones did:")
+	a.LDA_abs(tb(rtRequired))
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("ra_done")
+	a.STA_abs(st(rsTmpFlags))
+	a.TXA()
+	a.CMP_abs(st(rsTmpFlags))
+	a.BCC("ra_done")
+	a.INC_abs(st(rsBodyOK))
+	a.Label("ra_done")
+	a.RTL()
+	a.AssumeSEP(0x30)
+}
+
+// emitRemoteUploadList emits the routine that lists the rows of chrs of the parts drawn this frame for the NMI hooks
+// to upload. Called with JSL with A, X and Y 16-bit and DB = $70; clobbers them.
+func emitRemoteUploadList(a *asm.Emitter) {
+	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
+	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
+
+	a.Label("remoteUploadList")
+	a.AssumeREP(0x30)
+	a.Comment("X = part, Y = list offset:")
+	a.LDA_abs(st(rsDrawnParts))
+	a.STA_abs(st(rsTmpShift))
+	a.LDX_imm16_w(0x0000)
+	a.LDY_imm16_w(0x0000)
+	a.Label("ru_loop")
+	lsrAbs(a, st(rsTmpShift))
+	a.BCC("ru_next")
+	a.PHX()
+	a.Comment("the part's flags, and its slot's VRAM address:")
+	a.LDA_abs_x(tb(rtPartFlags))
+	a.AND_imm16_w(0x00FF)
+	a.STA_abs(st(rsTmpFlags))
+	a.AND_imm16_w(partWRAM)
+	a.XBA()
+	a.STA_abs(st(rsTmpExt))
+	a.LDA_abs_x(st(rsPartSlot))
+	a.AND_imm16_w(0x00FF)
+	a.ASL()
+	a.ASL()
+	a.ASL()
+	a.ASL()
+	a.ORA_imm16_w(0x4000)
+	a.STA_abs(st(rsTmpVRAM))
+	a.Comment("X = offset of the part's sources; the rows its sprites show:")
+	a.EmitBytes([]byte{0xA3, 0x01}) // LDA $01,S: the part
+	a.ASL()
+	a.ASL()
+	a.TAX()
+	a.Label("ru_row")
+	lsrAbs(a, st(rsTmpFlags))
+	a.BCC("ru_row_next")
+	a.LDA_abs(st(rsTmpVRAM))
+	a.ORA_abs(st(rsTmpExt))
+	a.STA_abs_y(st(rsNMIList + 0))
+	a.LDA_abs_x(tb(rtPartSrc))
+	a.STA_abs_y(st(rsNMIList + 2))
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(nmiRowSize)
+	a.TAY()
+	a.Label("ru_row_next")
+	a.LDA_abs(st(rsTmpVRAM))
+	a.CLC()
+	a.ADC_imm16_w(0x0100)
+	a.STA_abs(st(rsTmpVRAM))
+	a.INX()
+	a.INX()
+	a.TXA()
+	a.AND_imm16_w(0x0002)
+	a.BNE("ru_row")
+	a.PLX()
+	a.Label("ru_next")
+	a.INX()
+	a.CPX_imm16_w(remotePartMax)
+	a.BCC("ru_loop")
+	a.STY_abs(st(rsNMILen))
+	a.RTL()
+	a.AssumeSEP(0x30)
+}
+
+// emitRemoteSlottedChr emits the routine that makes the chr of a slotted sprite in rsTmpChr relative to its part's
+// VRAM slot and marks the part as drawn, or returns carry set if the part has no slot. Called with JSL with A, X and
+// Y 16-bit and DB = $70; clobbers A and X.
+func emitRemoteSlottedChr(a *asm.Emitter, t remoteDrawTables) {
+	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
+
+	a.Label("remoteSlottedChr")
+	a.AssumeREP(0x30)
+	a.Comment("part = chr bits 6-7:")
+	a.LDA_abs(st(rsTmpChr))
+	a.AND_imm16_w(0x00C0)
+	a.ASL()
+	a.ASL()
+	a.XBA()
+	a.STA_abs(st(rsTmpPart))
+	a.TAX()
+	a.LDA_abs_x(st(rsPartSlot))
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x00FF)
+	a.BEQ("rsc_none")
+	a.STA_abs(st(rsTmpAdd))
+	a.LDA_abs(st(rsTmpChr))
+	a.AND_imm16_w(0xFF11)
+	a.CLC()
+	adcAbs(a, st(rsTmpAdd))
+	a.STA_abs(st(rsTmpChr))
+	a.Comment("the part is drawn; upload it:")
+	a.LDX_abs(st(rsTmpPart))
+	a.LDA_long_x(t.partBits)
+	a.AND_imm16_w(0x00FF)
+	a.TSB_abs(st(rsDrawnParts))
+	a.CLC()
+	a.Label("rsc_none")
+	a.Comment("carry is set if the part has no slot:")
+	a.RTL()
+	a.AssumeSEP(0x30)
+}
+
+// emitRemoteDrawList emits the routine that draws the sprites of the table entries from offset Y up to offset A, each
+// into the first unused OAM entry below offset X, and updates X and Y, with the routine at slottedChr (see
+// emitRemoteSlottedChr). Called with JSL with A, X and Y 16-bit and DB = $70.
+func emitRemoteDrawList(a *asm.Emitter, slottedChr uint32) {
+	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
+	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
+
+	a.Label("remoteDrawList")
+	a.AssumeREP(0x30)
+	a.STA_abs(st(rsTmpEnd))
+	a.Label("rdl_loop")
+	a.TYA()
+	a.CMP_abs(st(rsTmpEnd))
+	a.BCS("rdl_done")
+	a.JSR_abs(0xFFFF) // fixed up below
+	jsr := a.PC() - 2
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.TAY()
+	a.BRA("rdl_loop")
+	a.Label("rdl_done")
+	a.RTL()
+
+	a.Comment("draw the sprite of the table entry at offset Y; preserves Y:")
+	drawSprite := a.Label("remoteDrawSprite")
 	a.Comment("screen x = world x - scroll x, visible if -16 < x < 256:")
 	a.LDA_abs_y(tb(rtEntries + 0))
 	a.SEC()
@@ -451,7 +701,9 @@ func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	a.CLC()
 	a.ADC_imm16_w(0x0010)
 	a.CMP_imm16_w(0x0110)
-	a.BCS("rds_return")
+	a.BCC("rds_x_ok")
+	a.RTS()
+	a.Label("rds_x_ok")
 	a.Comment("screen y = world y - scroll y, visible if -16 < y < 224:")
 	a.LDA_abs_y(tb(rtEntries + 2))
 	a.SEC()
@@ -460,6 +712,26 @@ func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	a.CLC()
 	a.ADC_imm16_w(0x0010)
 	a.CMP_imm16_w(0x00F0)
+	a.BCS("rds_return")
+
+	a.Comment("chr and attributes; blobs are animated, slotted chrs are relative to their part's VRAM slot:")
+	a.LDA_abs_y(tb(rtEntries + 4))
+	a.STA_abs(st(rsTmpChr))
+	a.LDA_abs_y(tb(rtEntries + 6))
+	a.AND_imm16_w(entrySlotted | entryBlobAnim)
+	a.BEQ("rds_find")
+	a.CMP_imm16_w(entryBlobAnim)
+	a.BNE("rds_slotted")
+	a.LDA_abs(st(rsTmpChr))
+	a.CLC()
+	adcAbs(a, st(rsBlobAnim))
+	a.STA_abs(st(rsTmpChr))
+	a.BRA("rds_find")
+	a.Label("rds_slotted")
+	a.PHX()
+	a.JSL(slottedChr)
+	a.PLX()
+	a.Comment("a sword or shield without a VRAM slot is not drawn:")
 	a.BCS("rds_return")
 
 	a.Comment("find the next unused OAM entry (Y = $F0) below X:")
@@ -474,8 +746,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	a.CMP_imm16_w(0x00F0)
 	a.BNE("rds_find")
 
-	a.LDA_abs_y(tb(rtEntries + 4))
-	a.ORA_abs(st(rsAnim))
+	a.LDA_abs(st(rsTmpChr))
 	a.STA_long_x(0x7E0802)
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX))
@@ -492,7 +763,10 @@ func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX + 1))
 	a.AND_imm8_b(0x01)
-	a.ORA_abs_y(tb(rtEntries + 6))
+	a.STA_abs(st(rsTmpExt))
+	a.LDA_abs_y(tb(rtEntries + 6))
+	a.AND_imm8_b(entrySize16)
+	a.ORA_abs(st(rsTmpExt))
 	a.STA_long_x(0x7E0A20)
 	a.REP(0x20)
 	a.PLX()
@@ -504,31 +778,39 @@ func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	a.LDX_imm16_w(0x0000)
 	a.RTS()
 	a.AssumeSEP(0x30)
-	return
+
+	code := a.Bytes()
+	base := a.GetBase()
+	code[jsr-base+0] = uint8(drawSprite)
+	code[jsr-base+1] = uint8(drawSprite >> 8)
 }
 
-// emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the remote player's head and body
-// tiles over chrs $20..$23 and $30..$33 when the trampoline enabled it this frame, and the upload subroutine they
-// share. Both are called with A 8-bit, X and Y 16-bit, DB = $00 (or $80), D = $0000. It returns their addresses:
+// emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the rows of chrs that remoteDraw
+// listed this frame (the remote player's head, body, sword and shield) into their VRAM slots, and the upload
+// subroutine they share. Both are called with A 8-bit, X and Y 16-bit, DB = $00 (or $80), D = $0000. It returns their
+// addresses:
 //
-//   - late, from nmiHookPatchAddr, when core updates are enabled ($0710 = 0): right after the game uploaded the
-//     follower and NPC tiles to the same chrs; DMA channels 0 and 1 are set up for VRAM writes ($1801). It runs the
-//     code it was patched over.
-//   - early, from nmiEarlyPatchAddr at the start of NMI_DoUpdates, when core updates are disabled ($0710 != 0) and
-//     the game skips all of its sprite uploads, e.g. on every frame a dialog renders text (Text_Render). It runs the
-//     code it was patched over (setting VMAIN) and sets up DMA channels 0 and 1 itself.
+//   - late, from nmiHookPatchAddr, when core updates are enabled ($0710 = 0): right after the game uploaded Link's,
+//     his items' and the follower and NPC tiles to the slots; DMA channel 0 is set up for VRAM writes ($1801). It
+//     uploads every row and runs the code it was patched over.
+//   - early, from nmiEarlyPatchAddr at the start of NMI_DoUpdates. When core updates are enabled the game uploads
+//     its own tiles over every slot, so it forgets what is in them. When they are disabled the game skips all of its
+//     sprite uploads, e.g. on every frame a dialog renders text (Text_Render): it uploads the rows that aren't still
+//     in VRAM from the last upload. It runs the code it was patched over (setting VMAIN) and sets up DMA channel 0
+//     itself.
 //
-// linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the bank of Link's graphics.
-func emitNMIHooks(a *asm.Emitter, linkGfxBankIns []byte) (late, early uint32) {
+// upload is the routine they call with JSL (see emitNMIUpload).
+func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early uint32) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)
 	a.AssumeREP(0x10)
 
 	late = a.Label("nmiHook")
-	a.LDA_long(st(rsNMIEnable))
+	a.LDA_long(st(rsNMILen))
 	a.BEQ("nmi_late_done")
-	a.JSR_abs(0xFFFF) // fixed up below
-	lateJSR := a.PC() - 2
+	a.LDA_imm8_b(0x00)
+	a.STA_long(st(rsNMIMode))
+	a.JSL(upload)
 	a.Label("nmi_late_done")
 	a.Comment("the code patched over:")
 	a.LDX_abs(0x0ADC)
@@ -539,54 +821,109 @@ func emitNMIHooks(a *asm.Emitter, linkGfxBankIns []byte) (late, early uint32) {
 	a.Comment("the code patched over:")
 	a.LDA_imm8_b(0x80)
 	a.STA_abs(0x2115)
-	a.Comment("only when core updates are disabled; otherwise the late hook uploads:")
 	a.LDA_long(0x7E0710)
-	a.BEQ("nmi_early_done")
-	a.LDA_long(st(rsNMIEnable))
+	a.BNE("nmi_early_disabled")
+	a.Comment("core updates are enabled: the game uploads its own tiles over every slot, and the late hook uploads:")
+	a.LDA_imm8_b(0x00)
+	a.STA_long(st(rsCacheLen))
+	a.RTL()
+	a.Label("nmi_early_disabled")
+	a.LDA_long(st(rsNMILen))
 	a.BEQ("nmi_early_done")
 	a.LDX_imm16_w(0x1801)
 	a.STX_abs(0x4300)
-	a.STX_abs(0x4310)
-	a.JSR_abs(0xFFFF) // fixed up below
-	earlyJSR := a.PC() - 2
+	a.LDA_imm8_b(0x01)
+	a.STA_long(st(rsNMIMode))
+	a.JSL(upload)
 	a.Label("nmi_early_done")
 	a.RTL()
+	a.AssumeSEP(0x30)
+	return
+}
 
-	upload := a.Label("nmiUpload")
+// emitNMIUpload emits the routine that the NMI hooks call with JSL to upload the rows of chrs in rsNMIList, with DMA
+// channel 0 set up for VRAM writes. Called with A 8-bit and X 16-bit; clobbers A and X. While rsNMIMode is 1 it skips
+// rows still in VRAM from the last upload. linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the
+// bank of Link's graphics.
+func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
+	st := func(o uint32) uint32 { return remoteStateAddr + o }
+	a.AssumeSEP(0x20)
+	a.AssumeREP(0x10)
+	a.Label("nmiUpload")
+	a.Comment("X = offset into the list of rows:")
+	a.REP(0x20)
+	a.LDX_imm16_w(0x0000)
+	a.Label("nmi_up_loop")
+	a.TXA()
+	a.CMP_long(st(rsNMILen))
+	a.BCC("nmi_up_row")
+	a.JMP_abs("nmi_up_done")
+	a.Label("nmi_up_row")
+	a.Comment("the early hook skips rows still in VRAM from the last upload:")
+	a.LDA_long(st(rsNMIMode))
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("nmi_up_dma")
+	a.TXA()
+	a.CMP_long(st(rsCacheLen))
+	a.BCS("nmi_up_dma")
+	for o := uint32(0); o < nmiRowSize; o += 2 {
+		a.LDA_long_x(st(rsNMIList + o))
+		a.CMP_long_x(st(rsCache + o))
+		a.BNE("nmi_up_dma")
+	}
+	a.BRA("nmi_up_next")
+	a.Label("nmi_up_dma")
+	a.LDA_long_x(st(rsNMIList + 0))
+	a.AND_imm16_w(0x7FFF)
+	a.STA_abs(0x2116)
+	a.LDA_long_x(st(rsNMIList + 2))
+	a.STA_abs(0x4302)
+	a.LDA_imm16_w(0x0040)
+	a.STA_abs(0x4305)
+	a.SEP(0x20)
+	a.LDA_long_x(st(rsNMIList + 1))
+	a.BMI("nmi_up_wram")
 	a.Comment("bank of Link's graphics, the same way NMI_DoUpdates gets it:")
 	a.EmitBytes(linkGfxBankIns)
+	a.BRA("nmi_up_bank")
+	a.Label("nmi_up_wram")
+	a.LDA_imm8_b(0x7E)
+	a.Label("nmi_up_bank")
 	a.STA_abs(0x4304)
-	a.STA_abs(0x4314)
-	for i, vram := range []uint16{remoteBodyVRAMTop, remoteBodyVRAMBottom} {
-		a.REP(0x20)
-		a.LDA_imm16_w(vram)
-		a.STA_abs(0x2116)
-		a.LDA_long(st(rsNMISrc + uint32(i)*4 + 0))
-		a.STA_abs(0x4302)
-		a.LDA_long(st(rsNMISrc + uint32(i)*4 + 2))
-		a.STA_abs(0x4312)
-		a.LDA_imm16_w(0x0040)
-		a.STA_abs(0x4305)
-		a.STA_abs(0x4315)
-		a.SEP(0x20)
-		a.LDA_imm8_b(0x03)
-		a.STA_abs(0x420B)
+	a.LDA_imm8_b(0x01)
+	a.STA_abs(0x420B)
+	a.REP(0x20)
+	for o := uint32(0); o < nmiRowSize; o += 2 {
+		a.LDA_long_x(st(rsNMIList + o))
+		a.STA_long_x(st(rsCache + o))
 	}
+	a.Label("nmi_up_next")
+	a.TXA()
+	a.CLC()
+	a.ADC_imm16_w(nmiRowSize)
+	a.TAX()
+	a.JMP_abs("nmi_up_loop")
+	a.Label("nmi_up_done")
+	a.LDA_long(st(rsNMILen))
+	a.STA_long(st(rsCacheLen))
+	a.SEP(0x20)
 	a.Comment("the following uploads expect WRAM as the source bank:")
 	a.LDA_imm8_b(0x7E)
 	a.STA_abs(0x4304)
-	a.STA_abs(0x4314)
-	a.RTS()
+	a.RTL()
 	a.AssumeSEP(0x30)
+}
 
-	// fix up the JSRs to the upload subroutine:
-	code := a.Bytes()
-	base := a.GetBase()
-	for _, op := range []uint32{lateJSR, earlyJSR} {
-		code[op-base+0] = uint8(upload)
-		code[op-base+1] = uint8(upload >> 8)
-	}
-	return
+// emitRemoteInit emits the init code that zeroes the remote sprites table and state. Runs with A, X and Y 16-bit;
+// leaves DB = $70.
+func emitRemoteInit(a *asm.Emitter) {
+	a.Comment("zero the remote sprites table and state:")
+	a.LDA_imm16_w(0x0000)
+	a.STA_long(remoteTableAddr)
+	a.LDX_imm16_w(uint16(remoteTableAddr & 0xFFFF))
+	a.LDY_imm16_w(uint16((remoteTableAddr + 1) & 0xFFFF))
+	a.LDA_imm16_w(uint16(remoteStateAddr + remoteStateSize - remoteTableAddr - 2))
+	a.MVN(uint8(remoteTableAddr>>16), uint8(remoteTableAddr>>16))
 }
 
 // linkGfxBankInstruction returns the instruction at linkGfxBankAddr if it is `LDA.b #imm` or `LDA.b dp`, else
@@ -608,6 +945,10 @@ type remoteSprite struct {
 	b      [5]uint8
 	size   uint8
 	absidx [4]uint16
+	// the 4bpp tiles of the sprite's 1 or 4 chrs if they were sent along (alttpo sends them for chrs that have no
+	// unique tile index, e.g. the sword and shield, once per packet and chr):
+	gfx    [4][32]byte
+	hasGfx bool
 }
 
 type remoteSprites struct {
@@ -668,9 +1009,12 @@ func (g *Game) deserializeRemoteSprites(p *Player, r io.Reader, start int) (err 
 
 		if spr[0]&0x80 != 0 {
 			// sprite graphics data 4bpp; 1 or 4 chrs of 32 bytes each:
-			if err = discard(r, 32*n); err != nil {
-				return fmt.Errorf("error deserializing sprite %d gfx: %w", i, err)
+			for k := 0; k < n; k++ {
+				if _, err = io.ReadFull(r, sp.gfx[k][:]); err != nil {
+					return fmt.Errorf("error deserializing sprite %d gfx: %w", i, err)
+				}
 			}
+			sp.hasGfx = true
 		}
 		if spr[5]&0x80 != 0 {
 			// palette data:
@@ -706,14 +1050,18 @@ func hasLinkBody(list []remoteSprite) bool {
 	return false
 }
 
-// remoteBodySprites returns up to two 16x16 sprites of Link's head and body from a remote player's sprites, ordered by
-// OAM index (front to back).
-func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
+// sortedByIndex returns a copy of a remote player's sprites ordered by OAM index (front to back).
+func sortedByIndex(list []remoteSprite) []remoteSprite {
 	sorted := make([]remoteSprite, len(list))
 	copy(sorted, list)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
+	return sorted
+}
 
-	for _, sp := range sorted {
+// remoteBodySprites returns up to two 16x16 sprites of Link's head and body from a remote player's sprites, ordered by
+// OAM index (front to back).
+func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
+	for _, sp := range sortedByIndex(list) {
 		if !isLinkBodySprite(&sp) {
 			continue
 		}
@@ -735,15 +1083,148 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	return
 }
 
+// remotePart is 2x2 chrs that the NMI hooks upload into a VRAM slot for slotted sprites to show.
+type remotePart struct {
+	// DMA source addresses of the top and bottom row:
+	src   [2]uint16
+	flags uint8
+}
+
+// slottedSprite is a sprite drawn with the chrs of a part.
+type slottedSprite struct {
+	sp   remoteSprite
+	part int
+	// the sprite's chr in the part's chrs: $00, $01, $10 or $11 (always $00 for 16x16 sprites):
+	off uint8
+}
+
+// remoteEquipBlocks are the chrs Link's sword and shield are uploaded to, 2x2 from chr, and the range of their tiles
+// in WRAM $7E9000 (see swordshield.go):
+var remoteEquipBlocks = []struct {
+	chr        uint8
+	first, end int
+	maxLevel   uint8
+}{
+	{0x05, 0, swordTileCount, 4},
+	{0x07, swordTileCount, swordShieldTileCount, 3},
+}
+
+// remoteEquipMax is the most sprites drawn for the sword or the shield (the game draws up to 3 for each):
+const remoteEquipMax = 4
+
+// remoteEquipment returns the parts and slotted sprites (with part indices starting at 0) of a remote player's sword
+// and shield, in the pose the player sent, drawn with the local player's sword and shield tiles in WRAM. o2 sends the
+// pose as unique tile indices $380..$3A3 (offsets into WRAM $7E9000); alttpo sends the tiles (once per chr and
+// packet), which are looked up in o2's copy of the local player's tiles. A sword or shield the local player doesn't
+// have is not drawn, nor is one whose tiles from alttpo are not the local player's.
+func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites []slottedSprite) {
+	s := &g.swordShield
+	sorted := sortedByIndex(list)
+
+	// the chrs of a sprite, relative to chr base; ok if it only shows chrs of the 2x2 chrs at base:
+	covered := func(sp *remoteSprite, base uint8) (offs []uint8, ok bool) {
+		if sp.b[1] == 0xF0 || sp.b[3]&1 != 0 {
+			return nil, false
+		}
+		if sp.size != 0 {
+			if sp.b[2] != base {
+				return nil, false
+			}
+			return []uint8{0x00, 0x01, 0x10, 0x11}, true
+		}
+		switch o := sp.b[2] - base; o {
+		case 0x00, 0x01, 0x10, 0x11:
+			return []uint8{o}, true
+		}
+		return nil, false
+	}
+
+	// tiles sent along, by chr:
+	gfx := map[uint8][]byte{}
+	for i := range sorted {
+		sp := &sorted[i]
+		if !sp.hasGfx || sp.b[3]&1 != 0 {
+			continue
+		}
+		gfx[sp.b[2]] = sp.gfx[0][:]
+		if sp.size != 0 {
+			for k, o := range []uint8{0x01, 0x10, 0x11} {
+				gfx[sp.b[2]+o] = sp.gfx[k+1][:]
+			}
+		}
+	}
+
+	for bi, b := range remoteEquipBlocks {
+		level, ok := s.swordLevel, s.swordOK
+		if bi == 1 {
+			level, ok = s.shieldLevel, s.shieldOK
+		}
+		if !s.ok || !ok || level == 0 || level > b.maxLevel {
+			continue
+		}
+
+		// the possible first tiles of each row, as bits of tile indices:
+		var rows [2]uint64
+		var used [2]bool
+		var block []slottedSprite
+		for _, sp := range sorted {
+			offs, ok := covered(&sp, b.chr)
+			if !ok {
+				continue
+			}
+			if len(block) == remoteEquipMax {
+				break
+			}
+			for k, o := range offs {
+				row, col := int(o>>4), int(o&1)
+				var m uint64
+				if idx := int(sp.absidx[k]) - swordShieldTileFirst; idx >= b.first+col && idx < b.end {
+					m = 1 << (idx - col)
+				} else if d, ok := gfx[b.chr+o]; ok {
+					for i := b.first + col; i < b.end; i++ {
+						if bytes.Equal(s.tiles[i<<5:i<<5+32], d) {
+							m |= 1 << (i - col)
+						}
+					}
+				}
+				if used[row] {
+					rows[row] &= m
+				} else {
+					rows[row], used[row] = m, true
+				}
+			}
+			block = append(block, slottedSprite{sp: sp, part: len(parts), off: offs[0]})
+		}
+		if len(block) == 0 {
+			continue
+		}
+
+		part := remotePart{flags: partWRAM}
+		for row := range rows {
+			if !used[row] {
+				continue
+			}
+			if rows[row] == 0 {
+				part.flags = 0
+				break
+			}
+			part.src[row] = uint16(swordShieldWRAMStart + bits.TrailingZeros64(rows[row])<<5)
+			part.flags |= partTopRow << row
+		}
+		if part.flags&(partTopRow|partBottomRow) == 0 {
+			continue
+		}
+		parts = append(parts, part)
+		sprites = append(sprites, block...)
+	}
+	return
+}
+
 // remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow or the water ripples or grass under
 // his feet, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) from a remote player's sprites,
 // ordered by OAM index.
 func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
-	sorted := make([]remoteSprite, len(list))
-	copy(sorted, list)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
-
-	for _, sp := range sorted {
+	for _, sp := range sortedByIndex(list) {
 		if len(extras) >= max {
 			break
 		}
@@ -782,7 +1263,7 @@ type remoteSpritesLocal struct {
 	writtenOK   bool
 	writtenTime time.Time
 
-	// player and body sprite counts last logged, and counts that differ from them and since when; a count is logged
+	// player and slotted sprite counts last logged, and counts that differ from them and since when; a count is logged
 	// once it holds for remoteLogSettle, so flickering players don't spam the log:
 	logged, pending [2]int
 	loggedOK        bool
@@ -791,7 +1272,7 @@ type remoteSpritesLocal struct {
 
 const remoteLogSettle = 500 * time.Millisecond
 
-// logRemoteCounts logs the number of players and body sprites drawn once it changed and held for remoteLogSettle.
+// logRemoteCounts logs the number of players and slotted sprites drawn once it changed and held for remoteLogSettle.
 func (s *remoteSpritesLocal) logRemoteCounts(t *[remoteTableSize]byte, now time.Time) {
 	var c [2]int
 	c[0], c[1] = remoteTableCounts(t)
@@ -806,11 +1287,11 @@ func (s *remoteSpritesLocal) logRemoteCounts(t *[remoteTableSize]byte, now time.
 	if now.Sub(s.pendingSince) < remoteLogSettle {
 		return
 	}
-	log.Printf("alttp: remote sprites: drawing %d players (%d body sprites)\n", c[0], c[1])
+	log.Printf("alttp: remote sprites: drawing %d players (%d sprites with Link's graphics)\n", c[0], c[1])
 	s.logged, s.loggedOK = c, true
 }
 
-// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the body tiles: JSLs into the free ROM
+// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the parts' tiles: JSLs into the free ROM
 // the patcher uses.
 func (g *Game) remoteBodyOK() bool {
 	for _, addr := range []uint32{nmiHookPatchAddr, nmiEarlyPatchAddr} {
@@ -891,13 +1372,45 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	}
 	binary.LittleEndian.PutUint16(t[rtLocation:], uint16(local.Location))
 
+	// the parts uploaded into VRAM slots: the body sprites back to front (they must all get a slot), then the sword and
+	// shield:
+	var parts []remotePart
+	var slotted []slottedSprite
+	if body != nil {
+		for j := len(body) - 1; j >= 0; j-- {
+			sp := body[j]
+			parts = append(parts, remotePart{
+				src:   [2]uint16{0x8000 + sp.absidx[0]<<5, 0x8000 + sp.absidx[2]<<5},
+				flags: partTopRow | partBottomRow,
+			})
+			slotted = append(slotted, slottedSprite{sp: sp, part: len(parts) - 1})
+		}
+		t[rtRequired] = uint8(len(parts))
+		eqParts, eqSprites := g.remoteEquipment(players[0].Sprites.list)
+		for _, es := range eqSprites {
+			es.part += len(parts)
+			slotted = append(slotted, es)
+		}
+		parts = append(parts, eqParts...)
+	}
+	// drawn back to front: the highest OAM index first:
+	sort.SliceStable(slotted, func(i, j int) bool { return slotted[i].sp.index > slotted[j].sp.index })
+
+	binary.LittleEndian.PutUint16(t[rtParts:], uint16(len(parts)))
+	for i, pt := range parts {
+		binary.LittleEndian.PutUint16(t[rtPartSrc+i*4:], pt.src[0])
+		binary.LittleEndian.PutUint16(t[rtPartSrc+i*4+2:], pt.src[1])
+		t[rtPartFlags+i] = pt.flags
+	}
+
 	o := rtEntries
-	entry := func(x, y uint16, chr, attr, size uint8) {
+	entry := func(x, y uint16, chr, attr, flags uint8) {
 		binary.LittleEndian.PutUint16(t[o+0:], x)
 		binary.LittleEndian.PutUint16(t[o+2:], y)
-		t[o+4], t[o+5], t[o+6] = chr, attr, size<<1
+		t[o+4], t[o+5], t[o+6] = chr, attr, flags
 		o += rtEntrySize
 	}
+	end := func(field int) { binary.LittleEndian.PutUint16(t[field:], uint16(o-rtEntries)) }
 	// world coordinates of a remote sprite:
 	world := func(p *Player, sp remoteSprite) (uint16, uint16) {
 		x := int(sp.b[0]) | int(sp.b[4]&1)<<8
@@ -910,19 +1423,22 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		}
 		return uint16(int(p.Sprites.xoffs) + x), uint16(int(p.Sprites.yoffs) + y)
 	}
+	// a shadow and a blob over the player's lower 16 pixels:
+	blob := func(p *Player) {
+		entry(p.X, p.Y+8+remoteShadowYOffs, remoteShadowChr, remoteBlobAttr, entrySize16)
+		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, entrySize16|entryBlobAnim)
+	}
 
-	// every player's shadow, sparkles, dust, projectiles and carried and thrown objects; those the body's player
-	// draws in front of Link (with a lower OAM index than the body) are drawn after everything else:
+	// every player's shadow, sparkles, dust, projectiles and carried and thrown objects, in the entries left; those
+	// the body's player draws in front of Link (with a lower OAM index than the body) are drawn after everything else:
 	type extra struct {
 		p  *Player
 		sp remoteSprite
 	}
+	extrasMax := min(remoteExtraMax, remoteEntryMax-len(slotted)-2*len(players))
 	var behind, front []extra
 	for _, p := range players {
-		if now.Sub(p.Sprites.received) >= remoteSpritesStale {
-			continue
-		}
-		for _, sp := range remoteExtraSprites(p.Sprites.list, remoteExtraMax-len(behind)-len(front)) {
+		for _, sp := range remoteExtraSprites(p.Sprites.list, extrasMax-len(behind)-len(front)) {
 			if body != nil && p == players[0] && sp.index < body[0].index {
 				front = append(front, extra{p, sp})
 			} else {
@@ -934,46 +1450,41 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	extras := func(list []extra) {
 		for j := len(list) - 1; j >= 0; j-- {
 			x, y := world(list[j].p, list[j].sp)
-			entry(x, y, list[j].sp.b[2], list[j].sp.b[3], list[j].sp.size)
+			entry(x, y, list[j].sp.b[2], list[j].sp.b[3], list[j].sp.size<<1)
 		}
 	}
 	extras(behind)
-	binary.LittleEndian.PutUint16(t[rtExtrasEnd:], uint16(o-rtEntries))
+	end(rtExtrasEnd)
 
+	for _, ss := range slotted {
+		x, y := world(players[0], ss.sp)
+		entry(x, y, uint8(ss.part)<<6|ss.off, ss.sp.b[3]&^1, ss.sp.size<<1|entrySlotted)
+	}
+	end(rtSlottedEnd)
+
+	others := players
 	if body != nil {
-		p := players[0]
-		for j := range body {
-			// the body sprite in front (lowest OAM index) is drawn last, into a lower OAM index:
-			sp := body[len(body)-1-j]
-			x, y := world(p, sp)
-			entry(x, y, uint8(remoteBodyChr+2*j), sp.b[3]&^1, 1)
-			binary.LittleEndian.PutUint16(t[rtSrc+2*j:], 0x8000+sp.absidx[0]<<5)
-			binary.LittleEndian.PutUint16(t[rtSrc+4+2*j:], 0x8000+sp.absidx[2]<<5)
-		}
-		if len(body) == 1 {
-			copy(t[rtSrc+2:rtSrc+4], t[rtSrc+0:rtSrc+2])
-			copy(t[rtSrc+6:rtSrc+8], t[rtSrc+4:rtSrc+6])
-		}
+		// drawn instead of the slotted sprites if the head and body get no VRAM slots:
+		blob(players[0])
+		others = players[1:]
 	}
-	binary.LittleEndian.PutUint16(t[rtBodyEnd:], uint16(o-rtEntries))
-
-	// a blob over each player's lower 16 pixels:
-	for _, p := range players {
-		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, 1)
+	end(rtP0BlobEnd)
+	for _, p := range others {
+		blob(p)
 	}
-	binary.LittleEndian.PutUint16(t[rtEnd:], uint16(o-rtEntries))
+	end(rtEnd)
 
 	extras(front)
-	binary.LittleEndian.PutUint16(t[rtFrontEnd:], uint16(o-rtEntries))
+	end(rtFrontEnd)
 	return
 }
 
-// remoteTableCounts returns the number of players and body sprites in a remote sprites table.
-func remoteTableCounts(t *[remoteTableSize]byte) (players, body int) {
-	shadowEnd := int(binary.LittleEndian.Uint16(t[rtExtrasEnd:]))
-	bodyEnd := int(binary.LittleEndian.Uint16(t[rtBodyEnd:]))
+// remoteTableCounts returns the number of players (shadows and blobs) and slotted sprites in a remote sprites table.
+func remoteTableCounts(t *[remoteTableSize]byte) (players, slotted int) {
+	extrasEnd := int(binary.LittleEndian.Uint16(t[rtExtrasEnd:]))
+	slottedEnd := int(binary.LittleEndian.Uint16(t[rtSlottedEnd:]))
 	end := int(binary.LittleEndian.Uint16(t[rtEnd:]))
-	return (end - bodyEnd) / rtEntrySize, (bodyEnd - shadowEnd) / rtEntrySize
+	return (end - slottedEnd) / (2 * rtEntrySize), (slottedEnd - extrasEnd) / rtEntrySize
 }
 
 // remoteTablePak is the FX Pak Pro address of the remote sprites table:
@@ -1239,7 +1750,7 @@ func captureLists() (types [captureTypeListSize]byte, chrs [captureChrListSize]b
 // emitInitCaptureTables emits the init code that zeroes sramZeroAddr..sramZeroEnd and builds the capture tables
 // there from the lists at typeList and chrList in ROM. Runs with A, X and Y 16-bit.
 func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
-	a.Comment("zero the capture tables, the copy of Link's OAM entries and the remote sprites table and state:")
+	a.Comment("zero the capture tables, the copy of Link's OAM entries, the player's color and the remote sound effects:")
 	a.LDA_imm16_w(0x0000)
 	a.STA_long(sramZeroAddr)
 	a.LDX_imm16_w(uint16(sramZeroAddr & 0xFFFF))
