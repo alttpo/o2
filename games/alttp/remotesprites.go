@@ -1368,4 +1368,3 @@ func emitNearDyingEnemySub(a *asm.Emitter) {
 	a.RTL()
 
 }
-

@@ -57,11 +57,11 @@ func rawDP(a *asm.Emitter, text string, op byte, dp uint8) {
 	raw(a, fmt.Sprintf(text, dp), op, dp)
 }
 
-func tsbDP(a *asm.Emitter, dp uint8)  { rawDP(a, "tsb.b $%02x", 0x04, dp) }
-func andDP(a *asm.Emitter, dp uint8)  { rawDP(a, "and.b $%02x", 0x25, dp) }
-func oraDP(a *asm.Emitter, dp uint8)  { rawDP(a, "ora.b $%02x", 0x05, dp) }
-func adcDP(a *asm.Emitter, dp uint8)  { rawDP(a, "adc.b $%02x", 0x65, dp) }
-func ldyDP(a *asm.Emitter, dp uint8)  { rawDP(a, "ldy.b $%02x", 0xA4, dp) }
+func tsbDP(a *asm.Emitter, dp uint8) { rawDP(a, "tsb.b $%02x", 0x04, dp) }
+func andDP(a *asm.Emitter, dp uint8) { rawDP(a, "and.b $%02x", 0x25, dp) }
+func oraDP(a *asm.Emitter, dp uint8) { rawDP(a, "ora.b $%02x", 0x05, dp) }
+func adcDP(a *asm.Emitter, dp uint8) { rawDP(a, "adc.b $%02x", 0x65, dp) }
+func ldyDP(a *asm.Emitter, dp uint8) { rawDP(a, "ldy.b $%02x", 0xA4, dp) }
 func ldyAbsX(a *asm.Emitter, addr uint16) {
 	rawAbs(a, "ldy.w $%04x,x", 0xBC, addr)
 }
@@ -117,10 +117,10 @@ func captureTables() (types [0x40]byte, chrs [0x100]byte) {
 
 // remoteFrameTables are the addresses of the ROM tables remoteFrame reads, in its own bank:
 type remoteFrameTables struct {
-	captureTypes, captureChrs   uint32
+	captureTypes, captureChrs    uint32
 	chrSlotsSmall, chrSlotsLarge uint32
-	allocSlots, allocFree       uint32
-	partBits                    uint32
+	allocSlots, allocFree        uint32
+	partBits                     uint32
 }
 
 // emitRemoteFrameTables emits the tables of remoteFrameTables in this order and returns their addresses.
