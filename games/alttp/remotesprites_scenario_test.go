@@ -603,6 +603,10 @@ func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
 		{"boomerang", func(e *emulator.System) { e.WRAM[0x0C4A+1] = 0x05 }, 0x26, 0x02},
 		{"bomb", func(e *emulator.System) { e.WRAM[0x0C4A+2] = 0x07 }, 0x6E, 0x02},
 		{"fire rod shot", func(e *emulator.System) { e.WRAM[0x0C4A+4] = 0x02 }, 0x8D, 0x00},
+		{"fire rod flame", func(e *emulator.System) { e.WRAM[0x0C4A+4] = 0x02 }, 0xA4, 0x00},
+		{"lamp flame", func(e *emulator.System) { e.WRAM[0x0C4A+4] = 0x2F }, 0xE3, 0x00},
+		{"sword beam hit", func(e *emulator.System) { e.WRAM[0x0C4A+3] = 0x04 }, 0xD5, 0x00},
+		{"ice rod wall hit", func(e *emulator.System) { e.WRAM[0x0C4A+3] = 0x11 }, 0xCF, 0x00},
 		{"somaria block", func(e *emulator.System) { e.WRAM[0x0C4A+5] = 0x2C }, 0xE9, 0x02},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1026,4 +1030,25 @@ func TestRemoteSpritesScenario_OffsetsArriveWithSprites(t *testing.T) {
 	if before != after {
 		t.Errorf("sprites moved with offsets that came without sprites:\n% x\n% x", before[:], after[:])
 	}
+}
+
+// The water ripples (and tall grass) the game draws under Link's feet instead of his shadow are in his own OAM
+// entries; they are sent without tile data like the shadow and drawn from the local VRAM.
+func TestRemoteSpritesScenario_RipplesUnderLink(t *testing.T) {
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	copy(e.WRAM[0x0800+0x66*4:], []byte{0x50, 0x68, 0xD9, 0x24})
+	copy(e.WRAM[0x0800+0x67*4:], []byte{0x58, 0x68, 0xD9, 0x64})
+	h.frames(8)
+
+	h.expectOAM("ripples", 0, 0x7E, [4]byte{0x40, 0x60, 0xD9, 0x24}, 0x00)
+	h.expectOAM("ripples", 0, 0x7F, [4]byte{0x48, 0x60, 0xD9, 0x64}, 0x00)
+	h.expectOAM("body", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+	// tall grass:
+	copy(e.WRAM[0x0800+0x66*4:], []byte{0x50, 0x68, 0xC8, 0x22})
+	copy(e.WRAM[0x0800+0x67*4:], []byte{0x58, 0x68, 0xC8, 0x62})
+	h.frames(8)
+	h.expectOAM("grass", 0, 0x7E, [4]byte{0x40, 0x60, 0xC8, 0x22}, 0x00)
+	h.expectOAM("grass", 0, 0x7F, [4]byte{0x48, 0x60, 0xC8, 0x62}, 0x00)
 }

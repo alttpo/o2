@@ -735,8 +735,9 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	return
 }
 
-// remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow, sparkles, dust, projectiles,
-// carried and thrown objects; see captureChrs) from a remote player's sprites, ordered by OAM index.
+// remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow or the water ripples or grass under
+// his feet, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) from a remote player's sprites,
+// ordered by OAM index.
 func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
 	sorted := make([]remoteSprite, len(list))
 	copy(sorted, list)
@@ -746,7 +747,7 @@ func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
 		if len(extras) >= max {
 			break
 		}
-		if sp.b[1] == 0xF0 || sp.b[3]&1 != 0 || !isCaptureChr(sp.b[2]) {
+		if sp.b[1] == 0xF0 || sp.b[3]&1 != 0 || !(isCaptureChr(sp.b[2]) || isLinkFootChr(uint16(sp.b[2]))) {
 			continue
 		}
 		extras = append(extras, sp)
@@ -1085,6 +1086,7 @@ var captureAncillae = []uint8{
 	0x2C, // Cane of Somaria block, including carried and thrown
 	0x2D, // Cane of Somaria block fizzle
 	0x2E, // Cane of Somaria block splitting into blasts
+	0x2F, // lamp flame
 	0x3C, // spin attack charging sparkle
 }
 
@@ -1096,10 +1098,13 @@ var captureChrs = []uint16{
 	0xA9, 0xCF, 0xDF,
 	// boomerang, arrows:
 	0x26, 0x2A, 0x2B, 0x2C, 0x2D, 0x3A, 0x3B, 0x3C, 0x3D,
-	// fire rod shot:
-	0x8D, 0x8E, 0x9C, 0x9D, 0xA0, 0xA2,
-	// sword beam hit:
-	0x53, 0x54,
+	// fire rod shot and its flame when it hits (also the lamp flame's):
+	0x8D, 0x8E, 0x9C, 0x9D, 0xA0, 0xA2, 0xA4, 0xA5,
+	// lamp flame:
+	0xB2, 0xB3, 0xE3, 0xF3,
+	// sword beam hit, the four sparks flying apart diagonally (Ancilla04_BeamHit draws its chrs $53/$54 + $82); $D6 is
+	// also a spin attack and Cane of Somaria spark:
+	0xD5, 0xD6,
 	// bomb and its explosion:
 	0x6E, 0x84, 0x86, 0x88, 0x8A, 0x8C, 0x9B,
 	// Cane of Somaria blast, block, fizzle, split:

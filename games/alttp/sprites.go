@@ -188,9 +188,17 @@ func (g *Game) swordShieldUniqTileIndex(ptr uint32, x uint32) (uint16, bool) {
 }
 
 // isLinkShadowChr reports whether chr is one of Link's shadow tiles: $6C on the ground, $28 or $38 while recoiling or
-// jumping off a ledge (kLinkShadows_Chardata). They are static tiles that receivers have in their own VRAM.
+// jumping off a ledge, or what the game draws under him instead (kLinkShadows_Chardata; see isLinkFootChr). They
+// are static tiles that receivers have in their own VRAM.
 func isLinkShadowChr(chr uint16) bool {
-	return (chr >= 0x6C && chr <= 0x6F) || (chr >= 0x7C && chr <= 0x7F) || chr == 0x28 || chr == 0x38
+	return (chr >= 0x6C && chr <= 0x6F) || (chr >= 0x7C && chr <= 0x7F) || chr == 0x28 || chr == 0x38 ||
+		isLinkFootChr(chr)
+}
+
+// isLinkFootChr reports whether chr is what LinkOam_DrawFootObject draws under Link's feet in his own OAM entries
+// instead of his shadow: water ripples $D8..$DA in shallow water and swamp puddles, and tall grass $C8..$CA.
+func isLinkFootChr(chr uint16) bool {
+	return (chr >= 0xD8 && chr <= 0xDA) || (chr >= 0xC8 && chr <= 0xCA)
 }
 
 // readLinkSprites samples Link's sprites from the copy of Link's OAM entries just read. Called once per game frame
