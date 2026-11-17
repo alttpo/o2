@@ -34,6 +34,21 @@ const (
 	fnRoomDraw16x16Single
 	// an RTL instruction in bank $01, used as the return address to call RTS routines in bank $01 from elsewhere:
 	fnBank01RTL
+	// Overworld_RevealSecret: X = tilemap offset, 16-bit A/X/Y; looks the position up in the area's hidden items and
+	// sets the low byte of $0B9C to the item's secret index (0 if none, $FF for holes and stairs). Ends with RTS, so it
+	// is called through fnBank1BRTL:
+	fnOverworldRevealSecret
+	// an RTL instruction in bank $1B (the end of the routine before HandleItemTileAction_Overworld):
+	fnBank1BRTL
+	// RevealPotItem: A = the pot's tilemap position ($0540), $06 = its tile attribute index, 16-bit A/X/Y; looks the
+	// pot up in the room's pot items, sets the low byte of $0B9C to the item's secret index and marks it taken in
+	// $7EF580 (except keys), or replaces the pot's replacement tiles with a hole or a switch. Ends with RTS, so it is
+	// called through fnBank01RTL:
+	fnRevealPotItem
+	// Sprite_SpawnThrowableTerrain_silently: A = thrown object type, $00/$02 = X/Y, 8-bit A/X/Y; spawns the carried
+	// object sprite ($EC) in slot X (X = $FF if none is free) and spawns the secret in $0B9C under it like the game
+	// does when an object is lifted (Overworld_SubstituteAlternateSecret, Sprite_SpawnSecret). JSL, RTL:
+	fnSpawnThrowableTerrainSilently
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -76,6 +91,10 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnOverworldDrawMap16Persist] = 0x1BC97C
 	fns[fnRoomDraw16x16Single] = 0x01D828
 	fns[fnBank01RTL] = 0x01D827 // PushBlock_Handler's RTL, right before RoomDraw_16x16Single
+	fns[fnOverworldRevealSecret] = 0x1BC8A4
+	fns[fnBank1BRTL] = 0x1BBD79
+	fns[fnRevealPotItem] = 0x01E6B2
+	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -96,4 +115,8 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnOverworldDrawMap16Persist] = 0x1BC97C
 	fns[fnRoomDraw16x16Single] = 0x01D826
 	fns[fnBank01RTL] = 0x01D825 // PushBlock_Handler's RTL, right before RoomDraw_16x16Single
+	fns[fnOverworldRevealSecret] = 0x1BC8A4
+	fns[fnBank1BRTL] = 0x1BBD79
+	fns[fnRevealPotItem] = 0x01E6B0
+	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 }

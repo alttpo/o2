@@ -48,6 +48,8 @@ func newManipScenario(t *testing.T, players int) *skScenario {
 			0x60, // RTS
 		})
 	}
+	// lifting a pot reveals the item under it for the other players:
+	h.stubSecrets()
 	return h
 }
 

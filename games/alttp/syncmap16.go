@@ -48,6 +48,11 @@ import (
 //     anything else is drawn by the game when scrolled to. (Drawing outside that range would overwrite the ring slot
 //     of a row that is in VRAM, and leaving a tile inside it undrawn would show the old tile until it scrolls away
 //     and back.)
+//
+// An entry that arrives while the local player has been in the area for a while (longer than the senders take to
+// resend their whole log, so not while catching up) is live: the remote player changed the tile just now. If a live
+// entry replaces a bush, rock or sign that is still there locally, the update routine also reveals the secret under
+// it (see syncsecrets.go).
 
 const (
 	map16LogIndex     = uint16(0x04AC)
@@ -60,6 +65,9 @@ const (
 	map16AsmSkipped   = 0xFF
 	// map16TableEnd terminates the table passed to the map16 apply routine; tilemap offsets are even and < $2000:
 	map16TableEnd = uint16(0xFFFF)
+	// map16LiveAfter is how many reads of the log in an area pass before entries received are taken as live; senders
+	// resend their whole log every 16 frames, so entries made before the local player arrived come in before that:
+	map16LiveAfter = 48
 )
 
 type map16Entry struct {
@@ -86,6 +94,9 @@ type map16Local struct {
 
 	// diagLogged is set once the remote players' logs were described after entering the area:
 	diagLogged bool
+
+	// age is how many times the log was read since the area was loaded; see map16LiveAfter:
+	age int
 }
 
 // map16Remote tracks a remote player's map16 change log as received.
@@ -95,6 +106,8 @@ type map16Remote struct {
 	count   int
 	entries [map16LogMax]map16Entry
 	have    [map16LogMax]bool
+	// live is set for entries first received while the local player was in the area, until they were applied:
+	live [map16LogMax]bool
 	// applied is how many entries of this log were applied locally:
 	applied int
 
@@ -163,7 +176,12 @@ func (g *Game) resetMap16Log() {
 	m.count = 0
 	m.sent = 0
 	m.known = make(map[uint16]uint16)
+	m.age = 0
 	g.resetMap16Applied()
+	// changes received before are not revealed again:
+	for i := range g.players {
+		g.players[i].Map16.live = [map16LogMax]bool{}
+	}
 }
 
 // resetMap16Applied makes all remote changes apply again.
@@ -257,6 +275,10 @@ func (g *Game) readMap16() {
 		// the area was reloaded:
 		g.resetMap16Log()
 		return
+	}
+
+	if m.age < map16LiveAfter {
+		m.age++
 	}
 
 	if m.readBase != m.count {
@@ -354,11 +376,17 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 		rm.reset(hdr.Loc)
 	}
 	rm.count = count
+	// entries arriving while we have been in the area for a while were just made by the sender:
+	m := &g.map16
+	here := m.valid && m.loc == hdr.Loc && m.age >= map16LiveAfter
 	for k, e := range entries {
 		i := start + k
 		if rm.have[i] && rm.entries[i] != e && i < rm.applied {
 			// the sender's log was replaced without us noticing; apply again from here:
 			rm.applied = i
+		}
+		if !rm.have[i] && here {
+			rm.live[i] = true
 		}
 		rm.entries[i] = e
 		rm.have[i] = true
@@ -372,7 +400,9 @@ type map16Update struct {
 	loc     uint32
 	entries []map16Entry
 	// ends is the remote log index each player's changes were applied up to, by player index:
-	ends      map[int]int
+	ends map[int]int
+	// live are the live remote log entries whose secrets the routine reveals, by player index:
+	live      map[int][]int
 	cancelled bool
 }
 
@@ -387,6 +417,16 @@ func (u *map16Update) ConfirmAsmExecuted(index uint32, value uint8) {
 	if value == map16AsmSkipped {
 		log.Printf("alttp: map16: update skipped\n")
 		return
+	}
+	// the routine revealed the secrets under these, if any; never again:
+	for pi, list := range u.live {
+		rm := &g.players[pi].Map16
+		if rm.loc != u.loc {
+			continue
+		}
+		for _, i := range list {
+			rm.live[i] = false
+		}
 	}
 	if !m.valid || m.loc != u.loc {
 		return
@@ -460,6 +500,9 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	list := make([]map16Entry, 0, map16MaxPerUpdate)
 	at := make(map[uint16]int, map16MaxPerUpdate)
 	ends := make(map[int]int)
+	// reveal is set for changes the remote player made just now, which reveal the secret under a lifted object:
+	reveal := make([]bool, 0, map16MaxPerUpdate)
+	live := make(map[int][]int)
 	for _, p := range g.RemotePlayers() {
 		// game worlds are team specific; menus and text boxes ($0E) keep the log, like alttpo:
 		// only changes made in exactly this location, including the world, by players who are still there:
@@ -475,6 +518,10 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 			e := rm.entries[i]
 			if j, ok := at[e.Pos]; ok {
 				list[j].Tile = e.Tile
+				if rm.live[i] {
+					reveal[j] = true
+					live[p.Index()] = append(live[p.Index()], i)
+				}
 				continue
 			}
 			if len(list) >= map16MaxPerUpdate {
@@ -482,6 +529,10 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 			}
 			at[e.Pos] = len(list)
 			list = append(list, e)
+			reveal = append(reveal, rm.live[i])
+			if rm.live[i] {
+				live[p.Index()] = append(live[p.Index()], i)
+			}
 		}
 		if i > rm.applied {
 			ends[p.Index()] = i
@@ -493,34 +544,79 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 
 	// skip changes the local tilemap already has (e.g. our own, or ones we passed on):
 	entries := list[:0]
-	for _, e := range list {
+	var reveals []uint16
+	for k, e := range list {
 		if t, ok := m.known[e.Pos]; ok && t == e.Tile {
 			continue
 		}
 		entries = append(entries, e)
+		// only where a remote player removed a small object (not where one put it):
+		if reveal[k] && !g.isOwLiftable(e.Tile) {
+			reveals = append(reveals, e.Pos)
+		}
 	}
 	if len(entries) == 0 {
 		for i, end := range ends {
-			g.players[i].Map16.applied = end
+			rm := &g.players[i].Map16
+			rm.applied = end
+			for _, k := range live[i] {
+				rm.live[k] = false
+			}
 		}
 		return
 	}
 
-	u = &map16Update{g: g, loc: m.loc, entries: entries, ends: ends}
+	fnReveal, ok1 := g.romFunctions[fnOverworldRevealSecret]
+	fnRTL, ok2 := g.romFunctions[fnBank1BRTL]
+	fnSpawn, ok3 := g.romFunctions[fnSpawnThrowableTerrainSilently]
+	liftables := g.owLiftablesFor()
+	if !ok1 || !ok2 || !ok3 || len(liftables) == 0 {
+		reveals = nil
+	}
+
+	u = &map16Update{g: g, loc: m.loc, entries: entries, ends: ends, live: live}
 	log.Printf("alttp: map16: generating update for %d of %d pending changes\n", len(entries), len(list))
 
 	area := owLocationArea(m.loc)
 	a = newEmitter()
 	a.Comment(fmt.Sprintf("map16 changes for location $%06x:", m.loc))
-	a.BRA("m16_start")
+	if len(reveals) > 0 {
+		// the subroutines follow the table:
+		a.JMP_abs("m16_start")
+	} else {
+		a.BRA("m16_start")
+	}
 	table := a.PC()
 	a.EmitBytes([]byte{byte(area), byte(area >> 8)})
 	for _, e := range entries {
 		a.EmitBytes([]byte{byte(e.Pos), byte(e.Pos >> 8), byte(e.Tile), byte(e.Tile >> 8)})
 	}
 	a.EmitBytes(binary.LittleEndian.AppendUint16(nil, map16TableEnd))
+	var revealSub uint16
+	if len(reveals) > 0 {
+		spawnSub := emitSpawnSecretSub(a, fnSpawn)
+		revealSub = emitOwRevealSub(a, liftables, fnReveal, fnRTL, spawnSub)
+	}
 	a.Label("m16_start")
 	emitWorldCheck(a, m.loc, "m16_wrong_world")
+	if len(reveals) > 0 {
+		log.Printf("alttp: map16: revealing secrets at %d positions\n", len(reveals))
+		a.Comment("reveal secrets in the overworld module, submodule 0, in the area, before the tiles change:")
+		a.LDA_dp(0x10)
+		a.CMP_imm16_w(0x0009)
+		a.BEQ("m16_reveal_module_ok")
+		a.CMP_imm16_w(0x000B)
+		a.BNE_far("m16_skip_reveals")
+		a.Label("m16_reveal_module_ok")
+		a.LDA_dp(0x8A)
+		a.CMP_imm16_w(area)
+		a.BNE_far("m16_skip_reveals")
+		for _, pos := range reveals {
+			a.LDX_imm16_w(pos)
+			a.JSR_abs(revealSub)
+		}
+		a.Label("m16_skip_reveals")
+	}
 	a.LDA_imm16_w(uint16(table))
 	a.JSR_abs(uint16(map16ApplyAddr & 0xFFFF))
 	a.BRA("m16_report")

@@ -40,7 +40,9 @@ import (
 //
 // Slots are matched by their room data offset (and position, except for push blocks) since their order may differ
 // between players. A remote player's revealed object is revealed locally by calling RoomDraw_16x16Single with the
-// remote's replacement tiles (a pot can hide a hole or a switch); items hidden under pots are not spawned. A remote
+// remote's replacement tiles (a pot can hide a hole or a switch). If a pot was lifted while the local player was in the
+// room (the sender's previous message had it still there), the item hidden under it is revealed first like lifting it
+// does (see syncsecrets.go), so every player in the room gets it. A remote
 // player's push block that finished moving is moved locally in one step: draw what was under it, then do what
 // PushBlock_CheckForPit does at the new position.
 
@@ -121,6 +123,9 @@ type manipRemoteSlot struct {
 	Pos   uint16
 	Flags uint8
 	Tiles [4]uint16
+	// live is set when the object was seen revealed after it was seen still there while the local player was in the
+	// room, so the secret under it is revealed here too:
+	live bool
 }
 
 // manipRemote is a remote player's manipulable objects as received.
@@ -325,6 +330,25 @@ func (g *Game) DeserializeManip(p *Player, r io.Reader) (err error) {
 			}
 		}
 	}
+	// objects revealed since the sender's last message, while we are in the room too, were just lifted:
+	m := &g.manip
+	here := g.local.Module == 0x07 && m.valid && m.room == rm.room
+	if prev := &p.Manip; here && prev.room == rm.room {
+		for i := 0; i < rm.n; i++ {
+			s := &rm.slots[i]
+			if s.Flags&manipFlagRevealed == 0 {
+				continue
+			}
+			for k := 0; k < prev.n; k++ {
+				ps := &prev.slots[k]
+				if ps.ObjX != s.ObjX || ps.Pos != s.Pos || ps.Type != s.Type {
+					continue
+				}
+				s.live = ps.live || ps.Flags&manipFlagRevealed == 0
+				break
+			}
+		}
+	}
 	p.Manip = rm
 	return nil
 }
@@ -355,10 +379,12 @@ func manipIsStep(from, to uint16) bool {
 }
 
 type manipItem struct {
-	slot   int
-	move   bool
-	to     uint16
-	tiles  [4]uint16
+	slot  int
+	move  bool
+	to    uint16
+	tiles [4]uint16
+	// reveal is set to reveal the item under a pot the remote player just lifted:
+	reveal bool
 	player string
 }
 
@@ -398,7 +424,7 @@ func (u *manipUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 			log.Printf("alttp: manip: update: room $%03x slot %d moved to $%04x from player '%s'\n", u.room, it.slot, it.to, it.player)
 		} else {
 			s.revealed = true
-			log.Printf("alttp: manip: update: room $%03x slot %d revealed from player '%s'\n", u.room, it.slot, it.player)
+			log.Printf("alttp: manip: update: room $%03x slot %d revealed from player '%s' (item: %v)\n", u.room, it.slot, it.player, it.reveal)
 		}
 	}
 }
@@ -428,6 +454,9 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 	if !ok1 || !ok2 {
 		return
 	}
+	fnRevealPot, ok3 := g.romFunctions[fnRevealPotItem]
+	fnSpawn, ok4 := g.romFunctions[fnSpawnThrowableTerrainSilently]
+	canReveal := ok3 && ok4
 
 	items := make([]manipItem, 0, 4)
 	queued := [manipSlots]bool{}
@@ -484,6 +513,11 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 					it.tiles = rs.Tiles
 				}
 				cost = 40
+				// pots hide items:
+				if rs.live && canReveal && s.Type&0x00F0 == 0x0010 {
+					it.reveal = true
+					cost += 40
+				}
 			}
 			if size+cost > 160 {
 				continue
@@ -502,6 +536,15 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 
 	a = newEmitter()
 	a.Comment(fmt.Sprintf("manipulables in room $%03x:", m.room))
+	var spawnSub uint16
+	for _, it := range items {
+		if it.reveal {
+			a.JMP_abs("mn_start")
+			spawnSub = emitSpawnSecretSub(a, fnSpawn)
+			a.Label("mn_start")
+			break
+		}
+	}
 	a.LDA_dp(0x10)
 	a.CMP_imm16_w(0x0007)
 	a.BNE_far("mn_skip")
@@ -527,7 +570,11 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 			a.LDA_long(0x7F2000 + manipAttrIndex(s.Pos))
 			a.AND_imm16_w(0x00FF)
 			a.CMP_imm16_w(uint16(manipAttrBase) + uint16(it.slot))
-			a.BNE(next)
+			a.BNE_far(next)
+			if it.reveal {
+				a.Comment("reveal the item under it like lifting it does:")
+				emitPotReveal(a, m.room, s.Pos, fnRevealPot, fnRTL, spawnSub)
+			}
 			for t := uint16(0); t < 4; t++ {
 				if it.tiles[t] != s.Tiles[t] {
 					a.LDA_imm16_w(it.tiles[t])

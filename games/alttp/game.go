@@ -112,6 +112,9 @@ type Game struct {
 	overworld  [0xC0]syncableOverworld
 
 	romFunctions map[romFunction]uint32
+	// owLiftables are the overworld objects that reveal secrets when lifted, read from the ROM once; see syncsecrets.go:
+	owLiftables     []owLiftable
+	owLiftablesRead bool
 
 	lastGameFrame      uint8 // copy of wram[$001A] in-game frame counter of vanilla ALTTP game
 	monotonicFrameTime uint8 // always increments by 1 whenever game frame increases by any amount N
