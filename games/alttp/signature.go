@@ -95,6 +95,8 @@ func computePatchVersion() (v [4]byte) {
 		map16StageBAddr,
 		map16StageMax,
 		map16StageEntry,
+		captureDyingAddr,
+		captureDyingEnd,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 	})

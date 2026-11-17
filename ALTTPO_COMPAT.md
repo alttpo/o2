@@ -137,12 +137,13 @@ more messages, which corrupted the rest of the packet.
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
   from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (items in use, held
   items like the lamp, followers) are not sent. o2 also does not send ancillae, tilemaps or PvP.
-- **Enemy deaths are not sent as player sprites by alttpo.** Enemies are synced on their own (alttpo), so every player
-  in the room draws an enemy's death poof (`SpriteDeath_DrawPoof`), explosion (`SpriteModule_Explode`) or poof
-  (`SpriteModule_Poof`) already. alttpo used to also send them along with its player's sprites, since some of their
-  chrs (`$A9`, `$9B`, `$B3`, ...) are also used by the cape, dash dust and lamp flame. It now skips those chrs within
-  about 24 pixels of an enemy in sprite state `$02`, `$04` or `$06` (this frame or the one before). o2 still sends them
-  when they are on screen at the same time as one of the objects it captures.
+- **Enemy deaths are not sent as player sprites.** Enemies are synced on their own (alttpo), so every player in the
+  room draws an enemy's death poof (`SpriteDeath_DrawPoof`), explosion (`SpriteModule_Explode`) or poof
+  (`SpriteModule_Poof`) already. Both used to also send them along with their player's sprites, since some of their
+  chrs (`$A9`, `$9B`, `$B3`, ...) are also used by the cape, dash dust and lamp flame. Both now skip those chrs within
+  about 24 pixels of an enemy in sprite state `$02`, `$04` or `$06`: alttpo reads OAM after the frame and also checks
+  the enemies of the frame before; o2's capture routine lists the enemies' screen positions (`$706A70`) of the same
+  frame, which suffices since those routines only change the state on frames where they draw nothing.
 - **No sprites in GAME OVER.** From module `$12` submodule `$06` on (alttpo's `is_game_over`), the GAME OVER animation
   and menu draw their own sprites into Link's OAM slots, which alttpo players saw as garbled tiles. o2 sends an empty
   sprite list there instead, so receivers stop drawing the player. Link's death spin (submodules `$00..$05`) is still

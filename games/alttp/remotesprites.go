@@ -1043,8 +1043,11 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 //
 // The scan of the OAM buffer only runs on frames where one of those ancillae, a carried (state $0A) or thrown
 // scenery ($EC) sprite, or thrown object debris (garnish $16) exists, and while o2 keeps rtCaptureTTL up because a
-// remote player is in the same location. Matching chrs from other sprites on screen at the same time (e.g. an
-// enemy's explosion) are captured too, like alttpo does.
+// remote player is in the same location. Matching chrs from other sprites on screen at the same time are captured too,
+// except for enemy deaths: enemies are synced by alttpo and every player draws their deaths already, so the chrs of
+// the death poof, explosion and poof (enemyDeathChrs) are not captured within about 24 pixels of an enemy in sprite
+// state $02, $04 or $06. Their routines only change the state on frames where they draw nothing, so the enemies'
+// positions of the same frame suffice.
 
 // SRAM and ROM addresses of the capture tables and routine:
 const (
@@ -1056,6 +1059,17 @@ const (
 	captureChrsAddr = captureTypesAddr + 0x40
 	// captureMaskAddr is the bits of captureChrsAddr captured this frame (u16; the high byte stays 0):
 	captureMaskAddr = sramZeroEnd - 2
+
+	// captureDyingAddr: the byte length of the list of enemy screen positions below (u16), scratch words for the capture
+	// routine, then up to 16 `x u16`, `y u16` of the enemies drawing their death this frame:
+	captureDyingAddr  = uint32(0x706A70)
+	captureTmpX       = captureDyingAddr + 2
+	captureTmpY       = captureDyingAddr + 4
+	captureTmpE       = captureDyingAddr + 6
+	captureTmpZ       = captureDyingAddr + 8
+	captureDyingList  = captureDyingAddr + 10
+	captureDyingEnd   = captureDyingList + 16*4
+	captureChrEnemyFX = 0x10 // set in captureChrsAddr for enemyDeathChrs
 
 	// the sizes of the lists in ROM that the init code builds the tables from, padded with their last entry (see
 	// captureLists). The patcher places them and the capture routine in free ROM:
@@ -1113,6 +1127,14 @@ var captureChrs = []uint16{
 	0x42, 0x44, 0x46, 0x4A,
 	// their debris:
 	0x48, 0x58, 0x59,
+}
+
+// enemyDeathChrs are the chrs of an enemy's death poof (SpriteDeath_DrawPoof), explosion (SpriteModule_Explode) and
+// poof (SpriteModule_Poof); those also in captureChrs are not captured near such an enemy:
+var enemyDeathChrs = []uint16{
+	0xA8, 0xA9, 0x9B, 0xB4, 0xB5, 0xB8, 0xB9,
+	0x4E, 0x60, 0x62, 0x64, 0x66, 0x68, 0x6A,
+	0x8A, 0xB3,
 }
 
 // captureShadowChrs are the shadows under bombs and carried and thrown objects. Enemies and NPCs use the same
@@ -1254,7 +1276,150 @@ func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
 	for _, t := range captureShadowCasters {
 		a.STA_abs(uint16((captureTypesAddr + uint32(t)) & 0xFFFF))
 	}
+	a.Comment("chrs of enemy deaths:")
+	for _, c := range enemyDeathChrs {
+		addr := uint16((captureChrsAddr + uint32(c)) & 0xFFFF)
+		a.LDA_abs(addr)
+		a.ORA_imm8_b(captureChrEnemyFX)
+		a.STA_abs(addr)
+	}
 	a.REP(0x20)
+}
+
+// emitDyingEnemiesList emits the code that lists the screen positions of the enemies drawing their death poof,
+// explosion or poof (sprite state $02, $04, $06) at captureDyingList. 16-bit registers; DB = $70 on return.
+func emitDyingEnemiesList(a *asm.Emitter) {
+	a.Comment("list the enemies drawing their death this frame:")
+	a.PEA(0x7070)
+	a.PLB()
+	a.PLB()
+	a.LDY_imm16_w(0x0000)
+	a.LDX_imm16_w(0x000F)
+	a.Label("ce_dy_loop")
+	a.LDA_long_x(0x7E0DD0)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x0002)
+	a.BEQ("ce_dy_found")
+	a.CMP_imm16_w(0x0004)
+	a.BEQ("ce_dy_found")
+	a.CMP_imm16_w(0x0006)
+	a.BNE("ce_dy_next")
+	a.Label("ce_dy_found")
+	tmpE, tmpZ := uint16(captureTmpE&0xFFFF), uint16(captureTmpZ&0xFFFF)
+	list := uint16(captureDyingList & 0xFFFF)
+	a.Comment("x - BG2 scroll:")
+	a.LDA_long_x(0x7E0D30)
+	a.XBA()
+	a.AND_imm16_w(0xFF00)
+	a.STA_abs(tmpE)
+	a.LDA_long_x(0x7E0D10)
+	a.AND_imm16_w(0x00FF)
+	a.ORA_abs(tmpE)
+	a.SEC()
+	a.SBC_long(0x7E00E2)
+	a.STA_abs_y(list)
+	a.Comment("y - BG2 scroll - z:")
+	a.LDA_long_x(0x7E0D20)
+	a.XBA()
+	a.AND_imm16_w(0xFF00)
+	a.STA_abs(tmpE)
+	a.LDA_long_x(0x7E0D00)
+	a.AND_imm16_w(0x00FF)
+	a.ORA_abs(tmpE)
+	a.SEC()
+	a.SBC_long(0x7E00E8)
+	a.STA_abs(tmpE)
+	a.LDA_long_x(0x7E0F70)
+	a.AND_imm16_w(0x00FF)
+	a.STA_abs(tmpZ)
+	a.LDA_abs(tmpE)
+	a.SEC()
+	a.SBC_abs(tmpZ)
+	a.STA_abs_y(list + 2)
+	a.INY()
+	a.INY()
+	a.INY()
+	a.INY()
+	a.Label("ce_dy_next")
+	a.DEX()
+	a.BPL("ce_dy_loop")
+	a.STY_abs(uint16(captureDyingAddr & 0xFFFF))
+}
+
+// emitNearDyingEnemySub emits a subroutine that returns carry set if the OAM entry at $0800,Y (DB = $7E) is within
+// about 24 pixels of an enemy in captureDyingList. 16-bit registers; clobbers A and X.
+func emitNearDyingEnemySub(a *asm.Emitter) uint16 {
+	sub := uint16(a.Label("ce_near_dying"))
+	tmpX, tmpY, tmpE := uint16(captureTmpX&0xFFFF), uint16(captureTmpY&0xFFFF), uint16(captureTmpE&0xFFFF)
+	list := uint16(captureDyingList & 0xFFFF)
+	a.Comment("the entry's signed screen x:")
+	a.TYA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.LDA_abs_x(0x0A20)
+	a.AND_imm16_w(0x0001)
+	a.XBA()
+	a.STA_long(captureTmpE)
+	a.LDA_abs_y(0x0800)
+	a.AND_imm16_w(0x00FF)
+	a.ORA_long(captureTmpE)
+	a.CMP_imm16_w(0x0100)
+	a.BCC("ce_nd_x")
+	a.CLC()
+	a.ADC_imm16_w(0xFE00) // -$200
+	a.Label("ce_nd_x")
+	a.STA_long(captureTmpX)
+	a.Comment("and y:")
+	a.LDA_abs_y(0x0801)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x00E0)
+	a.BCC("ce_nd_y")
+	a.CLC()
+	a.ADC_imm16_w(0xFF00) // -$100
+	a.Label("ce_nd_y")
+	a.STA_long(captureTmpY)
+	a.PHB()
+	a.PEA(0x7070)
+	a.PLB()
+	a.PLB()
+	a.LDX_imm16_w(0x0000)
+	a.Label("ce_nd_loop")
+	a.TXA()
+	a.CMP_abs(uint16(captureDyingAddr & 0xFFFF))
+	a.BCS("ce_nd_none")
+	a.LDA_abs_x(list)
+	a.STA_abs(tmpE)
+	a.LDA_abs(tmpX)
+	a.SEC()
+	a.SBC_abs(tmpE)
+	a.CLC()
+	a.ADC_imm16_w(24)
+	a.CMP_imm16_w(24 + 32)
+	a.BCS("ce_nd_next")
+	a.LDA_abs_x(list + 2)
+	a.STA_abs(tmpE)
+	a.LDA_abs(tmpY)
+	a.SEC()
+	a.SBC_abs(tmpE)
+	a.CLC()
+	a.ADC_imm16_w(32)
+	a.CMP_imm16_w(32 + 32)
+	a.BCS("ce_nd_next")
+	a.PLB()
+	a.SEC()
+	a.RTS()
+	a.Label("ce_nd_next")
+	a.INX()
+	a.INX()
+	a.INX()
+	a.INX()
+	a.BRA("ce_nd_loop")
+	a.Label("ce_nd_none")
+	a.PLB()
+	a.CLC()
+	a.RTS()
+	return sub
 }
 
 // emitCaptureExtras emits the routine that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after
@@ -1263,6 +1428,11 @@ func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
 func emitCaptureExtras(a *asm.Emitter) {
 	a.Label("captureExtras")
 	ex := linkOAMCopyAddr + linkOAMCopyExtras
+	a.JMP_abs("ce_start")
+	a.AssumeREP(0x30)
+	nearDying := emitNearDyingEnemySub(a)
+	a.AssumeSEP(0x30)
+	a.Label("ce_start")
 
 	a.PHP()
 	a.PHB()
@@ -1343,11 +1513,12 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.TSB_abs(mask)
 
 	a.Label("ce_scan")
+	a.REP(0x30)
+	emitDyingEnemiesList(a)
 	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
 	a.PEA(0x7E7E)
 	a.PLB()
 	a.PLB()
-	a.REP(0x30)
 	a.LDY_imm16_w(0x01FC)
 	a.Label("ce_loop")
 	a.Comment("drawn this frame (most entries are not):")
@@ -1370,6 +1541,13 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.SBC_abs(0x0352)
 	a.CMP_imm16_w(linkOAMCount * 4)
 	a.BCC("ce_next")
+	a.Comment("not an enemy's death poof or explosion:")
+	a.LDA_long_x(captureChrsAddr)
+	a.AND_imm16_w(captureChrEnemyFX)
+	a.BEQ("ce_copy")
+	a.JSR_abs(nearDying)
+	a.BCS("ce_next")
+	a.Label("ce_copy")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index:")
 	a.LDA_long(ex)
 	a.TAX()

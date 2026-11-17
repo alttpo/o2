@@ -1052,3 +1052,32 @@ func TestRemoteSpritesScenario_RipplesUnderLink(t *testing.T) {
 	h.expectOAM("grass", 0, 0x7E, [4]byte{0x40, 0x60, 0xC8, 0x22}, 0x00)
 	h.expectOAM("grass", 0, 0x7F, [4]byte{0x48, 0x60, 0xC8, 0x62}, 0x00)
 }
+
+// The death poof of an enemy (synced by alttpo, so every player draws it already) is not sent even while something
+// else is captured; the same chr away from dying enemies is.
+func TestRemoteSpritesScenario_EnemyDeathNotSent(t *testing.T) {
+	for _, state := range []uint8{0x02, 0x04, 0x06} {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		// a bomb, so that the OAM buffer is scanned:
+		e.WRAM[0x0C4A+2] = 0x07
+		// enemy in slot 3 at world ($1060,$0240) is at screen ($60,$40) with g2's scroll ($1000,$0200):
+		e.WRAM[0x0DD0+3] = state
+		e.WRAM[0x0D10+3], e.WRAM[0x0D30+3] = 0x60, 0x10
+		e.WRAM[0x0D00+3], e.WRAM[0x0D20+3] = 0x40, 0x02
+		e.WRAM[0x0F70+3] = 0
+		copy(e.WRAM[0x0800+0x20*4:], []byte{0x62, 0x44, 0x9B, 0x04})
+		copy(e.WRAM[0x0800+0x21*4:], []byte{0xC0, 0x40, 0x9B, 0x04})
+		h.frames(8)
+
+		var got []uint8
+		for _, sp := range h.gs[0].g.players[1].Sprites.list {
+			if sp.b[2] == 0x9B {
+				got = append(got, sp.index)
+			}
+		}
+		if len(got) != 1 || got[0] != 0x21 {
+			t.Errorf("state $%02x: expected only the $9B away from the enemy (OAM $21) to be sent; got %02x", state, got)
+		}
+	}
+}
