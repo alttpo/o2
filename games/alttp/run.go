@@ -415,9 +415,9 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	if area := g.wram[0x8A]; g.wram[0x1B] == 0 && area < 0xC0 {
 		q = g.readEnqueue(q, 0xF5F280+uint32(area), 0x01, nil) // [$F280+$8A]
 	}
-	// trap doors, manipulable object count, map16 change log index, star switch state and hole overlay, and the
-	// overworld entrance animation:
-	q = g.readEnqueue(q, 0xF50466, 0x61, nil) // [$0466..$04C6]
+	// trap doors, manipulable object count, map16 change log index, star switch state and hole overlay, the
+	// overworld entrance animation and the torch timers:
+	q = g.readEnqueue(q, 0xF50466, 0x9A, nil) // [$0466..$04FF]
 	// pull switch ($0642), hold switch ($0646) and chest positions ($06E0..$06EB) in the underworld:
 	q = g.enqueueRoomReads(q)
 	// overworld map16 change log and underworld manipulable objects:

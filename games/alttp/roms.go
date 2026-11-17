@@ -49,6 +49,9 @@ const (
 	// object sprite ($EC) in slot X (X = $FF if none is free) and spawns the secret in $0B9C under it like the game
 	// does when an object is lifted (Overworld_SubstituteAlternateSecret, Sprite_SpawnSecret). JSL, RTL:
 	fnSpawnThrowableTerrainSilently
+	// Underworld_LightTorch: $0333 = $C0 + torch index, 8-bit A/X/Y; lights the torch if it is not lit, draws it, sets
+	// its timer ($04F0+t) to $C0 and may switch to submodule $0A to brighten a dark room. JSL, RTL:
+	fnUnderworldLightTorch
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -95,6 +98,7 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnBank1BRTL] = 0x1BBD79
 	fns[fnRevealPotItem] = 0x01E6B2
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
+	fns[fnUnderworldLightTorch] = 0x01F3EC
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -119,4 +123,5 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnBank1BRTL] = 0x1BBD79
 	fns[fnRevealPotItem] = 0x01E6B0
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
+	fns[fnUnderworldLightTorch] = 0x01F3EA
 }

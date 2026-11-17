@@ -64,6 +64,10 @@ func (g *Game) sendPackets() {
 	if g.SyncUnderworld && local.Module == 0x07 {
 		// star switch state and manipulable objects are room specific; send them only to players in the same room:
 		m := g.makeSectorMessage()
+		// the torches the local player lit (shared with alttpo's torches.as):
+		if err := g.SerializeTorches(m); err != nil {
+			panic(err)
+		}
 		if err := g.SerializeStarSwitch(m); err != nil {
 			panic(err)
 		}

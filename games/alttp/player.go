@@ -155,9 +155,11 @@ type Player struct {
 	// overworld map16 change log and underworld manipulable objects, sent to players in the same area or room:
 	Map16 map16Remote
 	Manip manipRemote
-	Star  starSwitchRemote
-	Room  roomStateRemote
-	Doors roomDoorsRemote
+	// the torches the player lit in its room (see synctorches.go):
+	Torches torchesRemote
+	Star    starSwitchRemote
+	Room    roomStateRemote
+	Doors   roomDoorsRemote
 	// overworld entrance animations and other events (see syncowevents.go):
 	OwEvents owEventsRemote
 

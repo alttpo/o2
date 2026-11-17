@@ -243,6 +243,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		p.Room.valid = false
 		p.Doors.valid = false
 		p.Manip.reset()
+		p.Torches.valid = false
 		p.Map16.reset(0)
 		p.OwEvents.valid = false
 	}
@@ -428,22 +429,6 @@ func (g *Game) DeserializeAncillae(p *Player, r io.Reader) (err error) {
 		}
 	}
 
-	return
-}
-
-func (g *Game) DeserializeTorches(p *Player, r io.Reader) (err error) {
-	var (
-		count uint8
-	)
-	if err = binary.Read(r, binary.LittleEndian, &count); err != nil {
-		panic(fmt.Errorf("error deserializing torches: %w", err))
-	}
-	for i := uint8(0); i < count; i++ {
-		var torch [2]byte
-		if _, err = r.Read(torch[:]); err != nil {
-			panic(fmt.Errorf("error deserializing torches: %w", err))
-		}
-	}
 	return
 }
 

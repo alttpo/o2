@@ -141,6 +141,7 @@ type Game struct {
 
 	map16    map16Local
 	manip    manipLocal
+	torches  torchesLocal
 	owEvents owEventsLocal
 
 	runMinStart        time.Time
@@ -285,6 +286,7 @@ func (g *Game) FirstFrame() {
 	g.resetRoomState()
 	g.resetMap16()
 	g.resetManip()
+	g.resetTorches()
 	g.resetOwEvents()
 	// rewrite the remote sprites table:
 	g.remoteSprites = remoteSpritesLocal{}
