@@ -145,6 +145,7 @@ type Game struct {
 
 	crystalSwitch crystalSwitchLocal
 	starSwitch    starSwitchLocal
+	flyingTiles   flyingTilesLocal
 	roomState     roomStateLocal
 
 	map16    map16Local
@@ -292,6 +293,7 @@ func (g *Game) FirstFrame() {
 	g.owFlagsKnown = [0xC0]bool{}
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetFlyingTiles()
 	g.resetRoomState()
 	g.resetMap16()
 	g.resetManip()

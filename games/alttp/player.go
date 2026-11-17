@@ -162,6 +162,8 @@ type Player struct {
 	Star    starSwitchRemote
 	Room    roomStateRemote
 	Doors   roomDoorsRemote
+	// the tile room overlord of the player's room (see synctiles.go):
+	FlyingTiles flyingTilesRemote
 	// overworld entrance animations and other events (see syncowevents.go):
 	OwEvents owEventsRemote
 

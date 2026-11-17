@@ -295,6 +295,17 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					updated = true
 				}
 			}
+			if u, ta := g.generateFlyingTilesUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.flyingTiles.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
 		}
 
 		if g.SyncSmallKeys {

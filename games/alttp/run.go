@@ -391,6 +391,8 @@ func (g *Game) enqueueSRAMRead(q []snes.Read) []snes.Read {
 	q = g.enqueuePatchSignatureRead(q)
 	// the player colors the patch applies to Link's palette:
 	q = g.enqueueLinkColorRead(q)
+	// the overlords, to find a tile room overlord in the underworld:
+	q = g.enqueueFlyingTilesRead(q, true)
 	return q
 }
 
@@ -426,6 +428,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.enqueueMap16Reads(q)
 	q = g.enqueueOwEventReads(q)
 	q = g.enqueueManipReads(q)
+	// the overlords while the room has a tile room overlord:
+	q = g.enqueueFlyingTilesRead(q, false)
 
 	// sprite palettes 0..7 (Link, sword and shield, sparkles, dust, shadow); color 0 of palette 0 is transparent and
 	// not read, so this fits in a single read:

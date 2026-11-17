@@ -83,6 +83,9 @@ func (g *Game) sendPackets() {
 		if err := g.SerializeRoomDoors(m); err != nil {
 			panic(err)
 		}
+		if err := g.SerializeFlyingTiles(m); err != nil {
+			panic(err)
+		}
 		g.send(m)
 	}
 

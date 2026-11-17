@@ -24,7 +24,7 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
 state, room state (trap doors, chests, keys, key doors, switches), overworld events, underworld manipulable objects
-and torches (both), and sprites and enemies (alttpo).
+and torches, the flying floor tiles (both), and sprites and enemies (alttpo).
 Everything else is sent as broadcastAll, including the overworld map16 changes, which players need before they enter
 the area (see [Overworld map16 changes](#overworld-map16-changes)).
 
@@ -73,6 +73,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
 | 0x1B | room key doors and switches | yes (per sector) | yes (per sector) | used |
 | 0x1C | overworld entrance animations and other events | yes (per sector, own packet) | yes (per sector, own packet) | used |
+| 0x1D | flying floor tiles (tile room overlord) | yes (per sector, last) | yes (per sector, last) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -168,6 +169,8 @@ more messages, which corrupted the rest of the packet.
   one. The 16-byte patch signature (`$707FF0`, see `games/alttp/signature.go`) is read with the SRAM reads and every
   8th WRAM read cycle, and every cycle until it matches. The map16 change log adds two reads in the overworld, and the current area's flags (`$7EF280+$8A`) one more (and the sprite tables `$0D80..$0E2F` one more in the lumberjacks' area `$02`, for the overworld events); the manipulable objects add one read plus up to two
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
+  The overlord tables (`$0B00..$0B37`) are read with the SRAM reads every 8 frames in the underworld, and with every
+  read cycle only while the room has a tile room overlord (17 reads there, three VGET commands).
 - **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
@@ -586,6 +589,39 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
 - **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".
+
+## Flying floor tiles
+
+o2 (`games/alttp/synctiles.go`) and alttpo (`FlyingTiles.as`) share the state of the tile room overlord, so players in
+the same room see the same floor tiles fly at the same time.
+
+- **The overlord.** Overlord `$14` (`Overlord14_TileRoom`) only ticks while its position is on screen (in its
+  quadrant). 128 frames after the room loads and then every 96 frames it spawns the next of 22 tile sprites (`$94`) at
+  a fixed position (`TileRoom_SpawnTile`); the tile erases its floor tile right away (`UpdateTilemapWithCommonObject`
+  with object 6, `$01E7A9` US, `$01E7A7` JP and randomizers), rises and flies at Link. After the 22nd tile the overlord
+  frees its slot. Its state is `$0B28+k` (tiles spawned) and the timer `$0B30+k`, counting down from 0 (first tile)
+  or `$E0` to `$80`. A player entering the room or the quadrant later used to start over from the first tile.
+- **Message 0x1D**, broadcastSector: `room u16`, `count u8` (tiles spawned, 22 once the overlord is done),
+  `timer u8`. Both send it in the dungeon module once the room's tile room overlord was seen in this room visit, last
+  in the room state packet. A receiver drops a player's state whenever that player's location changes.
+- **Applying.** In submodule 0 of the dungeon module, while the local overlord is on screen, take the state of the
+  remote player in the same room (and team) that is furthest along, if it is more than 8 frames further along (more
+  tiles spawned, or as many and more time elapsed; the remote state is a few frames old, which must not make players
+  keep taking each other's state): erase the floor tiles its overlord already lifted (at most 4 per frame, since each
+  queues a VRAM upload), take its count and timer, or free the overlord when the remote one is done. The tiles already
+  flying for the remote player are not spawned here.
+- **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap". alttpo players with "Sync enemies" also copy the
+  overlords of the player owning the room's enemies, which agrees with this.
+
+## Uncle's sword and shield
+
+Talking to Link's uncle in the secret passage (`Uncle_GrantEquipment`) gives the sword and shield (or, in randomizers,
+the uncle's item) and sets bit 0 of `$7EF3C6`, which `SpritePrep_UncleAndPriest` only checks when the room loads. A
+player already in the passage could get them a second time from their own uncle after another player received them.
+When bit 0 arrives from another player (progress sync, "Sync progress" in o2), both o2 (`takeUncleGear` in
+`games/alttp/sync.go`) and alttpo (`take_uncle_gear` in `SyncableItem.as`) switch an uncle that was not talked to yet
+(sprite `$73` with `$0E90` = 0, `$0E80` = 1, AI state `$0D80` = 0) to AI state 2 and graphics `$0DC0` = 1: lying
+there without his sword and shield, as after granting them. The telepathic Zelda follower is removed as before.
 
 ## Torches
 

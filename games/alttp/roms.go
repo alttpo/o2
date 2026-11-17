@@ -56,6 +56,10 @@ const (
 	// area load decompressed the area's tilemap, before anything is drawn from it; 16-bit A/X/Y. The patch hooks its
 	// first instructions (map16StageHookExpected) to apply staged remote map16 changes (see emitMap16StageHook):
 	fnOverworldHandleOverlays
+	// UpdateTilemapWithCommonObject: $00/$02 = X/Y, Y = common object index * 2, 8-bit A/X/Y; replaces the 16x16 tile
+	// at X/Y in $7E2000 and its attributes in $7F2000 and queues a VRAM upload, like a flying floor tile (object 6)
+	// erasing its floor tile. JSL, RTL:
+	fnUpdateTilemapWithCommonObject
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -104,6 +108,7 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 	fns[fnUnderworldLightTorch] = 0x01F3EC
 	fns[fnOverworldHandleOverlays] = 0x02EF29
+	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A9
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -130,4 +135,5 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 	fns[fnUnderworldLightTorch] = 0x01F3EA
 	fns[fnOverworldHandleOverlays] = 0x02EC8D
+	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A7
 }

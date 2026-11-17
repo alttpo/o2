@@ -250,6 +250,7 @@ func (g *Game) readWRAM() {
 	g.readOwEvents()
 	g.readManip()
 	g.readTorches()
+	g.readFlyingTiles()
 
 	now := g.ServerSNESTimestamp()
 	nowTs := timestampFromTime(now)
