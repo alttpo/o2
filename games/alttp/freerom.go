@@ -2,27 +2,32 @@ package alttp
 
 import (
 	"fmt"
-	"log"
 	"sort"
 
 	"github.com/alttpo/snes/mapping/lorom"
 	"o2/snes"
 )
 
-// Free ROM
+// Patch ROM
 //
-// The patcher writes its routines to sections of the ROM that the game never reads. They come from the `FREE ROM`
-// comments and their `NULL_xxxxxx` (all $FF) and `GARBAGE_xxxxxx` labels in the JP 1.0 and US 1.0 disassemblies
-// (jpdasm, usdasm), with these corrections, checked against the ROMs themselves:
+// The patcher writes all of its routines and tables to patchRegion, the first half of bank $3C ($3C:8000..$3C:FFFF),
+// in a ROM of 2 MiB. Vanilla US 1.0 and JP 1.0 ROMs are 1 MiB; the patcher expands them to 2 MiB (expandROM), the way
+// randomizers do. Randomizers are built from the JP 1.0 ROM and are already 2 MiB.
 //
-//   - the GARBAGE sections start with a few leftover bytes (e.g. `$C0, $00, $00, $00, $00, $01, $FF, $00, $00` at
-//     $1B:B1D7); only the $FF bytes after them are listed.
-//   - usdasm's `FREE ROM: 0x16` at $03:B3F0, $03:E7F0, $04:B3F0 and $04:E7F0 are 16 bytes, and `FREE ROM: 0x19B` at
-//     $03:EB05 is $9B bytes, as the US ROM has them.
-//   - the room headers of the unused rooms $136..$13F ($04:FCCF in JP, $04:FFEF in US) are left out, since ROM hacks
-//     use those rooms.
+// Bank $3C is in a gap of banks ($38..$3E) that no z3randomizer variant writes to, checked against the sources of
+// z3randomizer (master, v32.0), its door randomizer branches (DRMain, DRVolatile, DRUnstable), cassidoxa's fork and
+// Archipelago's (main, doors), the `org`s in their asm and the addresses the generators (ALttPEntranceRandomizer,
+// ALttPDoorRandomizer, Archipelago) write to, and against randomized ROMs, which have only $00 in those banks. The
+// randomizers use banks $20..$24, $27..$29, $2B, $2F..$35 (z3randomizer's code and tables, door randomizer's tables,
+// key drop shuffle), $26, $36 and $37 (Enemizer) and $3F (sprite swap, door randomizer's pot shuffle); new code tends to
+// be added after those, so $3C has room on either side. The patcher refuses a ROM whose patchRegion holds anything but
+// $00 or $FF bytes.
 //
-// Every section lies within one bank. Sections are bus addresses in banks $00..$1F, [start, end).
+// The free sections of the JP 1.0 and US 1.0 ROMs below are where earlier versions of the patch put their routines;
+// they are only used to recognize ROMs that those versions patched. They come from the `FREE ROM` comments and their
+// `NULL_xxxxxx` (all $FF) and `GARBAGE_xxxxxx` labels in the JP 1.0 and US 1.0 disassemblies (jpdasm, usdasm).
+//
+// Sections are bus addresses, [start, end).
 type romSpan struct {
 	start, end uint32
 }
@@ -93,65 +98,59 @@ var freeROMUS10 = []romSpan{
 	{0x1FFF4E, 0x200000},
 }
 
-// randomizerUsedROM are the free sections of the JP 1.0 ROM that z3randomizer (the master, v32.0 and DRVolatile
-// branches, which alttpr, ALttPEntranceRandomizer and ALttPDoorRandomizer build their base ROMs from) writes to. Each
-// one starts at an `org` and runs to the end of the free section, so that a randomizer whose code there grows does
-// not run into o2's:
-var randomizerUsedROM = []romSpan{
-	{0x0089C2, 0x0089E0}, // hooks.asm
-	{0x0098AB, 0x0098C0}, // hooks.asm
-	{0x00FFB7, 0x00FFC0}, // hooks.asm
-	{0x02FFC7, 0x030000}, // hooks.asm
-	{0x04E96F, 0x04E9A0}, // hooks.asm
-	{0x07FFF4, 0x080000}, // hooks.asm
-	{0x09F7B2, 0x09F7DE}, // hooks.asm at $09F7BD; doorrando/drhooks.asm at $09F7B2
-	{0x0DFFE1, 0x0E0000}, // hooks.asm
-	{0x1BB1D7, 0x1BB880}, // custompalettes.asm (PalettesCustom) at $1BB1E0, `warnpc $9BB880`
-	{0x1FFFF8, 0x200000}, // the ROM timestamp
+// patchRegion is where the patcher writes its routines and tables; see the comment above:
+var patchRegion = romSpan{0x3C8000, 0x3D0000}
+
+// patchedROMSize is the size of a patched ROM: patchRegion is in its second MiB.
+const patchedROMSize = 0x20_0000
+
+// expandROM expands a ROM smaller than patchedROMSize to patchedROMSize, with the ROM repeated in the added space as
+// the SNES mirrors it, and patchRegion filled with $FF. It sets the ROM size in the header (which it doesn't write).
+func expandROM(rom *snes.ROM) error {
+	n := len(rom.Contents)
+	if n >= patchedROMSize {
+		return nil
+	}
+	if n == 0 || patchedROMSize%n != 0 {
+		return fmt.Errorf("cannot expand a ROM of $%x bytes to $%x bytes", n, patchedROMSize)
+	}
+	contents := make([]byte, patchedROMSize)
+	for o := 0; o < patchedROMSize; o += n {
+		copy(contents[o:], rom.Contents)
+	}
+	rom.Contents = contents
+	pak, err := lorom.BusAddressToPak(patchRegion.start)
+	if err != nil {
+		return err
+	}
+	for i := range rom.Contents[pak : pak+patchRegion.size()] {
+		rom.Contents[pak+uint32(i)] = 0xFF
+	}
+	// 1024 << $0B = 2 MiB:
+	rom.Header.ROMSize = 0x0B
+	return nil
 }
 
-// freeROMRandomizer are the free sections of a randomized ROM: JP 1.0's without the ones z3randomizer uses.
-var freeROMRandomizer = subtractROMSpans(freeROMJP10, randomizerUsedROM)
-
-// subtractROMSpans returns the parts of spans that are not in any of used.
-func subtractROMSpans(spans, used []romSpan) (free []romSpan) {
-	for _, s := range spans {
-		parts := []romSpan{s}
-		for _, u := range used {
-			var next []romSpan
-			for _, p := range parts {
-				if u.end <= p.start || u.start >= p.end {
-					next = append(next, p)
-					continue
-				}
-				if u.start > p.start {
-					next = append(next, romSpan{p.start, u.start})
-				}
-				if u.end < p.end {
-					next = append(next, romSpan{u.end, p.end})
-				}
-			}
-			parts = next
+// isPatchRegionEmpty reports whether patchRegion is in the ROM and holds only $00 or $FF bytes.
+func isPatchRegionEmpty(rom *snes.ROM) bool {
+	pak, err := lorom.BusAddressToPak(patchRegion.start)
+	if err != nil || int(pak+patchRegion.size()) > len(rom.Contents) {
+		return false
+	}
+	for _, b := range rom.Contents[pak : pak+patchRegion.size()] {
+		if b != 0x00 && b != 0xFF {
+			return false
 		}
-		free = append(free, parts...)
 	}
-	return
+	return true
 }
 
-// freeROMLayout picks the free sections for the ROM. Randomizers are built from the JP 1.0 ROM and expand it to 2 MiB
-// or more.
-func freeROMLayout(rom *snes.ROM) (name string, spans []romSpan) {
-	if rom.Header.DestinationCode == snes.RegionNorthAmerica && rom.Header.MaskROMVersion == 0 {
-		return "US 1.0", freeROMUS10
-	}
-	if len(rom.Contents) > 0x10_0000 {
-		return "JP 1.0 randomizer", freeROMRandomizer
-	}
-	return "JP 1.0", freeROMJP10
-}
-
-// isFreeROM reports whether addr is in a free section of any supported ROM, which is where o2's routines are.
+// isFreeROM reports whether addr is where o2's routines are: in patchRegion, or in a free section of the JP 1.0 or US
+// 1.0 ROM, where earlier versions of the patch put them.
 func isFreeROM(addr uint32) bool {
+	if patchRegion.contains(addr) {
+		return true
+	}
 	for _, spans := range [][]romSpan{freeROMJP10, freeROMUS10} {
 		for _, s := range spans {
 			if s.contains(addr) {
@@ -176,25 +175,7 @@ func isROMSpanFree(rom *snes.ROM, s romSpan) bool {
 	return true
 }
 
-// verifiedFreeROM returns the spans whose bytes are all $FF in the ROM. Others are left out, since an unknown ROM
-// hack may have put something there.
-func verifiedFreeROM(rom *snes.ROM, spans []romSpan) (free []romSpan) {
-	if rom.Header.HeaderVersion() >= 2 {
-		// the expanded header at $00FFB0..$00FFBF, which ROM.WriteHeader writes:
-		spans = subtractROMSpans(spans, []romSpan{{0x00FFB0, 0x00FFC0}})
-	}
-	free = make([]romSpan, 0, len(spans))
-	for _, s := range spans {
-		if !isROMSpanFree(rom, s) {
-			log.Printf("alttp: patch: free ROM $%06x..$%06x is in use; not using it\n", s.start, s.end-1)
-			continue
-		}
-		free = append(free, s)
-	}
-	return
-}
-
-// romBlock is a routine or table the patcher writes to free ROM.
+// romBlock is a routine or table the patcher writes to patchRegion.
 type romBlock struct {
 	name string
 	size uint32

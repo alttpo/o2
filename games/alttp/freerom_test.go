@@ -11,9 +11,8 @@ import (
 
 func TestFreeROM_Tables(t *testing.T) {
 	for name, spans := range map[string][]romSpan{
-		"JP 1.0":     freeROMJP10,
-		"US 1.0":     freeROMUS10,
-		"randomizer": freeROMRandomizer,
+		"JP 1.0": freeROMJP10,
+		"US 1.0": freeROMUS10,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for i, s := range spans {
@@ -26,14 +25,14 @@ func TestFreeROM_Tables(t *testing.T) {
 				if i > 0 && spans[i-1].end > s.start {
 					t.Errorf("$%06x..$%06x is not after $%06x..$%06x", s.start, s.end, spans[i-1].start, spans[i-1].end)
 				}
-				if len(subtractROMSpans([]romSpan{s}, []romSpan{patchSignatureSpan})) != 1 {
-					t.Errorf("$%06x..$%06x overlaps the patch signature", s.start, s.end)
-				}
-				if name == "randomizer" && len(subtractROMSpans([]romSpan{s}, randomizerUsedROM)) != 1 {
-					t.Errorf("$%06x..$%06x overlaps ROM that z3randomizer uses", s.start, s.end)
-				}
 			}
 		})
+	}
+	if patchRegion.start&0xFFFF != 0x8000 || (patchRegion.end-1)>>16 != patchRegion.start>>16 {
+		t.Errorf("patchRegion $%06x..$%06x is not the ROM of one bank", patchRegion.start, patchRegion.end)
+	}
+	if pak, _ := lorom.BusAddressToPak(patchRegion.end - 1); pak >= patchedROMSize || pak < 0x10_0000 {
+		t.Errorf("patchRegion is not in the second MiB of a patched ROM")
 	}
 }
 
@@ -67,7 +66,8 @@ func TestAllocateROM(t *testing.T) {
 }
 
 // TestPatcher_WritesOnlyFreeROM patches the real ROMs that are available and checks that the patch changes nothing
-// but the free ROM, the patch signature, the code it hooks and the header.
+// but patchRegion, the patch signature, the code it hooks and the header; a 1 MiB ROM is expanded to 2 MiB with the
+// ROM mirrored in the second MiB.
 func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 	files := []string{"alttp-jp-vanilla.sfc", "alttp-us.sfc", "alttpr - NoGlitches-standard-ganon_ry08z8Q5y5.sfc"}
 	dr, _ := filepath.Glob("DR_*.sfc")
@@ -84,20 +84,29 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, layout := freeROMLayout(rom)
 
 			if err = NewPatcher(rom).Patch(); err != nil {
 				t.Fatal(err)
 			}
+			if len(rom.Contents) != patchedROMSize {
+				t.Fatalf("patched ROM is $%x bytes; expected $%x", len(rom.Contents), patchedROMSize)
+			}
+			if rom.Header.ROMSize != 0x0B {
+				t.Errorf("header ROM size $%02x; expected $0B", rom.Header.ROMSize)
+			}
+			if hdr, _ := snes.NewROM(fileName, rom.Contents); hdr.Header.ROMSize != 0x0B {
+				t.Errorf("written header ROM size $%02x; expected $0B", hdr.Header.ROMSize)
+			}
 
-			allowed := append([]romSpan{
+			allowed := []romSpan{
+				patchRegion,
 				patchSignatureSpan,
 				{0x00802F, 0x008034},
 				{0x008056, 0x00805A},
 				{nmiEarlyPatchAddr, nmiEarlyPatchAddr + uint32(len(nmiEarlyPatchExpected))},
 				{nmiHookPatchAddr, nmiHookPatchAddr + uint32(len(nmiHookPatchExpected))},
 				{0x00FFB0, 0x010000},
-			}, layout...)
+			}
 			fns := make(map[romFunction]uint32)
 			fillRomFunctions(rom, fns)
 			stage := fns[fnOverworldHandleOverlays]
@@ -112,22 +121,23 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 				return false
 			}
 			for pak := range rom.Contents {
-				if rom.Contents[pak] == original[pak] {
+				// the original ROM, or the mirror of it in the added space:
+				orig := original[pak%len(original)]
+				if rom.Contents[pak] == orig {
 					continue
 				}
 				addr := uint32(pak>>15)<<16 | uint32(pak&0x7FFF) | 0x8000
 				if !isAllowed(addr) {
-					t.Errorf("patch changed $%06x outside of free ROM: $%02x -> $%02x", addr, original[pak], rom.Contents[pak])
+					t.Errorf("patch changed $%06x outside of the patch region: $%02x -> $%02x", addr, orig, rom.Contents[pak])
 				}
 			}
 
-			// the randomizer's custom palettes:
-			if len(original) > 0x10_0000 {
-				pak, _ := lorom.BusAddressToPak(0x1BB1E0)
-				for i := uint32(0); i < 0x80; i++ {
-					if rom.Contents[pak+i] != original[pak+i] {
-						t.Fatalf("patch changed the randomizer's PalettesCustom at $%06x", 0x1BB1E0+i)
-					}
+			// every routine is in patchRegion: the hooks call into it:
+			for _, hook := range []uint32{0x00802F, 0x008056, nmiEarlyPatchAddr, nmiHookPatchAddr} {
+				pak, _ := lorom.BusAddressToPak(hook)
+				target := uint32(rom.Contents[pak+1]) | uint32(rom.Contents[pak+2])<<8 | uint32(rom.Contents[pak+3])<<16
+				if !patchRegion.contains(target &^ 0x800000) {
+					t.Errorf("hook at $%06x calls $%06x, outside of the patch region", hook, target)
 				}
 			}
 
@@ -136,5 +146,24 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 				t.Error("expected an error patching a patched ROM")
 			}
 		})
+	}
+}
+
+// TestPatcher_RefusesUsedPatchRegion checks that a 2 MiB ROM with something in patchRegion is not patched.
+func TestPatcher_RefusesUsedPatchRegion(t *testing.T) {
+	contents, err := os.ReadFile("alttp-jp-vanilla.sfc")
+	if err != nil {
+		t.Skipf("ROM not available: %v", err)
+	}
+	expanded := make([]byte, patchedROMSize)
+	copy(expanded, contents)
+	pak, _ := lorom.BusAddressToPak(patchRegion.start + 0x123)
+	expanded[pak] = 0x42
+	rom, err := snes.NewROM("hack.sfc", expanded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = NewPatcher(rom).Patch(); err == nil {
+		t.Error("expected an error patching a ROM that uses the patch region")
 	}
 }

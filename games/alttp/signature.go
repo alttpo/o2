@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 8
+	patchFormat = 9
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -108,12 +108,8 @@ func computePatchVersion() (v [4]byte) {
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 	})
-	// the free ROM the routines are placed in:
-	for _, spans := range [][]romSpan{freeROMJP10, freeROMUS10, freeROMRandomizer} {
-		for _, s := range spans {
-			_ = binary.Write(h, binary.LittleEndian, [2]uint32{s.start, s.end})
-		}
-	}
+	// the ROM the routines are placed in, and the size of the patched ROM:
+	_ = binary.Write(h, binary.LittleEndian, [3]uint32{patchRegion.start, patchRegion.end, patchedROMSize})
 
 	// the code, with placeholder ROM addresses:
 	r := &patchROM{

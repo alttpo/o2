@@ -123,11 +123,15 @@ func (p *Patcher) Patch() (err error) {
 	// identify the ROM before it is modified:
 	signature := makePatchSignature(p.rom.Contents)
 
-	// the free ROM sections for this ROM (see freerom.go); only those that are still all $FF:
-	layoutName, layout := freeROMLayout(p.rom)
-	free := verifiedFreeROM(p.rom, layout)
 	if !isROMSpanFree(p.rom, patchSignatureSpan) {
 		return fmt.Errorf("ROM at $%06x, where o2 writes its patch signature, is in use", patchSignatureSpan.start)
+	}
+	// the routines go in patchRegion, in the second MiB of the ROM (see freerom.go):
+	if err = expandROM(p.rom); err != nil {
+		return
+	}
+	if !isPatchRegionEmpty(p.rom) {
+		return fmt.Errorf("ROM at $%06x..$%06x, where o2 writes its routines, is in use", patchRegion.start, patchRegion.end-1)
 	}
 
 	// patch header to expand SRAM size:
@@ -135,9 +139,9 @@ func (p *Patcher) Patch() (err error) {
 	if hdr.RAMSize < 5 {
 		// 1024 << 5 = 32768 bytes, aka $70:0000-7FFF
 		hdr.RAMSize = 5
-		if err = p.rom.WriteHeader(); err != nil {
-			return
-		}
+	}
+	if err = p.rom.WriteHeader(); err != nil {
+		return
 	}
 
 	// read from $00:802F which is where NMI should be enabled in the reset routine:
@@ -190,7 +194,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 	gameModes := frameJSL[1:]
 
-	// the routines and tables written to free ROM, measured with placeholder addresses and then placed by
+	// the routines and tables written to patchRegion, measured with placeholder addresses and then placed by
 	// allocateROM:
 	fns := make(map[romFunction]uint32)
 	fillRomFunctions(p.rom, fns)
@@ -208,8 +212,8 @@ func (p *Patcher) Patch() (err error) {
 	if err = r.measure(); err != nil {
 		return
 	}
-	if err = allocateROM(free, r.blocks()); err != nil {
-		return fmt.Errorf("%s ROM: %w", layoutName, err)
+	if err = allocateROM([]romSpan{patchRegion}, r.blocks()); err != nil {
+		return
 	}
 	if err = r.write(p.rom, textBuf); err != nil {
 		return
@@ -400,7 +404,7 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw, ma
 	a.RTL()
 }
 
-// patchROM is the code the patcher writes to free ROM, in blocks that allocateROM places separately:
+// patchROM is the code the patcher writes to patchRegion, in blocks that allocateROM places there:
 type patchROM struct {
 	// the code at $00:802F that the init code runs after its own:
 	code802F []byte

@@ -249,8 +249,7 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 	return
 }
 
-// remoteDrawTables are the addresses of the ROM tables the drawing routines use, in three blocks so that they fit
-// the free ROM:
+// remoteDrawTables are the addresses of the ROM tables the drawing routines use, in three blocks:
 type remoteDrawTables struct {
 	// remoteSlotChrTables:
 	chrSlotsSmall, chrSlotsLarge uint32
@@ -1291,8 +1290,8 @@ func (s *remoteSpritesLocal) logRemoteCounts(t *[remoteTableSize]byte, now time.
 	s.logged, s.loggedOK = c, true
 }
 
-// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the parts' tiles: JSLs into the free ROM
-// the patcher uses.
+// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the parts' tiles: JSLs into the ROM the
+// patcher puts its routines in (isFreeROM).
 func (g *Game) remoteBodyOK() bool {
 	for _, addr := range []uint32{nmiHookPatchAddr, nmiEarlyPatchAddr} {
 		pak, err := lorom.BusAddressToPak(addr)
@@ -1583,7 +1582,7 @@ const (
 	captureChrEnemyFX = 0x10 // set in captureChrsAddr for enemyDeathChrs
 
 	// the sizes of the lists in ROM that the init code builds the tables from, padded with their last entry (see
-	// captureLists). The patcher places them and the capture routine in free ROM:
+	// captureLists). The patcher places them and the capture routine in patchRegion:
 	captureTypeListSize = 0x18
 	captureChrListSize  = 0x40
 )
