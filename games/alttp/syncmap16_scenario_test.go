@@ -43,6 +43,7 @@ func (h *skScenario) inArea(i int, area uint16) {
 	e.WRAM[0x1B] = 0
 	e.WRAM[0x8A] = uint8(area)
 	e.WRAM[0x8B] = 0
+	e.WRAM[0x0FFF] = uint8(area>>6) & 1
 	e.WRAM[0x84] = uint8(m16ScrollAt & 0xFF)
 	e.WRAM[0x85] = uint8(m16ScrollAt >> 8)
 	// a large area (Overworld_LoadGFXAndScreenSize):
@@ -451,4 +452,23 @@ func TestMap16Scenario_PortalWarpKeepsPreviousAreaLog(t *testing.T) {
 	if h.logLen(1) != 0 {
 		t.Errorf("g2: expected an empty log; got %d entries", h.logLen(1))
 	}
+}
+
+func TestMap16Scenario_OnlyAppliedInTheSameWorld(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	// g2's world does not agree with its area (e.g. while a warp switches worlds):
+	h.gs[1].e.WRAM[0x0FFF] = 1
+	h.changeMap16(0, m16Pos, m16Bush)
+	h.frames(skSettleFrames)
+	if actual := h.wramU16(1, 0x2000+uint32(m16Pos)); actual != 0 {
+		t.Errorf("g2: expected the change not applied in another world; got tile $%04x", actual)
+	}
+
+	h.gs[1].e.WRAM[0x0FFF] = 0
+	h.frames(skSettleFrames)
+	h.expectTile("g2 is back in the light world", 1, m16Pos, m16Bush, true)
 }

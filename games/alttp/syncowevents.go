@@ -28,12 +28,14 @@ import (
 //   - The lumberjacks' tree top (sprite $3B with $0DC0 = 2, in area $02) hops and falls apart in leaves when Link
 //     dashes into it ($0D80 = 1, $0F80 = 20), revealing the hole under it until the area reloads.
 //
-// Message 0x1C, broadcastSector: `area u16` ($8A), `entrance u8` ($04C6 while an entrance animation runs, else 0),
+// Message 0x1C, broadcastSector: `location u24` (like map16 changes in message 0x17: the area $8A, and bit 17 for the
+// dark world), `entrance u8` ($04C6 while an entrance animation runs, else 0),
 // `flags u8` (bit 0: the desert statues were released, bit 1: the tree top was dashed into, both during this area
 // visit). It is sent in its own packet every frame while something is set, and for a few frames after, in overworld
 // modules $09/$0B (and the menus in $0E).
 //
-// While in the overworld module ($09), submodule 0, in the same area as a remote player on the same team:
+// While in the overworld module ($09), submodule 0, in exactly the same location (area and world) as a remote player on
+// the same team:
 //
 //   - If the remote entrance is set, ours is not and the area's overlay (bit $20) was not drawn when the area loaded
 //     (nor since by an entrance animation here), start the same entrance animation. Link must be standing on the ground
@@ -67,7 +69,8 @@ const (
 type owEventsLocal struct {
 	// valid is true when the area was sampled in the overworld module, submodule 0:
 	valid bool
-	area  uint16
+	// loc is the location (see owLocation):
+	loc uint32
 	// shown is true when the area's overlay was drawn: bit $20 of its flags was set when it loaded, or an entrance
 	// animation ran here since:
 	shown    bool
@@ -84,7 +87,7 @@ type owEventsLocal struct {
 // owEventsRemote is a remote player's overworld events as received.
 type owEventsRemote struct {
 	valid    bool
-	area     uint16
+	loc      uint32
 	entrance uint8
 	flags    uint8
 	at       time.Time
@@ -113,11 +116,12 @@ func (g *Game) readOwEvents() {
 		}
 		return
 	}
-	if !g.wramFresh[0x8A] || !g.wramFresh[0x8B] {
+	loc, ok := g.owLocation()
+	if !ok {
 		return
 	}
-	area := g.wramU16(0x8A)
-	if e.valid && e.area != area {
+	area := owLocationArea(loc)
+	if e.valid && e.loc != loc {
 		g.resetOwEvents()
 	}
 	// area loads happen in other submodules:
@@ -129,7 +133,7 @@ func (g *Game) readOwEvents() {
 			return
 		}
 		e.valid = true
-		e.area = area
+		e.loc = loc
 		e.shown = g.wram[0xF280+uint32(area)]&0x20 != 0
 	}
 
@@ -199,28 +203,37 @@ func (g *Game) sendOwEvents() {
 // SerializeOwEvents writes message 0x1C.
 func (g *Game) SerializeOwEvents(w io.Writer) (err error) {
 	e := &g.owEvents
-	_, err = w.Write([]byte{uint8(MsgOwEvents), uint8(e.area), uint8(e.area >> 8), e.entrance, e.flags})
+	if _, err = w.Write([]byte{uint8(MsgOwEvents)}); err != nil {
+		return
+	}
+	if err = writeU24(w, e.loc); err != nil {
+		return
+	}
+	_, err = w.Write([]byte{e.entrance, e.flags})
 	return
 }
 
 func (g *Game) DeserializeOwEvents(p *Player, r io.Reader) (err error) {
-	var b [4]byte
+	var loc uint32
+	if loc, err = readU24(r); err != nil {
+		return fmt.Errorf("error deserializing overworld events: %w", err)
+	}
+	var b [2]byte
 	if _, err = io.ReadFull(r, b[:]); err != nil {
 		return fmt.Errorf("error deserializing overworld events: %w", err)
 	}
-	area := uint16(b[0]) | uint16(b[1])<<8
 	re := &p.OwEvents
-	if re.valid && (re.area != area || re.entrance != b[2] || re.flags != b[3]) || !re.valid && (b[2] != 0 || b[3] != 0) {
-		log.Printf("alttp: owevents: from '%s': area $%02x entrance %d flags $%02x\n", p.Name(), area, b[2], b[3])
+	if re.valid && (re.loc != loc || re.entrance != b[0] || re.flags != b[1]) || !re.valid && (b[0] != 0 || b[1] != 0) {
+		log.Printf("alttp: owevents: from '%s': location $%06x entrance %d flags $%02x\n", p.Name(), loc, b[0], b[1])
 	}
-	*re = owEventsRemote{valid: true, area: area, entrance: b[2], flags: b[3], at: time.Now()}
+	*re = owEventsRemote{valid: true, loc: loc, entrance: b[0], flags: b[1], at: time.Now()}
 	return nil
 }
 
 // owEventsUpdate is a generated update routine applying a remote player's overworld events.
 type owEventsUpdate struct {
 	g         *Game
-	area      uint16
+	loc       uint32
 	entrance  uint8
 	flags     uint8
 	from      *Player
@@ -239,7 +252,7 @@ func (u *owEventsUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 		// conditions were not right; try again later:
 		return
 	}
-	if !e.valid || e.area != u.area {
+	if !e.valid || e.loc != u.loc {
 		return
 	}
 	// either applied, or nothing to do (already done here, or no tree top to dash into):
@@ -249,7 +262,7 @@ func (u *owEventsUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 	if value == owEventsWritten {
 		// the area flags sync notifies about opened entrances:
-		log.Printf("alttp: owevents: area $%02x: entrance %d flags $%02x from player '%s'\n", u.area, u.entrance, u.flags, u.from.Name())
+		log.Printf("alttp: owevents: location $%06x: entrance %d flags $%02x from player '%s'\n", u.loc, u.entrance, u.flags, u.from.Name())
 	}
 }
 
@@ -279,11 +292,12 @@ func (g *Game) generateOwEventsUpdate(newEmitter func() *asm.Emitter, index uint
 	now := time.Now()
 	for _, p := range g.RemotePlayers() {
 		// game worlds are team specific; menus and text boxes ($0E) keep the area:
-		if p.Team != local.Team || !(isOverworldModule(p.Module) || p.Module == 0x0E) || p.Location&0x010000 != 0 || p.OverworldArea != e.area {
+		// only events in exactly this location, including the world, from players who are still there:
+		if p.Team != local.Team || !(isOverworldModule(p.Module) || p.Module == 0x0E) || p.Location != e.loc {
 			continue
 		}
 		re := &p.OwEvents
-		if !re.valid || re.area != e.area || now.Sub(re.at) > owEventsRemoteTTL {
+		if !re.valid || re.loc != e.loc || now.Sub(re.at) > owEventsRemoteTTL {
 			continue
 		}
 		if entrance == 0 && !e.shown && e.entrance == 0 && re.entrance != 0 && re.entrance <= owEntranceMax {
@@ -299,6 +313,9 @@ func (g *Game) generateOwEventsUpdate(newEmitter func() *asm.Emitter, index uint
 	if from == nil {
 		return
 	}
+	if loc, ok := g.owLocationLastRead(); !ok || loc != e.loc {
+		return
+	}
 	fnSkull, ok := g.romFunctions[fnSkullWoodsFire]
 	if entrance == owEntranceSkullWoods && !ok {
 		entrance = 0
@@ -307,11 +324,12 @@ func (g *Game) generateOwEventsUpdate(newEmitter func() *asm.Emitter, index uint
 		}
 	}
 
-	u = &owEventsUpdate{g: g, area: e.area, entrance: entrance, flags: flags, from: from}
+	u = &owEventsUpdate{g: g, loc: e.loc, entrance: entrance, flags: flags, from: from}
+	area := owLocationArea(e.loc)
 
 	a = newEmitter()
-	a.Comment(fmt.Sprintf("overworld events in area $%02x from %s: entrance %d flags $%02x:", e.area, from.Name(), entrance, flags))
-	a.Comment("in the overworld module, submodule 0, in the same area:")
+	a.Comment(fmt.Sprintf("overworld events in location $%06x from %s: entrance %d flags $%02x:", e.loc, from.Name(), entrance, flags))
+	a.Comment("in the overworld module, submodule 0, in the same area and world:")
 	a.LDA_dp(0x10)
 	a.CMP_imm8_b(0x09)
 	a.BNE_far("owe_skip")
@@ -320,10 +338,14 @@ func (g *Game) generateOwEventsUpdate(newEmitter func() *asm.Emitter, index uint
 	a.LDA_dp(0x1B)
 	a.BNE_far("owe_skip")
 	a.LDA_dp(0x8A)
-	a.CMP_imm8_b(uint8(e.area))
+	a.CMP_imm8_b(uint8(area))
 	a.BNE_far("owe_skip")
 	a.LDA_dp(0x8B)
-	a.CMP_imm8_b(uint8(e.area >> 8))
+	a.CMP_imm8_b(uint8(area >> 8))
+	a.BNE_far("owe_skip")
+	a.LDA_abs(0x0FFF)
+	a.AND_imm8_b(0x01)
+	a.CMP_imm8_b(uint8(e.loc>>17) & 1)
 	a.BNE_far("owe_skip")
 	a.Comment("$00 = result:")
 	a.LDA_imm8_b(owEventsSame)

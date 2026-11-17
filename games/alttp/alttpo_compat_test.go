@@ -105,12 +105,14 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			u16()
 			skip(int(u16()))
 		case 0x17: // map16 changes
-			u16() // area
+			skip(3) // location u24
 			u8()  // count
 			u8()  // start
 			skip(int(u8()) * 4)
 		case 0x19: // star switch
 			skip(2 + 4 + 2)
+		case 0x1C: // overworld events
+			skip(3 + 1 + 1)
 		case 0x1A: // room state
 			skip(2 + 1 + 4 + 1)
 		case 0x1B: // room key doors and switches
@@ -411,7 +413,8 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		p.u16(0x1111).u16(0x0030).u16(0x0410).u8(0x03).u16(0x0D0E).u16(0x0D1E).u16(0x4D0E).u16(0x4D1E)
 		p.u16(0x0000).u16(0x0008).u16(0x0820).u8(0x00)
 		// map16 changes (alttpo sends these to its sector in the overworld; the parser does not care):
-		p.u8(0x17).u16(0x0018).u8(2, 0, 2).u16(0x0410).u16(0x0DC7).u16(0x0412).u16(0x0DC7)
+		// location u24 ($000018: Kakariko Village, light world):
+		p.u8(0x17, 0x18).u16(0x0000).u8(2, 0, 2).u16(0x0410).u16(0x0DC7).u16(0x0412).u16(0x0DC7)
 		p.name("alttpo3")
 		p.send(t, g)
 	}

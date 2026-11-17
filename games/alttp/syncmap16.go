@@ -25,9 +25,15 @@ import (
 // so entries [0, $04AC/2) are always complete.
 //
 // The log is shared with the players in the same area (alttpo's Map16Changes.as) in message 0x17 in broadcastSector
-// packets: `area u16`, `count u8` (entries in the sender's log), `start u8`, `len u8`, then `len` entries of
+// packets: `location u24`, `count u8` (entries in the sender's log), `start u8`, `len u8`, then `len` entries of
 // `pos u16`, `tile u16` for log indices [start, start+len). New entries are sent as soon as they are seen and the
 // whole log is sent every 16 frames so players entering the area catch up.
+//
+// The location is the one the log was read in, encoded like the location in message 0x01: bit 17 the dark world
+// ($0FFF & 1), bit 16 the underworld (0) and bits 0-15 the area ($8A). The log is only read, and changes are only
+// applied, while $0FFF agrees with the area's world (areas $40-$7F are the dark world), which it does not while a
+// warp switches worlds, and changes are only applied in exactly the sender's location, which must also be the
+// sender's current location; the update routine checks $8A and $0FFF again when it runs.
 //
 // Each receiver remembers how far into each remote player's log it has applied and only applies newly added entries.
 // Applying an entry skips it if $7E2000,X already holds the tile, otherwise writes it, appends it to the local log
@@ -63,9 +69,9 @@ type map16Entry struct {
 
 // map16Local tracks the local player's map16 change log.
 type map16Local struct {
-	// valid is true when the log was read in an overworld module for area:
+	// valid is true when the log was read in an overworld module at loc (see owLocation):
 	valid   bool
-	area    uint16
+	loc     uint32
 	count   int
 	entries [map16LogMax]map16Entry
 	// readBase is the log index the last enqueued window read starts at; -1 when none:
@@ -84,7 +90,8 @@ type map16Local struct {
 
 // map16Remote tracks a remote player's map16 change log as received.
 type map16Remote struct {
-	area    uint16
+	// loc is the location (see owLocation) the sender's log belongs to:
+	loc     uint32
 	count   int
 	entries [map16LogMax]map16Entry
 	have    [map16LogMax]bool
@@ -96,14 +103,49 @@ type map16Remote struct {
 }
 
 type map16Header struct {
-	Area  uint16
+	Loc   uint32
 	Count uint8
 	Start uint8
 	Len   uint8
 }
 
-func (r *map16Remote) reset(area uint16) {
-	*r = map16Remote{area: area}
+func (r *map16Remote) reset(loc uint32) {
+	*r = map16Remote{loc: loc}
+}
+
+// owLocation returns the overworld location Link is in, like the location sent in message 0x01: bit 17 is the dark
+// world ($0FFF & 1), bit 16 (underworld) is 0 and bits 0-15 are the area ($8A). ok is false unless both were read this
+// cycle and agree (the dark world areas are $40-$7F), which they don't while a mirror or portal warp switches worlds.
+func (g *Game) owLocation() (loc uint32, ok bool) {
+	if !g.wramFresh[0x8A] || !g.wramFresh[0x8B] || !g.wramFresh[0x0FFF] {
+		return
+	}
+	return g.owLocationLastRead()
+}
+
+// owLocationLastRead is owLocation from the values last read, which may be from an earlier read cycle. Generated update
+// routines check $8A and $0FFF again when they run.
+func (g *Game) owLocationLastRead() (loc uint32, ok bool) {
+	area := g.wramU16(0x8A)
+	world := uint32(g.wram[0x0FFF] & 1)
+	if uint32(area>>6)&1 != world {
+		return
+	}
+	return world<<17 | uint32(area), true
+}
+
+// owLocationArea returns the area of an overworld location.
+func owLocationArea(loc uint32) uint16 {
+	return uint16(loc)
+}
+
+// emitWorldCheck emits a check that $0FFF is the world of loc, branching to skip if not; 16-bit A:
+func emitWorldCheck(a *asm.Emitter, loc uint32, skip string) {
+	a.Comment("in the same world ($0FFF):")
+	a.LDA_abs(0x0FFF)
+	a.AND_imm16_w(0x0001)
+	a.CMP_imm16_w(uint16(loc>>17) & 1)
+	a.BNE(skip)
 }
 
 func (g *Game) resetMap16() {
@@ -182,11 +224,14 @@ func (g *Game) readMap16() {
 		}
 		return
 	}
-	if !g.wramFresh[0x8A] || !g.wramFresh[map16LogIndex] || !g.wramFresh[map16LogIndex+1] {
+	if !g.wramFresh[map16LogIndex] || !g.wramFresh[map16LogIndex+1] {
 		return
 	}
-	area := g.wramU16(0x8A)
-	if m.valid && m.area != area {
+	loc, ok := g.owLocation()
+	if !ok {
+		return
+	}
+	if m.valid && m.loc != loc {
 		g.resetMap16()
 	}
 	// area loads reset the log in other submodules; $8A and $04AC are not updated together:
@@ -205,7 +250,7 @@ func (g *Game) readMap16() {
 
 	if !m.valid {
 		m.valid = true
-		m.area = area
+		m.loc = loc
 		g.resetMap16Log()
 	}
 	if n < m.count {
@@ -270,7 +315,7 @@ func (g *Game) SerializeMap16(w io.Writer, start, end int) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, uint8(MsgMap16)); err != nil {
 		return
 	}
-	if err = binary.Write(w, binary.LittleEndian, m.area); err != nil {
+	if err = writeU24(w, m.loc); err != nil {
 		return
 	}
 	if _, err = w.Write([]byte{uint8(m.count), uint8(start), uint8(end - start)}); err != nil {
@@ -281,9 +326,14 @@ func (g *Game) SerializeMap16(w io.Writer, start, end int) (err error) {
 
 func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 	var hdr map16Header
-	if err = binary.Read(r, binary.LittleEndian, &hdr); err != nil {
+	if hdr.Loc, err = readU24(r); err != nil {
 		return fmt.Errorf("error deserializing map16 changes: %w", err)
 	}
+	var b [3]byte
+	if _, err = io.ReadFull(r, b[:]); err != nil {
+		return fmt.Errorf("error deserializing map16 changes: %w", err)
+	}
+	hdr.Count, hdr.Start, hdr.Len = b[0], b[1], b[2]
 	entries := make([]map16Entry, hdr.Len)
 	if err = binary.Read(r, binary.LittleEndian, entries); err != nil {
 		return fmt.Errorf("error deserializing map16 changes: %w", err)
@@ -297,11 +347,11 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 	if hdr != rm.lastHdr {
 		// diagnostics: log only when the header changes, so the periodic whole-log resends don't spam:
 		rm.lastHdr = hdr
-		log.Printf("alttp: map16: from '%s': area $%02x count %d start %d len %d\n", p.Name(), hdr.Area, hdr.Count, hdr.Start, hdr.Len)
+		log.Printf("alttp: map16: from '%s': location $%06x count %d start %d len %d\n", p.Name(), hdr.Loc, hdr.Count, hdr.Start, hdr.Len)
 	}
-	if rm.area != hdr.Area || count < rm.count {
+	if rm.loc != hdr.Loc || count < rm.count {
 		// another area, or the sender's area was reloaded:
-		rm.reset(hdr.Area)
+		rm.reset(hdr.Loc)
 	}
 	rm.count = count
 	for k, e := range entries {
@@ -319,7 +369,7 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 // map16Update is a generated update routine applying remote map16 changes, awaiting execution confirmation.
 type map16Update struct {
 	g       *Game
-	area    uint16
+	loc     uint32
 	entries []map16Entry
 	// ends is the remote log index each player's changes were applied up to, by player index:
 	ends      map[int]int
@@ -338,7 +388,7 @@ func (u *map16Update) ConfirmAsmExecuted(index uint32, value uint8) {
 		log.Printf("alttp: map16: update skipped\n")
 		return
 	}
-	if !m.valid || m.area != u.area {
+	if !m.valid || m.loc != u.loc {
 		return
 	}
 	n := int(value)
@@ -355,7 +405,7 @@ func (u *map16Update) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 	for i, end := range u.ends {
 		rm := &g.players[i].Map16
-		if rm.area == u.area && end <= rm.count && end > rm.applied {
+		if rm.loc == u.loc && end <= rm.count && end > rm.applied {
 			rm.applied = end
 		}
 	}
@@ -384,6 +434,10 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	if !g.map16LogBelongsToArea() {
 		return
 	}
+	if loc, ok := g.owLocationLastRead(); !ok || loc != m.loc {
+		// Link is not where the log was read (yet):
+		return
+	}
 	if !m.diagLogged {
 		// describe what we know of the remote players' logs once per area visit, to explain missing changes:
 		m.diagLogged = true
@@ -396,8 +450,8 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 				}
 			}
 			log.Printf(
-				"alttp: map16: area $%02x: remote '%s' team %d module $%02x location $%06x log area $%02x count %d have %d applied %d\n",
-				m.area, p.Name(), p.Team, uint8(p.Module), p.Location, rm.area, rm.count, have, rm.applied,
+				"alttp: map16: location $%06x: remote '%s' team %d module $%02x location $%06x log location $%06x count %d have %d applied %d\n",
+				m.loc, p.Name(), p.Team, uint8(p.Module), p.Location, rm.loc, rm.count, have, rm.applied,
 			)
 		}
 	}
@@ -408,11 +462,12 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	ends := make(map[int]int)
 	for _, p := range g.RemotePlayers() {
 		// game worlds are team specific; menus and text boxes ($0E) keep the log, like alttpo:
-		if p.Team != local.Team || !(isOverworldModule(p.Module) || p.Module == 0x0E) || p.Location&0x010000 != 0 || p.OverworldArea != m.area {
+		// only changes made in exactly this location, including the world, by players who are still there:
+		if p.Team != local.Team || !(isOverworldModule(p.Module) || p.Module == 0x0E) || p.Location != m.loc {
 			continue
 		}
 		rm := &p.Map16
-		if rm.area != m.area {
+		if rm.loc != m.loc {
 			continue
 		}
 		i := rm.applied
@@ -451,21 +506,27 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		return
 	}
 
-	u = &map16Update{g: g, area: m.area, entries: entries, ends: ends}
+	u = &map16Update{g: g, loc: m.loc, entries: entries, ends: ends}
 	log.Printf("alttp: map16: generating update for %d of %d pending changes\n", len(entries), len(list))
 
+	area := owLocationArea(m.loc)
 	a = newEmitter()
-	a.Comment(fmt.Sprintf("map16 changes for area $%02x:", m.area))
+	a.Comment(fmt.Sprintf("map16 changes for location $%06x:", m.loc))
 	a.BRA("m16_start")
 	table := a.PC()
-	a.EmitBytes([]byte{byte(m.area), byte(m.area >> 8)})
+	a.EmitBytes([]byte{byte(area), byte(area >> 8)})
 	for _, e := range entries {
 		a.EmitBytes([]byte{byte(e.Pos), byte(e.Pos >> 8), byte(e.Tile), byte(e.Tile >> 8)})
 	}
 	a.EmitBytes(binary.LittleEndian.AppendUint16(nil, map16TableEnd))
 	a.Label("m16_start")
+	emitWorldCheck(a, m.loc, "m16_wrong_world")
 	a.LDA_imm16_w(uint16(table))
 	a.JSR_abs(uint16(map16ApplyAddr & 0xFFFF))
+	a.BRA("m16_report")
+	a.Label("m16_wrong_world")
+	a.LDA_imm16_w(map16AsmSkipped)
+	a.Label("m16_report")
 	emitReport(a, index)
 
 	return

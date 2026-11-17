@@ -47,6 +47,7 @@ func (h *skScenario) inOwArea(i int, area uint16) {
 	e.WRAM[0x1B] = 0
 	e.WRAM[0x8A] = uint8(area)
 	e.WRAM[0x8B] = 0
+	e.WRAM[0x0FFF] = uint8(area>>6) & 1
 	e.WRAM[0x5D] = 0
 	e.WRAM[0x4D] = 0
 	e.WRAM[0x02E4] = 0

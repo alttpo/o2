@@ -399,8 +399,13 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF50100, 0x36, nil) // [$0100..$0135]
 	q = g.readEnqueue(q, 0xF502E0, 0x11, nil) // [$02E0..$02F0]; $02F0 = desert statues released
 	q = g.readEnqueue(q, 0xF50352, 0xCE, nil) // [$0352..$041F]; $0352 = Link's OAM buffer offset
-	// $1980..19E9 for reading underworld door state (19A0)
-	q = g.readEnqueue(q, 0xF51980, 0x6A, nil) // [$1980..$19E9]
+	if isOverworldModule(Module(g.wram[0x10])) {
+		// the world Link is in, to make sure overworld changes are only applied in the area of the same world:
+		q = g.readEnqueue(q, 0xF50FFF, 0x01, nil) // [$0FFF]
+	} else {
+		// $1980..19E9 for reading underworld door state (19A0)
+		q = g.readEnqueue(q, 0xF51980, 0x6A, nil) // [$1980..$19E9]
+	}
 	// ALTTP's SRAM copy in WRAM:
 	q = g.readEnqueue(q, 0xF5F340, 0xFF, nil) // [$F340..$F43E]
 	q = g.readEnqueue(q, 0xF5F43F, 0xC1, nil) // [$F43E..$F4FF]
