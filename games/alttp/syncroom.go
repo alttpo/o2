@@ -22,7 +22,11 @@ import (
 //     (OpenItemChest) sets bit i (1 << i, chests 0-5). Picking up a small key or big key sprite ($E4/$E5,
 //     Absorb_FlagKey) or a bonk key (sprite $3B with $0DC0 = 1, BonkKey_GrantKey, e.g. on top of a Desert Palace
 //     torch) sets $40 (key index 0) or $20 (key index 1, the same bit as chest 5), the index being the key's $0CBA. Key
-//     sprites remove themselves when their flag is set; bonk keys only check it when the room loads.
+//     sprites remove themselves when their flag is set; bonk keys only check it when the room loads. Heart pieces
+//     ($EB) and heart containers ($EA) on the floor set the same bits (HeartUpgrade_SetObtainedFlag), the index being
+//     bit 0 of their X high byte ($0D30), but only check them when they spawn (HeartUpgrade_CheckIfAlreadyObtained).
+//     A boss's heart container ($EA with $0D90 != 0) sets $80 instead, which is also what makes the boss room drop its
+//     prize (RoomTag_GetHeartForPrize) and keeps the boss from coming back.
 //   - $0401 (the high byte of $0400) has a bit set for each door opened in the room: unlocking key door slot k sets
 //     $80 >> (k & 7) (UnlockKeyDoor_Main), as do bombed and dashed walls.
 //   - $0642 is set by a pull switch when it is pulled (also by Swamp Palace's water switches); the pull switch door
@@ -42,7 +46,11 @@ import (
 //     timestamped; room tags change it during submodule 0 and switch to $05. Changes of room and intra-room
 //     transitions (submodule $01) forget the state, since the game resets the shutters itself.
 //   - Key flags ($40, and $20 if chests are synced since it is also chest 5's flag) are OR'ed in from remote players
-//     in the same room whose state was sampled there. Bonk keys of the newly set flags are removed.
+//     in the same room whose state was sampled there. Bonk keys, heart pieces and heart containers of the newly set
+//     flags are removed.
+//   - The boss flag ($80) is taken only while the boss's heart container lies on the floor here (the sprite tables
+//     are read for this while a remote player in the room has it), so a boss still alive here keeps its fight; the
+//     heart container is removed.
 //   - Chest flags (bits 0-5, if chests are synced) are OR'ed in as well and small chests still closed here are drawn
 //     open the way OpenItemChest does (tiles, $2727 attributes so they cannot be opened again, VRAM stripes), without
 //     giving the item. Not while a tag that hides the room's chests until it is solved is active, and not bit 3 in
@@ -90,9 +98,15 @@ const (
 	// $0403 bit the water tags set (DoorFlagMasks+1) once the water was let out:
 	roomFlagWater = uint8(0x08)
 
+	// $0403 bit set when the boss's heart container is taken (Sprite_HeartContainer) or the boss room is left:
+	roomFlagBoss = uint8(0x80)
+
 	// bonk key sprite: sprite $3B (bonk item) with $0DC0 = 1:
 	bonkItemSprite = uint8(0x3B)
 	bonkKeySubtype = uint8(0x01)
+	// heart container and heart piece sprites; a heart container with $0D90 != 0 is a boss's:
+	heartContainerSprite = uint8(0xEA)
+	heartPieceSprite     = uint8(0xEB)
 
 	// most chests drawn open by one update routine:
 	roomChestsPerUpdate = 2
@@ -154,6 +168,10 @@ type roomStateLocal struct {
 
 	// block remembers the push block door's block across intra-room transitions:
 	block roomBlockLocal
+
+	// readSprites is true while a remote player in the room took the boss's heart container and we did not; the sprite
+	// tables are read to see whether it lies on the floor here:
+	readSprites bool
 }
 
 // roomBlockLocal remembers that the block of a push block door room was pushed ($0641 odd). An intra-room transition
@@ -290,7 +308,26 @@ func (g *Game) enqueueRoomReads(q []snes.Read) []snes.Read {
 	if !g.SyncUnderworld || g.local.Module != 0x07 {
 		return q
 	}
-	return g.readEnqueue(q, 0xF50000+uint32(roomBlockOffs), uint8(roomChestPos+12-roomBlockOffs), nil)
+	q = g.readEnqueue(q, 0xF50000+uint32(roomBlockOffs), uint8(roomChestPos+12-roomBlockOffs), nil)
+	if g.roomState.readSprites {
+		// $0D90 (sprite_A), $0DD0 state, $0E20 type:
+		q = g.readEnqueue(q, 0xF50D90, 0xA0, nil) // [$0D90..$0E2F]
+	}
+	return q
+}
+
+// roomBossHeartPresent reports whether a boss's heart container ($EA with $0D90 != 0) lies on the floor, from the
+// sprite tables read because of readSprites.
+func (g *Game) roomBossHeartPresent() bool {
+	for i := uint32(0); i < 0x10; i++ {
+		if !g.wramFresh[0x0DD0+i] || !g.wramFresh[0x0E20+i] || !g.wramFresh[0x0D90+i] {
+			return false
+		}
+		if g.wram[0x0DD0+i] != 0 && g.wram[0x0E20+i] == heartContainerSprite && g.wram[0x0D90+i] != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // readRoomState samples the room state from WRAM and records changes made by the local player.
@@ -516,8 +553,11 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	if u.flags != 0 {
 		rs.flags |= u.flags
 		log.Printf("alttp: room: update: flags |= $%02x from player '%s'\n", u.flags, u.flagsFrom.Name())
-		if u.flags&^roomFlagChests != 0 {
-			g.PushNotification(fmt.Sprintf("took keys in this room from %s", u.flagsFrom.Name()))
+		if u.flags&(roomFlagKey0|roomFlagKey1) != 0 {
+			g.PushNotification(fmt.Sprintf("took keys or heart pieces in this room from %s", u.flagsFrom.Name()))
+		}
+		if u.flags&roomFlagBoss != 0 {
+			g.PushNotification(fmt.Sprintf("took the heart container in this room from %s", u.flagsFrom.Name()))
 		}
 		if u.chests != 0 {
 			g.PushNotification(fmt.Sprintf("opened chests in this room from %s", u.flagsFrom.Name()))
@@ -591,6 +631,19 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 
 	// chest and key flags:
 	mask := g.roomSyncedFlags()
+	// the boss flag only while the boss's heart container is on the floor here:
+	rs.readSprites = false
+	if rs.flags&roomFlagBoss == 0 {
+		for _, p := range remotes {
+			if p.Room.flags&roomFlagBoss != 0 {
+				rs.readSprites = true
+				break
+			}
+		}
+		if rs.readSprites && g.roomBossHeartPresent() {
+			mask |= roomFlagBoss
+		}
+	}
 	for _, p := range remotes {
 		if f := p.Room.flags & mask &^ rs.flags &^ u.flags; f != 0 {
 			u.flags |= f
@@ -711,33 +764,8 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		a.ORA_imm8_b(u.flags)
 		a.STA_abs(roomFlagsOffs)
 	}
-	if keys := u.flags & (roomFlagKey0 | roomFlagKey1); keys != 0 {
-		a.Comment("remove bonk keys of those flags (they only check $0403 when the room loads):")
-		a.LDX_imm8_b(0x0F)
-		a.Label("rm_next")
-		a.LDA_abs_x(0x0DD0)
-		a.BEQ("rm_cont")
-		a.LDA_abs_x(0x0E20)
-		a.CMP_imm8_b(bonkItemSprite)
-		a.BNE("rm_cont")
-		a.LDA_abs_x(0x0DC0)
-		a.CMP_imm8_b(bonkKeySubtype)
-		a.BNE("rm_cont")
-		a.LDA_abs_x(0x0CBA)
-		switch keys {
-		case roomFlagKey0:
-			a.BNE("rm_cont")
-		case roomFlagKey1:
-			a.CMP_imm8_b(0x01)
-			a.BNE("rm_cont")
-		default:
-			a.CMP_imm8_b(0x02)
-			a.BCS("rm_cont")
-		}
-		a.STZ_abs_x(0x0DD0)
-		a.Label("rm_cont")
-		a.DEX()
-		a.BPL("rm_next")
+	if keys, boss := u.flags&(roomFlagKey0|roomFlagKey1), u.flags&roomFlagBoss != 0; keys != 0 || boss {
+		emitRemoveTakenSprites(a, keys, boss)
 	}
 	if len(chests) > 0 {
 		a.REP(0x30)
@@ -992,4 +1020,66 @@ func (g *Game) DeserializeRoomDoors(p *Player, r io.Reader) (err error) {
 		pulledQuad: (m.Switches >> 2) & 3,
 	}
 	return nil
+}
+
+// emitRemoveTakenSprites removes the sprites of items taken by remote players, which only check $0403 when they spawn:
+// bonk keys ($3B with $0DC0 = 1, index $0CBA), heart pieces ($EB) and heart containers ($EA with $0D90 = 0, index bit
+// 0 of $0D30) of the key flags keys ($40: index 0, $20: index 1), and with boss the boss's heart container ($EA with
+// $0D90 != 0). Expects 8-bit A and X.
+func emitRemoveTakenSprites(a *asm.Emitter, keys uint8, boss bool) {
+	a.Comment("remove bonk keys, heart pieces and heart containers taken (they only check $0403 when they spawn):")
+	a.LDX_imm8_b(0x0F)
+	a.Label("rm_next")
+	a.LDA_abs_x(0x0DD0)
+	a.BEQ("rm_cont")
+	a.LDA_abs_x(0x0E20)
+	if keys != 0 {
+		a.CMP_imm8_b(bonkItemSprite)
+		a.BEQ("rm_bonk")
+		a.CMP_imm8_b(heartPieceSprite)
+		a.BEQ("rm_heart")
+	}
+	a.CMP_imm8_b(heartContainerSprite)
+	a.BNE("rm_cont")
+	a.LDA_abs_x(0x0D90)
+	if boss {
+		a.BNE("rm_kill")
+	} else {
+		a.BNE("rm_cont")
+	}
+	if keys != 0 {
+		a.Label("rm_heart")
+		a.LDA_abs_x(0x0D30)
+		a.AND_imm8_b(0x01)
+		switch keys {
+		case roomFlagKey0:
+			a.BNE("rm_cont")
+		case roomFlagKey1:
+			a.BEQ("rm_cont")
+		}
+		a.BRA("rm_kill")
+
+		a.Label("rm_bonk")
+		a.LDA_abs_x(0x0DC0)
+		a.CMP_imm8_b(bonkKeySubtype)
+		a.BNE("rm_cont")
+		a.LDA_abs_x(0x0CBA)
+		switch keys {
+		case roomFlagKey0:
+			a.BNE("rm_cont")
+		case roomFlagKey1:
+			a.CMP_imm8_b(0x01)
+			a.BNE("rm_cont")
+		default:
+			a.CMP_imm8_b(0x02)
+			a.BCS("rm_cont")
+		}
+	} else {
+		a.BRA("rm_cont")
+	}
+	a.Label("rm_kill")
+	a.STZ_abs_x(0x0DD0)
+	a.Label("rm_cont")
+	a.DEX()
+	a.BPL("rm_next")
 }

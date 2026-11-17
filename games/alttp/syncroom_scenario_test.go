@@ -256,3 +256,91 @@ func TestRoomStateScenario_ChestsNotSynced(t *testing.T) {
 	h.settleRoom(skSettleFrames)
 	h.expectRoomFlags("keys taken", 0x60, roomFlagKey0)
 }
+
+// placeHeart puts a heart piece or heart container sprite in slot with the given X high byte (bit 0 is its index)
+// and $0D90 (non-zero for a boss's heart container).
+func (h *skScenario) placeHeart(i int, slot uint32, sprite uint8, xHi uint8, a uint8) {
+	e := h.gs[i].e
+	e.WRAM[0x0DD0+slot] = 0x09
+	e.WRAM[0x0E20+slot] = sprite
+	e.WRAM[0x0D30+slot] = xHi
+	e.WRAM[0x0D90+slot] = a
+}
+
+func (h *skScenario) expectSprite(when string, slot uint32, expected ...bool) {
+	h.t.Helper()
+	for i, x := range expected {
+		if actual := h.gs[i].e.WRAM[0x0DD0+slot] != 0; actual != x {
+			h.t.Errorf("%s: g%d: expected sprite in slot %d present = %v; got %v", when, i+1, slot, x, actual)
+		}
+	}
+}
+
+func TestRoomStateScenario_HeartPiece(t *testing.T) {
+	h := newSSScenario(t, 2)
+	h.loadRoomState(0, rmRoom, 0, roomFlagKey0)
+	h.loadRoomState(1, rmRoom, 0, roomFlagKey0)
+	// a heart piece with index 1 ($20) and a heart container with index 0 ($40, already taken here by a key):
+	for i := range h.gs {
+		h.placeHeart(i, 6, heartPieceSprite, 0x11, 0)
+		h.placeHeart(i, 7, heartContainerSprite, 0x10, 0)
+	}
+	h.settleRoom(skSettleFrames)
+	h.expectSprite("initial", 6, true, true)
+
+	// g1 collects the heart piece (HeartUpgrade_SetObtainedFlag):
+	h.gs[0].e.WRAM[0x0DD0+6] = 0
+	h.gs[0].e.WRAM[roomFlagsOffs] |= roomFlagKey1
+	h.settleRoom(skSettleFrames)
+	h.expectRoomFlags("g1 took heart piece", 0x60, 0x60)
+	h.expectSprite("g1 took heart piece", 6, false, false)
+	// the heart container's flag was not newly set; it is left alone:
+	h.expectSprite("g1 took heart piece", 7, true, true)
+	h.expectSprite("g1 took heart piece", rmOtherSlot, true, true)
+}
+
+func TestRoomStateScenario_HeartContainer(t *testing.T) {
+	h := newSSScenario(t, 2)
+	h.loadRoomState(0, rmRoom, 0, 0)
+	h.loadRoomState(1, rmRoom, 0, 0)
+	for i := range h.gs {
+		h.placeHeart(i, 6, heartContainerSprite, 0x10, 0)
+		// index 1 must stay:
+		h.placeHeart(i, 7, heartPieceSprite, 0x11, 0)
+	}
+	h.settleRoom(skSettleFrames)
+
+	h.gs[1].e.WRAM[0x0DD0+6] = 0
+	h.gs[1].e.WRAM[roomFlagsOffs] |= roomFlagKey0
+	h.settleRoom(skSettleFrames)
+	h.expectRoomFlags("g2 took heart container", roomFlagKey0, roomFlagKey0)
+	h.expectSprite("g2 took heart container", 6, false, false)
+	h.expectSprite("g2 took heart container", 7, true, true)
+	// g1's bonk key shares the flag; g2 only took the heart container:
+	h.expectBonkKey("g2 took heart container", false, true)
+}
+
+func TestRoomStateScenario_BossHeartContainer(t *testing.T) {
+	h := newSSScenario(t, 3)
+	for i := range h.gs {
+		h.loadRoomState(i, rmRoom, 0, roomFlagKey0)
+	}
+	// the boss is dead for g1 and g2 but still alive for g3:
+	h.placeHeart(0, 6, heartContainerSprite, 0x10, 1)
+	h.placeHeart(1, 6, heartContainerSprite, 0x10, 1)
+	h.settleRoom(skSettleFrames)
+
+	// g1 takes the boss's heart container:
+	h.gs[0].e.WRAM[0x0DD0+6] = 0
+	h.gs[0].e.WRAM[roomFlagsOffs] |= roomFlagBoss
+	h.settleRoom(skSettleFrames * 2)
+	h.expectRoomFlags("g1 took boss heart", 0xC0, 0xC0, roomFlagKey0)
+	h.expectSprite("g1 took boss heart", 6, false, false, false)
+	h.expectSprite("g1 took boss heart", rmOtherSlot, true, true, true)
+
+	// g3 kills the boss later; its heart container is removed then:
+	h.placeHeart(2, 6, heartContainerSprite, 0x10, 1)
+	h.settleRoom(skSettleFrames * 2)
+	h.expectRoomFlags("g3 killed the boss", 0xC0, 0xC0, 0xC0)
+	h.expectSprite("g3 killed the boss", 6, false, false, false)
+}

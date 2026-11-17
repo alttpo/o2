@@ -291,7 +291,10 @@ still be taken by the other.
   (chests 0-5, positions in `$06E0`). Picking up a small or big key sprite (`$E4`/`$E5`) or a bonk key (sprite `$3B`
   with `$0DC0` = 1, like the one on a Desert Palace torch) sets `$40` (key index 0) or `$20` (key index 1, also chest
   5's bit), the index being the sprite's `$0CBA`. Key sprites remove themselves as soon as their flag is set; bonk keys
-  only check it when the room loads.
+  only check it when the room loads. Heart pieces (`$EB`) and heart containers (`$EA`) on the floor set the same bits
+  (`HeartUpgrade_SetObtainedFlag`), the index being bit 0 of their X high byte `$0D30`, and only check them when they
+  spawn. A boss's heart container (`$EA` with `$0D90` != 0) sets `$80` instead, which also makes the boss room drop its
+  prize (`RoomTag_GetHeartForPrize`) and keeps the boss from coming back.
 - **Key doors** (`$0401`, the high byte of `$0400`). Unlocking door slot k (`UnlockKeyDoor_Main`, submodule `$04`)
   sets `$80 >> (k & 7)`; bombed and dashed walls set their bits the same way. Only slots 0-3 are kept in `$7EF000`.
 - **Pull switches** (`$0642`). A pulled wall switch (and Swamp Palace's water switches) sets it; the pull switch door
@@ -313,13 +316,17 @@ still be taken by the other.
 - **Applying.** In submodule 0 of the dungeon module, from remote players on the same team in the same room whose
   state was sampled there:
   - Key flags `$40` (and, when chests are synced, `$20` and the chest bits) are OR'ed into `$0403`, and bonk keys of the
-    new flags are removed (`$0DD0` cleared). Small chests still closed here are drawn open like `OpenItemChest` does
+    new flags are removed (`$0DD0` cleared), and so are heart pieces and heart containers of the new flags. Small chests still closed here are drawn open like `OpenItemChest` does
     (opened chest tiles in `$7E2000`, attributes `$2727` so they cannot be opened again, four VRAM stripes in `$1000`,
     `$14` = 1), without giving their items; big chests and big key locks only get the flag. Chest bits wait while a tag
     that hides the room's chests until it is solved is active (`$27`, `$29`-`$32`, `$3C`, `$3E`), and bit 3 is not
     taken in water gate rooms (`$1A`/`$1B`), whose tags check it to know whether the gate was opened. The fill and drain
     tags (`$18`/`$19`) set it too but only act on `$0642`; sharing it there makes the room load filled or drained
     (`RoomDraw_WaterOverlay*`, `RoomDraw_EmptyWaterFace`) when another player enters it next.
+  - The boss flag `$80` is taken only while the boss's heart container lies on the floor here (o2 reads the sprite
+    tables `$0D90..$0E2F` for this while a remote player in the room has the flag and we do not), and that heart
+    container is removed. A boss still alive here keeps its fight; once it is beaten here, its heart container is
+    removed as soon as it drops, so nobody collects the same heart container twice.
   - A remote door bit whose slot here is a small or big key door (`$1980` type `$1C`-`$2B` except `$28`, `$2A`) that is
     still locked (attribute `$F0 + slot` at `$7F2041 + $19A0/2`) is unlocked like the game does once the key was
     used: `$068E` = that attribute index, `$0690` = 0, SFX3 `$14`, submodule `$04`. No key is used; the small key sync
@@ -350,7 +357,7 @@ still be taken by the other.
     recomputes `$0646` every frame and wins while it exists.
 - **Settings.** o2 uses "Sync underworld" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
   "Sync chests").
-- **Not synced.** Heart pieces in caves share the `$40`/`$20` flags but their sprites are not removed. The pulled
+- **Not synced.** The pulled
   lever sprite is not drawn pulled for other players. Enemies are not synced by o2, so a kill room opened by another
   player stays open even if its enemies are alive here, and keys dropped by enemies get their index in the order they
   spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
