@@ -131,6 +131,17 @@ func (g *Game) resetMap16Applied() {
 	}
 }
 
+// map16LogBelongsToArea returns false while Link lands from a mirror or portal warp. The warp (Module09_MirrorWarp)
+// changes the area and returns to submodule 0 but keeps the previous area's log, which LinkState_CrossingWorlds only
+// resets once Link lands in the other world (and keeps for a mirror bonk, which takes him back to that area). Reading
+// it before would send the previous area's changes as changes of the new area.
+func (g *Game) map16LogBelongsToArea() bool {
+	return g.wramFresh[0x5D] && g.wram[0x5D] != linkStateMirror
+}
+
+// linkStateMirror is Link's state ($5D) while warping between worlds (kPlayerState_Mirror):
+const linkStateMirror = 0x14
+
 func isOverworldModule(module Module) bool {
 	return module == 0x09 || module == 0x0B
 }
@@ -180,6 +191,9 @@ func (g *Game) readMap16() {
 	}
 	// area loads reset the log in other submodules; $8A and $04AC are not updated together:
 	if local.SubModule != 0 {
+		return
+	}
+	if !g.map16LogBelongsToArea() {
 		return
 	}
 
@@ -365,6 +379,9 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		return
 	}
 	if !isOverworldModule(local.Module) || local.SubModule != 0 {
+		return
+	}
+	if !g.map16LogBelongsToArea() {
 		return
 	}
 	if !m.diagLogged {

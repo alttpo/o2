@@ -422,3 +422,33 @@ func testMap16FullLog(t *testing.T, gameStripes uint8) {
 		t.Errorf("g2: expected its log to hold all %d changes; got %d", map16LogMax, n)
 	}
 }
+
+func TestMap16Scenario_PortalWarpKeepsPreviousAreaLog(t *testing.T) {
+	const lwArea, dwArea = uint16(0x07), uint16(0x47)
+	h := newM16Scenario(t, 2)
+	h.inArea(0, lwArea)
+	h.inArea(1, dwArea)
+	h.frames(skSettleFrames)
+
+	// g1 pounds a peg in the light world:
+	h.changeMap16(0, m16Pos, m16Bush)
+	h.frames(skSettleFrames)
+
+	// g1 warps through the portal: the area changes and submodule 0 resumes while Link is still landing, with the
+	// light world's log still there:
+	e := h.gs[0].e
+	e.WRAM[0x8A] = uint8(dwArea)
+	e.WRAM[0x5D] = linkStateMirror
+	h.frames(skSettleFrames)
+	// Link lands; LinkState_CrossingWorlds resets the log:
+	e.WRAM[0x5D] = 0
+	h.setWRAMU16(0, uint32(map16LogIndex), 0)
+	h.frames(skSettleFrames)
+
+	if actual := h.wramU16(1, 0x2000+uint32(m16Pos)); actual != 0 {
+		t.Errorf("g2: expected the light world's change not applied in the dark world; got tile $%04x", actual)
+	}
+	if h.logLen(1) != 0 {
+		t.Errorf("g2: expected an empty log; got %d entries", h.logLen(1))
+	}
+}
