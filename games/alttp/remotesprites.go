@@ -250,7 +250,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 
 	a.Comment("only in the room or area the table was made for:")
 	a.LDA_long(0x7E001B)
-	emitCMPAbs(a, tb(rtIndoors))
+	a.CMP_abs(tb(rtIndoors))
 	a.BNE("rd_exit2")
 	a.LDA_long(0x7E001B)
 	a.REP(0x30)
@@ -260,7 +260,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_overworld")
 	a.LDA_long(0x7E008A)
 	a.Label("rd_location")
-	emitCMPAbs(a, tb(rtLocation))
+	a.CMP_abs(tb(rtLocation))
 	a.BNE("rd_exit2")
 
 	emitRemoteChrsVisible(a, st(rsFree))
@@ -268,11 +268,11 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Comment("local scroll offsets:")
 	a.LDA_long(0x7E00E2)
 	a.SEC()
-	emitSBCLong(a, 0x7E011A)
+	a.SBC_long(0x7E011A)
 	a.STA_abs(st(rsScrollX))
 	a.LDA_long(0x7E00E8)
 	a.SEC()
-	emitSBCLong(a, 0x7E011C)
+	a.SBC_long(0x7E011C)
 	a.STA_abs(st(rsScrollY))
 	a.Comment("blob chr alternates every 8 frames:")
 	a.LDA_long(0x7E001A)
@@ -289,7 +289,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Comment("shadows, sparkles and dust:")
 	a.Label("rd_shadow_loop")
 	a.TYA()
-	emitCMPAbs(a, tb(rtExtrasEnd))
+	a.CMP_abs(tb(rtExtrasEnd))
 	a.BCS("rd_shadows_done")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
@@ -307,7 +307,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.BNE("rd_no_body")
 	a.REP(0x20)
 	a.TYA()
-	emitCMPAbs(a, tb(rtBodyEnd))
+	a.CMP_abs(tb(rtBodyEnd))
 	a.BCS("rd_blobs")
 	a.Label("rd_body_loop")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
@@ -315,7 +315,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
 	a.TAY()
-	emitCMPAbs(a, tb(rtBodyEnd))
+	a.CMP_abs(tb(rtBodyEnd))
 	a.BCC("rd_body_loop")
 	a.Comment("skip the body player's blob; carry is set:")
 	a.ADC_imm16_w(rtEntrySize - 1)
@@ -337,7 +337,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.STA_abs(st(rsAnim))
 	a.Label("rd_blob_loop")
 	a.TYA()
-	emitCMPAbs(a, tb(rtEnd))
+	a.CMP_abs(tb(rtEnd))
 	a.BCS("rd_front")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
@@ -351,7 +351,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.STZ_abs(st(rsAnim))
 	a.Label("rd_front_loop")
 	a.TYA()
-	emitCMPAbs(a, tb(rtFrontEnd))
+	a.CMP_abs(tb(rtFrontEnd))
 	a.BCS("rd_done")
 	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
 	a.TYA()
@@ -438,18 +438,18 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	}
 	a.AssumeREP(0x30)
 	a.Comment("screen x = world x - scroll x, visible if -16 < x < 256:")
-	emitLDAAbsY(a, tb(rtEntries+0))
+	a.LDA_abs_y(tb(rtEntries+0))
 	a.SEC()
-	emitSBCAbs(a, st(rsScrollX))
+	a.SBC_abs(st(rsScrollX))
 	a.STA_abs(st(rsTmpSX))
 	a.CLC()
 	a.ADC_imm16_w(0x0010)
 	a.CMP_imm16_w(0x0110)
 	a.BCS("rds_return")
 	a.Comment("screen y = world y - scroll y, visible if -16 < y < 224:")
-	emitLDAAbsY(a, tb(rtEntries+2))
+	a.LDA_abs_y(tb(rtEntries+2))
 	a.SEC()
-	emitSBCAbs(a, st(rsScrollY))
+	a.SBC_abs(st(rsScrollY))
 	a.STA_abs(st(rsTmpSY))
 	a.CLC()
 	a.ADC_imm16_w(0x0010)
@@ -468,8 +468,8 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.CMP_imm16_w(0x00F0)
 	a.BNE("rds_find")
 
-	emitLDAAbsY(a, tb(rtEntries+4))
-	emitORAAbs(a, st(rsAnim))
+	a.LDA_abs_y(tb(rtEntries+4))
+	a.ORA_abs(st(rsAnim))
 	a.STA_long_x(0x7E0802)
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX))
@@ -486,7 +486,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX + 1))
 	a.AND_imm8_b(0x01)
-	emitORAAbsY(a, tb(rtEntries+6))
+	a.ORA_abs_y(tb(rtEntries+6))
 	a.STA_long_x(0x7E0A20)
 	a.REP(0x20)
 	a.PLX()
@@ -802,7 +802,7 @@ func (s *remoteSpritesLocal) logRemoteCounts(t *[remoteTableSize]byte, now time.
 	s.logged, s.loggedOK = c, true
 }
 
-// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the body tiles: JSLs into the ROM area
+// remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the body tiles: JSLs into the free ROM
 // the patcher uses.
 func (g *Game) remoteBodyOK() bool {
 	for _, addr := range []uint32{nmiHookPatchAddr, nmiEarlyPatchAddr} {
@@ -812,7 +812,7 @@ func (g *Game) remoteBodyOK() bool {
 		}
 		c := g.rom.Contents[pak : pak+4]
 		target := uint32(c[1]) | uint32(c[2])<<8 | uint32(c[3])<<16
-		if c[0] != 0x22 || target < romGarbageStart || target >= romGarbageEnd {
+		if c[0] != 0x22 || !isFreeROM(target) {
 			return false
 		}
 	}
@@ -1049,14 +1049,10 @@ const (
 	// captureMaskAddr is the bits of captureChrsAddr captured this frame (u16; the high byte stays 0):
 	captureMaskAddr = sramZeroEnd - 2
 
-	// captureTypeListAddr and captureChrListAddr are the lists in ROM the init code builds the tables from, padded
-	// with their last entry:
-	captureTypeListAddr = uint32(0x1BB600)
+	// the sizes of the lists in ROM that the init code builds the tables from, padded with their last entry (see
+	// captureLists). The patcher places them and the capture routine in free ROM:
 	captureTypeListSize = 0x18
-	captureChrListAddr  = captureTypeListAddr + captureTypeListSize
 	captureChrListSize  = 0x40
-	// captureExtrasAddr is the capture routine in ROM, called by the trampoline with JSL:
-	captureExtrasAddr = captureChrListAddr + captureChrListSize
 )
 
 // captureAncillae are the ancilla types whose sprites are captured:
@@ -1207,8 +1203,8 @@ func captureLists() (types [captureTypeListSize]byte, chrs [captureChrListSize]b
 }
 
 // emitInitCaptureTables emits the init code that zeroes sramZeroAddr..sramZeroEnd and builds the capture tables
-// there. Runs with A, X and Y 16-bit.
-func emitInitCaptureTables(a *asm.Emitter) {
+// there from the lists at typeList and chrList in ROM. Runs with A, X and Y 16-bit.
+func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
 	a.Comment("zero the capture tables, the copy of Link's OAM entries and the remote sprites table and state:")
 	a.LDA_imm16_w(0x0000)
 	a.STA_long(sramZeroAddr)
@@ -1220,8 +1216,8 @@ func emitInitCaptureTables(a *asm.Emitter) {
 	for _, l := range []struct {
 		list, size, table uint32
 	}{
-		{captureTypeListAddr, captureTypeListSize, captureTypesAddr},
-		{captureChrListAddr, captureChrListSize, captureChrsAddr},
+		{typeList, captureTypeListSize, captureTypesAddr},
+		{chrList, captureChrListSize, captureChrsAddr},
 	} {
 		loop := fmt.Sprintf("init_capture_%06x", l.table)
 		a.LDX_imm16_w(uint16(l.size - 1))
@@ -1231,7 +1227,7 @@ func emitInitCaptureTables(a *asm.Emitter) {
 		a.TAY()
 		a.SEP(0x20)
 		a.LDA_imm8_b(0x01)
-		emitSTAAbsY(a, uint16(l.table&0xFFFF))
+		a.STA_abs_y(uint16(l.table&0xFFFF))
 		a.REP(0x20)
 		a.DEX()
 		a.BPL(loop)
@@ -1249,22 +1245,11 @@ func emitInitCaptureTables(a *asm.Emitter) {
 	a.REP(0x20)
 }
 
-// emitCaptureExtras emits the lists at captureTypeListAddr and captureChrListAddr and the routine at
-// captureExtrasAddr that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after storing the scroll
-// offsets at linkOAMCopyScroll. Called with JSL with A and X 8-bit; preserves P and DB.
+// emitCaptureExtras emits the routine that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after
+// storing the scroll offsets at linkOAMCopyScroll. Called by the trampoline with JSL with A and X 8-bit; preserves P
+// and DB. It runs from any bank.
 func emitCaptureExtras(a *asm.Emitter) {
-	if a.PC() != captureTypeListAddr {
-		panic(fmt.Errorf("captureTypeListAddr expected to be $%06x but got $%06x", a.PC(), captureTypeListAddr))
-	}
-	types, chrs := captureLists()
-	a.Comment("ancilla types whose sprites are captured:")
-	a.EmitBytes(types[:])
-	a.Comment("chrs that are captured:")
-	a.EmitBytes(chrs[:])
-
-	if a.Label("captureExtras") != captureExtrasAddr {
-		panic(fmt.Errorf("captureExtrasAddr expected to be $%06x but got $%06x", a.PC(), captureExtrasAddr))
-	}
+	a.Label("captureExtras")
 	ex := linkOAMCopyAddr + linkOAMCopyExtras
 
 	a.PHP()
@@ -1273,11 +1258,11 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.Comment("scroll offsets Link's copied OAM entries were drawn with (linkOAMCopyScroll):")
 	a.LDA_long(0x7E00E2)
 	a.SEC()
-	emitSBCLong(a, 0x7E011A)
+	a.SBC_long(0x7E011A)
 	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll)
 	a.LDA_long(0x7E00E8)
 	a.SEC()
-	emitSBCLong(a, 0x7E011C)
+	a.SBC_long(0x7E011C)
 	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll + 2)
 	a.LDA_imm16_w(0x0000)
 	a.STA_long(ex)
@@ -1302,8 +1287,8 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.CMP_imm8_b(0x40)
 	a.BCS("ce_next_ancilla")
 	a.TAY()
-	emitLDAAbsY(a, uint16(captureTypesAddr&0xFFFF))
-	emitTSBAbs(a, mask)
+	a.LDA_abs_y(uint16(captureTypesAddr&0xFFFF))
+	a.TSB_abs(mask)
 	a.Label("ce_next_ancilla")
 	a.DEX()
 	a.BPL("ce_ancilla")
@@ -1319,7 +1304,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.BNE("ce_next_sprite")
 	a.Label("ce_sprite_found")
 	a.LDA_imm8_b(0x03)
-	emitTSBAbs(a, mask)
+	a.TSB_abs(mask)
 	a.BRA("ce_sprites_done")
 	a.Label("ce_next_sprite")
 	a.DEX()
@@ -1343,7 +1328,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.RTL()
 	a.Label("ce_garnish_found")
 	a.LDA_imm8_b(0x01)
-	emitTSBAbs(a, mask)
+	a.TSB_abs(mask)
 
 	a.Label("ce_scan")
 	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
@@ -1354,31 +1339,31 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.LDY_imm16_w(0x01FC)
 	a.Label("ce_loop")
 	a.Comment("drawn this frame (most entries are not):")
-	emitLDAAbsY(a, 0x0800)
+	a.LDA_abs_y(0x0800)
 	a.AND_imm16_w(0xFF00)
 	a.CMP_imm16_w(0xF000)
 	a.BEQ("ce_next")
 	a.Comment("a captured chr in name table 0:")
-	emitLDAAbsY(a, 0x0802)
-	emitBITImm16(a, 0x0100)
+	a.LDA_abs_y(0x0802)
+	a.BIT_imm16_w(0x0100)
 	a.BNE("ce_next")
 	a.AND_imm16_w(0x00FF)
 	a.TAX()
 	a.LDA_long_x(captureChrsAddr)
-	emitANDLong(a, captureMaskAddr)
+	a.AND_long(captureMaskAddr)
 	a.BEQ("ce_next")
 	a.Comment("not one of Link's own entries, which are copied already:")
 	a.TYA()
 	a.SEC()
-	emitSBCAbs(a, 0x0352)
+	a.SBC_abs(0x0352)
 	a.CMP_imm16_w(linkOAMCount * 4)
 	a.BCC("ce_next")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index:")
 	a.LDA_long(ex)
 	a.TAX()
-	emitLDAAbsY(a, 0x0800)
+	a.LDA_abs_y(0x0800)
 	a.STA_long_x(ex + 2 + 0)
-	emitLDAAbsY(a, 0x0802)
+	a.LDA_abs_y(0x0802)
 	a.STA_long_x(ex + 2 + 2)
 	a.PHX()
 	a.TYA()

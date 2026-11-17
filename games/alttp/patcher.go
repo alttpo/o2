@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"o2/snes"
+	"slices"
 	"strings"
 )
 
@@ -63,10 +64,13 @@ const (
 	sramZeroAddr = uint32(0x706000)
 	sramZeroEnd  = uint32(0x706300)
 
-	// bus address of unused/garbage area in ROM (JP and US confirmed):
-	romGarbageStart = uint32(0x1BB1D7)
-	romGarbageEnd   = uint32(0x1BB800)
+	// the ROM area that versions of o2 before the free ROM tables (see freerom.go) patched their init code into:
+	legacyPatchStart = uint32(0x1BB1D7)
+	legacyPatchEnd   = uint32(0x1BB800)
 )
+
+// mvnSetupSize is the size of the code that copies one range with MVN: LDX, LDY, LDA and MVN:
+const mvnSetupSize = 3 + 3 + 3 + 3
 
 // layout of the copy of Link's OAM entries at linkOAMCopyAddr:
 const (
@@ -116,17 +120,12 @@ func (p *Patcher) Patch() (err error) {
 	// identify the ROM before it is modified:
 	signature := makePatchSignature(p.rom.Contents)
 
-	// free bytes in JP 1.0 rom:
-	// $00:89C2 - 30 bytes
-	// $00:E892 - 30 bytes
-	// $00:F7E1 - 31 bytes
-	// $00:FFB7 - 9 bytes
-
-	// $1B:B1D7 - 1577 bytes free
-	// the last valid SPC data is at $1B:B1D3: dw 0, $0800
-	// if you do go looking for that 5.8k free space, you'll see this sequence of bytes most likely
-	// $C0, $00, $00, $00, $00, $01, $FF, $00, $00
-	// I can assure you it's garbage
+	// the free ROM sections for this ROM (see freerom.go); only those that are still all $FF:
+	layoutName, layout := freeROMLayout(p.rom)
+	free := verifiedFreeROM(p.rom, layout)
+	if !isROMSpanFree(p.rom, patchSignatureSpan) {
+		return fmt.Errorf("ROM at $%06x, where o2 writes its patch signature, is in use", patchSignatureSpan.start)
+	}
 
 	// patch header to expand SRAM size:
 	hdr := &p.rom.Header
@@ -161,36 +160,18 @@ func (p *Patcher) Patch() (err error) {
 			// it's not vanilla code nor is it a JSL/JML + NOP combo:
 			return fmt.Errorf("unexpected code at $00:802F: %s", hex.Dump(code802F))
 		}
+		// our init code appends the code it was patched over, so patching a ROM that o2 already patched would make it
+		// call itself:
+		target := uint32(code802F[1]) | uint32(code802F[2])<<8 | uint32(code802F[3])<<16
+		if isFreeROM(target&^0x800000) || (target >= legacyPatchStart && target < legacyPatchEnd) {
+			return fmt.Errorf("ROM is already patched by o2; select the original ROM")
+		}
 	}
 
 	textBuf := &strings.Builder{}
 	defer func() {
 		log.Print(textBuf.String())
 	}()
-
-	// overwrite $00:802F with `JSL $1BB1D7`
-	const initHook = romGarbageStart
-
-	var pcAddr uint32
-	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
-	a := asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(expected802F))), true)
-	a.SetBase(0x00802F)
-	if code802F[0] == 0x5c {
-		// NOTE: FastROM randomizer replaces JSL with JML to its init and then JMLs back to $8034.
-		// doing a JML to our own init and appending the randomizer's copy of 802F code to our init
-		// will still JML back to $808034 and everything should work as intended:
-		a.JML(initHook)
-	} else {
-		a.JSL(initHook)
-	}
-	a.NOP()
-	if err := a.Finalize(); err != nil {
-		return err
-	}
-	a.WriteTextTo(textBuf)
-	if a.Len() != len(expected802F) {
-		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
-	}
 
 	// frame hook:
 	const frameHook = 0x008056
@@ -208,67 +189,46 @@ func (p *Patcher) Patch() (err error) {
 
 	// we can't write to SRAM from this program because we only have access to the ROM contents, so the patched init
 	// code copies the common code (the update stub, the frame trampoline which ends with the original JSL from the
-	// frameHook, and the map16 apply routine) from ROM to SRAM with MVN:
+	// frameHook, the map16 apply routine and the remote sprites routines) from ROM to SRAM with MVN.
+	// the routines and tables written to free ROM, measured with placeholder addresses and then placed by
+	// allocateROM:
+	r := &patchROM{
+		code802F:       code802F,
+		linkGfxBankIns: linkGfxBankInstruction(p.rom),
+	}
 	fns := make(map[romFunction]uint32)
 	fillRomFunctions(p.rom, fns)
-	ta := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), true)
-	ta.SetBase(sramCodeAddr)
-	if err = p.emitSRAMCode(ta, gameModes, fns); err != nil {
+	if err = r.measure(p, gameModes, fns); err != nil {
 		return
 	}
-	ta.WriteTextTo(textBuf)
+	if err = allocateROM(free, r.blocks()); err != nil {
+		return fmt.Errorf("%s ROM: %w", layoutName, err)
+	}
+	if err = r.write(p, gameModes, fns, textBuf); err != nil {
+		return
+	}
 
-	// start writing at the end of the ROM after music data:
-	pcAddr, err = lorom.BusAddressToPak(initHook)
-	a = asm.NewEmitter(p.rom.Slice(pcAddr, patchSignatureROMAddr-romGarbageStart), true)
-	a.SetBase(initHook)
-	a.Comment("copy the common code to SRAM:")
-	a.PHP()
-	a.PHB()
-	a.REP(0x30)
-	a.LDX_imm16_w(0xFFFF) // source address; fixed up below
-	srcOperand := a.PC() - 2
-	a.LDY_imm16_w(uint16(sramCodeAddr & 0xFFFF))
-	a.LDA_imm16_w(uint16(ta.Len() - 1))
-	a.MVN(uint8(sramCodeAddr>>16), 0xFF) // source bank; fixed up below
-	srcBankOperand := a.PC() - 1
-	a.Comment("copy the patch signature to SRAM:")
-	a.LDX_imm16_w(uint16(patchSignatureROMAddr & 0xFFFF))
-	a.LDY_imm16_w(uint16(patchSignatureAddr & 0xFFFF))
-	a.LDA_imm16_w(patchSignatureSize - 1)
-	a.MVN(uint8(patchSignatureAddr>>16), uint8(patchSignatureROMAddr>>16))
-	emitInitCaptureTables(a)
-	a.PLB()
-	a.PLP()
-	// append the original 802F code to our custom init hook:
-	a.EmitBytes(code802F)
-	// follow by `RTL`
-	// NOTE: in FastROM randomizer, this will never be reached because its 802F code JMLs back to 8034:
-	a.RTL()
-	// the common code to copy follows:
-	src := a.PC()
-	if src&0xFFFF+uint32(ta.Len()) > 0x10000 {
-		return fmt.Errorf("SRAM code at $%06x crosses a bank boundary", src)
+	// overwrite $00:802F with a JSL (or JML, see below) to our init code:
+	var pcAddr uint32
+	pcAddr, err = lorom.BusAddressToPak(0x00_802F)
+	a := asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(expected802F))), true)
+	a.SetBase(0x00802F)
+	if code802F[0] == 0x5c {
+		// NOTE: FastROM randomizer replaces JSL with JML to its init and then JMLs back to $8034.
+		// doing a JML to our own init and appending the randomizer's copy of 802F code to our init
+		// will still JML back to $808034 and everything should work as intended:
+		a.JML(r.init.addr)
+	} else {
+		a.JSL(r.init.addr)
 	}
-	a.Comment("common code for SRAM:")
-	a.EmitBytes(ta.Bytes())
-	// routines that run from ROM:
-	if a.PC() > captureTypeListAddr {
-		return fmt.Errorf("SRAM code copy at $%06x overlaps ROM routines at $%06x", a.PC(), captureTypeListAddr)
-	}
-	for a.PC() < captureTypeListAddr {
-		a.EmitBytes([]byte{0})
-	}
-	emitCaptureExtras(a)
-	nmiHookLate, nmiHookEarly := emitNMIHooks(a, linkGfxBankInstruction(p.rom))
+	a.NOP()
 	if err := a.Finalize(); err != nil {
 		return err
 	}
-	code := a.Bytes()
-	code[srcOperand-initHook+0] = uint8(src)
-	code[srcOperand-initHook+1] = uint8(src >> 8)
-	code[srcBankOperand-initHook] = uint8(src >> 16)
 	a.WriteTextTo(textBuf)
+	if a.Len() != len(expected802F) {
+		return fmt.Errorf("assembler failed to produce exactly %d bytes to patch", len(expected802F))
+	}
 
 	// write the patch signature:
 	pcAddr, err = lorom.BusAddressToPak(patchSignatureROMAddr)
@@ -296,8 +256,8 @@ func (p *Patcher) Patch() (err error) {
 		expected []byte
 		target   uint32
 	}{
-		{nmiHookPatchAddr, nmiHookPatchExpected, nmiHookLate},
-		{nmiEarlyPatchAddr, nmiEarlyPatchExpected, nmiHookEarly},
+		{nmiHookPatchAddr, nmiHookPatchExpected, r.nmiHookLate},
+		{nmiEarlyPatchAddr, nmiEarlyPatchExpected, r.nmiHookEarly},
 	}
 	hooksOK := true
 	for _, h := range hooks {
@@ -328,13 +288,18 @@ func (p *Patcher) Patch() (err error) {
 	return nil
 }
 
-// emitSRAMCode emits the common code that the patched init code copies to SRAM at sramCodeAddr.
-func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunction]uint32) (err error) {
+// emitSRAMCode emits the common code that the patched init code copies to SRAM at sramCodeAddr. captureExtras is the
+// ROM address of the capture routine (see emitCaptureExtras). It returns the SRAM ranges that hold code, without the
+// padding between them.
+func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunction]uint32, captureExtras uint32) (code []romSpan, err error) {
 	// pad emits zero bytes up to addr, which must not be behind the PC:
+	start := a.PC()
 	pad := func(addr uint32) {
 		if a.PC() > addr {
 			panic(fmt.Errorf("SRAM code at $%06x overlaps $%06x", a.PC(), addr))
 		}
+		code = append(code, romSpan{start, a.PC()})
+		start = addr
 		if n := addr - a.PC(); n > 0 {
 			a.EmitBytes(make([]byte, n))
 		}
@@ -382,7 +347,7 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 
 	p.emitLinkOAMCopy(a)
 	a.Comment("copy sparkles and dust for o2 to send:")
-	a.JSL(captureExtrasAddr)
+	a.JSL(captureExtras)
 	a.Comment("draw remote players:")
 	a.JSR_abs(uint16(remoteDrawAddr & 0xFFFF))
 	a.RTL()
@@ -396,9 +361,187 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	emitRemoteDraw(a)
 	pad(remoteDrawSpriteAddr)
 	emitRemoteDrawSprite(a)
+	code = append(code, romSpan{start, a.PC()})
 
 	if err = a.Finalize(); err != nil {
 		return
+	}
+	return
+}
+
+// patchROM is the code the patcher writes to free ROM, in blocks that allocateROM places separately:
+type patchROM struct {
+	// the code at $00:802F that the init code runs after its own:
+	code802F []byte
+	// the instruction that loads the bank of Link's graphics; see emitNMIHooks:
+	linkGfxBankIns []byte
+
+	// init is the init code called from $00:802F; see emitInit:
+	init romBlock
+	// sram are the parts of the common code that the init code copies to SRAM, at sramSpans:
+	sram      []romBlock
+	sramSpans []romSpan
+	// the lists the init code builds the capture tables from; see emitInitCaptureTables:
+	typeList romBlock
+	chrList  romBlock
+	// the capture routine called by the trampoline in SRAM; see emitCaptureExtras:
+	captureExtras romBlock
+	// the NMI hooks; see emitNMIHooks:
+	nmiHooks                  romBlock
+	nmiHookLate, nmiHookEarly uint32
+}
+
+// patchRoutine emits a block's code at its address:
+type patchRoutine struct {
+	block *romBlock
+	emit  func(a *asm.Emitter)
+}
+
+func (r *patchROM) blocks() (b []*romBlock) {
+	for _, rt := range r.routines(nil) {
+		b = append(b, rt.block)
+	}
+	return
+}
+
+// routines lists the blocks with the code to emit for each; sram is the assembled common code.
+func (r *patchROM) routines(sram *asm.Emitter) []patchRoutine {
+	types, chrs := captureLists()
+	list := []patchRoutine{
+		{&r.init, r.emitInit},
+		{&r.typeList, func(a *asm.Emitter) {
+			a.Comment("ancilla types whose sprites are captured:")
+			a.EmitBytes(types[:])
+		}},
+		{&r.chrList, func(a *asm.Emitter) {
+			a.Comment("chrs that are captured:")
+			a.EmitBytes(chrs[:])
+		}},
+		{&r.captureExtras, emitCaptureExtras},
+		{&r.nmiHooks, func(a *asm.Emitter) {
+			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.linkGfxBankIns)
+		}},
+	}
+	for i := range r.sram {
+		s := r.sramSpans[i]
+		list = append(list, patchRoutine{&r.sram[i], func(a *asm.Emitter) {
+			a.Comment(fmt.Sprintf("common code for SRAM $%06x..$%06x:", s.start, s.end-1))
+			a.EmitBytes(sram.Bytes()[s.start-sramCodeAddr : s.end-sramCodeAddr])
+		}})
+	}
+	return list
+}
+
+// emitInit emits the init code, called from $00:802F with JSL (or JML in FastROM randomizers) on reset. It copies the
+// common code and the patch signature to SRAM, builds the capture tables and then runs the code it was patched over.
+func (r *patchROM) emitInit(a *asm.Emitter) {
+	a.AssumeSEP(0x30)
+	a.Label("o2Init")
+	a.Comment("copy the common code to SRAM:")
+	a.PHP()
+	a.PHB()
+	a.REP(0x30)
+	for i, s := range r.sramSpans {
+		src := r.sram[i].addr
+		emitMVNCopy(a, src, s.start, s.size())
+	}
+	a.Comment("copy the patch signature to SRAM:")
+	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
+	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
+	a.PLB()
+	a.PLP()
+	a.Comment("the code patched over at $00:802F:")
+	a.EmitBytes(r.code802F)
+	// NOTE: in FastROM randomizer, this will never be reached because its 802F code JMLs back to 8034:
+	a.RTL()
+}
+
+// emitMVNCopy copies size bytes from src to dst with MVN; mvnSetupSize bytes. A, X and Y must be 16-bit. Leaves DB
+// set to dst's bank.
+func emitMVNCopy(a *asm.Emitter, src, dst, size uint32) {
+	a.LDX_imm16_w(uint16(src))
+	a.LDY_imm16_w(uint16(dst))
+	a.LDA_imm16_w(uint16(size - 1))
+	a.MVN(uint8(dst>>16), uint8(src>>16))
+}
+
+// sramCopySpans merges the SRAM code ranges whose gap is smaller than the code that copies a range, so that the init
+// code copies the padding between them instead.
+func sramCopySpans(code []romSpan) (spans []romSpan) {
+	for _, s := range code {
+		if s.size() == 0 {
+			continue
+		}
+		if n := len(spans); n > 0 && s.start-spans[n-1].end <= mvnSetupSize {
+			spans[n-1].end = s.end
+			continue
+		}
+		spans = append(spans, s)
+	}
+	return
+}
+
+// measure assembles every block with placeholder addresses to find its size.
+func (r *patchROM) measure(p *Patcher, gameModes []byte, fns map[romFunction]uint32) (err error) {
+	sram := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), false)
+	sram.SetBase(sramCodeAddr)
+	var code []romSpan
+	if code, err = p.emitSRAMCode(sram, gameModes, fns, 0); err != nil {
+		return
+	}
+	r.sramSpans = sramCopySpans(code)
+	r.sram = make([]romBlock, len(r.sramSpans))
+	for i, s := range r.sramSpans {
+		r.sram[i].name = fmt.Sprintf("SRAM code $%06x..$%06x", s.start, s.end-1)
+	}
+	r.init.name = "init"
+	r.typeList.name = "capture type list"
+	r.chrList.name = "capture chr list"
+	r.captureExtras.name = "captureExtras"
+	r.nmiHooks.name = "NMI hooks"
+
+	for _, rt := range r.routines(sram) {
+		a := asm.NewEmitter(make([]byte, 0x1000), false)
+		a.SetBase(0x008000)
+		rt.emit(a)
+		if err = a.Finalize(); err != nil {
+			return fmt.Errorf("%s: %w", rt.block.name, err)
+		}
+		rt.block.size = uint32(a.Len())
+	}
+	return
+}
+
+// write assembles every block at the address allocateROM placed it at and writes it to the ROM.
+func (r *patchROM) write(p *Patcher, gameModes []byte, fns map[romFunction]uint32, text io.Writer) (err error) {
+	sram := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), true)
+	sram.SetBase(sramCodeAddr)
+	var code []romSpan
+	if code, err = p.emitSRAMCode(sram, gameModes, fns, r.captureExtras.addr); err != nil {
+		return
+	}
+	if spans := sramCopySpans(code); !slices.Equal(spans, r.sramSpans) {
+		return fmt.Errorf("SRAM code ranges changed from %v to %v", r.sramSpans, spans)
+	}
+	_ = sram.WriteTextTo(text)
+
+	for _, rt := range r.routines(sram) {
+		b := rt.block
+		_, _ = fmt.Fprintf(text, "; %s: $%06x..$%06x ($%x bytes)\n", b.name, b.addr, b.addr+b.size-1, b.size)
+		var pak uint32
+		if pak, err = lorom.BusAddressToPak(b.addr); err != nil {
+			return
+		}
+		a := asm.NewEmitter(p.rom.Slice(pak, b.size), true)
+		a.SetBase(b.addr)
+		rt.emit(a)
+		if err = a.Finalize(); err != nil {
+			return fmt.Errorf("%s: %w", b.name, err)
+		}
+		if uint32(a.Len()) != b.size {
+			return fmt.Errorf("%s: assembled $%x bytes at $%06x but measured $%x", b.name, a.Len(), b.addr, b.size)
+		}
+		_ = a.WriteTextTo(text)
 	}
 	return
 }

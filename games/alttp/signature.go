@@ -34,12 +34,13 @@ const (
 	patchSignatureSize = 16
 	// patchSignatureAddr is the signature's SRAM address, past the end of the copy of Link's OAM entries:
 	patchSignatureAddr = uint32(0x707FF0)
-	// patchSignatureROMAddr is where the patcher writes the signature in ROM, at the end of the ROM area it uses:
-	patchSignatureROMAddr = romGarbageEnd - patchSignatureSize
+	// patchSignatureROMAddr is where the patcher writes the signature in ROM, the same for all ROMs: the end of the
+	// free section $1BD1D8..$1BD217 (see freerom.go):
+	patchSignatureROMAddr = uint32(0x1BD208)
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 3
+	patchFormat = 4
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -81,30 +82,34 @@ func computePatchVersion() (v [4]byte) {
 		linkOAMCopyReadSize,
 		captureTypesAddr,
 		captureChrsAddr,
-		captureTypeListAddr,
-		captureChrListAddr,
-		captureExtrasAddr,
 		sramZeroAddr,
 		sramZeroEnd,
 		linkOAMExtrasMax,
 		captureMaskAddr,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
-		romGarbageStart,
-		romGarbageEnd,
 	})
+	// the free ROM the routines are placed in:
+	for _, spans := range [][]romSpan{freeROMJP10, freeROMUS10, freeROMRandomizer} {
+		for _, s := range spans {
+			_ = binary.Write(h, binary.LittleEndian, [2]uint32{s.start, s.end})
+		}
+	}
 
 	// the common code, with placeholder ROM addresses:
 	a := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), false)
 	a.SetBase(sramCodeAddr)
-	if err := (&Patcher{}).emitSRAMCode(a, []byte{0, 0, 0}, map[romFunction]uint32{}); err != nil {
+	if _, err := (&Patcher{}).emitSRAMCode(a, []byte{0, 0, 0}, map[romFunction]uint32{}, 0); err != nil {
 		panic(fmt.Errorf("alttp: patch version: %w", err))
 	}
 	h.Write(a.Bytes())
 
-	// the routines in ROM; the NMI hook at a placeholder address:
-	a = asm.NewEmitter(make([]byte, 0x200), false)
-	a.SetBase(captureTypeListAddr)
+	// the routines in ROM, at a placeholder address:
+	a = asm.NewEmitter(make([]byte, 0x400), false)
+	a.SetBase(0x008000)
+	types, chrs := captureLists()
+	a.EmitBytes(types[:])
+	a.EmitBytes(chrs[:])
 	emitCaptureExtras(a)
 	emitNMIHooks(a, []byte{0xA9, 0x10})
 	h.Write(a.Bytes())

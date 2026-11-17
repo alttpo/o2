@@ -27,6 +27,13 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 		return
 	}
 
+	// fill the free ROM sections with $FF like the real ROMs have them, so that the patcher uses them:
+	for _, spans := range [][]romSpan{freeROMJP10, freeROMUS10, {patchSignatureSpan}} {
+		for _, s := range spans {
+			fillTestROM(rom, s, 0xFF)
+		}
+	}
+
 	// build ROM header:
 	copy(rom.Header.Title[:], title)
 	rom.EmulatedVectors.RESET = 0x8000
@@ -213,5 +220,16 @@ func TestPatcher_ModuleTests(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// fillTestROM fills the span s of the ROM with v.
+func fillTestROM(rom *snes.ROM, s romSpan, v byte) {
+	pak, err := lorom.BusAddressToPak(s.start)
+	if err != nil {
+		panic(err)
+	}
+	for i := range rom.Slice(pak, s.size()) {
+		rom.Contents[pak+uint32(i)] = v
 	}
 }
