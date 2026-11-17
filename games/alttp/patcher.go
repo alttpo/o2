@@ -367,9 +367,9 @@ func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
 
 // emitPreMain emits the trampoline that the frame hook calls with JSL every frame instead of `JSL Module_MainRouting`
 // (gameModes is its operand). It runs the update routine during safe modules, the module, and then copies Link's OAM
-// entries and the captured sprites for o2 and draws the remote players with the routines at captureExtras and
-// remoteDraw. Called with A and X 8-bit.
-func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw, manipPending uint32) {
+// entries and the captured sprites for o2 and draws the remote players with the routine at remoteFrame. Called with A
+// and X 8-bit.
+func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uint32) {
 	a.AssumeSEP(0x30)
 	a.Label("preMain")
 	a.Comment("only update during safe modules:")
@@ -401,10 +401,8 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw, ma
 	emitSfx(a)
 	a.Comment("apply the attributes of manipulable objects the room load applied:")
 	a.JSL(manipPending)
-	a.Comment("copy sparkles and dust for o2 to send:")
-	a.JSL(captureExtras)
-	a.Comment("draw remote players:")
-	a.JSL(remoteDraw)
+	a.Comment("copy sparkles and dust for o2 to send, and draw remote players:")
+	a.JSL(remoteFrame)
 	a.RTL()
 }
 
@@ -431,19 +429,12 @@ type patchROM struct {
 	preMain romBlock
 	// called by the generated map16 update routines through the SRAM stub; see emitMap16Apply:
 	map16Apply romBlock
-	// remote players drawing routines, called by preMain; see emitRemoteDrawRoutines:
-	remoteDraw     romBlock
-	remoteDrawAddr uint32
-	// their tables and the routines they call, in blocks small enough to fit the free ROM; see emitRemoteChrSlots,
-	// emitRemoteDrawTables, emitRemoteDrawBody, emitRemoteScanSlots, emitRemoteAllocSlots, emitRemoteSlottedChr,
-	// emitRemoteDrawList and emitRemoteUploadList:
-	remoteChrSlotsSmall, remoteChrSlotsLarge, remoteTables                                    romBlock
-	remoteDrawBody, remoteScan, remoteAlloc, remoteSlottedChr, remoteDrawSprite, remoteUpload romBlock
-	// the lists the init code builds the capture tables from; see emitInitCaptureTables:
-	typeList romBlock
-	chrList  romBlock
-	// the capture routine called by preMain; see emitCaptureExtras:
-	captureExtras romBlock
+	// the routine preMain calls to capture the local player's sprites and draw the remote players, and the tables it
+	// reads (in the same bank); see emitRemoteFrame:
+	remoteFrame       romBlock
+	remoteFrameAddr   uint32
+	remoteFrameTables romBlock
+	remoteTables      remoteFrameTables
 	// the NMI hooks; see emitNMIHooks:
 	nmiHooks                  romBlock
 	nmiHookLate, nmiHookEarly uint32
@@ -459,7 +450,7 @@ type patchROM struct {
 	manipPending romBlock
 	// called by the manip stage hook and manipPending:
 	manipStageObject, manipStageBlock, manipPendingBlock romBlock
-	// called by captureExtras; see emitDyingEnemiesList and emitNearDyingEnemySub:
+	// called by remoteFrame; see emitDyingEnemiesList and emitNearDyingEnemySub:
 	captureDyingList, captureNearDying romBlock
 }
 
@@ -467,11 +458,6 @@ type patchROM struct {
 type patchRoutine struct {
 	block *romBlock
 	emit  func(a *asm.Emitter) error
-}
-
-// remoteDrawTables returns the addresses of the remote sprites tables.
-func (r *patchROM) remoteDrawTables() remoteDrawTables {
-	return remoteDrawTablesAt(r.remoteChrSlotsSmall.addr, r.remoteChrSlotsLarge.addr, r.remoteTables.addr)
 }
 
 func (r *patchROM) blocks() (b []*romBlock) {
@@ -483,7 +469,6 @@ func (r *patchROM) blocks() (b []*romBlock) {
 
 // routines lists the blocks with the code to emit for each, given the addresses of the other blocks.
 func (r *patchROM) routines() []patchRoutine {
-	types, chrs := captureLists()
 	return []patchRoutine{
 		{&r.init, func(a *asm.Emitter) error {
 			r.emitInit(a)
@@ -504,64 +489,18 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.preMain, func(a *asm.Emitter) error {
-			emitPreMain(a, r.gameModes, r.captureExtras.addr, r.remoteDrawAddr, r.manipPending.addr)
+			emitPreMain(a, r.gameModes, r.remoteFrameAddr, r.manipPending.addr)
 			return nil
 		}},
 		{&r.map16Apply, func(a *asm.Emitter) error {
 			return emitMap16Apply(a, r.fnDrawMap16)
 		}},
-		{&r.remoteDraw, func(a *asm.Emitter) error {
-			r.remoteDrawAddr = emitRemoteDraw(a, r.remoteDrawBody.addr)
+		{&r.remoteFrameTables, func(a *asm.Emitter) error {
+			r.remoteTables = emitRemoteFrameTables(a)
 			return nil
 		}},
-		{&r.remoteDrawBody, func(a *asm.Emitter) error {
-			emitRemoteDrawBody(a, r.remoteAlloc.addr, r.remoteDrawSprite.addr, r.remoteUpload.addr)
-			return nil
-		}},
-		{&r.remoteChrSlotsSmall, func(a *asm.Emitter) error {
-			emitRemoteChrSlots(a, false)
-			return nil
-		}},
-		{&r.remoteChrSlotsLarge, func(a *asm.Emitter) error {
-			emitRemoteChrSlots(a, true)
-			return nil
-		}},
-		{&r.remoteTables, func(a *asm.Emitter) error {
-			emitRemoteDrawTables(a)
-			return nil
-		}},
-		{&r.remoteScan, func(a *asm.Emitter) error {
-			emitRemoteScanSlots(a, r.remoteDrawTables())
-			return nil
-		}},
-		{&r.remoteAlloc, func(a *asm.Emitter) error {
-			emitRemoteAllocSlots(a, r.remoteDrawTables(), r.remoteScan.addr)
-			return nil
-		}},
-		{&r.remoteSlottedChr, func(a *asm.Emitter) error {
-			emitRemoteSlottedChr(a, r.remoteDrawTables())
-			return nil
-		}},
-		{&r.remoteDrawSprite, func(a *asm.Emitter) error {
-			emitRemoteDrawList(a, r.remoteSlottedChr.addr)
-			return nil
-		}},
-		{&r.remoteUpload, func(a *asm.Emitter) error {
-			emitRemoteUploadList(a)
-			return nil
-		}},
-		{&r.typeList, func(a *asm.Emitter) error {
-			a.Comment("ancilla types whose sprites are captured:")
-			a.EmitBytes(types[:])
-			return nil
-		}},
-		{&r.chrList, func(a *asm.Emitter) error {
-			a.Comment("chrs that are captured:")
-			a.EmitBytes(chrs[:])
-			return nil
-		}},
-		{&r.captureExtras, func(a *asm.Emitter) error {
-			emitCaptureExtras(a, r.captureDyingList.addr, r.captureNearDying.addr)
+		{&r.remoteFrame, func(a *asm.Emitter) error {
+			r.remoteFrameAddr = emitRemoteFrame(a, r.remoteTables, r.captureDyingList.addr, r.captureNearDying.addr)
 			return nil
 		}},
 		{&r.nmiHooks, func(a *asm.Emitter) error {
@@ -623,7 +562,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	emitMVNCopy(a, r.sramStub.addr, sramStubAddr, sramStubEnd-sramStubAddr)
 	a.Comment("copy the patch signature to SRAM:")
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
-	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
+	emitInitSRAMZero(a)
 	emitRemoteInit(a)
 	emitMap16StageInit(a)
 	emitManipStageInit(a)
@@ -649,20 +588,9 @@ func (r *patchROM) measure() (err error) {
 	r.sramStub.name = "SRAM stub"
 	r.preMain.name = "preMain"
 	r.map16Apply.name = "map16Apply"
-	r.remoteDraw.name = "remoteDraw"
-	r.remoteChrSlotsSmall.name = "remote 8x8 chr slots"
-	r.remoteChrSlotsLarge.name = "remote 16x16 chr slots"
-	r.remoteTables.name = "remote sprites tables"
-	r.remoteScan.name = "remote slots scan"
-	r.remoteAlloc.name = "remote slots"
-	r.remoteSlottedChr.name = "remote slotted chr"
-	r.remoteDrawSprite.name = "remote draw list"
-	r.remoteDrawBody.name = "remote draw body"
-	r.remoteUpload.name = "remote uploads"
+	r.remoteFrame.name = "remoteFrame"
+	r.remoteFrameTables.name = "remoteFrame tables"
 	r.nmiUpload.name = "NMI upload"
-	r.typeList.name = "capture type list"
-	r.chrList.name = "capture chr list"
-	r.captureExtras.name = "captureExtras"
 	r.nmiHooks.name = "NMI hooks"
 	r.map16StageHook.name = "map16 stage hook"
 	r.manipStageHook.name = "manip stage hook"
@@ -696,10 +624,13 @@ func (r *patchROM) write(rom *snes.ROM, text io.Writer) (err error) {
 	list := r.routines()
 	slices.SortStableFunc(list, func(x, y patchRoutine) int {
 		first := func(b *romBlock) int {
-			if b == &r.remoteDraw {
+			switch b {
+			case &r.remoteFrameTables:
 				return 0
+			case &r.remoteFrame:
+				return 1
 			}
-			return 1
+			return 2
 		}
 		return first(x.block) - first(y.block)
 	})

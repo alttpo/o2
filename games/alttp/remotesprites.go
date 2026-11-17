@@ -249,541 +249,6 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 	return
 }
 
-// remoteDrawTables are the addresses of the ROM tables the drawing routines use, in three blocks:
-type remoteDrawTables struct {
-	// remoteSlotChrTables:
-	chrSlotsSmall, chrSlotsLarge uint32
-	// per slot, its first chr:
-	slotChrs uint32
-	// per part, its bit:
-	partBits uint32
-}
-
-// remoteDrawTablesAt returns the addresses of the tables that emitRemoteChrSlots emits at small and large and that
-// emitRemoteDrawTables emits at base.
-func remoteDrawTablesAt(small, large, base uint32) (t remoteDrawTables) {
-	t.chrSlotsSmall, t.chrSlotsLarge = small, large
-	t.slotChrs = base
-	t.partBits = t.slotChrs + uint32(len(remoteSlots))
-	return
-}
-
-// emitRemoteChrSlots emits the slots shown by 8x8 (large = false) or 16x16 sprites of each chr.
-func emitRemoteChrSlots(a *asm.Emitter, large bool) {
-	small, big := remoteSlotChrTables()
-	if large {
-		a.Comment("slots shown by 16x16 sprites of each chr:")
-		a.EmitBytes(big[:])
-	} else {
-		a.Comment("slots shown by 8x8 sprites of each chr:")
-		a.EmitBytes(small[:])
-	}
-}
-
-// emitRemoteDrawTables emits the small ROM tables of remoteDrawTables.
-func emitRemoteDrawTables(a *asm.Emitter) {
-	a.Comment("first chr of each slot:")
-	a.EmitBytes(remoteSlots)
-	a.Comment("bit of each part:")
-	for i := 0; i < remotePartMax; i++ {
-		a.EmitBytes([]byte{1 << i})
-	}
-}
-
-// emitRaw3 emits an instruction with a 16-bit operand that asm.Emitter has no method for.
-func emitRaw3(a *asm.Emitter, op uint8, operand uint16) {
-	a.EmitBytes([]byte{op, uint8(operand), uint8(operand >> 8)})
-}
-
-// adcAbs emits `ADC.w addr`.
-func adcAbs(a *asm.Emitter, addr uint16) { emitRaw3(a, 0x6D, addr) }
-
-// lsrAbs emits `LSR.w addr`.
-func lsrAbs(a *asm.Emitter, addr uint16) { emitRaw3(a, 0x4E, addr) }
-
-// emitRemoteDraw emits the routine that the trampoline calls with JSL after the module ran. While the game draws
-// sprites in the room or area the remote sprites table was made for, it draws the table into the OAM buffer with the
-// routine at body (see emitRemoteDrawBody). Called with A and X 8-bit; preserves P and DB. It runs from any bank.
-func emitRemoteDraw(a *asm.Emitter, body uint32) (addr uint32) {
-	// the table and state are accessed with absolute addressing while DB = $70:
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
-
-	addr = a.Label("remoteDraw")
-	a.PHP()
-	a.PHB()
-	a.PEA(uint16(remoteStateAddr>>16) * 0x0101)
-	a.PLB()
-	a.PLB()
-	a.SEP(0x30)
-
-	a.Comment("nothing for the NMI hooks to upload unless parts are drawn:")
-	a.STZ_abs(st(rsNMILen))
-	a.STZ_abs(st(rsNMILen + 1))
-
-	a.Comment("count down the table's TTL:")
-	a.LDA_abs(tb(rtTTL))
-	a.BNE("rd_ttl_ok")
-	a.Label("rd_exit")
-	a.PLB()
-	a.PLP()
-	a.RTL()
-	a.Label("rd_ttl_ok")
-	a.DEC_abs(tb(rtTTL))
-
-	a.Comment("only while the game draws the underworld or overworld sprites:")
-	a.LDA_long(0x7E0010)
-	for _, m := range []uint8{0x07, 0x09, 0x0B, 0x0F, 0x10, 0x13, 0x16} {
-		a.CMP_imm8_b(m)
-		a.BEQ("rd_module_ok")
-	}
-	a.CMP_imm8_b(0x0E)
-	a.BNE("rd_exit2")
-	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu:")
-	a.LDA_long(0x7E001B)
-	a.BEQ("rd_interface_ow")
-	a.LDA_long(0x7E0011)
-	a.CMP_imm8_b(0x03)
-	a.BNE("rd_module_ok")
-	a.LDA_long(0x7E0200)
-	a.BEQ("rd_module_ok")
-	a.CMP_imm8_b(0x07)
-	a.BEQ("rd_module_ok")
-	a.BRA("rd_exit2")
-	a.Label("rd_interface_ow")
-	a.LDA_long(0x7E0011)
-	a.CMP_imm8_b(0x07)
-	a.BEQ("rd_interface_map")
-	a.CMP_imm8_b(0x0A)
-	a.BNE("rd_module_ok")
-	a.Label("rd_interface_map")
-	a.LDA_long(0x7E0200)
-	a.BEQ("rd_module_ok")
-	a.Label("rd_exit2")
-	a.PLB()
-	a.PLP()
-	a.RTL()
-	a.Label("rd_module_ok")
-
-	a.Comment("only in the room or area the table was made for:")
-	a.LDA_long(0x7E001B)
-	a.CMP_abs(tb(rtIndoors))
-	a.BNE("rd_exit2")
-	a.LDA_long(0x7E001B)
-	a.REP(0x30)
-	a.BEQ("rd_overworld")
-	a.LDA_long(0x7E00A0)
-	a.BRA("rd_location")
-	a.Label("rd_overworld")
-	a.LDA_long(0x7E008A)
-	a.Label("rd_location")
-	a.CMP_abs(tb(rtLocation))
-	a.BNE("rd_exit2")
-	a.JSL(body)
-	a.PLB()
-	a.PLP()
-	a.RTL()
-	a.AssumeSEP(0x30)
-	return
-}
-
-// emitRemoteDrawBody emits the routine that draws the remote sprites table into the OAM buffer with the routines at
-// alloc (emitRemoteAllocSlots) and drawList (emitRemoteDrawList), and lists the rows of chrs for the NMI hooks to
-// upload with the routine at upload (emitRemoteUploadList). Called with JSL with A, X and Y 16-bit and DB = $70;
-// clobbers them.
-func emitRemoteDrawBody(a *asm.Emitter, alloc, drawList, upload uint32) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
-
-	a.Label("remoteDrawBody")
-	a.AssumeREP(0x30)
-	a.JSL(alloc)
-
-	a.Comment("local scroll offsets:")
-	a.LDA_long(0x7E00E2)
-	a.SEC()
-	a.SBC_long(0x7E011A)
-	a.STA_abs(st(rsScrollX))
-	a.LDA_long(0x7E00E8)
-	a.SEC()
-	a.SBC_long(0x7E011C)
-	a.STA_abs(st(rsScrollY))
-	a.Comment("blob chr alternates every 8 frames:")
-	a.LDA_long(0x7E001A)
-	a.AND_imm16_w(0x0008)
-	a.LSR()
-	a.LSR()
-	a.STA_abs(st(rsBlobAnim))
-	a.STZ_abs(st(rsDrawnParts))
-
-	a.Comment("X = OAM buffer offset to search down from; Y = table entry offset:")
-	a.LDX_imm16_w(0x0200)
-	a.LDY_imm16_w(0x0000)
-	drawUntil := func(end uint32) {
-		a.LDA_abs(tb(end))
-		a.JSL(drawList)
-	}
-	a.Comment("extra sprites behind Link:")
-	drawUntil(rtExtrasEnd)
-	a.Comment("the head, body, sword and shield if the head and body got VRAM slots, else the player's shadow and blob:")
-	a.LDA_abs(st(rsBodyOK))
-	a.BEQ("rdb_no_body")
-	drawUntil(rtSlottedEnd)
-	a.LDY_abs(tb(rtP0BlobEnd))
-	a.BRA("rdb_blobs")
-	a.Label("rdb_no_body")
-	a.LDY_abs(tb(rtSlottedEnd))
-	a.Label("rdb_blobs")
-	a.Comment("the other players' shadows and blobs, and the extra sprites in front of Link:")
-	drawUntil(rtFrontEnd)
-
-	a.JSL(upload)
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
-
-// emitRemoteScanSlots emits the routine that sets rsUsed to the slots that sprites in the OAM buffer show, and, while
-// core updates are disabled, Link's own slots: the game doesn't upload Link's chrs then, and he may show them again
-// before it does. Called with JSL with A, X and Y 16-bit and DB = $70; clobbers A and X.
-func emitRemoteScanSlots(a *asm.Emitter, t remoteDrawTables) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-
-	a.Label("remoteScanSlots")
-	a.AssumeREP(0x30)
-	a.STZ_abs(st(rsUsed))
-	a.LDX_imm16_w(0x01FC)
-	a.Label("rs_loop")
-	a.LDA_long_x(0x7E0800)
-	a.AND_imm16_w(0xFF00)
-	a.CMP_imm16_w(0xF000)
-	a.BEQ("rs_next")
-	a.Comment("chrs $00..$3F of the first name table:")
-	a.LDA_long_x(0x7E0802)
-	a.BIT_imm16_w(0x01C0)
-	a.BNE("rs_next")
-	a.AND_imm16_w(0x003F)
-	a.STA_abs(st(rsTmpChr))
-	a.PHX()
-	a.TXA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.LDA_long_x(0x7E0A20)
-	a.AND_imm16_w(0x0002)
-	a.BEQ("rs_small")
-	a.LDX_abs(st(rsTmpChr))
-	a.LDA_long_x(t.chrSlotsLarge)
-	a.BRA("rs_slots")
-	a.Label("rs_small")
-	a.LDX_abs(st(rsTmpChr))
-	a.LDA_long_x(t.chrSlotsSmall)
-	a.Label("rs_slots")
-	a.PLX()
-	a.AND_imm16_w(0x00FF)
-	a.TSB_abs(st(rsUsed))
-	a.Label("rs_next")
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.BPL("rs_loop")
-
-	a.LDA_long(0x7E0710)
-	a.AND_imm16_w(0x00FF)
-	a.BEQ("rs_done")
-	a.LDA_imm16_w(remoteLinkSlots)
-	a.TSB_abs(st(rsUsed))
-	a.Label("rs_done")
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
-
-// emitRemoteAllocSlots emits the routine that hands out the VRAM slots that no sprite shows (found by the routine at
-// scan; see emitRemoteScanSlots) to the parts, in order, and sets rsBodyOK if the required parts all got one. Called
-// with JSL with A, X and Y 16-bit and DB = $70; clobbers them.
-func emitRemoteAllocSlots(a *asm.Emitter, t remoteDrawTables, scan uint32) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
-
-	a.Label("remoteAllocSlots")
-	a.AssumeREP(0x30)
-	a.Comment("no part has a VRAM slot yet:")
-	a.LDA_imm16_w(0xFFFF)
-	for i := uint32(0); i < remotePartMax; i += 2 {
-		a.STA_abs(st(rsPartSlot + i))
-	}
-	a.STZ_abs(st(rsBodyOK))
-	a.LDA_abs(tb(rtParts))
-	a.BEQ("ra_done")
-	a.JSL(scan)
-
-	a.Comment("hand out the free slots to the parts in order; X = part, Y = slot:")
-	a.LDA_abs(st(rsUsed))
-	a.STA_abs(st(rsTmpShift))
-	a.LDX_imm16_w(0x0000)
-	a.LDY_imm16_w(0x0000)
-	a.Label("ra_alloc")
-	a.TXA()
-	a.CMP_abs(tb(rtParts))
-	a.BCS("ra_alloc_done")
-	a.CPY_imm16_w(uint16(len(remoteSlots)))
-	a.BCS("ra_alloc_done")
-	a.LDA_abs(st(rsTmpShift))
-	a.LSR()
-	a.STA_abs(st(rsTmpShift))
-	a.BCS("ra_alloc_next")
-	a.SEP(0x20)
-	a.PHX()
-	a.EmitBytes([]byte{0xBB}) // TYX
-	a.LDA_long_x(t.slotChrs)
-	a.PLX()
-	a.STA_abs_x(st(rsPartSlot))
-	a.REP(0x20)
-	a.INX()
-	a.Label("ra_alloc_next")
-	a.INY()
-	a.BRA("ra_alloc")
-
-	a.Label("ra_alloc_done")
-	a.Comment("X parts got a slot; the body is drawn if the required ones did:")
-	a.LDA_abs(tb(rtRequired))
-	a.AND_imm16_w(0x00FF)
-	a.BEQ("ra_done")
-	a.STA_abs(st(rsTmpFlags))
-	a.TXA()
-	a.CMP_abs(st(rsTmpFlags))
-	a.BCC("ra_done")
-	a.INC_abs(st(rsBodyOK))
-	a.Label("ra_done")
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
-
-// emitRemoteUploadList emits the routine that lists the rows of chrs of the parts drawn this frame for the NMI hooks
-// to upload. Called with JSL with A, X and Y 16-bit and DB = $70; clobbers them.
-func emitRemoteUploadList(a *asm.Emitter) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
-
-	a.Label("remoteUploadList")
-	a.AssumeREP(0x30)
-	a.Comment("X = part, Y = list offset:")
-	a.LDA_abs(st(rsDrawnParts))
-	a.STA_abs(st(rsTmpShift))
-	a.LDX_imm16_w(0x0000)
-	a.LDY_imm16_w(0x0000)
-	a.Label("ru_loop")
-	lsrAbs(a, st(rsTmpShift))
-	a.BCC("ru_next")
-	a.PHX()
-	a.Comment("the part's flags, and its slot's VRAM address:")
-	a.LDA_abs_x(tb(rtPartFlags))
-	a.AND_imm16_w(0x00FF)
-	a.STA_abs(st(rsTmpFlags))
-	a.AND_imm16_w(partWRAM)
-	a.XBA()
-	a.STA_abs(st(rsTmpExt))
-	a.LDA_abs_x(st(rsPartSlot))
-	a.AND_imm16_w(0x00FF)
-	a.ASL()
-	a.ASL()
-	a.ASL()
-	a.ASL()
-	a.ORA_imm16_w(0x4000)
-	a.STA_abs(st(rsTmpVRAM))
-	a.Comment("X = offset of the part's sources; the rows its sprites show:")
-	a.EmitBytes([]byte{0xA3, 0x01}) // LDA $01,S: the part
-	a.ASL()
-	a.ASL()
-	a.TAX()
-	a.Label("ru_row")
-	lsrAbs(a, st(rsTmpFlags))
-	a.BCC("ru_row_next")
-	a.LDA_abs(st(rsTmpVRAM))
-	a.ORA_abs(st(rsTmpExt))
-	a.STA_abs_y(st(rsNMIList + 0))
-	a.LDA_abs_x(tb(rtPartSrc))
-	a.STA_abs_y(st(rsNMIList + 2))
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(nmiRowSize)
-	a.TAY()
-	a.Label("ru_row_next")
-	a.LDA_abs(st(rsTmpVRAM))
-	a.CLC()
-	a.ADC_imm16_w(0x0100)
-	a.STA_abs(st(rsTmpVRAM))
-	a.INX()
-	a.INX()
-	a.TXA()
-	a.AND_imm16_w(0x0002)
-	a.BNE("ru_row")
-	a.PLX()
-	a.Label("ru_next")
-	a.INX()
-	a.CPX_imm16_w(remotePartMax)
-	a.BCC("ru_loop")
-	a.STY_abs(st(rsNMILen))
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
-
-// emitRemoteSlottedChr emits the routine that makes the chr of a slotted sprite in rsTmpChr relative to its part's
-// VRAM slot and marks the part as drawn, or returns carry set if the part has no slot. Called with JSL with A, X and
-// Y 16-bit and DB = $70; clobbers A and X.
-func emitRemoteSlottedChr(a *asm.Emitter, t remoteDrawTables) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-
-	a.Label("remoteSlottedChr")
-	a.AssumeREP(0x30)
-	a.Comment("part = chr bits 6-7:")
-	a.LDA_abs(st(rsTmpChr))
-	a.AND_imm16_w(0x00C0)
-	a.ASL()
-	a.ASL()
-	a.XBA()
-	a.STA_abs(st(rsTmpPart))
-	a.TAX()
-	a.LDA_abs_x(st(rsPartSlot))
-	a.AND_imm16_w(0x00FF)
-	a.CMP_imm16_w(0x00FF)
-	a.BEQ("rsc_none")
-	a.STA_abs(st(rsTmpAdd))
-	a.LDA_abs(st(rsTmpChr))
-	a.AND_imm16_w(0xFF11)
-	a.CLC()
-	adcAbs(a, st(rsTmpAdd))
-	a.STA_abs(st(rsTmpChr))
-	a.Comment("the part is drawn; upload it:")
-	a.LDX_abs(st(rsTmpPart))
-	a.LDA_long_x(t.partBits)
-	a.AND_imm16_w(0x00FF)
-	a.TSB_abs(st(rsDrawnParts))
-	a.CLC()
-	a.Label("rsc_none")
-	a.Comment("carry is set if the part has no slot:")
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
-
-// emitRemoteDrawList emits the routine that draws the sprites of the table entries from offset Y up to offset A, each
-// into the first unused OAM entry below offset X, and updates X and Y, with the routine at slottedChr (see
-// emitRemoteSlottedChr). Called with JSL with A, X and Y 16-bit and DB = $70.
-func emitRemoteDrawList(a *asm.Emitter, slottedChr uint32) {
-	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
-	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
-
-	a.Label("remoteDrawList")
-	a.AssumeREP(0x30)
-	a.STA_abs(st(rsTmpEnd))
-	a.Label("rdl_loop")
-	a.TYA()
-	a.CMP_abs(st(rsTmpEnd))
-	a.BCS("rdl_done")
-	a.JSR_abs(0xFFFF) // fixed up below
-	jsr := a.PC() - 2
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.BRA("rdl_loop")
-	a.Label("rdl_done")
-	a.RTL()
-
-	a.Comment("draw the sprite of the table entry at offset Y; preserves Y:")
-	drawSprite := a.Label("remoteDrawSprite")
-	a.Comment("screen x = world x - scroll x, visible if -16 < x < 256:")
-	a.LDA_abs_y(tb(rtEntries + 0))
-	a.SEC()
-	a.SBC_abs(st(rsScrollX))
-	a.STA_abs(st(rsTmpSX))
-	a.CLC()
-	a.ADC_imm16_w(0x0010)
-	a.CMP_imm16_w(0x0110)
-	a.BCC("rds_x_ok")
-	a.RTS()
-	a.Label("rds_x_ok")
-	a.Comment("screen y = world y - scroll y, visible if -16 < y < 224:")
-	a.LDA_abs_y(tb(rtEntries + 2))
-	a.SEC()
-	a.SBC_abs(st(rsScrollY))
-	a.STA_abs(st(rsTmpSY))
-	a.CLC()
-	a.ADC_imm16_w(0x0010)
-	a.CMP_imm16_w(0x00F0)
-	a.BCS("rds_return")
-
-	a.Comment("chr and attributes; blobs are animated, slotted chrs are relative to their part's VRAM slot:")
-	a.LDA_abs_y(tb(rtEntries + 4))
-	a.STA_abs(st(rsTmpChr))
-	a.LDA_abs_y(tb(rtEntries + 6))
-	a.AND_imm16_w(entrySlotted | entryBlobAnim)
-	a.BEQ("rds_find")
-	a.CMP_imm16_w(entryBlobAnim)
-	a.BNE("rds_slotted")
-	a.LDA_abs(st(rsTmpChr))
-	a.CLC()
-	adcAbs(a, st(rsBlobAnim))
-	a.STA_abs(st(rsTmpChr))
-	a.BRA("rds_find")
-	a.Label("rds_slotted")
-	a.PHX()
-	a.JSL(slottedChr)
-	a.PLX()
-	a.Comment("a sword or shield without a VRAM slot is not drawn:")
-	a.BCS("rds_return")
-
-	a.Comment("find the next unused OAM entry (Y = $F0) below X:")
-	a.Label("rds_find")
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.BMI("rds_full")
-	a.LDA_long_x(0x7E0801)
-	a.AND_imm16_w(0x00FF)
-	a.CMP_imm16_w(0x00F0)
-	a.BNE("rds_find")
-
-	a.LDA_abs(st(rsTmpChr))
-	a.STA_long_x(0x7E0802)
-	a.SEP(0x20)
-	a.LDA_abs(st(rsTmpSX))
-	a.STA_long_x(0x7E0800)
-	a.LDA_abs(st(rsTmpSY))
-	a.STA_long_x(0x7E0801)
-	a.Comment("extended attributes: size, x bit 8:")
-	a.REP(0x20)
-	a.PHX()
-	a.TXA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.SEP(0x20)
-	a.LDA_abs(st(rsTmpSX + 1))
-	a.AND_imm8_b(0x01)
-	a.STA_abs(st(rsTmpExt))
-	a.LDA_abs_y(tb(rtEntries + 6))
-	a.AND_imm8_b(entrySize16)
-	a.ORA_abs(st(rsTmpExt))
-	a.STA_long_x(0x7E0A20)
-	a.REP(0x20)
-	a.PLX()
-	a.Label("rds_return")
-	a.RTS()
-
-	a.Label("rds_full")
-	a.Comment("no unused entries left; stay at the start for any following sprites:")
-	a.LDX_imm16_w(0x0000)
-	a.RTS()
-	a.AssumeSEP(0x30)
-
-	code := a.Bytes()
-	base := a.GetBase()
-	code[jsr-base+0] = uint8(drawSprite)
-	code[jsr-base+1] = uint8(drawSprite >> 8)
-}
-
 // emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the rows of chrs that remoteDraw
 // listed this frame (the remote player's head, body, sword and shield) into their VRAM slots, and the upload
 // subroutine they share. Both are called with A 8-bit, X and Y 16-bit, DB = $00 (or $80), D = $0000. It returns their
@@ -849,66 +314,91 @@ func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.AssumeSEP(0x20)
 	a.AssumeREP(0x10)
 	a.Label("nmiUpload")
-	a.Comment("X = offset into the list of rows:")
+	a.PHY()
+	a.Comment("the bank of Link's graphics, the same way NMI_DoUpdates gets it, at $03,S during the loops:")
+	a.EmitBytes(linkGfxBankIns)
+	a.PHA()
 	a.REP(0x20)
-	a.LDX_imm16_w(0x0000)
-	a.Label("nmi_up_loop")
-	a.TXA()
-	a.CMP_long(st(rsNMILen))
-	a.BCC("nmi_up_row")
+	a.LDA_long(st(rsNMILen))
+	a.BNE("nmi_up_rows")
 	a.JMP_abs("nmi_up_done")
-	a.Label("nmi_up_row")
-	a.Comment("the early hook skips rows still in VRAM from the last upload:")
+	a.Label("nmi_up_rows")
+	a.Comment("the byte length of the list at $01,S; X = offset into the list:")
+	a.PHA()
+	a.LDX_imm16_w(0x0000)
 	a.LDA_long(st(rsNMIMode))
 	a.AND_imm16_w(0x00FF)
-	a.BEQ("nmi_up_dma")
+	a.BEQ("nmi_up_late")
+	a.JMP_abs("nmi_up_early")
+
+	row := func(prefix string) {
+		a.LDA_long_x(st(rsNMIList + 0))
+		a.AND_imm16_w(0x7FFF)
+		a.STA_abs(0x2116)
+		a.LDA_long_x(st(rsNMIList + 2))
+		a.STA_abs(0x4302)
+		a.LDA_imm16_w(0x0040)
+		a.STA_abs(0x4305)
+		a.SEP(0x20)
+		a.LDA_long_x(st(rsNMIList + 1))
+		a.BMI(prefix + "_wram")
+		raw(a, "lda $03,s: the bank of Link's graphics", 0xA3, 0x03)
+		a.BRA(prefix + "_bank")
+		a.Label(prefix + "_wram")
+		a.LDA_imm8_b(0x7E)
+		a.Label(prefix + "_bank")
+		a.STA_abs(0x4304)
+		a.LDA_imm8_b(0x01)
+		a.STA_abs(0x420B)
+		a.REP(0x20)
+		a.Comment("remember the row as uploaded:")
+		a.LDA_long_x(st(rsNMIList + 0))
+		a.STA_long_x(st(rsCache + 0))
+		a.LDA_long_x(st(rsNMIList + 2))
+		a.STA_long_x(st(rsCache + 2))
+	}
+	next := func(loop string) {
+		a.INX()
+		a.INX()
+		a.INX()
+		a.INX()
+		a.TXA()
+		raw(a, "cmp $01,s: the byte length of the list", 0xC3, 0x01)
+		a.BCC(loop)
+	}
+
+	a.Comment("the late hook uploads every row:")
+	a.Label("nmi_up_late")
+	row("nmi_up_late")
+	next("nmi_up_late")
+	a.JMP_abs("nmi_up_end")
+
+	a.Comment("the early hook skips rows still in VRAM from the last upload:")
+	a.Label("nmi_up_early")
 	a.TXA()
 	a.CMP_long(st(rsCacheLen))
-	a.BCS("nmi_up_dma")
+	a.BCS("nmi_up_early_row")
 	for o := uint32(0); o < nmiRowSize; o += 2 {
 		a.LDA_long_x(st(rsNMIList + o))
 		a.CMP_long_x(st(rsCache + o))
-		a.BNE("nmi_up_dma")
+		a.BNE("nmi_up_early_row")
 	}
-	a.BRA("nmi_up_next")
-	a.Label("nmi_up_dma")
-	a.LDA_long_x(st(rsNMIList + 0))
-	a.AND_imm16_w(0x7FFF)
-	a.STA_abs(0x2116)
-	a.LDA_long_x(st(rsNMIList + 2))
-	a.STA_abs(0x4302)
-	a.LDA_imm16_w(0x0040)
-	a.STA_abs(0x4305)
-	a.SEP(0x20)
-	a.LDA_long_x(st(rsNMIList + 1))
-	a.BMI("nmi_up_wram")
-	a.Comment("bank of Link's graphics, the same way NMI_DoUpdates gets it:")
-	a.EmitBytes(linkGfxBankIns)
-	a.BRA("nmi_up_bank")
-	a.Label("nmi_up_wram")
-	a.LDA_imm8_b(0x7E)
-	a.Label("nmi_up_bank")
-	a.STA_abs(0x4304)
-	a.LDA_imm8_b(0x01)
-	a.STA_abs(0x420B)
-	a.REP(0x20)
-	for o := uint32(0); o < nmiRowSize; o += 2 {
-		a.LDA_long_x(st(rsNMIList + o))
-		a.STA_long_x(st(rsCache + o))
-	}
-	a.Label("nmi_up_next")
-	a.TXA()
-	a.CLC()
-	a.ADC_imm16_w(nmiRowSize)
-	a.TAX()
-	a.JMP_abs("nmi_up_loop")
+	a.BRA("nmi_up_early_next")
+	a.Label("nmi_up_early_row")
+	row("nmi_up_early")
+	a.Label("nmi_up_early_next")
+	next("nmi_up_early")
+
+	a.Label("nmi_up_end")
+	a.PLA()
 	a.Label("nmi_up_done")
-	a.LDA_long(st(rsNMILen))
 	a.STA_long(st(rsCacheLen))
 	a.SEP(0x20)
+	a.PLA()
 	a.Comment("the following uploads expect WRAM as the source bank:")
 	a.LDA_imm8_b(0x7E)
 	a.STA_abs(0x4304)
+	a.PLY()
 	a.RTL()
 	a.AssumeSEP(0x30)
 }
@@ -1561,14 +1051,11 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 
 // SRAM and ROM addresses of the capture tables and routine:
 const (
-	// captureTypesAddr is a table in SRAM of the ancilla types $00..$3F whose sprites are captured, built from
-	// captureAncillae by the init code: 1 for most, 3 for captureShadowCasters:
+	// captureTypesAddr, captureChrsAddr and captureMaskAddr are unused (zeroed by the init code): earlier versions of
+	// the patch built the capture tables there, which are now in ROM (see captureTables):
 	captureTypesAddr = sramZeroAddr
-	// captureChrsAddr is a table in SRAM of the chrs $00..$FF that are captured, built from captureChrs: 1 for most,
-	// 2 for captureShadowChrs:
-	captureChrsAddr = captureTypesAddr + 0x40
-	// captureMaskAddr is the bits of captureChrsAddr captured this frame (u16; the high byte stays 0):
-	captureMaskAddr = sramZeroEnd - 2
+	captureChrsAddr  = captureTypesAddr + 0x40
+	captureMaskAddr  = sramZeroEnd - 2
 
 	// captureDyingAddr: the byte length of the list of enemy screen positions below (u16), scratch words for the capture
 	// routine, then up to 16 `x u16`, `y u16` of the enemies drawing their death this frame:
@@ -1579,12 +1066,7 @@ const (
 	captureTmpZ       = captureDyingAddr + 8
 	captureDyingList  = captureDyingAddr + 10
 	captureDyingEnd   = captureDyingList + 16*4
-	captureChrEnemyFX = 0x10 // set in captureChrsAddr for enemyDeathChrs
-
-	// the sizes of the lists in ROM that the init code builds the tables from, padded with their last entry (see
-	// captureLists). The patcher places them and the capture routine in patchRegion:
-	captureTypeListSize = 0x18
-	captureChrListSize  = 0x40
+	captureChrEnemyFX = 0x10 // set in the capture chr table for enemyDeathChrs (see captureTables)
 )
 
 // captureAncillae are the ancilla types whose sprites are captured:
@@ -1732,68 +1214,16 @@ func isCasterShadow(sh linkSprite, sprites []linkSprite) bool {
 	return false
 }
 
-// captureLists returns the ROM lists of captureAncillae and captureChrs, padded with their last entries.
-func captureLists() (types [captureTypeListSize]byte, chrs [captureChrListSize]byte) {
-	if len(captureAncillae) > len(types) || len(captureChrs) > len(chrs) {
-		panic("capture lists too long")
-	}
-	for i := range types {
-		types[i] = captureAncillae[min(i, len(captureAncillae)-1)]
-	}
-	for i := range chrs {
-		chrs[i] = uint8(captureChrs[min(i, len(captureChrs)-1)])
-	}
-	return
-}
-
-// emitInitCaptureTables emits the init code that zeroes sramZeroAddr..sramZeroEnd and builds the capture tables
-// there from the lists at typeList and chrList in ROM. Runs with A, X and Y 16-bit.
-func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
-	a.Comment("zero the capture tables, the copy of Link's OAM entries, the player's color and the remote sound effects:")
+// emitInitSRAMZero emits the init code that zeroes sramZeroAddr..sramZeroEnd. Runs with A, X and Y 16-bit; leaves DB =
+// $70.
+func emitInitSRAMZero(a *asm.Emitter) {
+	a.Comment("zero the copy of Link's OAM entries, the player's color and the remote sound effects:")
 	a.LDA_imm16_w(0x0000)
 	a.STA_long(sramZeroAddr)
 	a.LDX_imm16_w(uint16(sramZeroAddr & 0xFFFF))
 	a.LDY_imm16_w(uint16((sramZeroAddr + 1) & 0xFFFF))
 	a.LDA_imm16_w(uint16(sramZeroEnd - sramZeroAddr - 2))
 	a.MVN(uint8(sramZeroAddr>>16), uint8(sramZeroAddr>>16))
-	a.Comment("build the capture tables; DB = $70 after MVN:")
-	for _, l := range []struct {
-		list, size, table uint32
-	}{
-		{typeList, captureTypeListSize, captureTypesAddr},
-		{chrList, captureChrListSize, captureChrsAddr},
-	} {
-		loop := fmt.Sprintf("init_capture_%06x", l.table)
-		a.LDX_imm16_w(uint16(l.size - 1))
-		a.Label(loop)
-		a.LDA_long_x(l.list)
-		a.AND_imm16_w(0x00FF)
-		a.TAY()
-		a.SEP(0x20)
-		a.LDA_imm8_b(0x01)
-		a.STA_abs_y(uint16(l.table & 0xFFFF))
-		a.REP(0x20)
-		a.DEX()
-		a.BPL(loop)
-	}
-	a.Comment("shadows, and the ancillae that cast them:")
-	a.SEP(0x20)
-	a.LDA_imm8_b(0x02)
-	for _, c := range captureShadowChrs {
-		a.STA_abs(uint16((captureChrsAddr + uint32(c)) & 0xFFFF))
-	}
-	a.LDA_imm8_b(0x03)
-	for _, t := range captureShadowCasters {
-		a.STA_abs(uint16((captureTypesAddr + uint32(t)) & 0xFFFF))
-	}
-	a.Comment("chrs of enemy deaths:")
-	for _, c := range enemyDeathChrs {
-		addr := uint16((captureChrsAddr + uint32(c)) & 0xFFFF)
-		a.LDA_abs(addr)
-		a.ORA_imm8_b(captureChrEnemyFX)
-		a.STA_abs(addr)
-	}
-	a.REP(0x20)
 }
 
 // emitDyingEnemiesList emits the routine that lists the screen positions of the enemies drawing their death poof,
@@ -1939,164 +1369,3 @@ func emitNearDyingEnemySub(a *asm.Emitter) {
 
 }
 
-// emitCaptureExtras emits the routine that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after
-// storing the scroll offsets at linkOAMCopyScroll. Called by the trampoline with JSL with A and X 8-bit; preserves P
-// and DB. It runs from any bank.
-func emitCaptureExtras(a *asm.Emitter, dyingList, nearDying uint32) {
-	a.Label("captureExtras")
-	ex := linkOAMCopyAddr + linkOAMCopyExtras
-
-	a.PHP()
-	a.PHB()
-	a.REP(0x30)
-	a.Comment("scroll offsets Link's copied OAM entries were drawn with (linkOAMCopyScroll):")
-	a.LDA_long(0x7E00E2)
-	a.SEC()
-	a.SBC_long(0x7E011A)
-	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll)
-	a.LDA_long(0x7E00E8)
-	a.SEC()
-	a.SBC_long(0x7E011C)
-	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll + 2)
-	a.LDA_imm16_w(0x0000)
-	a.STA_long(ex)
-	a.SEP(0x30)
-	a.Comment("only while a remote player is in the same location:")
-	a.LDA_long(remoteTableAddr + rtCaptureTTL)
-	a.BEQ("ce_exit")
-	a.SEC()
-	a.SBC_imm8_b(0x01)
-	a.STA_long(remoteTableAddr + rtCaptureTTL)
-
-	a.Comment("which chrs to capture (captureMaskAddr): 1 while a captured ancilla exists, 2 (shadows) while one that")
-	a.Comment("casts a shadow does:")
-	a.PEA(0x7070)
-	a.PLB()
-	a.PLB()
-	mask := uint16(captureMaskAddr & 0xFFFF)
-	a.STZ_abs(mask)
-	a.LDX_imm8_b(0x09)
-	a.Label("ce_ancilla")
-	a.LDA_long_x(0x7E0C4A)
-	a.CMP_imm8_b(0x40)
-	a.BCS("ce_next_ancilla")
-	a.TAY()
-	a.LDA_abs_y(uint16(captureTypesAddr & 0xFFFF))
-	a.TSB_abs(mask)
-	a.Label("ce_next_ancilla")
-	a.DEX()
-	a.BPL("ce_ancilla")
-	a.Comment("a carried sprite or thrown scenery (both, with shadows):")
-	a.LDX_imm8_b(0x0F)
-	a.Label("ce_sprite")
-	a.LDA_long_x(0x7E0DD0)
-	a.BEQ("ce_next_sprite")
-	a.CMP_imm8_b(0x0A)
-	a.BEQ("ce_sprite_found")
-	a.LDA_long_x(0x7E0E20)
-	a.CMP_imm8_b(0xEC)
-	a.BNE("ce_next_sprite")
-	a.Label("ce_sprite_found")
-	a.LDA_imm8_b(0x03)
-	a.TSB_abs(mask)
-	a.BRA("ce_sprites_done")
-	a.Label("ce_next_sprite")
-	a.DEX()
-	a.BPL("ce_sprite")
-	a.Label("ce_sprites_done")
-	a.LDA_abs(mask)
-	a.BNE("ce_scan")
-	a.Comment("thrown object debris:")
-	a.LDA_long(0x7E0FB4)
-	a.BEQ("ce_exit")
-	a.LDX_imm8_b(0x1D)
-	a.Label("ce_garnish")
-	a.LDA_long_x(0x7FF800)
-	a.CMP_imm8_b(0x16)
-	a.BEQ("ce_garnish_found")
-	a.DEX()
-	a.BPL("ce_garnish")
-	a.Label("ce_exit")
-	a.PLB()
-	a.PLP()
-	a.RTL()
-	a.Label("ce_garnish_found")
-	a.LDA_imm8_b(0x01)
-	a.TSB_abs(mask)
-
-	a.Label("ce_scan")
-	a.REP(0x30)
-	a.JSL(dyingList)
-	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
-	a.PEA(0x7E7E)
-	a.PLB()
-	a.PLB()
-	a.LDY_imm16_w(0x01FC)
-	a.Label("ce_loop")
-	a.Comment("drawn this frame (most entries are not):")
-	a.LDA_abs_y(0x0800)
-	a.AND_imm16_w(0xFF00)
-	a.CMP_imm16_w(0xF000)
-	a.BEQ("ce_next")
-	a.Comment("a captured chr in name table 0:")
-	a.LDA_abs_y(0x0802)
-	a.BIT_imm16_w(0x0100)
-	a.BNE("ce_next")
-	a.AND_imm16_w(0x00FF)
-	a.TAX()
-	a.LDA_long_x(captureChrsAddr)
-	a.AND_long(captureMaskAddr)
-	a.BEQ("ce_next")
-	a.Comment("not one of Link's own entries, which are copied already:")
-	a.TYA()
-	a.SEC()
-	a.SBC_abs(0x0352)
-	a.CMP_imm16_w(linkOAMCount * 4)
-	a.BCC("ce_next")
-	a.Comment("not an enemy's death poof or explosion:")
-	a.LDA_long_x(captureChrsAddr)
-	a.AND_imm16_w(captureChrEnemyFX)
-	a.BEQ("ce_copy")
-	a.JSL(nearDying)
-	a.BCS("ce_next")
-	a.Label("ce_copy")
-	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index:")
-	a.LDA_long(ex)
-	a.TAX()
-	a.LDA_abs_y(0x0800)
-	a.STA_long_x(ex + 2 + 0)
-	a.LDA_abs_y(0x0802)
-	a.STA_long_x(ex + 2 + 2)
-	a.PHX()
-	a.TYA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.LDA_abs_x(0x0A20)
-	a.AND_imm16_w(0x0003)
-	a.PLX()
-	a.STA_long_x(ex + 2 + 4)
-	a.TYA()
-	a.LSR()
-	a.LSR()
-	a.SEP(0x20)
-	a.STA_long_x(ex + 2 + 5)
-	a.REP(0x20)
-	a.TXA()
-	a.CLC()
-	a.ADC_imm16_w(linkOAMExtraSize)
-	a.STA_long(ex)
-	a.CMP_imm16_w(linkOAMExtrasMax * linkOAMExtraSize)
-	a.BCS("ce_done")
-	a.Label("ce_next")
-	a.DEY()
-	a.DEY()
-	a.DEY()
-	a.DEY()
-	a.BPL("ce_loop")
-	a.Label("ce_done")
-	a.PLB()
-	a.PLP()
-	a.RTL()
-	a.AssumeSEP(0x30)
-}
