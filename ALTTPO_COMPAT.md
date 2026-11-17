@@ -114,7 +114,10 @@ more messages, which corrupted the rest of the packet.
   debris (garnish `$16`) exists, and only while another player is in the same location. Matching chrs from
   enemies on screen at the same time are sent too, as alttpo does, except shadows (`$6C`, `$28`, `$38`), which
   every enemy and NPC has: they are only captured while a bomb, Cane of Somaria block or carried or thrown object
-  exists, and o2 only sends the ones just under one of those (within 24 pixels to the side, 8 above to 56 below). Checking for those objects costs a few hundred
+  exists, and o2 only sends the exact shadow entries those objects draw themselves (as the game draws them): a
+  bomb's 8x8 halves at its X and X+8 (or `$38` at X+4 in the air) within two OAM entries of it; a bush, pot or rock's
+  16x16 `$6C` at its X in the next OAM entry; a large rock's three 16x16 `$6C` with attributes `$24` at X -6, 0 and
+  +6 from its center (enemy shadows use palette 4). Enemy shadows next to them are not sent. Checking for those objects costs a few hundred
   cycles per frame while someone is in the same location; the scan of the OAM buffer (up to about 5,000 cycles)
   only runs while one exists. alttpo draws remote sprites only with palettes the remote player sent, so o2 sends
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
@@ -526,6 +529,8 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   well under its usual load. Otherwise, outside submodule 0 (except in dialogs) or while core updates are disabled
   outside dialogs, the player is
   drawn as a blob instead.
+- **Players with no visible sprites** (an empty sprite list: Link is invisible, e.g. flickering after a warp) are not
+  drawn at all, not even as a blob, so the flicker doesn't alternate between Link and a blob.
 - **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 4
   like the blob magic powder turns enemies into) at their Link
   coordinates.
