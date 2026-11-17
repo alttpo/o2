@@ -577,8 +577,8 @@ func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
 	h.expectShadow("nothing else", 0x40, 0x60)
 }
 
-// Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus;
-// the body only where the NMI has time for it.
+// Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus,
+// and the first one always with Link's head and body, in every submodule.
 func TestRemoteSpritesScenario_Modules(t *testing.T) {
 	const (
 		nothing = iota
@@ -592,18 +592,23 @@ func TestRemoteSpritesScenario_Modules(t *testing.T) {
 		expected                   int
 	}{
 		{"underworld", false, 0x07, 0x00, 0, body},
-		{"underworld transition", false, 0x07, 0x02, 0, blob},
+		{"underworld intra-room transition", false, 0x07, 0x01, 0, body},
+		{"underworld transition", false, 0x07, 0x02, 0, body},
+		{"entering through a door", false, 0x07, 0x07, 0, body},
+		{"spiral staircase", false, 0x07, 0x0E, 0, body},
+		{"straight staircase", false, 0x07, 0x12, 0, body},
 		{"dialog", false, 0x0E, 0x02, 0, body},
-		{"item menu", false, 0x0E, 0x01, 0, blob},
-		{"dungeon map opening", false, 0x0E, 0x03, 0, blob},
+		{"item menu", false, 0x0E, 0x01, 0, body},
+		{"dungeon map opening", false, 0x0E, 0x03, 0, body},
 		{"dungeon map shown", false, 0x0E, 0x03, 1, nothing},
-		{"dungeon map closing", false, 0x0E, 0x03, 7, blob},
-		{"spotlight open", false, 0x10, 0x01, 0, blob},
+		{"dungeon map closing", false, 0x0E, 0x03, 7, body},
+		{"spotlight close", false, 0x0F, 0x00, 0, body},
+		{"spotlight open", false, 0x10, 0x01, 0, body},
 		{"pendant victory", false, 0x13, 0x00, 0, body},
 		{"game over", false, 0x12, 0x00, 0, nothing},
 		{"overworld", true, 0x09, 0x00, 0, body},
 		{"overworld dialog", true, 0x0E, 0x02, 0, body},
-		{"overworld map opening", true, 0x0E, 0x07, 0, blob},
+		{"overworld map opening", true, 0x0E, 0x07, 0, body},
 		{"overworld map shown", true, 0x0E, 0x07, 1, nothing},
 		{"flute menu shown", true, 0x0E, 0x0A, 1, nothing},
 		{"special overworld", true, 0x0B, 0x00, 0, body},
@@ -711,11 +716,23 @@ func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
 		t.Errorf("early hook uploaded %d words with core updates enabled", len(vram.writes))
 	}
 
-	// outside of dialogs, disabled core updates mean the NMI is busy with something else: the blob is drawn:
-	e.WRAM[0x10], e.WRAM[0x11] = 0x07, 0x00
+	// outside of dialogs too, e.g. while a room loads during a transition, the early hook uploads the body:
+	g1.beforeEmulate = func() {
+		clearOAM()
+		e.WRAM[0x0710] = 1
+	}
+	e.WRAM[0x10], e.WRAM[0x11] = 0x07, 0x02
 	h.frames(2)
-	if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
-		t.Errorf("expected a blob with core updates disabled outside dialogs; OAM[$7d] = % x", entry[:])
+	h.expectOAM("room load", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("room load", 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	vram = runNMIHookAt(t, e, g1.g, nmiEarlyPatchAddr)
+	for _, c := range []struct {
+		vram uint16
+		src  uint16
+	}{{0x4200, 0x9000}, {0x4220, 0x8400}, {0x4300, 0x9200}, {0x4320, 0x8600}} {
+		if actual := vram.bytes(c.vram, 0x40); !bytes.Equal(actual, rom(c.src)) {
+			t.Errorf("room load: VRAM $%04x = % x; expected LinkGraphics $%04x", c.vram, actual, c.src)
+		}
 	}
 }
 

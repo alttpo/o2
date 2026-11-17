@@ -108,10 +108,8 @@ const (
 	rsAnim = 20
 	// blob animation for this frame:
 	rsBlobAnim = 22
-	// non-zero when the body must not be drawn in this module and submodule:
-	rsBodyBlocked = 24
 
-	remoteStateSize = 26
+	remoteStateSize = 24
 )
 
 // VRAM and OAM constants:
@@ -215,10 +213,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_ttl_ok")
 	a.DEC_abs(tb(rtTTL))
 
-	a.Comment("only while the game draws the underworld or overworld sprites; the body only in submodule 0, where")
-	a.Comment("the NMI has time for it, and in dialogs, which upload nothing else during NMI:")
-	a.LDA_long(0x7E0011)
-	a.STA_abs(st(rsBodyBlocked))
+	a.Comment("only while the game draws the underworld or overworld sprites:")
 	a.LDA_long(0x7E0010)
 	for _, m := range []uint8{0x07, 0x09, 0x0B, 0x0F, 0x10, 0x13, 0x16} {
 		a.CMP_imm8_b(m)
@@ -226,11 +221,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	}
 	a.CMP_imm8_b(0x0E)
 	a.BNE("rd_exit2")
-	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu; the body")
-	a.Comment("only in dialogs (submodule 2):")
-	a.LDA_long(0x7E0011)
-	emitEORImm8(a, 0x02)
-	a.STA_abs(st(rsBodyBlocked))
+	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu:")
 	a.LDA_long(0x7E001B)
 	a.BEQ("rd_interface_ow")
 	a.LDA_long(0x7E0011)
@@ -305,20 +296,12 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.BRA("rd_shadow_loop")
 	a.Label("rd_shadows_done")
 
-	a.Comment("draw the body if there is one, nothing else uses chrs $20..$23, and it's safe to upload them:")
+	a.Comment("draw the body if there is one and nothing else uses chrs $20..$23; the late NMI hook uploads them while")
+	a.Comment("core NMI updates are enabled, the early one while they are disabled:")
 	a.SEP(0x20)
 	a.LDA_abs(st(rsFree))
 	a.CMP_imm8_b(0x02)
 	a.BNE("rd_no_body")
-	a.LDA_abs(st(rsBodyBlocked))
-	a.BNE("rd_no_body")
-	a.Comment("core NMI updates enabled, or a dialog rendering text (the early NMI hook uploads then):")
-	a.LDA_long(0x7E0710)
-	a.BEQ("rd_body_nmi_ok")
-	a.LDA_long(0x7E0010)
-	a.CMP_imm8_b(0x0E)
-	a.BNE("rd_no_body")
-	a.Label("rd_body_nmi_ok")
 	a.REP(0x20)
 	a.TYA()
 	emitCMPAbs(a, tb(rtBodyEnd))
