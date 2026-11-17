@@ -922,3 +922,24 @@ func TestRemoteSpritesScenario_RemoteLeaving(t *testing.T) {
 		t.Errorf("drawn without recent sprites")
 	}
 }
+
+// TestRemoteSpritesScenario_OffsetsArriveWithSprites places a remote player's sprites with the scroll offsets that
+// arrived with them: a location packet from a later frame (the screen scrolled on) without new sprites yet must not
+// shift the old sprites.
+func TestRemoteSpritesScenario_OffsetsArriveWithSprites(t *testing.T) {
+	h := newRSScenario(t)
+	h.frames(8)
+	g := h.gs[0].g
+	before, draw, _ := g.buildRemoteSpritesTable(time.Now())
+	if !draw {
+		t.Fatalf("expected the remote player to be drawn")
+	}
+
+	p := &g.players[1]
+	p.XOffs += 0x40
+	p.YOffs += 0x20
+	after, _, _ := g.buildRemoteSpritesTable(time.Now())
+	if before != after {
+		t.Errorf("sprites moved with offsets that came without sprites:\n% x\n% x", before[:], after[:])
+	}
+}

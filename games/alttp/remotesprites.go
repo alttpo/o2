@@ -560,6 +560,10 @@ type remoteSprite struct {
 type remoteSprites struct {
 	list     []remoteSprite
 	received time.Time
+	// the player's scroll offsets when the list arrived. Senders send their location (with the offsets) before their
+	// sprites in the same frame, so these are the offsets the sprites were drawn with; the player's latest offsets
+	// can be a frame ahead or behind, which shifts the sprites by however far the screen scrolled meanwhile:
+	xoffs, yoffs int16
 }
 
 // deserializeRemoteSprites reads message 0x03 (start = 0) or 0x04 into p.Sprites, like alttpo's
@@ -577,6 +581,9 @@ func (g *Game) deserializeRemoteSprites(p *Player, r io.Reader, start int) (err 
 		s.list = append(s.list[:cap(s.list)], make([]remoteSprite, n-cap(s.list))...)
 	}
 	s.received = time.Now()
+	if start == 0 {
+		s.xoffs, s.yoffs = p.XOffs, p.YOffs
+	}
 
 	for i := 0; i < int(length); i++ {
 		// OAM index (bit 7 = chr data follows) and 5 OAM table bytes (b4 bit 7 = palette data follows):
@@ -847,7 +854,7 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		if y >= 0xE0 {
 			y -= 0x100
 		}
-		return uint16(int(p.XOffs) + x), uint16(int(p.YOffs) + y)
+		return uint16(int(p.Sprites.xoffs) + x), uint16(int(p.Sprites.yoffs) + y)
 	}
 
 	// every player's shadow, sparkles, dust, projectiles and carried and thrown objects; those the body's player
@@ -1197,8 +1204,8 @@ func emitInitCaptureTables(a *asm.Emitter) {
 }
 
 // emitCaptureExtras emits the lists at captureTypeListAddr and captureChrListAddr and the routine at
-// captureExtrasAddr that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras. Called with JSL with A
-// and X 8-bit; preserves P and DB.
+// captureExtrasAddr that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after storing the scroll
+// offsets at linkOAMCopyScroll. Called with JSL with A and X 8-bit; preserves P and DB.
 func emitCaptureExtras(a *asm.Emitter) {
 	if a.PC() != captureTypeListAddr {
 		panic(fmt.Errorf("captureTypeListAddr expected to be $%06x but got $%06x", a.PC(), captureTypeListAddr))
@@ -1217,6 +1224,15 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.PHP()
 	a.PHB()
 	a.REP(0x30)
+	a.Comment("scroll offsets Link's copied OAM entries were drawn with (linkOAMCopyScroll):")
+	a.LDA_long(0x7E00E2)
+	a.SEC()
+	emitSBCLong(a, 0x7E011A)
+	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll)
+	a.LDA_long(0x7E00E8)
+	a.SEC()
+	emitSBCLong(a, 0x7E011C)
+	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll + 2)
 	a.LDA_imm16_w(0x0000)
 	a.STA_long(ex)
 	a.SEP(0x30)

@@ -204,6 +204,13 @@ func (g *Game) readLinkSprites() {
 		return
 	}
 
+	// send the scroll offsets Link's entries were drawn with, so receivers place the sprites with the offsets of the
+	// same frame (see linkOAMCopyScroll); not on the overworld map, like the offsets read from WRAM:
+	if local := g.local; !(local.Module == 0x0E && local.SubModule == 0x07) {
+		local.XOffs = int16(binary.LittleEndian.Uint16(s.oamCopy[linkOAMCopyScroll:]))
+		local.YOffs = int16(binary.LittleEndian.Uint16(s.oamCopy[linkOAMCopyScroll+2:]))
+	}
+
 	if g.local.isGameOver() {
 		// the GAME OVER animation and menu draw their own sprites around Link's OAM slots, which alttpo would draw
 		// garbled; send no sprites so receivers stop drawing this player:

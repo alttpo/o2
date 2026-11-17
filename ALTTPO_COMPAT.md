@@ -95,6 +95,12 @@ more messages, which corrupted the rest of the packet.
   ignores any SRAM data beyond its 0x500 byte shadow instead of panicking.
 - **Sprites (0x03/0x04):** alttpo added unique tile indices (`uniq_absidx_0..3`) after the OAM bytes; o2 did not read
   them and would lose its place in the packet.
+- **Scroll offsets sent with the sprites:** o2 read `xoffs`/`yoffs` from WRAM, at another point of the frame than the
+  copy of Link's OAM entries (see "Sprite sampling" below), so while the screen scrolled (room transitions) the
+  offsets could be a frame off from the sprites they were sent with, which shifted o2's Link on other players'
+  screens. The trampoline's capture routine now also stores `$E2 - $011A` and `$E8 - $011C` with the copy, and o2
+  sends those. Receivers (o2 and alttpo) also keep the offsets that arrived with each 0x03 (the sender's location
+  comes first in the same frame) and place the sprites with them, not with a later location packet's offsets.
 
 ## Remaining discrepancies (not fixed)
 
@@ -585,6 +591,13 @@ revealed and anything else gets the game's usual random prize.
   tilemap".
 
 ## Drawing remote players
+
+alttpo now shows and hides remote players with the same rules as o2 (`can_draw_remote_players` and the checks in
+`pre_frame.as`): the local module and "screen still shows the sampled location" checks, players in a screen
+transition or warp, sprites older than 250ms, and players without Link's head or body (their label stays). Before,
+alttpo kept drawing the last sprites it received until the remote location changed, so players lingered in place
+during warps, and it drew both rooms during its own screen transitions. alttpo also stops sending sprites in GAME
+OVER, like o2.
 
 alttpo draws every sprite a remote player sends, with their own graphics and palettes, on top of the emulated
 picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simplified version

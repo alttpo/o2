@@ -2,6 +2,7 @@ package alttp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"o2/client"
@@ -427,5 +428,31 @@ func TestLinkSprites_NotSentInGameOver(t *testing.T) {
 	parsed := h.frames(3)
 	if len(parsed.sprites) != 0 {
 		t.Fatalf("expected an empty sprite list in GAME OVER; got %+v", parsed.sprites)
+	}
+}
+
+// TestLinkSprites_ScrollFromCopy sends the scroll offsets Link's OAM entries were drawn with, from the copy the
+// trampoline made, not the ones read from WRAM, which may already be from a later frame while the screen scrolls.
+func TestLinkSprites_ScrollFromCopy(t *testing.T) {
+	h := newSpriteTestRig(t)
+	e := h.gs.e
+	setScroll := func(x, y uint16) {
+		binary.LittleEndian.PutUint16(e.WRAM[0xE2:], x)
+		binary.LittleEndian.PutUint16(e.WRAM[0xE8:], y)
+	}
+	// screen shake:
+	binary.LittleEndian.PutUint16(e.WRAM[0x011A:], 0x0002)
+	binary.LittleEndian.PutUint16(e.WRAM[0x011C:], 0x0001)
+	// the module draws Link with the screen at ($0700,$0E00):
+	h.gs.beforeEmulate = func() { setScroll(0x0700, 0x0E00) }
+	for f := 0; f < 3; f++ {
+		h.frames(1)
+		// and the screen scrolls on before o2 reads WRAM:
+		setScroll(0x0740, 0x0E20)
+	}
+
+	local := h.gs.g.local
+	if local.XOffs != 0x06FE || local.YOffs != 0x0DFF {
+		t.Errorf("expected offsets ($06fe,$0dff) the sprites were drawn with; got ($%04x,$%04x)", local.XOffs, local.YOffs)
 	}
 }

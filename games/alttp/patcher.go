@@ -83,11 +83,20 @@ const (
 	linkOAMCopySize    = linkOAMCopyDMA + linkOAMCopyDMASize
 	// captured OAM entries (see emitCaptureExtras): byte length (u16), then up to linkOAMExtrasMax entries of x, y,
 	// chr, attributes, extended attributes (size << 1 | x bit 8), OAM index, and a spare byte:
-	linkOAMCopyExtras   = linkOAMCopySize
-	linkOAMExtrasMax    = 16
-	linkOAMExtraSize    = 6
-	linkOAMCopyReadSize = linkOAMCopyExtras + 2 + linkOAMExtrasMax*linkOAMExtraSize + 1
+	linkOAMCopyExtras    = linkOAMCopySize
+	linkOAMExtrasMax     = 16
+	linkOAMExtraSize     = 6
+	linkOAMCopyExtrasEnd = linkOAMCopyExtras + 2 + linkOAMExtrasMax*linkOAMExtraSize + 1
+	// the scroll offsets the copied entries were drawn with, as alttpo samples them: BG2 scroll minus the shake
+	// offsets, x ($E2 - $011A) then y ($E8 - $011C). o2 sends these as its XOffs/YOffs so that receivers place the
+	// sprites with the offsets of the same frame; offsets sampled from another frame shift the sprites by however far
+	// the screen scrolled in between, e.g. during room transitions:
+	linkOAMCopyScroll   = linkOAMCopyExtrasEnd
+	linkOAMCopyReadSize = linkOAMCopyScroll + 4
 )
+
+// the copy must end before the remote sprites table:
+const _ = remoteTableAddr - (linkOAMCopyAddr + linkOAMCopyReadSize)
 
 type Patcher struct {
 	rom *snes.ROM
