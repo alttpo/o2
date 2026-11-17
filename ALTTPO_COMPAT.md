@@ -624,14 +624,18 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
 - **VRAM:** the head and body are uploaded over chrs `$20..$23`/`$30..$33`, which followers and a few NPCs (Kiki, the
   crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use through `dma_var6/7`
   (`$0AE8`/`$0AEA`). The frame trampoline sets both to `$FF` before the module runs and restores them after; if
-  neither was written, nothing used those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
+  neither was written, or no sprite in the OAM buffer shows chrs `$20..$23`/`$30..$33` (8x8, or 16x16 covering them)
+  although one was, nothing visible uses those chrs this frame, and an NMI hook in `NMI_DoUpdates` (`$008B50`) uploads
   the 256 bytes right after the game's own upload of those chrs. While the game disables its own sprite uploads
   (`$0710` != 0: a dialog rendering text, `Text_Render`, room and area loads, warps), a second NMI hook at the start
   of `NMI_DoUpdates` (`$0089E2`) uploads the body instead. The body is drawn in every submodule (room transitions,
   doors, staircases, spotlights, menus): the 256 bytes are small next to the game's own uploads of up to `$9C0`
   bytes per frame, which it skips while `$0710` is set. o2 used to draw a blob for the body's player outside
   submodule 0 and dialogs, without having measured that the NMI lacked time. The body's player is only drawn as a
-  blob while a follower or NPC uses chrs `$20..$23`, or if the ROM's NMI hooks are missing.
+  blob while a follower or NPC visibly draws with chrs `$20..$23`, or if the ROM's NMI hooks are missing. o2 used to
+  draw a blob whenever `dma_var6/7` was written, but Kiki keeps writing them after it fled out of view on the Palace
+  of Darkness area (`Kiki_Flee` calls `SpriteDraw_Kiki`, which sets them, every frame while the sprite is alive),
+  which left the only remote player as a blob there.
 - **Players without Link's head or body** in their sprites (Link is invisible, e.g. flickering after a warp; alttpo
   still sends Link's shadow then, o2 sends nothing) are not drawn at all, not even as a blob or a shadow, so the
   flicker doesn't alternate between Link and a blob. The "drawing N players" log line is only written once the counts

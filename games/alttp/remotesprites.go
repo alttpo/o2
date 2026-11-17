@@ -35,8 +35,9 @@ import (
 // sets the graphics to upload there in dma_var6 ($0AE8, chrs $20,$21,$30,$31) and dma_var7 ($0AEA, chrs $22,$23,$32,$33)
 // and the game uploads them every frame whether or not anything uses them. That is exactly room for two 16x16 sprites.
 // The frame trampoline sets both variables to a sentinel before the module runs and restores them afterwards; if both
-// still hold the sentinel, nothing used those chrs this frame and the remote player's head and body are uploaded over
-// them in the same NMI, right after the game's own upload. Otherwise the remote player is drawn as a blob instead.
+// still hold the sentinel, or no sprite in the OAM buffer shows any of those chrs (something set them without drawing
+// itself, like Kiki after it fled out of view), the remote player's head and body are uploaded over them in the same
+// NMI, right after the game's own upload. Otherwise the remote player is drawn as a blob instead.
 //
 // OAM: after the module drew everything (and before NMI_PrepareSprites packs the extended attributes), the trampoline
 // fills unused OAM entries (Y = $F0, as ClearOAMBuffer leaves them) from the end of the OAM buffer, so remote players
@@ -94,7 +95,7 @@ const (
 	rsSaved7 = 1
 	// non-zero when the NMI hook should upload the body tiles from rsNMISrc:
 	rsNMIEnable = 2
-	// 2 when neither dma_var6 nor dma_var7 was set by the module this frame:
+	// 2 when neither dma_var6 nor dma_var7 was set by the module this frame, or no sprite drawn shows chrs $20..$23:
 	rsFree = 3
 	// copy of rtSrc for the NMI hook, consistent with the sprites drawn this frame:
 	rsNMISrc = 4
@@ -262,6 +263,8 @@ func emitRemoteDraw(a *asm.Emitter) {
 	emitCMPAbs(a, tb(rtLocation))
 	a.BNE("rd_exit2")
 
+	emitRemoteChrsVisible(a, st(rsFree))
+
 	a.Comment("local scroll offsets:")
 	a.LDA_long(0x7E00E2)
 	a.SEC()
@@ -362,6 +365,66 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.PLP()
 	a.RTS()
 	a.AssumeSEP(0x30)
+}
+
+// emitRemoteChrsVisible sets rsFree to 2 when dma_var6/7 were set this frame but no sprite in the OAM buffer shows
+// any of chrs $20..$23 or $30..$33: whatever set them isn't visible, e.g. Kiki keeps setting them every frame after
+// it fled out of view on the Palace of Darkness area, and its upload can be overwritten. Called with A, X and Y
+// 16-bit; leaves them 16-bit and clobbers A and X.
+func emitRemoteChrsVisible(a *asm.Emitter, rsFreeAbs uint16) {
+	a.Comment("chrs $20..$23/$30..$33 are also free if dma_var6/7 were set but no sprite drawn this frame shows them:")
+	a.SEP(0x20)
+	a.LDA_abs(rsFreeAbs)
+	a.CMP_imm8_b(0x02)
+	a.BEQ("rd_chrs_done")
+	a.LDX_imm16_w(0x01FC)
+	a.Label("rd_chrs_loop")
+	a.LDA_long_x(0x7E0801)
+	a.CMP_imm8_b(0xF0)
+	a.BEQ("rd_chrs_next")
+	a.Comment("first name table only:")
+	a.LDA_long_x(0x7E0803)
+	a.LSR()
+	a.BCS("rd_chrs_next")
+	a.Comment("chr $20..$23 or $30..$33:")
+	a.LDA_long_x(0x7E0802)
+	a.AND_imm8_b(0xEC)
+	a.CMP_imm8_b(0x20)
+	a.BEQ("rd_chrs_done")
+	a.Comment("a 16x16 sprite also shows the chrs right of (wrapping in the row) and below its own: rows $1x..$3x,")
+	a.Comment("columns 0..3 and $F:")
+	a.LDA_long_x(0x7E0802)
+	a.CLC()
+	a.ADC_imm8_b(0x01)
+	a.AND_imm8_b(0x0F)
+	a.CMP_imm8_b(0x05)
+	a.BCS("rd_chrs_next")
+	a.LDA_long_x(0x7E0802)
+	a.SEC()
+	a.SBC_imm8_b(0x10)
+	a.CMP_imm8_b(0x30)
+	a.BCS("rd_chrs_next")
+	a.REP(0x20)
+	a.PHX()
+	a.TXA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.SEP(0x20)
+	a.LDA_long_x(0x7E0A20)
+	a.PLX()
+	a.AND_imm8_b(0x02)
+	a.BNE("rd_chrs_done")
+	a.Label("rd_chrs_next")
+	a.DEX()
+	a.DEX()
+	a.DEX()
+	a.DEX()
+	a.BPL("rd_chrs_loop")
+	a.LDA_imm8_b(0x02)
+	a.STA_abs(rsFreeAbs)
+	a.Label("rd_chrs_done")
+	a.REP(0x20)
 }
 
 // emitRemoteDrawSprite emits the subroutine that draws the sprite of the table entry at offset Y into the first

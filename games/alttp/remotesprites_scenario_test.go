@@ -183,13 +183,24 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	h.expectOAMUnused("off screen", 0, 0x7F)
 }
 
-// When a follower or NPC uses chrs $20..$23 the remote player is drawn as a blob and nothing is uploaded.
-func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
-	h := newRSScenario(t)
-	// g1's module draws a follower: LDA #$20 : STA $0AE8 : RTL
-	for i, b := range []byte{0xA9, 0x20, 0x8D, 0xE8, 0x0A, 0x6B} {
+// setModuleDrawsFollower makes g1's module set dma_var6 to $20 like a follower or NPC does, and draw an OAM entry
+// (x = $00, y = $20) with chr and the size in ext, unless chr is 0: LDA #$20 : STA $0AE8 : LDA #chr : STA $0802 :
+// LDA #$20 : STA $0801 : LDA #ext : STA $0A20 : RTL
+func (h *skScenario) setModuleDrawsFollower(chr, ext uint8) {
+	code := []byte{0xA9, 0x20, 0x8D, 0xE8, 0x0A}
+	if chr != 0 {
+		code = append(code, 0xA9, chr, 0x8D, 0x02, 0x08, 0xA9, 0x20, 0x8D, 0x01, 0x08, 0xA9, ext, 0x8D, 0x20, 0x0A)
+	}
+	code = append(code, 0x6B)
+	for i, b := range code {
 		h.gs[0].e.Bus.EaWrite(testROMModuleRouting+uint32(i), b)
 	}
+}
+
+// When a visible follower or NPC uses chrs $20..$23 the remote player is drawn as a blob and nothing is uploaded.
+func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
+	h := newRSScenario(t)
+	h.setModuleDrawsFollower(0x22, 0x02)
 	h.frames(8)
 
 	// blob at g2's coordinates ($1050, $0250 + 8) relative to g1's scroll ($1010, $0208):
@@ -202,7 +213,12 @@ func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
 		}
 		h.expectShadow("blob", 0x40, 0x60)
 		h.expectOAM("blob", 0, 0x7D, [4]byte{0x40, 0x50, chr, remoteBlobAttr}, 0x02)
-		h.expectOAMUnused("only the shadow and blob", 0, 0x7C)
+		for index := 0x7C; index > 0; index-- {
+			if entry, _ := h.oamEntry(0, index); entry[1] != 0xF0 {
+				t.Errorf("only the shadow, blob and follower: g1 OAM[$%02x] = % x; expected unused", index, entry[:])
+			}
+		}
+		h.expectOAM("follower", 0, 0x00, [4]byte{0x00, 0x20, 0x22, 0x00}, 0x02)
 	}
 	if en := h.remoteState(0, rsNMIEnable)[0]; en != 0 {
 		t.Errorf("NMI upload enabled")
@@ -213,6 +229,57 @@ func TestRemoteSpritesScenario_BlobWhenChrsInUse(t *testing.T) {
 	vram := runNMIHook(t, h.gs[0].e, h.gs[0].g)
 	if len(vram.writes) != 0 {
 		t.Errorf("NMI hook uploaded %d bytes", len(vram.writes))
+	}
+}
+
+// Something that sets dma_var6/7 without drawing those chrs (Kiki keeps setting them after it fled out of view on the
+// Palace of Darkness area) doesn't keep the remote player from being drawn with Link's head and body. Sprites that
+// only show other chrs don't either, while any sprite showing one of chrs $20..$23/$30..$33 does.
+func TestRemoteSpritesScenario_BodyWhenChrsSetButNotShown(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		chr, ext    uint8
+		expectsBody bool
+	}{
+		{"nothing drawn", 0x00, 0x00, true},
+		{"8x8 chr $24", 0x24, 0x00, true},
+		{"8x8 chr $1F", 0x1F, 0x00, true},
+		{"8x8 chr $40", 0x40, 0x00, true},
+		{"16x16 chr $02", 0x02, 0x02, true},
+		{"16x16 chr $04", 0x04, 0x02, true},
+		{"16x16 chr $34", 0x34, 0x02, true},
+		{"16x16 chr $40", 0x40, 0x02, true},
+		{"8x8 chr $20", 0x20, 0x00, false},
+		{"8x8 chr $33", 0x33, 0x00, false},
+		{"16x16 chr $20", 0x20, 0x02, false},
+		{"16x16 chr $12", 0x12, 0x02, false},
+		{"16x16 chr $1F", 0x1F, 0x02, false},
+		{"16x16 chr $33", 0x33, 0x02, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newRSScenario(t)
+			h.setModuleDrawsFollower(c.chr, c.ext)
+			h.frames(8)
+			h.expectShadow(c.name, 0x40, 0x60)
+			if c.expectsBody {
+				h.expectOAM(c.name, 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+				h.expectOAM(c.name, 0, 0x7C, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+				if en := h.remoteState(0, rsNMIEnable)[0]; en == 0 {
+					t.Errorf("NMI upload disabled")
+				}
+			} else {
+				if entry, _ := h.oamEntry(0, 0x7D); entry[2]&^2 != remoteBlobChr0 {
+					t.Errorf("expected a blob; OAM[$7d] = % x", entry[:])
+				}
+				if en := h.remoteState(0, rsNMIEnable)[0]; en != 0 {
+					t.Errorf("NMI upload enabled")
+				}
+			}
+			// the game's own upload of chrs $20..$23 is left as it is set:
+			if v6 := h.gs[0].e.WRAM[0x0AE8]; v6 != 0x20 {
+				t.Errorf("dma_var6 = $%02x; expected $20", v6)
+			}
+		})
 	}
 }
 
