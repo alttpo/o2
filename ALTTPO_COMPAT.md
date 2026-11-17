@@ -123,6 +123,10 @@ more messages, which corrupted the rest of the packet.
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
   from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (items in use, held
   items like the lamp, followers) are not sent. o2 also does not send sfx, ancillae, tilemaps or PvP.
+- **No sprites in GAME OVER.** From module `$12` submodule `$06` on (alttpo's `is_game_over`), the GAME OVER animation
+  and menu draw their own sprites into Link's OAM slots, which alttpo players saw as garbled tiles. o2 sends an empty
+  sprite list there instead, so receivers stop drawing the player. Link's death spin (submodules `$00..$05`) is still
+  sent.
 - **o2 players see much less of other players than alttpo players do.** See "Drawing remote players" below.
 - **Sword and shield tiles are rebuilt from ROM.** The game decompresses sprite sheets `$5E`/`$5F` and converts the
   current sword/shield to 4bpp in WRAM `$7E9000..$947F` (`DecompressSwordGraphics`, `DecompressShieldGraphics`); o2

@@ -281,6 +281,11 @@ func (p *Player) isInScreenTransition() bool {
 	return false
 }
 
+// isGameOver reports whether the GAME OVER animation or menu is showing. Same as alttpo's GameState::is_game_over.
+func (p *Player) isGameOver() bool {
+	return p.Module == 0x12 && p.SubModule >= 0x06
+}
+
 func (p *Player) IsInDungeon() bool {
 	if p.IsDungeon() {
 		return true

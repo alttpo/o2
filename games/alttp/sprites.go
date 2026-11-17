@@ -204,6 +204,14 @@ func (g *Game) readLinkSprites() {
 		return
 	}
 
+	if g.local.isGameOver() {
+		// the GAME OVER animation and menu draw their own sprites around Link's OAM slots, which alttpo would draw
+		// garbled; send no sprites so receivers stop drawing this player:
+		s.sprites = s.sprites[:0]
+		s.fresh = true
+		return
+	}
+
 	c := s.oamCopy[:]
 	start := uint16(c[linkOAMCopyStart]) | uint16(c[linkOAMCopyStart+1])<<8
 	if start&3 != 0 || start >= 0x200 {

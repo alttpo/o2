@@ -409,3 +409,23 @@ func TestLinkSprites_PalettesSentForEffects(t *testing.T) {
 		}
 	}
 }
+
+// TestLinkSprites_NotSentInGameOver sends no sprites while the GAME OVER animation and menu show (module $12 from
+// submodule $06), since those sprites are not Link's and alttpo draws them garbled.
+func TestLinkSprites_NotSentInGameOver(t *testing.T) {
+	h := newSpriteTestRig(t)
+	e := h.gs.e
+
+	// dying; Link still spins:
+	e.WRAM[0x10], e.WRAM[0x11] = 0x12, 0x05
+	if parsed := h.frames(3); len(parsed.sprites) != 3 {
+		t.Fatalf("expected Link's 3 sprites while dying; got %+v", parsed.sprites)
+	}
+
+	// GAME OVER:
+	e.WRAM[0x11] = 0x06
+	parsed := h.frames(3)
+	if len(parsed.sprites) != 0 {
+		t.Fatalf("expected an empty sprite list in GAME OVER; got %+v", parsed.sprites)
+	}
+}
