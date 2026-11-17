@@ -324,6 +324,20 @@ func (p *Patcher) Patch() (err error) {
 		a.WriteTextTo(textBuf)
 	}
 
+	// the hook that skips rebuilding the HUD's numbers and hearts while they don't change; see hud.go:
+	if skipItem := hudHookSite(p.rom); skipItem == 0 {
+		log.Printf("alttp: patch: no vanilla HUD update at $%06x; the HUD is rebuilt every frame\n", hudHookAddr)
+	} else {
+		pcAddr, _ = lorom.BusAddressToPak(hudHookAddr)
+		a = asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(hudHookExpected))), true)
+		a.SetBase(hudHookAddr)
+		emitHUDHookSite(a, r.hudCheck.addr, skipItem)
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
+	}
+
 	// the hook that applies staged remote manipulable objects to every room load; without it, they are applied once the
 	// room finished loading:
 	pcAddr, _ = lorom.BusAddressToPak(manipStageHookAddr)
@@ -450,6 +464,8 @@ type patchROM struct {
 	manipPending romBlock
 	// called by the manip stage hook and manipPending:
 	manipStageObject, manipStageBlock, manipPendingBlock romBlock
+	// the routine the HUD hook calls; see emitHUDCheck:
+	hudCheck romBlock
 	// called by remoteFrame; see emitDyingEnemiesList and emitNearDyingEnemySub:
 	captureDyingList, captureNearDying romBlock
 }
@@ -494,6 +510,10 @@ func (r *patchROM) routines() []patchRoutine {
 		}},
 		{&r.map16Apply, func(a *asm.Emitter) error {
 			return emitMap16Apply(a, r.fnDrawMap16)
+		}},
+		{&r.hudCheck, func(a *asm.Emitter) error {
+			emitHUDCheck(a)
+			return nil
 		}},
 		{&r.remoteFrameTables, func(a *asm.Emitter) error {
 			r.remoteTables = emitRemoteFrameTables(a)
@@ -589,6 +609,7 @@ func (r *patchROM) measure() (err error) {
 	r.preMain.name = "preMain"
 	r.map16Apply.name = "map16Apply"
 	r.remoteFrame.name = "remoteFrame"
+	r.hudCheck.name = "HUD check"
 	r.remoteFrameTables.name = "remoteFrame tables"
 	r.nmiUpload.name = "NMI upload"
 	r.nmiHooks.name = "NMI hooks"
