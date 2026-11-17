@@ -625,10 +625,21 @@ func (g *Game) deserializeRemoteSprites(p *Player, r io.Reader, start int) (err 
 	return
 }
 
-// hasVisibleSprites reports whether a remote player's last sprite list has any sprite that is not disabled.
-func hasVisibleSprites(list []remoteSprite) bool {
-	for _, sp := range list {
-		if sp.b[1] != 0xF0 {
+// isLinkBodySprite reports whether sp is one of Link's head and body sprites: 16x16, drawn from chrs $00..$03 and
+// $10..$13, and not disabled.
+func isLinkBodySprite(sp *remoteSprite) bool {
+	if sp.size == 0 || sp.b[1] == 0xF0 {
+		return false
+	}
+	chr := uint16(sp.b[2]) | uint16(sp.b[3]&1)<<8
+	return chr < 0x20 && chr&0x0F < 0x04
+}
+
+// hasLinkBody reports whether a remote player's last sprite list has Link's head or body. alttpo always sends Link's
+// 12 reserved OAM entries, so while Link is invisible (flickering) the list still has his shadow but no head or body.
+func hasLinkBody(list []remoteSprite) bool {
+	for i := range list {
+		if isLinkBodySprite(&list[i]) {
 			return true
 		}
 	}
@@ -643,12 +654,7 @@ func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].index < sorted[j].index })
 
 	for _, sp := range sorted {
-		if sp.size == 0 || sp.b[1] == 0xF0 {
-			continue
-		}
-		// Link's head and body are drawn from chrs $00..$03 and $10..$13:
-		chr := uint16(sp.b[2]) | uint16(sp.b[3]&1)<<8
-		if chr >= 0x20 || chr&0x0F >= 0x04 {
+		if !isLinkBodySprite(&sp) {
 			continue
 		}
 		// both rows of tiles must be from LinkGraphics, uploaded 2 tiles at a time:
@@ -714,6 +720,33 @@ type remoteSpritesLocal struct {
 	written     [remoteTableSize]byte
 	writtenOK   bool
 	writtenTime time.Time
+
+	// player and body sprite counts last logged, and counts that differ from them and since when; a count is logged
+	// once it holds for remoteLogSettle, so flickering players don't spam the log:
+	logged, pending [2]int
+	loggedOK        bool
+	pendingSince    time.Time
+}
+
+const remoteLogSettle = 500 * time.Millisecond
+
+// logRemoteCounts logs the number of players and body sprites drawn once it changed and held for remoteLogSettle.
+func (s *remoteSpritesLocal) logRemoteCounts(t *[remoteTableSize]byte, now time.Time) {
+	var c [2]int
+	c[0], c[1] = remoteTableCounts(t)
+	if s.loggedOK && c == s.logged {
+		s.pending = c
+		return
+	}
+	if c != s.pending {
+		s.pending, s.pendingSince = c, now
+		return
+	}
+	if now.Sub(s.pendingSince) < remoteLogSettle {
+		return
+	}
+	log.Printf("alttp: remote sprites: drawing %d players (%d body sprites)\n", c[0], c[1])
+	s.logged, s.loggedOK = c, true
 }
 
 // remoteBodyOK reports whether the patched ROM has the NMI hooks that upload the body tiles: JSLs into the ROM area
@@ -774,9 +807,9 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		if now.Sub(p.Sprites.received) >= remoteSpritesStale {
 			continue
 		}
-		// Link is invisible (e.g. flickering after a warp): draw nothing for this player, not even a blob, which
-		// would flash in and out with the flicker:
-		if !hasVisibleSprites(p.Sprites.list) {
+		// Link is invisible (e.g. flickering after a warp): draw nothing for this player, not even a blob or his
+		// shadow, which would flash in and out with the flicker:
+		if !hasLinkBody(p.Sprites.list) {
 			continue
 		}
 		if bodyOK && body == nil {
@@ -903,6 +936,7 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 
 	s := &g.remoteSprites
 	t, draw, capture := g.buildRemoteSpritesTable(now)
+	s.logRemoteCounts(&t, now)
 	if capture {
 		// only for comparing with the last write; the game counts it down:
 		t[rtCaptureTTL] = 1
@@ -928,10 +962,6 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 	}); err != nil {
 		log.Printf("alttp: remote sprites: error enqueuing snes write: %v\n", err)
 		return
-	}
-	players, body := remoteTableCounts(&t)
-	if lastPlayers, lastBody := remoteTableCounts(&s.written); !s.writtenOK || lastPlayers != players || lastBody != body {
-		log.Printf("alttp: remote sprites: drawing %d players (%d body sprites)\n", players, body)
 	}
 	s.written, s.writtenOK, s.writtenTime = t, true, now
 }

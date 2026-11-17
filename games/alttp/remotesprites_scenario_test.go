@@ -837,15 +837,27 @@ func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
 	})
 }
 
-// A remote player whose Link is invisible (e.g. flickering after a warp) sends no sprites: they are not drawn at all,
-// not even as a blob, so the flicker doesn't alternate between Link and a blob.
+// A remote player whose Link is invisible (e.g. flickering after a warp) sends no head or body: alttpo still sends
+// Link's shadow then, o2 sends nothing. They are not drawn at all, not even as a blob, so the flicker doesn't alternate
+// between Link and a blob.
 func TestRemoteSpritesScenario_NoSpritesNoBlob(t *testing.T) {
 	h := newRSScenario(t)
 	h.frames(8)
 	h.expectOAM("visible", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 
+	// only the shadow is left, like alttpo sends:
 	e := h.gs[1].e
-	for i := 0x64; i <= 0x67; i++ {
+	for i := 0x64; i <= 0x65; i++ {
+		e.WRAM[0x0800+i*4+1] = 0xF0
+	}
+	h.frames(8)
+	if n := len(h.gs[0].g.players[1].Sprites.list); n != 2 {
+		t.Fatalf("expected only the shadow; got %d sprites", n)
+	}
+	h.expectOAMUnused("shadow only", 0, 0x7F)
+
+	// nothing at all:
+	for i := 0x66; i <= 0x67; i++ {
 		e.WRAM[0x0800+i*4+1] = 0xF0
 	}
 	h.frames(8)
