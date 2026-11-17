@@ -215,6 +215,10 @@ func (p *Patcher) Patch() (err error) {
 	if err = allocateROM([]romSpan{patchRegion}, r.blocks()); err != nil {
 		return
 	}
+	// run the routines from the FastROM mirror of patchRegion; the init code enables FastROM (see emitInit):
+	for _, b := range r.blocks() {
+		b.addr |= fastROMBank
+	}
 	if err = r.write(p.rom, textBuf); err != nil {
 		return
 	}
@@ -608,6 +612,10 @@ func (r *patchROM) routines() []patchRoutine {
 func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	a.Label("o2Init")
+	a.Comment("FastROM: the patch's routines run from banks $80+ at 6 master clocks per access; vanilla code runs from banks")
+	a.Comment("$00..$1F, which are not affected (randomizers enable it themselves):")
+	a.LDA_imm8_b(0x01)
+	a.STA_long(0x00420D)
 	a.PHP()
 	a.PHB()
 	a.REP(0x30)

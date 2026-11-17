@@ -101,6 +101,10 @@ var freeROMUS10 = []romSpan{
 // patchRegion is where the patcher writes its routines and tables; see the comment above:
 var patchRegion = romSpan{0x3C8000, 0x3D0000}
 
+// fastROMBank is ORed into the bus addresses of the routines in patchRegion: they run from its mirror in banks $80+,
+// which MEMSEL ($420D) makes FastROM.
+const fastROMBank = 0x80_0000
+
 // patchedROMSize is the size of a patched ROM: patchRegion is in its second MiB.
 const patchedROMSize = 0x20_0000
 
@@ -148,6 +152,7 @@ func isPatchRegionEmpty(rom *snes.ROM) bool {
 // isFreeROM reports whether addr is where o2's routines are: in patchRegion, or in a free section of the JP 1.0 or US
 // 1.0 ROM, where earlier versions of the patch put them.
 func isFreeROM(addr uint32) bool {
+	addr &^= fastROMBank
 	if patchRegion.contains(addr) {
 		return true
 	}
