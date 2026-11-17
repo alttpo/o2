@@ -3,6 +3,9 @@ import {useEffect, useLayoutEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {setField} from "../util";
 
+// localStorage key of the height the user resized the notification history to:
+const historyHeightKey = "o2.alttp.notificationHistoryHeight";
+
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
 
@@ -23,7 +26,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncSprites, setsyncSprites] = useState(true);
 
     const [notifHistory, setNotifHistory] = useState([] as TimestampedNotification[]);
-    const historyTextarea = useRef(null);
+    const historyTextarea = useRef<HTMLDivElement>(null);
+    // the height the user resized the notification history to, kept in this browser:
+    const [historyHeight] = useState(() => {
+        try {
+            return parseInt(window.localStorage.getItem(historyHeightKey) || "", 10) || 0;
+        } catch {
+            return 0;
+        }
+    });
 
     const [showASM, set_showASM] = useState(false);
     const asmTextAreaRef = useRef(null);
@@ -65,6 +76,25 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             historyTextarea.current.scrollTop = historyTextarea.current.scrollHeight;
         }
     }, [vm["game/notification/history"]]);
+
+    useEffect(() => {
+        const el = historyTextarea.current;
+        if (!el || typeof ResizeObserver === "undefined") return;
+        let last = el.offsetHeight;
+        const ro = new ResizeObserver(() => {
+            // every element is box-sizing: border-box, so offsetHeight is the inline height to restore:
+            const height = el.offsetHeight;
+            if (height === last || height === 0) return;
+            last = height;
+            try {
+                window.localStorage.setItem(historyHeightKey, height.toString());
+            } catch {
+                // the height is only a convenience
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     useEffect(() => {
         setrunTimer(vm["game/run/timer"]);
@@ -134,7 +164,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         sendGameCommand("setField", {"playerColor": bgr});
     };
 
-    return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: 5fr 3fr;">
+    return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: minmax(24em, 2fr) 3fr;">
         <div style="grid-column: 1 / auto; display: grid; grid-template-columns: 5fr 2fr 1fr;">
             <h5>Game: {game.gameName}</h5>
             <button type="button"
@@ -220,12 +250,12 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Sync Small Keys
                 </label></div>
 
-                <div><label for="syncUnderworld">
+                <div><label for="syncChests">
                     <input type="checkbox"
-                           id="syncUnderworld"
-                           checked={syncUnderworld}
-                           onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
-                    />Sync Underworld
+                           id="syncChests"
+                           checked={syncChests}
+                           onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
+                    />Sync Chests
                 </label></div>
 
                 <div><label for="syncOverworld">
@@ -236,12 +266,12 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Sync Overworld
                 </label></div>
 
-                <div><label for="syncChests">
+                <div><label for="syncUnderworld">
                     <input type="checkbox"
-                           id="syncChests"
-                           checked={syncChests}
-                           onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
-                    />Sync Chests
+                           id="syncUnderworld"
+                           checked={syncUnderworld}
+                           onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
+                    />Sync Underworld
                 </label></div>
 
                 <div><label for="syncSprites"
@@ -253,37 +283,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Sync Sprites
                 </label></div>
             </div>
-        </div>
-        <div style="grid-row: 1; grid-column: 2; display: flex">
-            <div style="flex: 1">Run Timer:</div><span class="mono" title="First player start to last player finish">{runTimer}</span>
-        </div>
-        <div
-            style="grid-row: 2 / span 2; grid-column: 2; width: 100%; height: 100%; overflow: auto; display: grid; grid-auto-rows: min-content; grid-template-columns: 1fr 2fr 4fr 8fr 4fr 4fr; grid-column-gap: 0.5em">
-            <h5 style="grid-column: 1 / span 6">Players</h5>
-            <div style="font-weight: bold; text-decoration: underline">##</div>
-            <div style="font-weight: bold; text-decoration: underline">team</div>
-            <div style="font-weight: bold; text-decoration: underline">name</div>
-            <div style="font-weight: bold; text-decoration: underline">location</div>
-            <div style="font-weight: bold; text-decoration: underline">start</div>
-            <div style="font-weight: bold; text-decoration: underline">finish</div>
-            {
-                (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
-                    <div class="mono" title="Player index">{("00" + p.index.toString(16).toUpperCase()).slice(-3)}</div>
-                    <div class="mono" title="Team number">{p.team}</div>
-                    <div style={"color: " + hexrgb24(bgr16torgb24(p.color)) + "; white-space: nowrap"}
-                         title="Player name">{p.name}</div>
-                    <div
-                        style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan") + "; white-space: nowrap"}
-                        title="Location">{
-                        ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
-                    }</div>
-                    <div class="mono" title="Start">{p.relStart}</div>
-                    <div class="mono" title="Finish">{p.relFinish}</div>
-                </Fragment>))
-            }
-        </div>
-        <div style="grid-column: 1 / 1">
-            <div style="display: grid; grid-template-columns: 3fr 1fr;">
+            <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">
                 <div style="grid-column: 1 / span 2">
                     <label for="showASM">
                         <input type="checkbox"
@@ -303,18 +303,43 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                         onClick={e => sendGameCommand('asm', {code: asmTextAreaRef?.current?.value})}
                 >Execute
                 </button>
-
-                <div style="grid-column: 1 / span 2; margin-top: 0.5em">
-                    updates:
-                </div>
-                <div style="grid-column: 1 / span 2; margin-top: 0.5em">
-                    <div ref={historyTextarea}
-                         style="display: grid; grid-auto-rows: 18px; line-height: 18px; grid-template-columns: max-content; width: 100%; height: 7em; padding-bottom: 1.1rem; border: 1px solid red; background: #010; color: yellow; font-family: Rokkitt; font-size: 1.0em; overflow-y: scroll">
-                        {notifHistory.map((h, index) => (<Fragment key={index}>
-                            <span><span style="font-family: monospace; font-size: 0.8rem">{h.t}</span>&nbsp;&ndash;&nbsp;{h.m}</span>
-                        </Fragment>))}
-                    </div>
-                </div>
+            </div>
+        </div>
+        <div style="grid-row: 1; grid-column: 2; display: flex">
+            <div style="flex: 1">Run Timer:</div><span class="mono" title="First player start to last player finish">{runTimer}</span>
+        </div>
+        <div class="players" style="grid-row: 2; grid-column: 2; align-self: start">
+            <h5 style="grid-column: 1 / -1">Players</h5>
+            <div class="players-header">##</div>
+            <div class="players-header">team</div>
+            <div class="players-header">name</div>
+            <div class="players-header">location</div>
+            <div class="players-header">start</div>
+            <div class="players-header">finish</div>
+            {
+                (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
+                    <div class="mono" title="Player index">{("00" + p.index.toString(16).toUpperCase()).slice(-3)}</div>
+                    <div class="mono" title="Team number">{p.team}</div>
+                    <div style={"color: " + hexrgb24(bgr16torgb24(p.color))}
+                         title="Player name">{p.name}</div>
+                    <div
+                        style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan")}
+                        title="Location">{
+                        ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
+                    }</div>
+                    <div class="mono" title="Start">{p.relStart}</div>
+                    <div class="mono" title="Finish">{p.relFinish}</div>
+                </Fragment>))
+            }
+        </div>
+        <div style="grid-column: 1 / -1; margin-top: 0.5em">
+            <div>updates:</div>
+            <div ref={historyTextarea}
+                 class="notification-history"
+                 style={historyHeight ? `height: ${historyHeight}px` : ""}>
+                {notifHistory.map((h, index) => (<Fragment key={index}>
+                    <span><span style="font-family: monospace; font-size: 0.8rem">{h.t}</span>&nbsp;&ndash;&nbsp;{h.m}</span>
+                </Fragment>))}
             </div>
         </div>
     </div>;

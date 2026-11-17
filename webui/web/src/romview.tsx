@@ -33,6 +33,11 @@ export default ({ch, vm}: TopLevelProps) => {
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
 
+    // the patched ROM's filename includes the O2 patch version, so users can check they are playing the right patch:
+    const filenameTitle = "Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, the " +
+        "O2 patched ROM's filename will be used, which includes the O2 patch version" +
+        (rom?.patchedFilename ? ": " + rom.patchedFilename : ".");
+
     return (<div style="min-width: 26em; width: 100%; height: 100%">
         <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: 1fr 1fr 2fr">
             <h5 style="grid-column: 1 / span 3">
@@ -70,12 +75,12 @@ patched for O2 support. O2 automatically patches your Input ROM for you."
                    onInput={setField.bind(this, sendROMCommand, setFolder, "folder", getTargetValueString)}/>
 
             <label
-                title="Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, original filename will be used."
+                title={filenameTitle}
             >Filename:
             </label>
             <input style="grid-column-end: span 2" class="mono" value={filename}
-                   placeholder={rom?.name}
-                   title="Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, original filename will be used."
+                   placeholder={rom?.patchedFilename}
+                   title={filenameTitle}
                    onInput={setField.bind(this, sendROMCommand, setFilename, "filename", getTargetValueString)}/>
 
             <label><span data-rh-at="left" data-rh="O2 can only communicate with patched ROMs running
@@ -89,7 +94,7 @@ the patched ROM and manually send it to your SNES device.">Patched ROM:&nbsp;3ï¸
             <form method="get" action="/rom/patched.smc">
                 <input type="submit"
                        disabled={!rom?.isLoaded}
-                       title="Download the O2 patched ROM"
+                       title={"Download the O2 patched ROM" + (rom?.patchedFilename ? " as " + rom.patchedFilename : "")}
                        value="Download"/>
             </form>
         </div>
