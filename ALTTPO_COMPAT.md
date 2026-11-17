@@ -357,9 +357,16 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   `Overworld_MemorizeMap16Change` (`$0EDD40` US, `$04E780` JP) and `Overworld_DoMapUpdate32x32` (four entries at once),
   always before advancing `$04AC`, and resets `$04AC` on every area load. Its only use in the game is restoring the
   changes after a mirror bonk. Cut grass and dirt patches are never logged, so they are not synced.
-- **Message 0x17**, broadcastSector: `area u16` (`$8A`, which is the parent screen in large areas), `count u8`,
-  `start u8`, `len u8`, then `len` × (`pos u16`, `tile u16`) for log indices `[start, start+len)`. Entries are sent as
-  soon as they are seen and the whole log (in chunks of 64) every 16 frames so players entering the area catch up.
+- **Message 0x17**, broadcastSector: `location u24`, `count u8`, `start u8`, `len u8`, then `len` × (`pos u16`,
+  `tile u16`) for log indices `[start, start+len)`. Entries are sent as soon as they are seen and the whole log (in
+  chunks of 64) every 16 frames so players entering the area catch up. The location is the one the log was read in,
+  encoded like the location in message 0x01: bit 17 the dark world (`$0FFF & 1`), bit 16 the underworld (0) and bits
+  0-15 the area (`$8A`, which is the parent screen in large areas). (Earlier versions sent `area u16` instead; they
+  cannot share map16 changes with these.)
+- **Same world.** The log is only read, and changes are only applied, while `$0FFF` agrees with the area's world (the
+  dark world areas are `$40`-`$7F`), which it does not while a warp switches worlds. o2 reads `$0FFF` in the
+  overworld instead of the underworld door table (`$1980..$19E9`), which is only used in the underworld, so the read
+  count stays the same.
 - **Sampling.** Only in overworld modules `$09`/`$0B` during submodule 0, since `$8A` and `$04AC` change at different
   times during an area load. Not while Link lands from a mirror or portal warp (`$5D` = `$14`): the warp switches the area and
   returns to submodule 0 but keeps the previous area's log until `LinkState_CrossingWorlds` resets it once Link lands
@@ -368,7 +375,9 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   going down resets the log. o2 reads `$04AC` along with the star switch state and a 16-entry window of both arrays
   starting at the first entry it has not read yet.
 - **Applying.** Each receiver remembers how much of each remote player's log it applied and only applies new entries,
-  keeping the last tile for each position. In submodule 0 of the overworld module, in the same area, an entry whose
+  keeping the last tile for each position. Only a log of exactly the local location (area and world) is applied, and
+  only while its sender's current location (message 0x01) is that location too; o2's update routine checks `$8A` and
+  `$0FFF` again when it runs. In submodule 0 of the overworld module, in the same area, an entry whose
   tile `$7E2000,X` already has is skipped; otherwise it is appended to the local log (while it has room), which passes
   it on to players who enter the area later and keeps it through a mirror bonk, and drawn with
   `Overworld_DrawMap16_Persist` (`$1BC97C`) if VRAM holds it; other tiles are only written to `$7E2000` and the game
@@ -411,7 +420,8 @@ left and came back.
 - **The lumberjacks' tree** (sprite `$3B` with `$0DC0` = 2, area `$02`) hops and falls apart in leaves when Link dashes
   into it (`$0D80` = 1, `$0F80` = 20), revealing the hole under it until the area reloads. A receiver does the same to its
   tree top if it still stands.
-- **Message 0x1C**, broadcastSector, in its own packet: `area u16` (`$8A`), `entrance u8` (`$04C6`), `flags u8` (bit 0:
+- **Message 0x1C**, broadcastSector, in its own packet: `location u24` (like message 0x17; only applied in exactly that
+  location, area and world, and only while it is the sender's current location), `entrance u8` (`$04C6`), `flags u8` (bit 0:
   desert statues released, bit 1: tree top dashed into, during this area visit). Sent every frame in overworld modules
   `$09`/`$0B` (and `$0E`) while something is set and for 16 frames after, so receivers see it clear; receivers ignore
   it once not refreshed for 500ms, and drop it when the sender's location changes.
