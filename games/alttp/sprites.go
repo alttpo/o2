@@ -291,8 +291,9 @@ func (g *Game) readLinkSprites() {
 			extras = append(extras, sp)
 		}
 		for _, sp := range extras {
-			// enemies and NPCs on screen use the same shadows as bombs and thrown objects:
-			if isCaptureShadowChr(sp.b[2]) && !isNearShadowCaster(int(sp.b[0])|int(sp.b[4]&1)<<8, int(sp.b[1]), extras) {
+			// enemies and NPCs on screen use the same shadows as bombs and thrown objects; only send those the objects
+			// drew themselves:
+			if isCaptureShadowChr(sp.b[2]) && !isCasterShadow(sp, extras) {
 				continue
 			}
 			s.sprites = append(s.sprites, sp)

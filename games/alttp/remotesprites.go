@@ -625,6 +625,16 @@ func (g *Game) deserializeRemoteSprites(p *Player, r io.Reader, start int) (err 
 	return
 }
 
+// hasVisibleSprites reports whether a remote player's last sprite list has any sprite that is not disabled.
+func hasVisibleSprites(list []remoteSprite) bool {
+	for _, sp := range list {
+		if sp.b[1] != 0xF0 {
+			return true
+		}
+	}
+	return false
+}
+
 // remoteBodySprites returns up to two 16x16 sprites of Link's head and body from a remote player's sprites, ordered by
 // OAM index (front to back).
 func remoteBodySprites(list []remoteSprite) (body []remoteSprite) {
@@ -762,6 +772,11 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		}
 		// players that stopped sending sprites left the room or area:
 		if now.Sub(p.Sprites.received) >= remoteSpritesStale {
+			continue
+		}
+		// Link is invisible (e.g. flickering after a warp): draw nothing for this player, not even a blob, which
+		// would flash in and out with the flicker:
+		if !hasVisibleSprites(p.Sprites.list) {
 			continue
 		}
 		if bodyOK && body == nil {
@@ -1009,17 +1024,14 @@ var captureChrs = []uint16{
 	0x48, 0x58, 0x59,
 }
 
-// captureShadowChrs are the shadows under bombs, Cane of Somaria blocks and carried and thrown objects. Enemies and
-// NPCs use the same shadows, so they are only captured while one of those exists (captureShadowCasters, or a
-// carried or thrown sprite), and o2 only sends those just below one of them (see isNearShadowCaster).
+// captureShadowChrs are the shadows under bombs and carried and thrown objects. Enemies and NPCs use the same
+// shadows, so they are only captured while one of those exists (captureShadowCasters, or a carried or thrown sprite),
+// and o2 only sends the exact shadow entries that the object itself drew (see isCasterShadow).
 var captureShadowChrs = []uint16{0x6C, 0x28, 0x38}
 
-// captureShadowCasters are the ancilla types that cast those shadows: bombs and Cane of Somaria blocks:
+// captureShadowCasters are the ancilla types that cast those shadows: bombs and Cane of Somaria blocks (which draw
+// none, but are also carried and thrown):
 var captureShadowCasters = []uint8{0x07, 0x2C}
-
-// captureShadowCasterChrs are the chrs of the objects those shadows are under: bombs, Cane of Somaria blocks, bushes,
-// pots, rocks, signs:
-var captureShadowCasterChrs = []uint8{0x6E, 0xE9, 0x42, 0x44, 0x46, 0x4A}
 
 // isCaptureChr reports whether chr is one of captureChrs or captureShadowChrs.
 func isCaptureChr(chr uint8) bool {
@@ -1040,23 +1052,58 @@ func isCaptureShadowChr(chr uint8) bool {
 	return false
 }
 
-// isNearShadowCaster reports whether a captured shadow at x, y is just under one of the captured objects that cast
-// shadows; otherwise it belongs to an enemy or NPC on screen at the same time. Thrown objects fly up to about 32
-// pixels above their shadows.
-func isNearShadowCaster(x, y int, sprites []linkSprite) bool {
-	for _, o := range sprites {
-		isCaster := false
-		for _, c := range captureShadowCasterChrs {
-			if o.b[2] == c && o.b[3]&1 == 0 {
-				isCaster = true
-			}
-		}
-		if !isCaster {
+// oamX returns the signed 9-bit X coordinate of an OAM entry.
+func oamX(sp *linkSprite) int {
+	x := int(sp.b[0]) | int(sp.b[4]&1)<<8
+	if x >= 0x100 {
+		x -= 0x200
+	}
+	return x
+}
+
+// isCasterShadow reports whether the captured shadow sh is one that a captured object in sprites drew for itself, the
+// way the game draws them; any other shadow belongs to an enemy or NPC on screen at the same time:
+//
+//   - a bomb ($6E, 16x16, Bomb_Draw) draws two 8x8 halves ($6C, then $6C flipped 8 pixels to the right) or a single
+//     8x8 $38 4 pixels to the right while in the air, in the OAM entries right after it (or the two before it while
+//     on grass or in shallow water);
+//   - a carried or thrown bush, pot or rock (sprite $EC, SpriteDraw_SingleLarge) draws a 16x16 $6C at the same X in
+//     the next OAM entry (sprite_flags2 & $1F = 1);
+//   - a large rock (SpriteDraw_ThrownItem_Gigantic) draws four 16x16 $4A around its center (X -8 and +8, the left
+//     ones unflipped) and three 16x16 $6C with attributes $24 at X -6, 0 and +6 from its center, in another OAM
+//     region. Enemy shadows always use palette 4 ($08).
+func isCasterShadow(sh linkSprite, sprites []linkSprite) bool {
+	sx := oamX(&sh)
+	for i := range sprites {
+		o := &sprites[i]
+		if o.b[3]&1 != 0 || o.b[1] == 0xF0 {
 			continue
 		}
-		ox, oy := int(o.b[0])|int(o.b[4]&1)<<8, int(o.b[1])
-		if dx, dy := x-ox, y-oy; dx >= -24 && dx <= 24 && dy >= -8 && dy <= 56 {
-			return true
+		ox := oamX(o)
+		di := int(sh.index) - int(o.index)
+		switch o.b[2] {
+		case 0x6E:
+			if o.size == 0 || sh.size != 0 || di == 0 || di < -2 || di > 2 {
+				continue
+			}
+			if (sh.b[2] == 0x6C && (sx == ox || sx == ox+8)) || (sh.b[2] == 0x38 && sx == ox+4) {
+				return true
+			}
+		case 0x42, 0x44, 0x46:
+			if o.size != 0 && sh.size != 0 && sh.b[2] == 0x6C && di == 1 && sx == ox {
+				return true
+			}
+		case 0x4A:
+			if o.size == 0 || sh.size == 0 || sh.b[2] != 0x6C || sh.b[3] != 0x24 {
+				continue
+			}
+			cx := ox + 8
+			if o.b[3]&0x40 != 0 {
+				cx = ox - 8
+			}
+			if d := sx - cx; d == -6 || d == 0 || d == 6 {
+				return true
+			}
 		}
 	}
 	return false

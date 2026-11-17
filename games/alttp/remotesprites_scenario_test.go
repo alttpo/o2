@@ -383,6 +383,18 @@ func TestRemoteSpritesScenario_ThirdPlayerIsBlob(t *testing.T) {
 	h.inRoom(2, rsRoom)
 	// g3 at ($1030, $0230): on g1's screen at ($20, $28) + 8 pixels down:
 	h.setScroll(2, 0x1030, 0x0230, 0x1000, 0x0200)
+	// g3's Link, so g3 is visible (players that send no sprites are not drawn at all):
+	e3 := g3.e
+	e3.WRAM[0x0352], e3.WRAM[0x0353] = 0x90, 0x01
+	for i := 0; i < 0x80; i++ {
+		e3.WRAM[0x0800+i*4+1] = 0xF0
+	}
+	copy(e3.WRAM[0x0800+0x64*4:], []byte{0x30, 0x38, 0x00, 0x2E})
+	copy(e3.WRAM[0x0800+0x65*4:], []byte{0x30, 0x40, 0x02, 0x6E})
+	e3.WRAM[0x0A20+0x64], e3.WRAM[0x0A20+0x65] = 0x02, 0x02
+	for k, v := range []uint16{0x8400, 0x8600, 0x9000, 0x9200, 0x9400, 0x9420} {
+		binary.LittleEndian.PutUint16(e3.WRAM[0x0ACC+k*2:], v)
+	}
 	h.frames(8)
 
 	h.expectShadow("3 players", 0x40, 0x60)
@@ -771,6 +783,83 @@ func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
 			t.Errorf("expected the bomb and its shadow; got chrs % x", chrs)
 		}
 	})
+
+	t.Run("thrown pot next to an enemy", func(t *testing.T) {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		e.WRAM[0x0DD0+5], e.WRAM[0x0E20+5] = 0x0B, 0xEC
+		// an enemy's shadow at the pot's X, just below it, in its own OAM entry:
+		setOAM(e, 0x10, 0xC0, 0x58, 0x6C, 0x28, 0x02)
+		setOAM(e, 0x20, 0xC0, 0x40, 0x44, 0x0C, 0x02)
+		setOAM(e, 0x21, 0xC0, 0x54, 0x6C, 0x28, 0x02)
+		h.frames(8)
+		list := h.gs[0].g.players[1].Sprites.list
+		var shadows []uint8
+		for _, sp := range list {
+			if sp.b[2] == 0x6C && (sp.index < 0x64 || sp.index > 0x6F) {
+				shadows = append(shadows, sp.index)
+			}
+		}
+		if len(shadows) != 1 || shadows[0] != 0x21 {
+			t.Errorf("expected only the pot's shadow (OAM $21); got shadows at % x", shadows)
+		}
+	})
+
+	t.Run("carried large rock next to an enemy", func(t *testing.T) {
+		h := newRSScenario(t)
+		e := h.gs[1].e
+		// sprite $EC carried by Link (state $0A):
+		e.WRAM[0x0DD0+5], e.WRAM[0x0E20+5] = 0x0A, 0xEC
+		// the rock centered at X $60 above Link's head (SpriteDraw_ThrownItem_Gigantic):
+		setOAM(e, 0x20, 0x58, 0x30, 0x4A, 0x2C, 0x02)
+		setOAM(e, 0x21, 0x68, 0x30, 0x4A, 0x6C, 0x02)
+		setOAM(e, 0x22, 0x58, 0x40, 0x4A, 0xAC, 0x02)
+		setOAM(e, 0x23, 0x68, 0x40, 0x4A, 0xEC, 0x02)
+		// its shadow, in region B:
+		setOAM(e, 0x30, 0x5A, 0x5C, 0x6C, 0x24, 0x02)
+		setOAM(e, 0x31, 0x60, 0x5C, 0x6C, 0x24, 0x02)
+		setOAM(e, 0x32, 0x66, 0x5C, 0x6C, 0x24, 0x02)
+		// enemies' shadows right next to it:
+		setOAM(e, 0x40, 0x60, 0x60, 0x6C, 0x28, 0x02)
+		setOAM(e, 0x41, 0x50, 0x50, 0x6C, 0x28, 0x02)
+		setOAM(e, 0x42, 0x5A, 0x48, 0x38, 0x28, 0x00)
+		h.frames(8)
+		var shadows []uint8
+		for _, sp := range h.gs[0].g.players[1].Sprites.list {
+			if isCaptureShadowChr(sp.b[2]) && (sp.index < 0x64 || sp.index > 0x6F) {
+				shadows = append(shadows, sp.index)
+			}
+		}
+		sort.Slice(shadows, func(i, j int) bool { return shadows[i] < shadows[j] })
+		if len(shadows) != 3 || shadows[0] != 0x30 || shadows[1] != 0x31 || shadows[2] != 0x32 {
+			t.Errorf("expected only the rock's shadow (OAM $30..$32); got shadows at % x", shadows)
+		}
+	})
+}
+
+// A remote player whose Link is invisible (e.g. flickering after a warp) sends no sprites: they are not drawn at all,
+// not even as a blob, so the flicker doesn't alternate between Link and a blob.
+func TestRemoteSpritesScenario_NoSpritesNoBlob(t *testing.T) {
+	h := newRSScenario(t)
+	h.frames(8)
+	h.expectOAM("visible", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+
+	e := h.gs[1].e
+	for i := 0x64; i <= 0x67; i++ {
+		e.WRAM[0x0800+i*4+1] = 0xF0
+	}
+	h.frames(8)
+	if n := len(h.gs[0].g.players[1].Sprites.list); n != 0 {
+		t.Fatalf("expected an empty sprite list; got %d sprites", n)
+	}
+	h.expectOAMUnused("invisible", 0, 0x7F)
+
+	// the same while the body can't be drawn (a follower uses chrs $20..$23), where a visible player is a blob:
+	for i, b := range []byte{0xA9, 0x20, 0x8D, 0xE8, 0x0A, 0x6B} {
+		h.gs[0].e.Bus.EaWrite(testROMModuleRouting+uint32(i), b)
+	}
+	h.frames(8)
+	h.expectOAMUnused("invisible with chrs in use", 0, 0x7F)
 }
 
 // A remote player that leaves the room or area is not drawn, even though their reported location only changes once
