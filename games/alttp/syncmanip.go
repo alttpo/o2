@@ -252,6 +252,10 @@ func (g *Game) readManip() {
 		m.n = n
 		for i := 0; i < n; i++ {
 			m.slots[i] = g.readManipSlot(i)
+			// revealed while the room loaded (see manipstage.go): it counts as revealed once its attribute shows it:
+			if s := &m.slots[i]; manipIsLiftable(s.Type) && g.manipStagedRevealed(room, s.ObjX, s.Pos) {
+				s.present = true
+			}
 		}
 		return
 	}

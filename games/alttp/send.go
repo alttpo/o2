@@ -86,6 +86,20 @@ func (g *Game) sendPackets() {
 		g.send(m)
 	}
 
+	if g.SyncUnderworld && g.manip.valid && (local.Module == 0x07 || local.Module == 0x0E) {
+		// the manipulable objects again, to all players whenever they change and every 32 frames, so that players
+		// entering the room have them while it loads (see manipstage.go):
+		m := g.makeBroadcastMessage()
+		start := m.Len()
+		if err := g.SerializeManip(m); err != nil {
+			panic(err)
+		}
+		if h := hash64(m.Bytes()[start:]); h != g.manipSentHash || g.monotonicFrameTime&31 == 0 {
+			g.manipSentHash = h
+			g.send(m)
+		}
+	}
+
 	if g.SyncOverworld {
 		// the overworld map16 change log, to all players so that it is applied while they load the area:
 		g.sendMap16()

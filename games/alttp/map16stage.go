@@ -218,6 +218,7 @@ func emitMap16StageHook(a *asm.Emitter, chain uint32) {
 	a.PEA(uint16(map16StageSelAddr>>16) * 0x0101)
 	a.PLB()
 	a.PLB()
+	emitStageModuleGuard(a, "m16s_done")
 	a.Comment("X = the selected table:")
 	a.LDX_imm16_w(uint16(map16StageAAddr & 0xFFFF))
 	a.LDA_abs(uint16(map16StageSelAddr & 0xFFFF))
@@ -258,4 +259,20 @@ func emitMap16StageHook(a *asm.Emitter, chain uint32) {
 	a.Comment("the instructions the JSL replaced:")
 	a.EmitBytes(map16StageHookExpected)
 	a.RTL()
+}
+
+// emitStageModuleGuard branches to skip unless the game is in a module that loads rooms or areas for the player ($06 to
+// $18 except the attract mode $14), not the title, attract mode or ending. 16-bit A.
+func emitStageModuleGuard(a *asm.Emitter, skip string) {
+	a.LDA_long(0x7E0010)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x0006)
+	a.BCC(skip + "_far")
+	a.CMP_imm16_w(0x0014)
+	a.BEQ(skip + "_far")
+	a.CMP_imm16_w(0x0019)
+	a.BCC(skip + "_ok")
+	a.Label(skip + "_far")
+	a.JMP_abs(skip)
+	a.Label(skip + "_ok")
 }

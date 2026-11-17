@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 6
+	patchFormat = 7
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -96,6 +96,14 @@ func computePatchVersion() (v [4]byte) {
 		map16StageMax,
 		map16StageEntry,
 		captureDyingAddr,
+		manipStageSelAddr,
+		manipStageAAddr,
+		manipStageBAddr,
+		manipStageMax,
+		manipStageEntry,
+		manipPendAddr,
+		manipPendMax,
+		manipStageHookAddr,
 		captureDyingEnd,
 		patchSignatureAddr,
 		patchSignatureROMAddr,

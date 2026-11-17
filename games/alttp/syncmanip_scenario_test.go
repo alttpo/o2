@@ -441,3 +441,92 @@ func TestManipScenario_PushBlockOntoSwitch(t *testing.T) {
 		t.Errorf("g2: expected $0466 = $0468 ^ 1 = 0; got $%04x", v)
 	}
 }
+
+// runRoomLoad calls the code in Dungeon_LoadRoom the patch hooks, as the room loader does after it registered the
+// room's manipulable objects (see loadRoom) and drew the push blocks.
+func (h *skScenario) runRoomLoad(i int) {
+	h.t.Helper()
+	gs := h.gs[i]
+	e := gs.e
+	h.setWRAMU16(i, 0x042C, h.wramU16(i, uint32(manipCount)))
+	addr := manipStageHookAddr
+	stub := []byte{
+		0x18, 0xFB, // CLC; XCE
+		0xC2, 0x10, // REP #$10
+		0xE2, 0x20, // SEP #$20
+		0xA2, 0x00, 0x00, // LDX #$0000
+		0xDA, 0x2B, // PHX; PLD
+		0x22, uint8(addr), uint8(addr >> 8), uint8(addr >> 16), // JSL
+	}
+	copy(e.WRAM[0x1F00:], stub)
+	e.CPU.Reset()
+	e.SetPC(0x001F00)
+	if !e.RunUntil(0x001F00+uint32(len(stub)), 0x4_000) {
+		h.t.Fatalf("room load did not return; PC=$%06x", e.GetPC())
+	}
+	if e.CPU.RA != h.wramU16(i, 0x042C) {
+		h.t.Errorf("after the hook: A = $%04x; expected $042C", e.CPU.RA)
+	}
+}
+
+// Objects revealed and blocks pushed by players in another room are applied to the tilemap while that room loads,
+// and their attributes once it is loaded.
+func TestManipScenario_AppliedWhileRoomLoads(t *testing.T) {
+	for _, blockPos := range []uint16{mnBlockPos, mnBlockPos | 0x4000} {
+		h := newManipScenario(t, 2)
+		pot := mnObj{0x1111, mnPotObjX, mnPotPos, mnPotTiles}
+		block := mnObj{0x0000, mnBlockObjX, blockPos, mnFloorTiles}
+		h.loadRoom(0, mnOtherRoom)
+		h.loadRoom(1, mnRoom, pot, block)
+		h.settleStar(skSettleFrames)
+
+		h.liftPot(1, mnPotObjX)
+		h.pushBlock(1, mnBlockObjX, blockPos+0x100)
+		h.setWRAMU16(1, uint32(manipType)+h.slotOf(1, mnBlockObjX), 0x0000)
+		h.settleStar(skSettleFrames)
+		if n := len(h.gs[0].g.manipStagedEntries()); n != 2 {
+			t.Fatalf("expected 2 staged objects; got %d", n)
+		}
+
+		// g1 enters g2's room:
+		h.loadRoom(0, mnRoom, pot, block)
+		h.gs[0].e.WRAM[skSubModule] = 0x02
+		h.runRoomLoad(0)
+		for k, d := range []uint32{0x00, 0x80, 0x02, 0x82} {
+			if v := h.wramU16(0, 0x2000+uint32(mnPotPos)+d); v != mnPotTiles[k] {
+				t.Errorf("while loading: expected pot replacement tile $%04x; got $%04x", mnPotTiles[k], v)
+			}
+			if v := h.wramU16(0, 0x2000+uint32(blockPos&0x3FFF)+d); v != mnFloorTiles[k] {
+				t.Errorf("while loading: expected floor tile $%04x where the block was; got $%04x", mnFloorTiles[k], v)
+			}
+			if v := h.wramU16(0, 0x2000+uint32((blockPos+0x100)&0x3FFF)+d); v != [4]uint16{0x0922, 0x0932, 0x0923, 0x0933}[k] {
+				t.Errorf("while loading: expected block tile at the new position; got $%04x", v)
+			}
+		}
+		if v := h.wramU16(0, uint32(manipPos)+h.slotOf(0, mnBlockObjX)); v != blockPos+0x100 {
+			t.Errorf("while loading: expected the block's slot at $%04x; got $%04x", blockPos+0x100, v)
+		}
+
+		// the room is loaded:
+		h.gs[0].e.WRAM[skSubModule] = 0x00
+		h.settleStar(skSettleFrames)
+		h.expectPotGone("loaded", 0, mnPotObjX, mnPotTiles)
+		if a := h.wramU16(0, 0x12000+manipAttrIndex(blockPos+0x100)); a != 0x2727 {
+			t.Errorf("loaded: expected block attributes $2727; got $%04x", a)
+		}
+		if v := h.wramU16(0, uint32(manipPos)+h.slotOf(0, mnBlockObjX)); v != blockPos+0x100 {
+			t.Errorf("loaded: expected the block to stay at $%04x; got $%04x", blockPos+0x100, v)
+		}
+		upper := uint8(0)
+		if blockPos&0x4000 == 0 {
+			upper = 1
+		}
+		if v := h.gs[0].e.WRAM[0x0641]; v != upper {
+			t.Errorf("block at $%04x: expected $0641 = %d; got $%02x", blockPos, upper, v)
+		}
+		// g1 counts the pot as revealed, so it passes it on:
+		if s := h.gs[0].g.manip.slots[h.slotOf(0, mnPotObjX)>>1]; !s.revealed {
+			t.Errorf("g1: expected the pot to count as revealed")
+		}
+	}
+}

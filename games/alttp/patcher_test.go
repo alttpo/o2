@@ -119,6 +119,13 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 		copy(rom.Slice(pakAddr, uint32(len(map16StageHookExpected)+1)), append(append([]byte(nil), map16StageHookExpected...), 0x6B))
 	}
 
+	// the code in Dungeon_LoadRoom that the patch hooks; RTL instead of the rest of it:
+	pakAddr, err = lorom.BusAddressToPak(manipStageHookAddr)
+	if err != nil {
+		return
+	}
+	copy(rom.Slice(pakAddr, uint32(len(manipStageHookExpected)+1)), append(append([]byte(nil), manipStageHookExpected...), 0x6B))
+
 	// module routing:
 	pakAddr, err = lorom.BusAddressToPak(testROMModuleRouting)
 	a = asm.NewEmitter(rom.Slice(pakAddr, 1), true)

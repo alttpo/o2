@@ -1286,10 +1286,14 @@ func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
 	a.REP(0x20)
 }
 
-// emitDyingEnemiesList emits the code that lists the screen positions of the enemies drawing their death poof,
-// explosion or poof (sprite state $02, $04, $06) at captureDyingList. 16-bit registers; DB = $70 on return.
+// emitDyingEnemiesList emits the routine that lists the screen positions of the enemies drawing their death poof,
+// explosion or poof (sprite state $02, $04, $06) at captureDyingList. Called with JSL with 16-bit registers; preserves
+// DB.
 func emitDyingEnemiesList(a *asm.Emitter) {
+	a.AssumeREP(0x30)
+	a.Label("captureDyingList")
 	a.Comment("list the enemies drawing their death this frame:")
+	a.PHB()
 	a.PEA(0x7070)
 	a.PLB()
 	a.PLB()
@@ -1344,12 +1348,15 @@ func emitDyingEnemiesList(a *asm.Emitter) {
 	a.DEX()
 	a.BPL("ce_dy_loop")
 	a.STY_abs(uint16(captureDyingAddr & 0xFFFF))
+	a.PLB()
+	a.RTL()
 }
 
-// emitNearDyingEnemySub emits a subroutine that returns carry set if the OAM entry at $0800,Y (DB = $7E) is within
-// about 24 pixels of an enemy in captureDyingList. 16-bit registers; clobbers A and X.
-func emitNearDyingEnemySub(a *asm.Emitter) uint16 {
-	sub := uint16(a.Label("ce_near_dying"))
+// emitNearDyingEnemySub emits a routine that returns carry set if the OAM entry at $0800,Y (DB = $7E) is within about
+// 24 pixels of an enemy in captureDyingList. Called with JSL with 16-bit registers; clobbers A and X.
+func emitNearDyingEnemySub(a *asm.Emitter) {
+	a.AssumeREP(0x30)
+	a.Label("ce_near_dying")
 	tmpX, tmpY, tmpE := uint16(captureTmpX&0xFFFF), uint16(captureTmpY&0xFFFF), uint16(captureTmpE&0xFFFF)
 	list := uint16(captureDyingList & 0xFFFF)
 	a.Comment("the entry's signed screen x:")
@@ -1408,7 +1415,7 @@ func emitNearDyingEnemySub(a *asm.Emitter) uint16 {
 	a.BCS("ce_nd_next")
 	a.PLB()
 	a.SEC()
-	a.RTS()
+	a.RTL()
 	a.Label("ce_nd_next")
 	a.INX()
 	a.INX()
@@ -1418,21 +1425,16 @@ func emitNearDyingEnemySub(a *asm.Emitter) uint16 {
 	a.Label("ce_nd_none")
 	a.PLB()
 	a.CLC()
-	a.RTS()
-	return sub
+	a.RTL()
+
 }
 
 // emitCaptureExtras emits the routine that copies captured OAM entries to linkOAMCopyAddr + linkOAMCopyExtras, after
 // storing the scroll offsets at linkOAMCopyScroll. Called by the trampoline with JSL with A and X 8-bit; preserves P
 // and DB. It runs from any bank.
-func emitCaptureExtras(a *asm.Emitter) {
+func emitCaptureExtras(a *asm.Emitter, dyingList, nearDying uint32) {
 	a.Label("captureExtras")
 	ex := linkOAMCopyAddr + linkOAMCopyExtras
-	a.JMP_abs("ce_start")
-	a.AssumeREP(0x30)
-	nearDying := emitNearDyingEnemySub(a)
-	a.AssumeSEP(0x30)
-	a.Label("ce_start")
 
 	a.PHP()
 	a.PHB()
@@ -1514,7 +1516,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 
 	a.Label("ce_scan")
 	a.REP(0x30)
-	emitDyingEnemiesList(a)
+	a.JSL(dyingList)
 	a.Comment("DB = $7E for the OAM buffer; Y = OAM buffer offset:")
 	a.PEA(0x7E7E)
 	a.PLB()
@@ -1545,7 +1547,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.LDA_long_x(captureChrsAddr)
 	a.AND_imm16_w(captureChrEnemyFX)
 	a.BEQ("ce_copy")
-	a.JSR_abs(nearDying)
+	a.JSL(nearDying)
 	a.BCS("ce_next")
 	a.Label("ce_copy")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index:")

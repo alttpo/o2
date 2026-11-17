@@ -866,6 +866,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.writeRemoteSfx(now)
 	// stage remote map16 changes for the game to apply when it loads their areas:
 	g.writeMap16Stage(now)
+	// stage remote manipulable objects for the game to apply when it loads their rooms:
+	g.writeManipStage(now)
 
 	// send out any network updates:
 	g.sendPackets()

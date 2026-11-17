@@ -125,8 +125,12 @@ type Game struct {
 	// local and queued remote sound effects (see sfx.go):
 	sfx sfxLocal
 	// remote map16 changes staged for area loads (see map16stage.go):
-	map16Stage  map16Stage
-	swordShield swordShieldGfx
+	map16Stage map16Stage
+	// remote manipulable objects staged for room loads (see manipstage.go):
+	manipStage stagedTable
+	// hash of the manipulable objects last sent to all players:
+	manipSentHash uint64
+	swordShield   swordShieldGfx
 
 	// remote players drawn by the game; see remotesprites.go:
 	remoteSprites remoteSpritesLocal

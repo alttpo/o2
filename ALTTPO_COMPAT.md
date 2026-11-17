@@ -68,7 +68,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
 | 0x17 | overworld map16 changes | yes (to all) | yes (to all) | used |
-| 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
+| 0x18 | underworld manipulable objects | yes (per sector, and to all on change) | yes (per sector, and to all on change) | used |
 | 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
 | 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
 | 0x1B | room key doors and switches | yes (per sector) | yes (per sector) | used |
@@ -466,7 +466,7 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   buffer.
 - **Menus.** A player in the item menu or a text box (`$0E`) keeps its log, keeps sending it and is still taken as
   being in its area, so players entering the area meanwhile catch up.
-- **Underworld.** Manipulable objects (message 0x18) are still applied once the room is loaded.
+- **Underworld.** Manipulable objects get the same treatment; see [While the room loads](#underworld-manipulable-objects).
 - **Teams.** Only players on the same team share changes; game worlds are team specific. (alttpo's old tilemap sync
   shared overworld changes across teams.)
 - **Regions.** Map16 tile numbers differ between US and JP ROMs (the cut grass tile is `$0DC5` in US and `$0DBF` in
@@ -543,6 +543,9 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
 - **Message 0x18**, broadcastSector, in the same packet as the star switch state (dropped, like 0x17, whenever the
   sender's location changes): `room u16`, `count u8`, then per
   slot `type u16`, `objx u16`, `pos u16`, `flags u8` (bit 0: revealed, bit 1: four replacement tiles `u16` follow).
+- **Also to all players.** Both also send message 0x18 in its own broadcastAll packet whenever it changes and every 32
+  frames, so players entering the room have it while the room loads (see below). The per-frame sector copy stays, since
+  the item reveal below compares consecutive messages.
 - **Sampling.** In the dungeon module during submodule 0. A change of room, of the slot count or of any `$0520` starts
   a new baseline; leaving the dungeon module (except for the menus) forgets the room. An object counts as revealed once
   its attribute was seen as `$70+slot` and then no longer is. o2 reads `$0500..$05DF` every frame and the attributes of
@@ -561,6 +564,22 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   moving. A block is not moved onto a spot still taken by another object here (attribute `$70`-`$7F`), e.g. a hammer
   peg in Ganon's Tower room `$8B` that the remote player pounded but that is still up here; it waits for the peg. Draws stop when the
   VRAM stripe buffer passes `$68` (o2) or `$80` (alttpo) bytes.
+- **While the room loads.** Every room load (`Dungeon_LoadRoom`: room transitions, staircases, falling through holes,
+  entering from the overworld before the spotlight opens) draws the room into the tilemaps at `$7E2000`/`$7E4000` and
+  registers the manipulable objects; the tilemaps are uploaded to VRAM afterwards. Both hook the code right after the
+  push blocks are drawn (`$01889A`, `REP #$20 : LDA.w $042C`, the same in US, JP and randomizer ROMs): for the room
+  being loaded (`$A0`), objects remote players on the same team in that room revealed get the remote replacement tiles
+  in the tilemap and in the slot, and push blocks they left in state `$0000` one step from where the block stands here
+  are moved: the slot's replacement tiles where it was, the block's tiles (`$0922`/`$0932`/`$0923`/`$0933`) where it
+  is now, and `$0540`. The attribute table built after the load marks every slot at its position with `$70+slot`, so
+  these are recorded in a pending list (`$706A20`) and fixed in the first frame of submodule 0 in that room:
+  `RoomDraw_16x16Single` for revealed objects still marked (it draws the same tiles again and sets the attributes), and
+  attributes `$27` for moved blocks; for a block on the upper layer (no `$4000`) `$0641` is toggled like
+  `PushBlock_CheckForPit` does and the push block door shutters operated like below. Blocks on switches (`$0005`) or in
+  pits are left to the update in submodule 0, which checks the attributes. o2 stages up to 32 objects in two SRAM
+  tables (`$706612`, `$706814`, selector `$706610`) for its patch's hook and does the fix-up in the frame trampoline;
+  alttpo uses a PC interceptor and does the fix-up between frames. A revealed object applied there counts as revealed
+  locally (o2 marks it present at the baseline), so it is passed on.
 - **Items under pots.** A pot another player lifts while we are in the room reveals its item here too; see
   [Secrets under lifted objects](#secrets-under-lifted-objects).
 - **Not synced.** The push animation is not shown, and bombable floors are left to the room flags in

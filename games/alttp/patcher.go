@@ -25,6 +25,9 @@ import (
 //	  $7062F4..$7062FC  remote sound effects for the game to play (written by o2); see sfx.go
 //	$706300..$706605  remote map16 changes staged for area loads (written by o2; both tables are emptied by the
 //	                  init code); see map16stage.go
+//	$706610..$706A15  remote manipulable objects staged for room loads (written by o2), and
+//	$706A20..$706A67  the pending list and scratch of the room load hook; see manipstage.go
+//	$706A70..$706AB9  enemies drawing their death this frame and scratch of the capture routine; see remotesprites.go
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
 //	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
@@ -197,6 +200,8 @@ func (p *Patcher) Patch() (err error) {
 		code802F:       code802F,
 		gameModes:      gameModes,
 		fnDrawMap16:    fns[fnOverworldDrawMap16Persist],
+		fnRoomDraw:     fns[fnRoomDraw16x16Single],
+		fnBank01RTL:    fns[fnBank01RTL],
 		linkGfxBankIns: linkGfxBankInstruction(p.rom),
 	}
 	stageAddr := fns[fnOverworldHandleOverlays]
@@ -313,6 +318,22 @@ func (p *Patcher) Patch() (err error) {
 		a.WriteTextTo(textBuf)
 	}
 
+	// the hook that applies staged remote manipulable objects to every room load; without it, they are applied once the
+	// room finished loading:
+	pcAddr, _ = lorom.BusAddressToPak(manipStageHookAddr)
+	if c := p.rom.Slice(pcAddr, uint32(len(manipStageHookExpected))); !bytes.Equal(c, manipStageHookExpected) {
+		log.Printf("alttp: patch: unexpected code at $%06x: % x; remote pots and blocks appear after room loads\n", manipStageHookAddr, c)
+	} else {
+		a = asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(manipStageHookExpected))), true)
+		a.SetBase(manipStageHookAddr)
+		a.JSL(r.manipStageHook.addr)
+		a.NOP()
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
+	}
+
 	return nil
 }
 
@@ -342,7 +363,7 @@ func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
 // (gameModes is its operand). It runs the update routine during safe modules, the module, and then copies Link's OAM
 // entries and the captured sprites for o2 and draws the remote players with the routines at captureExtras and
 // remoteDraw. Called with A and X 8-bit.
-func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw uint32) {
+func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw, manipPending uint32) {
 	a.AssumeSEP(0x30)
 	a.Label("preMain")
 	a.Comment("only update during safe modules:")
@@ -373,6 +394,8 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw uin
 	emitLinkOAMCopy(a)
 	emitLinkColor(a)
 	emitSfx(a)
+	a.Comment("apply the attributes of manipulable objects the room load applied:")
+	a.JSL(manipPending)
 	a.Comment("copy sparkles and dust for o2 to send:")
 	a.JSL(captureExtras)
 	a.Comment("draw remote players:")
@@ -388,6 +411,8 @@ type patchROM struct {
 	gameModes []byte
 	// Overworld_DrawMap16_Persist; see emitMap16Apply:
 	fnDrawMap16 uint32
+	// RoomDraw_16x16Single and an RTL in its bank; see emitManipPending:
+	fnRoomDraw, fnBank01RTL uint32
 	// the instruction that loads the bank of Link's graphics; see emitNMIHooks:
 	linkGfxBankIns []byte
 	// the listing of the SRAM stub is written here while the blocks are written:
@@ -416,6 +441,14 @@ type patchROM struct {
 	// when done if a randomizer had hooked the same instructions (0: it runs them itself); see emitMap16StageHook:
 	map16StageHook romBlock
 	stageChain     uint32
+	// the hook in Dungeon_LoadRoom that applies staged manipulable objects; see emitManipStageHook:
+	manipStageHook romBlock
+	// called by preMain; see emitManipPending:
+	manipPending romBlock
+	// called by the manip stage hook and manipPending:
+	manipStageObject, manipStageBlock, manipPendingBlock romBlock
+	// called by captureExtras; see emitDyingEnemiesList and emitNearDyingEnemySub:
+	captureDyingList, captureNearDying romBlock
 }
 
 // patchRoutine emits a block's code at its address:
@@ -454,7 +487,7 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.preMain, func(a *asm.Emitter) error {
-			emitPreMain(a, r.gameModes, r.captureExtras.addr, r.remoteDrawAddr)
+			emitPreMain(a, r.gameModes, r.captureExtras.addr, r.remoteDrawAddr, r.manipPending.addr)
 			return nil
 		}},
 		{&r.map16Apply, func(a *asm.Emitter) error {
@@ -475,7 +508,7 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.captureExtras, func(a *asm.Emitter) error {
-			emitCaptureExtras(a)
+			emitCaptureExtras(a, r.captureDyingList.addr, r.captureNearDying.addr)
 			return nil
 		}},
 		{&r.nmiHooks, func(a *asm.Emitter) error {
@@ -484,6 +517,34 @@ func (r *patchROM) routines() []patchRoutine {
 		}},
 		{&r.map16StageHook, func(a *asm.Emitter) error {
 			emitMap16StageHook(a, r.stageChain)
+			return nil
+		}},
+		{&r.manipStageHook, func(a *asm.Emitter) error {
+			emitManipStageHook(a, r.manipStageObject.addr, r.manipStageBlock.addr)
+			return nil
+		}},
+		{&r.manipPending, func(a *asm.Emitter) error {
+			emitManipPending(a, r.fnRoomDraw, r.fnBank01RTL, r.manipPendingBlock.addr)
+			return nil
+		}},
+		{&r.manipStageObject, func(a *asm.Emitter) error {
+			emitManipStageObject(a)
+			return nil
+		}},
+		{&r.manipStageBlock, func(a *asm.Emitter) error {
+			emitManipStageBlock(a)
+			return nil
+		}},
+		{&r.manipPendingBlock, func(a *asm.Emitter) error {
+			emitManipPendingBlock(a)
+			return nil
+		}},
+		{&r.captureDyingList, func(a *asm.Emitter) error {
+			emitDyingEnemiesList(a)
+			return nil
+		}},
+		{&r.captureNearDying, func(a *asm.Emitter) error {
+			emitNearDyingEnemySub(a)
 			return nil
 		}},
 	}
@@ -503,6 +564,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
 	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
 	emitMap16StageInit(a)
+	emitManipStageInit(a)
 	a.PLB()
 	a.PLP()
 	a.Comment("the code patched over at $00:802F:")
@@ -531,6 +593,13 @@ func (r *patchROM) measure() (err error) {
 	r.captureExtras.name = "captureExtras"
 	r.nmiHooks.name = "NMI hooks"
 	r.map16StageHook.name = "map16 stage hook"
+	r.manipStageHook.name = "manip stage hook"
+	r.manipPending.name = "manip pending"
+	r.manipStageObject.name = "manip stage object"
+	r.manipStageBlock.name = "manip stage block"
+	r.manipPendingBlock.name = "manip pending block"
+	r.captureDyingList.name = "capture dying list"
+	r.captureNearDying.name = "capture near dying"
 
 	for _, rt := range r.routines() {
 		a := asm.NewEmitter(make([]byte, 0x1000), false)

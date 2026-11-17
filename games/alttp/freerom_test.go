@@ -101,7 +101,8 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 			fns := make(map[romFunction]uint32)
 			fillRomFunctions(rom, fns)
 			stage := fns[fnOverworldHandleOverlays]
-			allowed = append(allowed, romSpan{stage, stage + uint32(len(map16StageHookExpected))})
+			allowed = append(allowed, romSpan{stage, stage + uint32(len(map16StageHookExpected))},
+				romSpan{manipStageHookAddr, manipStageHookAddr + uint32(len(manipStageHookExpected))})
 			isAllowed := func(addr uint32) bool {
 				for _, s := range allowed {
 					if s.contains(addr) {
