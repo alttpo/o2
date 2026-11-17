@@ -490,11 +490,59 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   moving. A block is not moved onto a spot still taken by another object here (attribute `$70`-`$7F`), e.g. a hammer
   peg in Ganon's Tower room `$8B` that the remote player pounded but that is still up here; it waits for the peg. Draws stop when the
   VRAM stripe buffer passes `$68` (o2) or `$80` (alttpo) bytes.
-- **Not synced.** Items hidden under pots are not spawned for other players (only the player who lifts the pot gets
-  them, so keys are not duplicated), the push animation is not shown, and bombable floors are left to the room flags in
+- **Items under pots.** A pot another player lifts while we are in the room reveals its item here too; see
+  [Secrets under lifted objects](#secrets-under-lifted-objects).
+- **Not synced.** The push animation is not shown, and bombable floors are left to the room flags in
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
 - **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".
+
+## Secrets under lifted objects
+
+o2 (`games/alttp/syncsecrets.go`) and alttpo (`Secrets.as`) reveal the item under a bush, rock, sign or pot that
+another player lifts while the local player is in the same overworld area or room, so every player there gets one to
+pick up. Nothing is sent for this; each receiver finds out from the map16 changes (message 0x17) and manipulable
+objects (message 0x18) it already gets, and runs the game's own lookup, so a hidden item configured at that spot is
+revealed and anything else gets the game's usual random prize.
+
+- **What the game does.** Lifting a small overworld object (`Overworld_HandleLiftableTiles`) calls
+  `Overworld_RevealSecret` (`$1BC8A4`), which looks the tilemap offset up in the area's hidden items and sets the low
+  byte of `$0B9C` to the secret index (0 if none, `$FF` for holes and stairs); `Sprite_SpawnThrowableTerrain` then
+  spawns the carried object (sprite `$EC`) and the secret under it: for bushes (thrown object types 2 and 3) without
+  one `Overworld_SubstituteAlternateSecret` may pick a green rupee, guard, landmine, stal or bee, and in the overworld
+  `Sprite_SpawnSecret` only spawns anything half of the time and picks a random prize for secret 4. Lifting a pot calls
+  `RevealPotItem` (`$01E6B2` US, `$01E6B0` JP) with the pot's `$0540` position, which looks it up in the room's pot
+  items and marks it taken in `$7EF580` (except keys), or replaces its replacement tiles with a hole or a switch.
+- **Small objects.** The tiles that reveal secrets are the operands of `Overworld_HandleLiftableTiles`' CMPs at
+  `$1BBFE7` (bush `$0036`), `$1BBFEF` (dark bush, `$072A` US, `$0727` JP), `$1BBFF7` (light rock `$020F`), `$1BBFFC`
+  (dark rock `$0239`) and `$1BC001` (sign `$0101`), read from the ROM. Their thrown object types (2, 4, 1, 5, 0) are
+  found like `Overworld_GetLiftableTileType` does: the tile type (`OverworldTileTypes`, operand at `$1BC04F`) of the top
+  left 8x8 tile (`Map16Definitions`, operand at `$1BC041`), looked up in `LinkToss_liftable_tiles`
+  (`$54 $52 $50 $FF $51 $53 $55 $56 $57`). Big rocks and rock piles are not included.
+- **Live changes only.** A map16 change entry is live if it was first received while the local player had been in the
+  area for 48 frames or more (senders resend their whole log every 16 frames, so changes made before the local player
+  arrived come in before that); an area (re)load clears all live marks. A remote pot is live if the sender's previous
+  message, received in the same room while the local player was there, had it still there. Entering an area or room
+  where objects were lifted earlier reveals nothing.
+- **Revealing.** In the update that applies the change, before the tile changes, and only if the local tile is still a
+  small object (overworld; the remote's new tile must not be one) or the pot's attribute is still `$70+slot`: save
+  `$0B9C`, `$0314` and `$0FB2`; call `Overworld_RevealSecret` with X = the tilemap offset (through the RTL at
+  `$1BBD79`), or `RevealPotItem` with A = the pot's position and `$06` = its attribute index (through the bank `$01`
+  RTL); set `$00`/`$02` to the object's X/Y (overworld: `((pos & $7E) + $070C) << 3` and `((pos & $1F80) >> 3) +
+  $0708`, like `Overworld_GetLinkMap16Coords`; underworld: `(room & $0F) << 9 + (pos & $7E) << 2` and `(room & $F0) << 5
+  + (pos & $1F80) >> 4`); call `Sprite_SpawnThrowableTerrain_silently` (`$068156`) with A = the thrown object type (0
+  for pots), clear the carried object sprite's `$0DD0,X` it returns (X = `$FF` if no slot was free), and restore what
+  was saved. o2 marks the entries revealed once the update routine reports it ran; alttpo once it wrote the patch
+  buffer code.
+- **Keys.** A small key under a pot gets its key index from `$0B9B` like any spawned key, so with two keys in a room
+  the receiver's index can differ from the lifter's. Key sprites remove themselves once their key flag is set, which
+  the room state sync shares, so a key taken by one player disappears for the others.
+- **Other ways of removing objects.** Any logged map16 change that replaces a small object reveals its secret, so
+  bushes cut with the sword (`HandleItemTileAction_Overworld`, which logs the stump) count too, and pots smashed with
+  the hammer like lifted ones. A small object
+  the local player already removed reveals nothing.
+- **Settings.** The map16 and manipulable object settings: o2 "Sync overworld" / "Sync underworld", alttpo "Sync
+  tilemap".
 
 ## Drawing remote players
 
