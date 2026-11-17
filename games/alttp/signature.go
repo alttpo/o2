@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 4
+	patchFormat = 5
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -49,9 +49,9 @@ type patchSignature [patchSignatureSize]byte
 
 var patchVersionOnce = sync.OnceValue(computePatchVersion)
 
-// patchVersion identifies the patch: a hash of patchFormat, the SRAM and ROM layout, and the common code copied to
-// SRAM (assembled with placeholder ROM addresses). Any change to the code in patcher.go that is copied to SRAM, or to
-// the addresses that o2 relies on, changes the version.
+// patchVersion identifies the patch: a hash of patchFormat, the SRAM and ROM layout, and all of the patch's code
+// (assembled with placeholder ROM addresses). Any change to that code, or to the addresses that o2 relies on, changes
+// the version.
 func patchVersion() [4]byte {
 	return patchVersionOnce()
 }
@@ -63,14 +63,13 @@ func computePatchVersion() (v [4]byte) {
 		updateBufAAddr,
 		updateBufBAddr,
 		updateBufSize,
-		sramCodeAddr,
-		sramCodeEnd,
+		sramStubAddr,
+		sramStubEnd,
 		updateStubAddr,
-		preMainAddr,
-		preMainJSRAddr,
-		map16ApplyAddr,
-		remoteDrawAddr,
-		remoteDrawSpriteAddr,
+		callUpdateAddr,
+		updateJSRAddr,
+		map16ApplyStubAddr,
+		map16TableBank,
 		remoteTableAddr,
 		remoteTableSize,
 		remoteStateAddr,
@@ -96,23 +95,23 @@ func computePatchVersion() (v [4]byte) {
 		}
 	}
 
-	// the common code, with placeholder ROM addresses:
-	a := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), false)
-	a.SetBase(sramCodeAddr)
-	if _, err := (&Patcher{}).emitSRAMCode(a, []byte{0, 0, 0}, map[romFunction]uint32{}, 0); err != nil {
-		panic(fmt.Errorf("alttp: patch version: %w", err))
+	// the code, with placeholder ROM addresses:
+	r := &patchROM{
+		code802F:       []byte{0xA9, 0x81, 0x8D, 0x00, 0x42},
+		gameModes:      []byte{0, 0, 0},
+		linkGfxBankIns: []byte{0xA9, 0x10},
 	}
-	h.Write(a.Bytes())
-
-	// the routines in ROM, at a placeholder address:
-	a = asm.NewEmitter(make([]byte, 0x400), false)
-	a.SetBase(0x008000)
-	types, chrs := captureLists()
-	a.EmitBytes(types[:])
-	a.EmitBytes(chrs[:])
-	emitCaptureExtras(a)
-	emitNMIHooks(a, []byte{0xA9, 0x10})
-	h.Write(a.Bytes())
+	for _, rt := range r.routines() {
+		a := asm.NewEmitter(make([]byte, 0x1000), false)
+		a.SetBase(0x008000)
+		if err := rt.emit(a); err != nil {
+			panic(fmt.Errorf("alttp: patch version: %s: %w", rt.block.name, err))
+		}
+		if err := a.Finalize(); err != nil {
+			panic(fmt.Errorf("alttp: patch version: %s: %w", rt.block.name, err))
+		}
+		h.Write(a.Bytes())
+	}
 
 	copy(v[:], h.Sum(nil))
 	return

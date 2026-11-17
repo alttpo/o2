@@ -23,38 +23,37 @@ import (
 //	  $706200..$7062D7  remote sprites table (written by o2) and state (written by the game code)
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
-//	$707C00..$707F7F  common code, copied from ROM by the patched init code:
-//	  $707C00           update stub: RTS, which the trampoline's JSR points at after a reset
-//	  $707C02           preMain trampoline, called by the frame hook instead of `JSL Module_MainRouting`
-//	  $707C80           map16 apply routine, called by generated map16 update routines
-//	  $707D50           remote sprites drawing routine, called by the trampoline; see remotesprites.go
-//	  $707F10           remote sprites drawing subroutine for one sprite
+//	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
+//	  $707C00           update stub: RTS, which callUpdate's JSR points at after a reset
+//	  $707C01           callUpdate: `JSR` to the update routine o2 wrote last, called by preMain
+//	  $707C05           `JML map16Apply`, called by generated map16 update routines
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
-	// SRAM buffers that generated update routines are written to, alternately. The trampoline's JSR is only pointed
+	// SRAM buffers that generated update routines are written to, alternately. callUpdate's JSR is only pointed
 	// at one of these buffers after a routine was written there:
 	updateBufAAddr = uint32(0x707400)
 	updateBufBAddr = uint32(0x707800)
 	// updateBufSize is the size of each buffer and the maximum size of a generated update routine. Routines larger
-	// than 255 bytes are written in several chunks; the trampoline's JSR is only redirected after all of them:
+	// than 255 bytes are written in several chunks; callUpdate's JSR is only redirected after all of them:
 	updateBufSize = 0x400
 
-	// sramCodeAddr is where the patched init code copies the common code to:
-	sramCodeAddr = uint32(0x707C00)
-	sramCodeEnd  = uint32(0x707F80)
-	// updateStubAddr is an RTS that the trampoline's JSR points at after a reset, until the first update routine is
+	// the SRAM stub: the only code in SRAM, since o2 rewrites part of it at runtime. The rest of the patch's code runs
+	// from ROM (see patchROM), at addresses that depend on the ROM; the stub's JML lets o2's generated update routines
+	// call map16Apply without knowing where it is:
+	sramStubAddr = uint32(0x707C00)
+	sramStubEnd  = uint32(0x707C09)
+	// updateStubAddr is an RTS that callUpdate's JSR points at after a reset, until the first update routine is
 	// written. o2 only rewrites the high byte of the JSR's operand (a single byte write cannot be torn), so the low
 	// byte must be the same as the update buffers':
-	updateStubAddr = sramCodeAddr
-	// SRAM address of preMain routine called every frame instead of `JSL Module_MainRouting`:
-	preMainAddr = uint32(0x707C02)
-	// SRAM address of the high byte of the preMain routine's `JSR updateStubAddr` operand:
-	preMainJSRAddr = uint32(0x707C1A)
-	// map16ApplyAddr is the routine that generated map16 update routines JSR to; see emitMap16Apply:
-	map16ApplyAddr = uint32(0x707C80)
-	// remote sprites routines; see remotesprites.go:
-	remoteDrawAddr       = uint32(0x707D50)
-	remoteDrawSpriteAddr = uint32(0x707F10)
+	updateStubAddr = sramStubAddr
+	// callUpdateAddr is `JSR updateStubAddr; RTL`, which preMain calls with JSL to run the update routine:
+	callUpdateAddr = uint32(0x707C01)
+	// updateJSRAddr is the high byte of callUpdate's JSR operand, which o2 points at the update routine it wrote:
+	updateJSRAddr = callUpdateAddr + 2
+	// map16ApplyStubAddr is `JML map16Apply`, which generated map16 update routines call with JSL:
+	map16ApplyStubAddr = uint32(0x707C05)
+	// map16TableBank is the bank of the tables that map16Apply applies, in the update routine buffers:
+	map16TableBank = updateBufAAddr & 0xFF0000
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
@@ -68,9 +67,6 @@ const (
 	legacyPatchStart = uint32(0x1BB1D7)
 	legacyPatchEnd   = uint32(0x1BB800)
 )
-
-// mvnSetupSize is the size of the code that copies one range with MVN: LDX, LDY, LDA and MVN:
-const mvnSetupSize = 3 + 3 + 3 + 3
 
 // layout of the copy of Link's OAM entries at linkOAMCopyAddr:
 const (
@@ -187,24 +183,23 @@ func (p *Patcher) Patch() (err error) {
 	}
 	gameModes := frameJSL[1:]
 
-	// we can't write to SRAM from this program because we only have access to the ROM contents, so the patched init
-	// code copies the common code (the update stub, the frame trampoline which ends with the original JSL from the
-	// frameHook, the map16 apply routine and the remote sprites routines) from ROM to SRAM with MVN.
 	// the routines and tables written to free ROM, measured with placeholder addresses and then placed by
 	// allocateROM:
-	r := &patchROM{
-		code802F:       code802F,
-		linkGfxBankIns: linkGfxBankInstruction(p.rom),
-	}
 	fns := make(map[romFunction]uint32)
 	fillRomFunctions(p.rom, fns)
-	if err = r.measure(p, gameModes, fns); err != nil {
+	r := &patchROM{
+		code802F:       code802F,
+		gameModes:      gameModes,
+		fnDrawMap16:    fns[fnOverworldDrawMap16Persist],
+		linkGfxBankIns: linkGfxBankInstruction(p.rom),
+	}
+	if err = r.measure(); err != nil {
 		return
 	}
 	if err = allocateROM(free, r.blocks()); err != nil {
 		return fmt.Errorf("%s ROM: %w", layoutName, err)
 	}
-	if err = r.write(p, gameModes, fns, textBuf); err != nil {
+	if err = r.write(p.rom, textBuf); err != nil {
 		return
 	}
 
@@ -239,11 +234,11 @@ func (p *Patcher) Patch() (err error) {
 	textBuf.WriteString(fmt.Sprintf("patch signature at $%06x: % x\n", patchSignatureROMAddr, signature[:]))
 	p.rom.PatchVersion = patchVersionString()
 
-	// overwrite the frame hook with a JSL to the SRAM trampoline:
+	// overwrite the frame hook with a JSL to the trampoline:
 	pcAddr, err = lorom.BusAddressToPak(frameHook)
 	a = asm.NewEmitter(p.rom.Slice(pcAddr, 4), true)
 	a.SetBase(frameHook)
-	a.JSL(preMainAddr)
+	a.JSL(r.preMain.addr)
 	if err := a.Finalize(); err != nil {
 		return err
 	}
@@ -288,32 +283,34 @@ func (p *Patcher) Patch() (err error) {
 	return nil
 }
 
-// emitSRAMCode emits the common code that the patched init code copies to SRAM at sramCodeAddr. captureExtras is the
-// ROM address of the capture routine (see emitCaptureExtras). It returns the SRAM ranges that hold code, without the
-// padding between them.
-func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunction]uint32, captureExtras uint32) (code []romSpan, err error) {
-	// pad emits zero bytes up to addr, which must not be behind the PC:
-	start := a.PC()
-	pad := func(addr uint32) {
-		if a.PC() > addr {
-			panic(fmt.Errorf("SRAM code at $%06x overlaps $%06x", a.PC(), addr))
-		}
-		code = append(code, romSpan{start, a.PC()})
-		start = addr
-		if n := addr - a.PC(); n > 0 {
-			a.EmitBytes(make([]byte, n))
-		}
-	}
-
-	// assume 8-bit mode for accumulator and index registers:
+// emitSRAMStub emits the SRAM stub at sramStubAddr; map16Apply is the ROM address of emitMap16Apply's routine.
+func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
 	a.AssumeSEP(0x30)
-
 	if a.Label("updateStub") != updateStubAddr {
 		panic(fmt.Errorf("updateStubAddr expected to be $%06x but got $%06x", a.PC(), updateStubAddr))
 	}
 	a.RTS()
+	if a.Label("callUpdate") != callUpdateAddr {
+		panic(fmt.Errorf("callUpdateAddr expected to be $%06x but got $%06x", a.PC(), callUpdateAddr))
+	}
+	a.Comment("o2 points this JSR at the update routine it wrote last:")
+	a.JSR_abs(uint16(updateStubAddr & 0xFFFF))
+	a.RTL()
+	if a.Label("map16ApplyStub") != map16ApplyStubAddr {
+		panic(fmt.Errorf("map16ApplyStubAddr expected to be $%06x but got $%06x", a.PC(), map16ApplyStubAddr))
+	}
+	a.JML(map16Apply)
+	if a.PC() != sramStubEnd {
+		panic(fmt.Errorf("sramStubEnd expected to be $%06x but got $%06x", a.PC(), sramStubEnd))
+	}
+}
 
-	pad(preMainAddr)
+// emitPreMain emits the trampoline that the frame hook calls with JSL every frame instead of `JSL Module_MainRouting`
+// (gameModes is its operand). It runs the update routine during safe modules, the module, and then copies Link's OAM
+// entries and the captured sprites for o2 and draws the remote players with the routines at captureExtras and
+// remoteDraw. Called with A and X 8-bit.
+func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw uint32) {
+	a.AssumeSEP(0x30)
 	a.Label("preMain")
 	a.Comment("only update during safe modules:")
 	a.LDA_dp(0x10)
@@ -332,12 +329,7 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	// == $14    : bad
 	a.CMP_imm8_b(0x14)
 	a.BEQ("syncExit")
-
-	jsr := a.Label("syncStart")
-	if preMainJSRAddr != jsr+2 {
-		panic(fmt.Errorf("preMainJSRAddr expected to be $%06x but got $%06x", jsr+2, preMainJSRAddr))
-	}
-	a.JSR_abs(uint16(updateStubAddr & 0xFFFF))
+	a.JSL(callUpdateAddr)
 
 	a.Label("syncExit")
 	emitRemoteSave(a)
@@ -345,46 +337,42 @@ func (p *Patcher) emitSRAMCode(a *asm.Emitter, gameModes []byte, fns map[romFunc
 	// jsl to mainrouting that we patched over:
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 
-	p.emitLinkOAMCopy(a)
+	emitLinkOAMCopy(a)
 	a.Comment("copy sparkles and dust for o2 to send:")
 	a.JSL(captureExtras)
 	a.Comment("draw remote players:")
-	a.JSR_abs(uint16(remoteDrawAddr & 0xFFFF))
+	a.JSL(remoteDraw)
 	a.RTL()
-
-	pad(map16ApplyAddr)
-	if err = emitMap16Apply(a, fns[fnOverworldDrawMap16Persist]); err != nil {
-		return
-	}
-
-	pad(remoteDrawAddr)
-	emitRemoteDraw(a)
-	pad(remoteDrawSpriteAddr)
-	emitRemoteDrawSprite(a)
-	code = append(code, romSpan{start, a.PC()})
-
-	if err = a.Finalize(); err != nil {
-		return
-	}
-	return
 }
 
 // patchROM is the code the patcher writes to free ROM, in blocks that allocateROM places separately:
 type patchROM struct {
 	// the code at $00:802F that the init code runs after its own:
 	code802F []byte
+	// the operand of the `JSL Module_MainRouting` at the frame hook:
+	gameModes []byte
+	// Overworld_DrawMap16_Persist; see emitMap16Apply:
+	fnDrawMap16 uint32
 	// the instruction that loads the bank of Link's graphics; see emitNMIHooks:
 	linkGfxBankIns []byte
+	// the listing of the SRAM stub is written here while the blocks are written:
+	text io.Writer
 
 	// init is the init code called from $00:802F; see emitInit:
 	init romBlock
-	// sram are the parts of the common code that the init code copies to SRAM, at sramSpans:
-	sram      []romBlock
-	sramSpans []romSpan
+	// the SRAM stub that the init code copies to SRAM; see emitSRAMStub:
+	sramStub romBlock
+	// the trampoline called by the frame hook; see emitPreMain:
+	preMain romBlock
+	// called by the generated map16 update routines through the SRAM stub; see emitMap16Apply:
+	map16Apply romBlock
+	// remote players drawing routines, called by preMain; see emitRemoteDrawRoutines:
+	remoteDraw     romBlock
+	remoteDrawAddr uint32
 	// the lists the init code builds the capture tables from; see emitInitCaptureTables:
 	typeList romBlock
 	chrList  romBlock
-	// the capture routine called by the trampoline in SRAM; see emitCaptureExtras:
+	// the capture routine called by preMain; see emitCaptureExtras:
 	captureExtras romBlock
 	// the NMI hooks; see emitNMIHooks:
 	nmiHooks                  romBlock
@@ -394,57 +382,80 @@ type patchROM struct {
 // patchRoutine emits a block's code at its address:
 type patchRoutine struct {
 	block *romBlock
-	emit  func(a *asm.Emitter)
+	emit  func(a *asm.Emitter) error
 }
 
 func (r *patchROM) blocks() (b []*romBlock) {
-	for _, rt := range r.routines(nil) {
+	for _, rt := range r.routines() {
 		b = append(b, rt.block)
 	}
 	return
 }
 
-// routines lists the blocks with the code to emit for each; sram is the assembled common code.
-func (r *patchROM) routines(sram *asm.Emitter) []patchRoutine {
+// routines lists the blocks with the code to emit for each, given the addresses of the other blocks.
+func (r *patchROM) routines() []patchRoutine {
 	types, chrs := captureLists()
-	list := []patchRoutine{
-		{&r.init, r.emitInit},
-		{&r.typeList, func(a *asm.Emitter) {
+	return []patchRoutine{
+		{&r.init, func(a *asm.Emitter) error {
+			r.emitInit(a)
+			return nil
+		}},
+		{&r.sramStub, func(a *asm.Emitter) error {
+			s := asm.NewEmitter(make([]byte, sramStubEnd-sramStubAddr), r.text != nil)
+			s.SetBase(sramStubAddr)
+			emitSRAMStub(s, r.map16Apply.addr)
+			if err := s.Finalize(); err != nil {
+				return err
+			}
+			if r.text != nil {
+				_ = s.WriteTextTo(r.text)
+			}
+			a.Comment(fmt.Sprintf("SRAM stub, copied to $%06x by the init code:", sramStubAddr))
+			a.EmitBytes(s.Bytes())
+			return nil
+		}},
+		{&r.preMain, func(a *asm.Emitter) error {
+			emitPreMain(a, r.gameModes, r.captureExtras.addr, r.remoteDrawAddr)
+			return nil
+		}},
+		{&r.map16Apply, func(a *asm.Emitter) error {
+			return emitMap16Apply(a, r.fnDrawMap16)
+		}},
+		{&r.remoteDraw, func(a *asm.Emitter) error {
+			r.remoteDrawAddr = emitRemoteDrawRoutines(a)
+			return nil
+		}},
+		{&r.typeList, func(a *asm.Emitter) error {
 			a.Comment("ancilla types whose sprites are captured:")
 			a.EmitBytes(types[:])
+			return nil
 		}},
-		{&r.chrList, func(a *asm.Emitter) {
+		{&r.chrList, func(a *asm.Emitter) error {
 			a.Comment("chrs that are captured:")
 			a.EmitBytes(chrs[:])
+			return nil
 		}},
-		{&r.captureExtras, emitCaptureExtras},
-		{&r.nmiHooks, func(a *asm.Emitter) {
+		{&r.captureExtras, func(a *asm.Emitter) error {
+			emitCaptureExtras(a)
+			return nil
+		}},
+		{&r.nmiHooks, func(a *asm.Emitter) error {
 			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.linkGfxBankIns)
+			return nil
 		}},
 	}
-	for i := range r.sram {
-		s := r.sramSpans[i]
-		list = append(list, patchRoutine{&r.sram[i], func(a *asm.Emitter) {
-			a.Comment(fmt.Sprintf("common code for SRAM $%06x..$%06x:", s.start, s.end-1))
-			a.EmitBytes(sram.Bytes()[s.start-sramCodeAddr : s.end-sramCodeAddr])
-		}})
-	}
-	return list
 }
 
 // emitInit emits the init code, called from $00:802F with JSL (or JML in FastROM randomizers) on reset. It copies the
-// common code and the patch signature to SRAM, builds the capture tables and then runs the code it was patched over.
+// SRAM stub and the patch signature to SRAM, builds the capture tables and then runs the code it was patched over.
 func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	a.Label("o2Init")
-	a.Comment("copy the common code to SRAM:")
 	a.PHP()
 	a.PHB()
 	a.REP(0x30)
-	for i, s := range r.sramSpans {
-		src := r.sram[i].addr
-		emitMVNCopy(a, src, s.start, s.size())
-	}
+	a.Comment("copy the SRAM stub to SRAM:")
+	emitMVNCopy(a, r.sramStub.addr, sramStubAddr, sramStubEnd-sramStubAddr)
 	a.Comment("copy the patch signature to SRAM:")
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
 	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
@@ -456,8 +467,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.RTL()
 }
 
-// emitMVNCopy copies size bytes from src to dst with MVN; mvnSetupSize bytes. A, X and Y must be 16-bit. Leaves DB
-// set to dst's bank.
+// emitMVNCopy copies size bytes from src to dst with MVN. A, X and Y must be 16-bit. Leaves DB set to dst's bank.
 func emitMVNCopy(a *asm.Emitter, src, dst, size uint32) {
 	a.LDX_imm16_w(uint16(src))
 	a.LDY_imm16_w(uint16(dst))
@@ -465,45 +475,24 @@ func emitMVNCopy(a *asm.Emitter, src, dst, size uint32) {
 	a.MVN(uint8(dst>>16), uint8(src>>16))
 }
 
-// sramCopySpans merges the SRAM code ranges whose gap is smaller than the code that copies a range, so that the init
-// code copies the padding between them instead.
-func sramCopySpans(code []romSpan) (spans []romSpan) {
-	for _, s := range code {
-		if s.size() == 0 {
-			continue
-		}
-		if n := len(spans); n > 0 && s.start-spans[n-1].end <= mvnSetupSize {
-			spans[n-1].end = s.end
-			continue
-		}
-		spans = append(spans, s)
-	}
-	return
-}
-
 // measure assembles every block with placeholder addresses to find its size.
-func (r *patchROM) measure(p *Patcher, gameModes []byte, fns map[romFunction]uint32) (err error) {
-	sram := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), false)
-	sram.SetBase(sramCodeAddr)
-	var code []romSpan
-	if code, err = p.emitSRAMCode(sram, gameModes, fns, 0); err != nil {
-		return
-	}
-	r.sramSpans = sramCopySpans(code)
-	r.sram = make([]romBlock, len(r.sramSpans))
-	for i, s := range r.sramSpans {
-		r.sram[i].name = fmt.Sprintf("SRAM code $%06x..$%06x", s.start, s.end-1)
-	}
+func (r *patchROM) measure() (err error) {
 	r.init.name = "init"
+	r.sramStub.name = "SRAM stub"
+	r.preMain.name = "preMain"
+	r.map16Apply.name = "map16Apply"
+	r.remoteDraw.name = "remoteDraw"
 	r.typeList.name = "capture type list"
 	r.chrList.name = "capture chr list"
 	r.captureExtras.name = "captureExtras"
 	r.nmiHooks.name = "NMI hooks"
 
-	for _, rt := range r.routines(sram) {
+	for _, rt := range r.routines() {
 		a := asm.NewEmitter(make([]byte, 0x1000), false)
 		a.SetBase(0x008000)
-		rt.emit(a)
+		if err = rt.emit(a); err != nil {
+			return fmt.Errorf("%s: %w", rt.block.name, err)
+		}
 		if err = a.Finalize(); err != nil {
 			return fmt.Errorf("%s: %w", rt.block.name, err)
 		}
@@ -512,29 +501,34 @@ func (r *patchROM) measure(p *Patcher, gameModes []byte, fns map[romFunction]uin
 	return
 }
 
-// write assembles every block at the address allocateROM placed it at and writes it to the ROM.
-func (r *patchROM) write(p *Patcher, gameModes []byte, fns map[romFunction]uint32, text io.Writer) (err error) {
-	sram := asm.NewEmitter(make([]byte, sramCodeEnd-sramCodeAddr), true)
-	sram.SetBase(sramCodeAddr)
-	var code []romSpan
-	if code, err = p.emitSRAMCode(sram, gameModes, fns, r.captureExtras.addr); err != nil {
-		return
-	}
-	if spans := sramCopySpans(code); !slices.Equal(spans, r.sramSpans) {
-		return fmt.Errorf("SRAM code ranges changed from %v to %v", r.sramSpans, spans)
-	}
-	_ = sram.WriteTextTo(text)
+// write assembles every block at the address allocateROM placed it at and writes it to the ROM. The blocks that are
+// called by others are emitted first, so that their entry points are known.
+func (r *patchROM) write(rom *snes.ROM, text io.Writer) (err error) {
+	r.text = text
+	defer func() { r.text = nil }()
 
-	for _, rt := range r.routines(sram) {
+	list := r.routines()
+	slices.SortStableFunc(list, func(x, y patchRoutine) int {
+		first := func(b *romBlock) int {
+			if b == &r.remoteDraw {
+				return 0
+			}
+			return 1
+		}
+		return first(x.block) - first(y.block)
+	})
+	for _, rt := range list {
 		b := rt.block
 		_, _ = fmt.Fprintf(text, "; %s: $%06x..$%06x ($%x bytes)\n", b.name, b.addr, b.addr+b.size-1, b.size)
 		var pak uint32
 		if pak, err = lorom.BusAddressToPak(b.addr); err != nil {
 			return
 		}
-		a := asm.NewEmitter(p.rom.Slice(pak, b.size), true)
+		a := asm.NewEmitter(rom.Slice(pak, b.size), true)
 		a.SetBase(b.addr)
-		rt.emit(a)
+		if err = rt.emit(a); err != nil {
+			return fmt.Errorf("%s: %w", b.name, err)
+		}
 		if err = a.Finalize(); err != nil {
 			return fmt.Errorf("%s: %w", b.name, err)
 		}
@@ -550,7 +544,7 @@ func (r *patchROM) write(p *Patcher, gameModes []byte, fns map[romFunction]uint3
 // them. Reading them from the OAM buffer in WRAM races with the next frame's ClearOAMBuffer, which sets the Y
 // coordinates of all entries to $F0 and made Link disappear for alttpo players. o2 may still read the copy while it
 // is being written, which at worst mixes two consecutive frames' entries.
-func (p *Patcher) emitLinkOAMCopy(a *asm.Emitter) {
+func emitLinkOAMCopy(a *asm.Emitter) {
 	a.Comment("copy Link's OAM entries to SRAM before the next frame clears them:")
 	a.PHP()
 	a.PHB()

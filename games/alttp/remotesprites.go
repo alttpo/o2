@@ -173,19 +173,26 @@ func emitRemoteSave(a *asm.Emitter) {
 	a.STA_long(wramDMAVar7)
 }
 
-// emitRemoteDraw emits the routine that the trampoline calls with JSR after the module ran. It restores dma_var6/7 and
-// draws the remote sprites table into the OAM buffer. Called with A and X 8-bit; preserves P and DB.
-func emitRemoteDraw(a *asm.Emitter) {
+// emitRemoteDrawRoutines emits remoteDrawSprite and then remoteDraw, which calls it with JSR, and returns the address
+// of remoteDraw. They run from any bank.
+func emitRemoteDrawRoutines(a *asm.Emitter) (remoteDraw uint32) {
+	drawSprite := emitRemoteDrawSprite(a)
+	return emitRemoteDraw(a, uint16(drawSprite))
+}
+
+// emitRemoteDraw emits the routine that the trampoline calls with JSL after the module ran. It restores dma_var6/7 and
+// draws the remote sprites table into the OAM buffer, with the routine at drawSprite in the same bank. Called with A
+// and X 8-bit; preserves P and DB.
+func emitRemoteDraw(a *asm.Emitter, drawSprite uint16) (addr uint32) {
 	// the table and state are accessed with absolute addressing while DB = $70:
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
 
-	if a.Label("remoteDraw") != remoteDrawAddr {
-		panic(fmt.Errorf("remoteDrawAddr expected to be $%06x but got $%06x", a.PC(), remoteDrawAddr))
-	}
+	addr = a.Label("remoteDraw")
 	a.PHP()
 	a.PHB()
-	a.PHK()
+	a.PEA(uint16(remoteStateAddr>>16) * 0x0101)
+	a.PLB()
 	a.PLB()
 	a.SEP(0x30)
 
@@ -210,7 +217,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_exit")
 	a.PLB()
 	a.PLP()
-	a.RTS()
+	a.RTL()
 	a.Label("rd_ttl_ok")
 	a.DEC_abs(tb(rtTTL))
 
@@ -245,7 +252,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_exit2")
 	a.PLB()
 	a.PLP()
-	a.RTS()
+	a.RTL()
 	a.Label("rd_module_ok")
 
 	a.Comment("only in the room or area the table was made for:")
@@ -291,7 +298,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.TYA()
 	a.CMP_abs(tb(rtExtrasEnd))
 	a.BCS("rd_shadows_done")
-	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.JSR_abs(drawSprite)
 	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
@@ -310,7 +317,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.CMP_abs(tb(rtBodyEnd))
 	a.BCS("rd_blobs")
 	a.Label("rd_body_loop")
-	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.JSR_abs(drawSprite)
 	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
@@ -339,7 +346,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.TYA()
 	a.CMP_abs(tb(rtEnd))
 	a.BCS("rd_front")
-	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.JSR_abs(drawSprite)
 	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
@@ -353,7 +360,7 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.TYA()
 	a.CMP_abs(tb(rtFrontEnd))
 	a.BCS("rd_done")
-	a.JSR_abs(uint16(remoteDrawSpriteAddr & 0xFFFF))
+	a.JSR_abs(drawSprite)
 	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(rtEntrySize)
@@ -363,8 +370,9 @@ func emitRemoteDraw(a *asm.Emitter) {
 	a.Label("rd_done")
 	a.PLB()
 	a.PLP()
-	a.RTS()
+	a.RTL()
 	a.AssumeSEP(0x30)
+	return
 }
 
 // emitRemoteChrsVisible sets rsFree to 2 when dma_var6/7 were set this frame but no sprite in the OAM buffer shows
@@ -429,16 +437,14 @@ func emitRemoteChrsVisible(a *asm.Emitter, rsFreeAbs uint16) {
 
 // emitRemoteDrawSprite emits the subroutine that draws the sprite of the table entry at offset Y into the first
 // unused OAM entry below offset X, and updates X. Called with A, X and Y 16-bit and DB = $70; preserves Y.
-func emitRemoteDrawSprite(a *asm.Emitter) {
+func emitRemoteDrawSprite(a *asm.Emitter) (addr uint32) {
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
 
-	if a.Label("remoteDrawSprite") != remoteDrawSpriteAddr {
-		panic(fmt.Errorf("remoteDrawSpriteAddr expected to be $%06x but got $%06x", a.PC(), remoteDrawSpriteAddr))
-	}
+	addr = a.Label("remoteDrawSprite")
 	a.AssumeREP(0x30)
 	a.Comment("screen x = world x - scroll x, visible if -16 < x < 256:")
-	a.LDA_abs_y(tb(rtEntries+0))
+	a.LDA_abs_y(tb(rtEntries + 0))
 	a.SEC()
 	a.SBC_abs(st(rsScrollX))
 	a.STA_abs(st(rsTmpSX))
@@ -447,7 +453,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.CMP_imm16_w(0x0110)
 	a.BCS("rds_return")
 	a.Comment("screen y = world y - scroll y, visible if -16 < y < 224:")
-	a.LDA_abs_y(tb(rtEntries+2))
+	a.LDA_abs_y(tb(rtEntries + 2))
 	a.SEC()
 	a.SBC_abs(st(rsScrollY))
 	a.STA_abs(st(rsTmpSY))
@@ -468,7 +474,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.CMP_imm16_w(0x00F0)
 	a.BNE("rds_find")
 
-	a.LDA_abs_y(tb(rtEntries+4))
+	a.LDA_abs_y(tb(rtEntries + 4))
 	a.ORA_abs(st(rsAnim))
 	a.STA_long_x(0x7E0802)
 	a.SEP(0x20)
@@ -486,7 +492,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.SEP(0x20)
 	a.LDA_abs(st(rsTmpSX + 1))
 	a.AND_imm8_b(0x01)
-	a.ORA_abs_y(tb(rtEntries+6))
+	a.ORA_abs_y(tb(rtEntries + 6))
 	a.STA_long_x(0x7E0A20)
 	a.REP(0x20)
 	a.PLX()
@@ -498,6 +504,7 @@ func emitRemoteDrawSprite(a *asm.Emitter) {
 	a.LDX_imm16_w(0x0000)
 	a.RTS()
 	a.AssumeSEP(0x30)
+	return
 }
 
 // emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the remote player's head and body
@@ -1227,7 +1234,7 @@ func emitInitCaptureTables(a *asm.Emitter, typeList, chrList uint32) {
 		a.TAY()
 		a.SEP(0x20)
 		a.LDA_imm8_b(0x01)
-		a.STA_abs_y(uint16(l.table&0xFFFF))
+		a.STA_abs_y(uint16(l.table & 0xFFFF))
 		a.REP(0x20)
 		a.DEX()
 		a.BPL(loop)
@@ -1287,7 +1294,7 @@ func emitCaptureExtras(a *asm.Emitter) {
 	a.CMP_imm8_b(0x40)
 	a.BCS("ce_next_ancilla")
 	a.TAY()
-	a.LDA_abs_y(uint16(captureTypesAddr&0xFFFF))
+	a.LDA_abs_y(uint16(captureTypesAddr & 0xFFFF))
 	a.TSB_abs(mask)
 	a.Label("ce_next_ancilla")
 	a.DEX()

@@ -70,12 +70,12 @@ func (g *Game) updateWRAM(q snes.Queue) (writes []snes.Write, ok bool) {
 
 	// write generated asm routine to SRAM:
 	var targetJSR uint32
-	targetJSR, err = lorom.BusAddressToPak(preMainJSRAddr)
+	targetJSR, err = lorom.BusAddressToPak(updateJSRAddr)
 	code := a.Bytes()
 	writes = []snes.Write{
 		{
 			// may be larger than 255 bytes; the device drivers split it into chunks (e.g. FX Pak Pro VPUTs) and write
-			// them in order. Write all but the first two bytes first: if the trampoline still points at this buffer
+			// them in order. Write all but the first two bytes first: if callUpdate still points at this buffer
 			// (e.g. after o2 restarted), the routine that was there already ran and starts with RTS, so the game
 			// never runs a partially written routine:
 			Address: target + 2,
@@ -123,7 +123,7 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 		return
 	}
 
-	// refer to patcher.go for the initial setup of SRAM trampoline which eventually JSRs here
+	// refer to patcher.go for the SRAM stub (callUpdate) which JSRs here every frame
 	a.SetBase(targetSNES)
 
 	// assume 8-bit mode for accumulator and index registers:

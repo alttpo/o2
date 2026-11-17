@@ -181,9 +181,9 @@ func TestPatcher_ModuleTests(t *testing.T) {
 	}
 
 	_ = rom
-	// write the update routine to buffer A and point the trampoline's JSR at it, like o2 does:
+	// write the update routine to buffer A and point callUpdate's JSR at it, like o2 does:
 	a := asm.NewEmitter(e.SRAM[updateBufAAddr&0x7FFF:], false)
-	e.SRAM[preMainJSRAddr&0x7FFF] = uint8(updateBufAAddr >> 8 & 0xFF)
+	e.SRAM[updateJSRAddr&0x7FFF] = uint8(updateBufAAddr >> 8 & 0xFF)
 	// negative match case keeps $0F at #$00:
 	// positive match case sets  $0F to #$FF:
 	a.DEC_dp(0x0F)

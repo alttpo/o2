@@ -618,7 +618,7 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		a.Label("m16_skip_reveals")
 	}
 	a.LDA_imm16_w(uint16(table))
-	a.JSR_abs(uint16(map16ApplyAddr & 0xFFFF))
+	a.JSL(map16ApplyStubAddr)
 	a.BRA("m16_report")
 	a.Label("m16_wrong_world")
 	a.LDA_imm16_w(map16AsmSkipped)
@@ -628,8 +628,9 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 	return
 }
 
-// emitMap16Apply emits the routine at map16ApplyAddr in SRAM which applies a table of map16 changes. It is called by
-// generated map16 update routines in 16-bit mode (REP #$30) with JSR, with A = address of the table in bank $70:
+// emitMap16Apply emits the routine in ROM which applies a table of map16 changes. It is called by generated map16 update
+// routines in 16-bit mode (REP #$30) with JSL through the SRAM stub at map16ApplyStubAddr, with A = address of the
+// table in map16TableBank:
 //
 //	dw area                ; $8A the changes are for
 //	dw pos, tile ...       ; tilemap offset ($7E2000,X) and map16 tile of each change
@@ -639,10 +640,8 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 // map16AsmSkipped if the player is no longer in the area in the overworld module, submodule 0. fnDraw is
 // Overworld_DrawMap16_Persist.
 func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
-	if a.Label("map16Apply") != map16ApplyAddr {
-		return fmt.Errorf("map16ApplyAddr expected to be $%06x but got $%06x", a.PC(), map16ApplyAddr)
-	}
-	bank := map16ApplyAddr & 0xFF0000
+	a.Label("map16Apply")
+	bank := uint32(map16TableBank)
 
 	a.AssumeREP(0x30)
 	a.Comment("X = table address; in the overworld module, submodule 0, in the table's area:")
@@ -749,9 +748,9 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.LSR()
 	a.LSR()
 	a.PLX()
-	a.RTS()
+	a.RTL()
 	a.Label("m16_skip")
 	a.LDA_imm16_w(map16AsmSkipped)
-	a.RTS()
+	a.RTL()
 	return nil
 }
