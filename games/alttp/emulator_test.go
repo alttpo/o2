@@ -92,7 +92,11 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 
 	// make all JSL destinations contain a single RTL instruction:
 	g.fillRomFunctions()
-	for _, addr := range g.romFunctions {
+	for fn, addr := range g.romFunctions {
+		if fn == fnOverworldHandleOverlays {
+			// not called with JSL; the patch hooks the code there:
+			continue
+		}
 		// 0x6B RTL
 		pakAddr, _ := lorom.BusAddressToPak(addr)
 		system.ROM[pakAddr] = 0x6B

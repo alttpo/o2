@@ -472,3 +472,104 @@ func TestMap16Scenario_OnlyAppliedInTheSameWorld(t *testing.T) {
 	h.frames(skSettleFrames)
 	h.expectTile("g2 is back in the light world", 1, m16Pos, m16Bush, true)
 }
+
+// expectNoChange expects the tile inArea cleared to be untouched.
+func (h *skScenario) expectNoChange(when string, i int, pos uint16) {
+	h.t.Helper()
+	if actual := h.wramU16(i, 0x2000+uint32(pos)); actual != 0 {
+		h.t.Errorf("%s: g%d: expected no change at $%04x; got tile $%04x", when, i+1, pos, actual)
+	}
+}
+
+// runAreaLoad does what the game does when it loads an overworld area: it decompresses the area's tilemap into
+// $7E2000 (here: what inArea left there) and calls Overworld_HandleOverlaysAndBombDoors, which the patch hooks.
+func (h *skScenario) runAreaLoad(i int) {
+	h.t.Helper()
+	gs := h.gs[i]
+	addr := gs.g.romFunctions[fnOverworldHandleOverlays]
+	pak, _ := lorom.BusAddressToPak(addr)
+	if c := gs.g.rom.Contents[pak : pak+4]; c[0] != 0x22 {
+		h.t.Fatalf("no JSL at $%06x: % x", addr, c)
+	}
+	e := gs.e
+	stub := []byte{
+		0x18, 0xFB, // CLC; XCE
+		0xC2, 0x30, // REP #$30
+		0xA9, 0x00, 0x00, // LDA #$0000
+		0x5B,                                                   // TCD
+		0x22, uint8(addr), uint8(addr >> 8), uint8(addr >> 16), // JSL Overworld_HandleOverlaysAndBombDoors
+	}
+	copy(e.WRAM[0x1F00:], stub)
+	e.CPU.Reset()
+	e.SetPC(0x001F00)
+	if !e.RunUntil(0x001F00+uint32(len(stub)), 0x2_000) {
+		h.t.Fatalf("area load did not return; PC=$%06x", e.GetPC())
+	}
+	// the replaced instructions ran:
+	if a, x := e.CPU.RA, e.CPU.RX; a != 0x020F || x != uint16(e.WRAM[0x8A]) {
+		h.t.Errorf("after the hook: A = $%04x, X = $%04x; expected $020F, $%04x", a, x, e.WRAM[0x8A])
+	}
+}
+
+// Changes of players in another area are staged in SRAM and applied to $7E2000 while that area loads, before the
+// game draws it; once the area is loaded, they are only memorized, not drawn again.
+func TestMap16Scenario_AppliedWhileAreaLoads(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16OtherArea)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	h.changeMap16(1, m16Pos, m16Bush)
+	h.changeMap16(1, m16PosFar, m16Bush+1)
+	h.frames(skSettleFrames)
+	h.expectNoChange("other area", 0, m16Pos)
+
+	// g1 loads another area first: nothing is applied there:
+	h.inArea(0, 0x1C)
+	h.runAreaLoad(0)
+	h.expectNoChange("third area", 0, m16Pos)
+
+	// g1 walks into g2's area:
+	h.inArea(0, m16Area)
+	h.gs[0].e.WRAM[skSubModule] = 0x03
+	h.runAreaLoad(0)
+	h.expectTile("while loading", 0, m16Pos, m16Bush, false)
+	h.expectTile("while loading", 0, m16PosFar, m16Bush+1, false)
+
+	h.gs[0].e.WRAM[skSubModule] = 0x00
+	h.frames(skSettleFrames)
+	h.expectTile("loaded", 0, m16Pos, m16Bush, false)
+	h.expectTile("loaded", 0, m16PosFar, m16Bush+1, false)
+	if h.logLen(0) != 2 {
+		t.Errorf("g1: expected both changes memorized; got %d log entries", h.logLen(0))
+	}
+	// and not again:
+	h.frames(skSettleFrames * 4)
+	if h.logLen(0) != 2 || h.logLen(1) != 2 {
+		t.Errorf("expected two log entries for both players; got %d and %d", h.logLen(0), h.logLen(1))
+	}
+}
+
+// Changes are not staged from players on another team, or from players that left the area their log is for.
+func TestMap16Scenario_StagedOnlyFromPlayersThere(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16OtherArea)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+	h.changeMap16(1, m16Pos, m16Bush)
+	h.frames(skSettleFrames)
+	if n := len(h.gs[0].g.map16StagedEntries()); n != 1 {
+		t.Fatalf("expected 1 staged change; got %d", n)
+	}
+
+	// g2 goes into a cave:
+	h.inRoom(1, 0x0104)
+	h.frames(skSettleFrames)
+	if n := len(h.gs[0].g.map16StagedEntries()); n != 0 {
+		t.Errorf("expected no staged changes once g2 left the area; got %d", n)
+	}
+	h.inArea(0, m16Area)
+	h.gs[0].e.WRAM[skSubModule] = 0x03
+	h.runAreaLoad(0)
+	h.expectNoChange("g2 left", 0, m16Pos)
+}

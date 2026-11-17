@@ -23,9 +23,10 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and events, underworld manipulable objects
+state, room state (trap doors, chests, keys, key doors, switches), overworld events, underworld manipulable objects
 and torches (both), and sprites and enemies (alttpo).
-Everything else is sent as broadcastAll.
+Everything else is sent as broadcastAll, including the overworld map16 changes, which players need before they enter
+the area (see [Overworld map16 changes](#overworld-map16-changes)).
 
 Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
 between protocols and the game `script_protocol` was reset, so those versions cannot share a group with the current
@@ -46,7 +47,7 @@ Values match alttpo's `GameState::deserialize`.
 | Type | Name | alttpo sends | o2 sends | o2 handling of received message |
 |---|---|---|---|---|
 | 0x01 | location | yes | yes | used |
-| 0x02 | sfx | yes | no | parsed, ignored |
+| 0x02 | sfx | yes | yes (own packet per sound) | played, local sounds first (see [Sound effects](#sound-effects)) |
 | 0x03/0x04 | sprites / continuation | yes | 0x03: Link's body, sword, shield, shadow, sword sparkles and dash dust | head, body, shadow, sparkles and dust used to draw one remote player |
 | 0x05 | WRAM syncables | yes (crystal switch `$C172`) | yes (`$C172`) | `$C172` used; others stored but unused |
 | 0x06 | SRAM | yes | yes | used |
@@ -66,7 +67,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x14 | overlord data | yes | no | skipped |
 | 0x15 | unique sprite tiles | yes | yes (built from ROM) | skipped |
 | 0x16 | unique sprite tiles NAK | yes | no | re-sends the requested tiles |
-| 0x17 | overworld map16 changes | yes (per sector) | yes (per sector) | used |
+| 0x17 | overworld map16 changes | yes (to all) | yes (to all) | used |
 | 0x18 | underworld manipulable objects | yes (per sector) | yes (per sector) | used |
 | 0x19 | star switch state | yes (per sector) | yes (per sector) | used |
 | 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
@@ -108,9 +109,16 @@ more messages, which corrupted the rest of the packet.
   which includes custom Link sprites), sword and shield, and Link's shadow (chr `$6C` on the ground, `$28`/`$38`
   while recoiling or jumping off a ledge). It also sends up to 16 OAM entries of:
   - sword sparkles (charging and doing a spin attack, poking walls, stabbing) and dash dust;
-  - projectiles: arrows, boomerang, bombs and their explosions, fire and ice rod shots, sword beams, Cane of Somaria
-    blocks and blasts, and their impacts;
+  - projectiles: arrows, boomerang, bombs and their explosions, fire and ice rod shots and the fire rod's flame where
+    it hits, sword beams and the four sparks flying apart diagonally when they hit (chrs `$D5`/`$D6`;
+    `Ancilla04_BeamHit` adds `$82` to the `$53`/`$54` in its table, which o2 used to capture instead), Cane of
+    Somaria blocks and blasts, and their impacts;
+  - the lamp's flame (ancilla `$2F`);
   - carried and thrown objects (pots, bushes, rocks, signs) and their shadows and debris.
+
+  The water ripples (`$D8`..`$DA`, in shallow water and swamp puddles) and tall grass (`$C8`..`$CA`) that the game
+  draws under Link instead of his shadow are in Link's own OAM entries; o2 sends them without tile data like the
+  shadow (it used to drop them, since they are not LinkGraphics tiles).
 
   Only chrs in sprite page 0 that no NMI DMA overwrites are captured (not `$00..$25`, `$30..$35`, which hold Link's,
   his items', the bird's and followers' tiles every frame), so they are sent without tile data and receivers draw
@@ -128,7 +136,13 @@ more messages, which corrupted the rest of the packet.
   only runs while one exists. alttpo draws remote sprites only with palettes the remote player sent, so o2 sends
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
   from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (items in use, held
-  items like the lamp, followers) are not sent. o2 also does not send sfx, ancillae, tilemaps or PvP.
+  items like the lamp, followers) are not sent. o2 also does not send ancillae, tilemaps or PvP.
+- **Enemy deaths are not sent as player sprites by alttpo.** Enemies are synced on their own (alttpo), so every player
+  in the room draws an enemy's death poof (`SpriteDeath_DrawPoof`), explosion (`SpriteModule_Explode`) or poof
+  (`SpriteModule_Poof`) already. alttpo used to also send them along with its player's sprites, since some of their
+  chrs (`$A9`, `$9B`, `$B3`, ...) are also used by the cape, dash dust and lamp flame. It now skips those chrs within
+  about 24 pixels of an enemy in sprite state `$02`, `$04` or `$06` (this frame or the one before). o2 still sends them
+  when they are on screen at the same time as one of the objects it captures.
 - **No sprites in GAME OVER.** From module `$12` submodule `$06` on (alttpo's `is_game_over`), the GAME OVER animation
   and menu draw their own sprites into Link's OAM slots, which alttpo players saw as garbled tiles. o2 sends an empty
   sprite list there instead, so receivers stop drawing the player. Link's death spin (submodules `$00..$05`) is still
@@ -165,6 +179,29 @@ more messages, which corrupted the rest of the packet.
 - **Group reset:** alttpo does not take part in o2's group reset. The initiating o2 player only waits for o2 players to
   acknowledge, and alttpo players keep broadcasting their state, which o2 players accept again once the reset
   finalizes. A mixed group should reset alttpo players by hand at the same time.
+
+## Sound effects
+
+o2 (`games/alttp/sfx.go`) and alttpo (`pre_nmi.as`, `GameState::play_sfx`) play the sound effects of players in the
+same location, panned to where they are relative to the local player.
+
+- **The game** queues sound effects for the APU in `$012E` (SFX2) and `$012F` (SFX3) during the frame; NMI writes them
+  to the APU ports and clears them. Bits 6-7 are the pan (`$40` right, `$80` left).
+- **Message 0x02** (`sfx2 u8`, `sfx3 u8`), broadcastAll. alttpo reads both right before NMI and sends them in its
+  main packet every frame. o2 can't read them at that point, so the frame trampoline appends the values of every
+  frame that queued one to a ring of 8 entries right after the module ran, in the copy o2 reads every frame (no extra
+  read), and o2 sends each in its own packet (alttpo keeps only the last 0x02 of a packet). Neither sends the low
+  life warning beep (SFX2 `$2B`) or menu and map sounds (SFX3 `$0C`, `$10`-`$12`, `$20`, `$24`), nor anything while
+  the player is in a bad module.
+- **Playing.** A remote player's sound is played while that player is in the same location, panned like alttpo's
+  `adjust_sfx_pan` (the sender's pan places it 40 pixels left or right of the sender; it is panned left or right
+  when that is 40 pixels or more from the local player). **Local sounds come first:** a remote sound is only written
+  to `$012E`/`$012F` when the game left that slot empty this frame, and waits otherwise (a new sound from the same
+  player replaces it). alttpo does this right before NMI and drops sounds that waited 16 frames. o2 queues them in a
+  ring of 4 entries in SRAM (`$7062F4`) that the trampoline plays after the module ran, one entry per frame, each
+  slot only if empty; o2 drops sounds that waited 16 frames before they were queued, and the trampoline drops the
+  queue outside the modules o2's update routines run in. Remote sounds are queued after the local ones are captured,
+  so they are not sent back out.
 
 ## Small keys
 
@@ -377,9 +414,12 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   `Overworld_MemorizeMap16Change` (`$0EDD40` US, `$04E780` JP) and `Overworld_DoMapUpdate32x32` (four entries at once),
   always before advancing `$04AC`, and resets `$04AC` on every area load. Its only use in the game is restoring the
   changes after a mirror bonk. Cut grass and dirt patches are never logged, so they are not synced.
-- **Message 0x17**, broadcastSector: `location u24`, `count u8`, `start u8`, `len u8`, then `len` × (`pos u16`,
+- **Message 0x17**, broadcastAll: `location u24`, `count u8`, `start u8`, `len u8`, then `len` × (`pos u16`,
   `tile u16`) for log indices `[start, start+len)`. Entries are sent as soon as they are seen and the whole log (in
-  chunks of 64) every 16 frames so players entering the area catch up. The location is the one the log was read in,
+  chunks of 64) every 32 frames. It used to be sent as broadcastSector every 16 frames, so a player only received an
+  area's changes after entering it (the sector only switches once `$8A` changes, and o2's only once the transition
+  ended); now every player knows every other player's current log before entering the area. Older versions still
+  send it per sector; their changes appear once the area is loaded, as before. The location is the one the log was read in,
   encoded like the location in message 0x01: bit 17 the dark world (`$0FFF & 1`), bit 16 the underworld (0) and bits
   0-15 the area (`$8A`, which is the parent screen in large areas). (Earlier versions sent `area u16` instead; they
   cannot share map16 changes with these.)
@@ -394,12 +434,24 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   Changes are not applied then either. A change of area, leaving the overworld modules (except for the menus in `$0E`) or `$04AC`
   going down resets the log. o2 reads `$04AC` along with the star switch state and a 16-entry window of both arrays
   starting at the first entry it has not read yet.
+- **While the area loads.** Every overworld area load (scroll transitions, coming out of the underworld or a special
+  area before the spotlight opens, warps, the flute, the reload after a mirror bonk) decompresses the area's tilemap
+  into `$7E2000` and calls `Overworld_HandleOverlaysAndBombDoors` (`$02EF29` US, `$02EC8D` JP), which applies the
+  area's overlay and bombed doors. Both hook its first instructions: the remote changes for the area being loaded
+  (`$8A`) are written to `$7E2000` first, so the load draws them (or the scroll transition streams them in) and they
+  appear seamlessly. The changes are those of the remote players on the same team who are in the area their log is
+  for. alttpo does this in a PC interceptor. o2 stages up to 64 of them (area, position, tile) in one of two SRAM
+  tables (`$706302`, `$706484`) and then switches a selector byte (`$706300`) to it, and the patch replaces the
+  hooked `LDA.w #$020F : LDX.b $8A` with a JSL to a routine that applies them and runs those instructions;
+  randomizers already replace them with a JSL to their own routine (`HardcodedRocks`), which o2's routine jumps to
+  instead. The changes are not added to the local log there (scroll transitions reset `$04AC` afterwards); that
+  happens when they are applied as below, which finds the tiles already there and only memorizes them.
 - **Applying.** Each receiver remembers how much of each remote player's log it applied and only applies new entries,
   keeping the last tile for each position. Only a log of exactly the local location (area and world) is applied, and
   only while its sender's current location (message 0x01) is that location too; o2's update routine checks `$8A` and
-  `$0FFF` again when it runs. In submodule 0 of the overworld module, in the same area, an entry whose
-  tile `$7E2000,X` already has is skipped; otherwise it is appended to the local log (while it has room), which passes
-  it on to players who enter the area later and keeps it through a mirror bonk, and drawn with
+  `$0FFF` again when it runs. In submodule 0 of the overworld module, in the same area, an entry is appended to the
+  local log (while it has room), which passes it on to players who enter the area later and keeps it through a mirror
+  bonk. If `$7E2000,X` already has its tile (applied while the area loaded), that is all; otherwise it is drawn with
   `Overworld_DrawMap16_Persist` (`$1BC97C`) if VRAM holds it; other tiles are only written to `$7E2000` and the game
   draws them as it scrolls. Small areas (`$0712` = 0) are entirely in VRAM since the area load and the game never draws
   tiles while scrolling there, so changes are always drawn. Large areas keep a 32x32 map16 ring in VRAM around `$84`:
@@ -413,6 +465,7 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   buffer.
 - **Menus.** A player in the item menu or a text box (`$0E`) keeps its log, keeps sending it and is still taken as
   being in its area, so players entering the area meanwhile catch up.
+- **Underworld.** Manipulable objects (message 0x18) are still applied once the room is loaded.
 - **Teams.** Only players on the same team share changes; game worlds are team specific. (alttpo's old tilemap sync
   shared overworld changes across teams.)
 - **Regions.** Map16 tile numbers differ between US and JP ROMs (the cut grass tile is `$0DC5` in US and `$0DBF` in
@@ -573,8 +626,9 @@ revealed and anything else gets the game's usual random prize.
   left 8x8 tile (`Map16Definitions`, operand at `$1BC041`), looked up in `LinkToss_liftable_tiles`
   (`$54 $52 $50 $FF $51 $53 $55 $56 $57`). Big rocks and rock piles are not included.
 - **Live changes only.** A map16 change entry is live if it was first received while the local player had been in the
-  area for 48 frames or more (senders resend their whole log every 16 frames, so changes made before the local player
-  arrived come in before that); an area (re)load clears all live marks. A remote pot is live if the sender's previous
+  area for 48 frames or more (changes made before the local player arrived were received before, since the log is
+  sent to all players, or come in within 32 frames, when senders resend their whole log); an area (re)load clears all
+  live marks. A remote pot is live if the sender's previous
   message, received in the same room while the local player was there, had it still there. Entering an area or room
   where objects were lifted earlier reveals nothing.
 - **Revealing.** In the update that applies the change, before the tile changes, and only if the local tile is still a
@@ -624,7 +678,7 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   LinkGraphics tiles (`$000..$37F`). Unique tile indices are offsets into LinkGraphics, so the tiles are uploaded
   from the local ROM: the remote pose is shown with the local Link graphics and palette, never the remote player's
   custom sprite, and without sword, shield or items.
-- **Shadows, sparkles, dust, projectiles and carried and thrown objects** of every drawn player with recent
+- **Shadows, ripples and grass under Link, sparkles, dust, projectiles and carried and thrown objects** of every drawn player with recent
   sprites (the chrs o2 captures itself, see above) are drawn from the local static and common sprite sheets with
   the local palettes, up to 14 sprites. Those the body's player draws with a lower OAM index than Link are drawn in
   front of the body, the others behind it.

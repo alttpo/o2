@@ -109,6 +109,16 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 		copy(rom.Slice(pakAddr, uint32(len(code))), code)
 	}
 
+	// the start of Overworld_HandleOverlaysAndBombDoors that the patch hooks, at the US and JP addresses; RTL instead of
+	// the rest of it:
+	for _, addr := range []uint32{0x02EF29, 0x02EC8D} {
+		pakAddr, err = lorom.BusAddressToPak(addr)
+		if err != nil {
+			return
+		}
+		copy(rom.Slice(pakAddr, uint32(len(map16StageHookExpected)+1)), append(append([]byte(nil), map16StageHookExpected...), 0x6B))
+	}
+
 	// module routing:
 	pakAddr, err = lorom.BusAddressToPak(testROMModuleRouting)
 	a = asm.NewEmitter(rom.Slice(pakAddr, 1), true)

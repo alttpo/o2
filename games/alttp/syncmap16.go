@@ -24,10 +24,11 @@ import (
 // restores) and Overworld_DoMapUpdate32x32 appends four entries at once. Entries are written before $04AC is advanced,
 // so entries [0, $04AC/2) are always complete.
 //
-// The log is shared with the players in the same area (alttpo's Map16Changes.as) in message 0x17 in broadcastSector
-// packets: `location u24`, `count u8` (entries in the sender's log), `start u8`, `len u8`, then `len` entries of
-// `pos u16`, `tile u16` for log indices [start, start+len). New entries are sent as soon as they are seen and the
-// whole log is sent every 16 frames so players entering the area catch up.
+// The log is shared with the other players (alttpo's Map16Changes.as) in message 0x17: `location u24`, `count u8`
+// (entries in the sender's log), `start u8`, `len u8`, then `len` entries of `pos u16`, `tile u16` for log indices
+// [start, start+len). New entries are sent as soon as they are seen and the whole log every 32 frames. It is sent to
+// all players (broadcastAll), not just those in the same area, so that a player entering the area already has the
+// changes while the area loads and they appear seamlessly (see map16stage.go).
 //
 // The location is the one the log was read in, encoded like the location in message 0x01: bit 17 the dark world
 // ($0FFF & 1), bit 16 the underworld (0) and bits 0-15 the area ($8A). The log is only read, and changes are only
@@ -36,9 +37,10 @@ import (
 // sender's current location; the update routine checks $8A and $0FFF again when it runs.
 //
 // Each receiver remembers how far into each remote player's log it has applied and only applies newly added entries.
-// Applying an entry skips it if $7E2000,X already holds the tile, otherwise writes it, appends it to the local log
-// (so it survives a mirror bonk and is passed on to players who enter the area later) and draws it with
-// Overworld_DrawMap16_Persist if VRAM holds it; other tiles are drawn by the game as it scrolls:
+// Applying an entry appends it to the local log (so it survives a mirror bonk and is passed on to players who enter
+// the area later). If $7E2000,X already holds the tile (the stage hook applied it while the area loaded), that is all;
+// otherwise it writes it and draws it with Overworld_DrawMap16_Persist if VRAM holds it; other tiles are drawn by the
+// game as it scrolls:
 //
 //   - Small areas ($0712 = 0) are entirely in VRAM since the area load and the game never draws tiles while
 //     scrolling there, so changes are always drawn.
@@ -66,8 +68,11 @@ const (
 	// map16TableEnd terminates the table passed to the map16 apply routine; tilemap offsets are even and < $2000:
 	map16TableEnd = uint16(0xFFFF)
 	// map16LiveAfter is how many reads of the log in an area pass before entries received are taken as live; senders
-	// resend their whole log every 16 frames, so entries made before the local player arrived come in before that:
+	// resend their whole log every 32 frames (older versions every 16), so entries made before the local player arrived
+	// come in before that:
 	map16LiveAfter = 48
+	// map16ResendMask: the whole log is sent on frames where (frame & map16ResendMask) == 0:
+	map16ResendMask = 31
 )
 
 type map16Entry struct {
@@ -298,7 +303,7 @@ func (g *Game) readMap16() {
 	}
 }
 
-// sendMap16 sends the new entries of the local log, and the whole log every 16 frames, to the players in the area.
+// sendMap16 sends the new entries of the local log, and the whole log every 32 frames, to all players.
 func (g *Game) sendMap16() {
 	m := &g.map16
 	// menus and text boxes ($0E) keep the log; keep sending it so players entering the area still catch up:
@@ -307,7 +312,7 @@ func (g *Game) sendMap16() {
 	}
 
 	start := m.sent
-	if g.monotonicFrameTime&15 == 0 {
+	if g.monotonicFrameTime&map16ResendMask == 0 {
 		start = 0
 	} else if start >= m.count {
 		return
@@ -318,7 +323,8 @@ func (g *Game) sendMap16() {
 		if end > m.count {
 			end = m.count
 		}
-		s := g.makeSectorMessage()
+		// to all players, so that players entering the area have the changes while it loads:
+		s := g.makeBroadcastMessage()
 		if err := g.SerializeMap16(s, start, end); err != nil {
 			panic(err)
 		}
@@ -636,7 +642,7 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 //	dw pos, tile ...       ; tilemap offset ($7E2000,X) and map16 tile of each change
 //	dw map16TableEnd
 //
-// It returns A = the number of changes applied (it stops early when the VRAM stripe buffer is getting full), or
+// A change whose tile $7E2000 already holds is only memorized. It returns A = the number of changes applied (it stops early when the VRAM stripe buffer is getting full), or
 // map16AsmSkipped if the player is no longer in the area in the overworld module, submodule 0. fnDraw is
 // Overworld_DrawMap16_Persist.
 func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
@@ -674,19 +680,27 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.Comment("stop when the VRAM stripe buffer is getting full or at the end of the table:")
 	a.LDA_abs(0x1000)
 	a.CMP_imm16_w(0x0080)
-	a.BCS("m16_done")
+	a.BCC("m16_room")
+	a.JMP_abs("m16_done")
+	a.Label("m16_room")
 	a.LDA_long_x(bank + 0)
 	a.CMP_imm16_w(map16TableEnd)
-	a.BEQ("m16_done")
+	a.BNE("m16_entry")
+	a.JMP_abs("m16_done")
+	a.Label("m16_entry")
 	a.PHX()
 	a.LDA_long_x(bank + 2)
 	a.STA_dp(0x0E)
 	a.LDA_long_x(bank + 0)
 	a.TAX()
-	a.Comment("skip if the tilemap already has this tile:")
+	a.Comment("$0C = 1 if the tilemap already has this tile (e.g. applied by the stage hook while the area loaded); it is")
+	a.Comment("memorized but not drawn then:")
+	a.STZ_dp(0x0C)
 	a.LDA_long_x(0x7E2000)
 	a.CMP_dp(0x0E)
-	a.BEQ("m16_next")
+	a.BNE("m16_changed")
+	a.INC_dp(0x0C)
+	a.Label("m16_changed")
 	a.Comment("memorize the change like Overworld_MemorizeMap16Change if the log has room:")
 	a.LDA_abs(map16LogIndex)
 	a.CMP_imm16_w(map16LogMax << 1)
@@ -702,6 +716,8 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.STX_abs(map16LogIndex)
 	a.TAX()
 	a.Label("m16_no_memo")
+	a.LDA_dp(0x0C)
+	a.BNE_far("m16_next")
 	a.Comment("small areas never stream tiles while scrolling; always draw:")
 	a.LDA_dp(0x06)
 	a.BEQ("m16_draw")

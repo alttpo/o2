@@ -98,6 +98,10 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 				{nmiHookPatchAddr, nmiHookPatchAddr + uint32(len(nmiHookPatchExpected))},
 				{0x00FFB0, 0x010000},
 			}, layout...)
+			fns := make(map[romFunction]uint32)
+			fillRomFunctions(rom, fns)
+			stage := fns[fnOverworldHandleOverlays]
+			allowed = append(allowed, romSpan{stage, stage + uint32(len(map16StageHookExpected))})
 			isAllowed := func(addr uint32) bool {
 				for _, s := range allowed {
 					if s.contains(addr) {

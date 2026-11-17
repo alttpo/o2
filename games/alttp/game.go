@@ -123,7 +123,9 @@ type Game struct {
 
 	linkSprites linkSpriteSync
 	// local and queued remote sound effects (see sfx.go):
-	sfx         sfxLocal
+	sfx sfxLocal
+	// remote map16 changes staged for area loads (see map16stage.go):
+	map16Stage  map16Stage
 	swordShield swordShieldGfx
 
 	// remote players drawn by the game; see remotesprites.go:

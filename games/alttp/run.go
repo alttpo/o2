@@ -864,6 +864,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.writeRemoteSprites(now)
 	// queue remote players' sound effects for the game to play:
 	g.writeRemoteSfx(now)
+	// stage remote map16 changes for the game to apply when it loads their areas:
+	g.writeMap16Stage(now)
 
 	// send out any network updates:
 	g.sendPackets()

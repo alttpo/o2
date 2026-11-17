@@ -23,6 +23,8 @@ import (
 //	  $706210..$7062E5  remote sprites table (written by o2) and state (written by the game code)
 //	  $7062F0..$7062F3  the player's colors for Link's palette (written by o2); see linkcolor.go
 //	  $7062F4..$7062FC  remote sound effects for the game to play (written by o2); see sfx.go
+//	$706300..$706605  remote map16 changes staged for area loads (written by o2; both tables are emptied by the
+//	                  init code); see map16stage.go
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
 //	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
@@ -197,6 +199,9 @@ func (p *Patcher) Patch() (err error) {
 		fnDrawMap16:    fns[fnOverworldDrawMap16Persist],
 		linkGfxBankIns: linkGfxBankInstruction(p.rom),
 	}
+	stageAddr := fns[fnOverworldHandleOverlays]
+	stageOK, stageChain := map16StageHookSite(p.rom, stageAddr)
+	r.stageChain = stageChain
 	if err = r.measure(); err != nil {
 		return
 	}
@@ -282,6 +287,30 @@ func (p *Patcher) Patch() (err error) {
 			}
 			a.WriteTextTo(textBuf)
 		}
+	}
+
+	// the hook that applies staged remote map16 changes to every overworld area load; without it, they are applied
+	// once the area finished loading. Randomizers already replace the same instructions with a JSL to their own
+	// routine; that JSL is pointed at the hook instead, which jumps to their routine when done:
+	if !stageOK {
+		pcAddr, _ = lorom.BusAddressToPak(stageAddr)
+		log.Printf("alttp: patch: unexpected code at $%06x: % x; remote map16 changes appear after area loads\n", stageAddr, p.rom.Slice(pcAddr, uint32(len(map16StageHookExpected))))
+	} else {
+		pcAddr, _ = lorom.BusAddressToPak(stageAddr)
+		n := uint32(len(map16StageHookExpected))
+		if stageChain != 0 {
+			n = 4
+		}
+		a = asm.NewEmitter(p.rom.Slice(pcAddr, n), true)
+		a.SetBase(stageAddr)
+		a.JSL(r.map16StageHook.addr)
+		if stageChain == 0 {
+			a.NOP()
+		}
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
 	}
 
 	return nil
@@ -383,6 +412,10 @@ type patchROM struct {
 	// the NMI hooks; see emitNMIHooks:
 	nmiHooks                  romBlock
 	nmiHookLate, nmiHookEarly uint32
+	// the hook in Overworld_HandleOverlaysAndBombDoors that applies staged map16 changes, and the routine it jumps to
+	// when done if a randomizer had hooked the same instructions (0: it runs them itself); see emitMap16StageHook:
+	map16StageHook romBlock
+	stageChain     uint32
 }
 
 // patchRoutine emits a block's code at its address:
@@ -449,6 +482,10 @@ func (r *patchROM) routines() []patchRoutine {
 			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.linkGfxBankIns)
 			return nil
 		}},
+		{&r.map16StageHook, func(a *asm.Emitter) error {
+			emitMap16StageHook(a, r.stageChain)
+			return nil
+		}},
 	}
 }
 
@@ -465,6 +502,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.Comment("copy the patch signature to SRAM:")
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
 	emitInitCaptureTables(a, r.typeList.addr, r.chrList.addr)
+	emitMap16StageInit(a)
 	a.PLB()
 	a.PLP()
 	a.Comment("the code patched over at $00:802F:")
@@ -492,6 +530,7 @@ func (r *patchROM) measure() (err error) {
 	r.chrList.name = "capture chr list"
 	r.captureExtras.name = "captureExtras"
 	r.nmiHooks.name = "NMI hooks"
+	r.map16StageHook.name = "map16 stage hook"
 
 	for _, rt := range r.routines() {
 		a := asm.NewEmitter(make([]byte, 0x1000), false)

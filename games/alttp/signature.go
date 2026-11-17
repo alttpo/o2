@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 5
+	patchFormat = 6
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -90,6 +90,11 @@ func computePatchVersion() (v [4]byte) {
 		linkOAMCopySfx,
 		sfxRemoteAddr,
 		sfxRemoteSize,
+		map16StageSelAddr,
+		map16StageAAddr,
+		map16StageBAddr,
+		map16StageMax,
+		map16StageEntry,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 	})

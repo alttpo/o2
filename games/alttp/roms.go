@@ -52,6 +52,10 @@ const (
 	// Underworld_LightTorch: $0333 = $C0 + torch index, 8-bit A/X/Y; lights the torch if it is not lit, draws it, sets
 	// its timer ($04F0+t) to $C0 and may switch to submodule $0A to brighten a dark room. JSL, RTL:
 	fnUnderworldLightTorch
+	// Overworld_HandleOverlaysAndBombDoors: applies the area's overlay and bombed doors to $7E2000 right after every
+	// area load decompressed the area's tilemap, before anything is drawn from it; 16-bit A/X/Y. The patch hooks its
+	// first instructions (map16StageHookExpected) to apply staged remote map16 changes (see emitMap16StageHook):
+	fnOverworldHandleOverlays
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -99,6 +103,7 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnRevealPotItem] = 0x01E6B2
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 	fns[fnUnderworldLightTorch] = 0x01F3EC
+	fns[fnOverworldHandleOverlays] = 0x02EF29
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -124,4 +129,5 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnRevealPotItem] = 0x01E6B0
 	fns[fnSpawnThrowableTerrainSilently] = 0x068156
 	fns[fnUnderworldLightTorch] = 0x01F3EA
+	fns[fnOverworldHandleOverlays] = 0x02EC8D
 }
