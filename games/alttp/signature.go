@@ -85,6 +85,8 @@ func computePatchVersion() (v [4]byte) {
 		sramZeroEnd,
 		linkOAMExtrasMax,
 		captureMaskAddr,
+		linkColorAddr,
+		linkColorSize,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 	})

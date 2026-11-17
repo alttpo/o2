@@ -389,6 +389,8 @@ func (g *Game) enqueueSRAMRead(q []snes.Read) []snes.Read {
 	q = g.readEnqueue(q, 0xF5F280, 0xC0, nil) // [$F280..$F33F]
 	// the patch signature, to make sure the SNES is still running the ROM we patched:
 	q = g.enqueuePatchSignatureRead(q)
+	// the player colors the patch applies to Link's palette:
+	q = g.enqueueLinkColorRead(q)
 	return q
 }
 
@@ -593,6 +595,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			// $E0-EF:xxxx is SRAM, aka $70-7D:xxxx
 			if _, _, ok := g.isReadSRAM(rsp); ok {
 				g.readSpriteResponse(rsp)
+				g.readLinkColorResponse(rsp)
 			}
 		}
 

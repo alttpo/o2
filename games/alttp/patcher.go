@@ -20,7 +20,8 @@ import (
 //	  $706000           capture tables: ancilla types ($40 bytes) and chrs ($100 bytes); see emitCaptureExtras
 //	  $706140..$7061F8  copy of Link's OAM entries and the local player's captured sparkles, dust, projectiles and
 //	                    carried and thrown objects, written by the trampoline every frame
-//	  $706200..$7062D7  remote sprites table (written by o2) and state (written by the game code)
+//	  $706200..$7062D5  remote sprites table (written by o2) and state (written by the game code)
+//	  $7062F0..$7062F3  the player's colors for Link's palette (written by o2); see linkcolor.go
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
 //	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
@@ -338,6 +339,7 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, captureExtras, remoteDraw uin
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 
 	emitLinkOAMCopy(a)
+	emitLinkColor(a)
 	a.Comment("copy sparkles and dust for o2 to send:")
 	a.JSL(captureExtras)
 	a.Comment("draw remote players:")

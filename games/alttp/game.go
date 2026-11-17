@@ -160,8 +160,11 @@ type Game struct {
 	// readCycle counts read cycles, to read the patch signature periodically:
 	readCycle uint8
 
-	colorPendingUpdate int
-	colorUpdatedTo     uint16
+	// the player colors last read from SRAM (see linkcolor.go), whether they were read since o2 last wrote them, and
+	// how many reads to ignore after writing them:
+	linkColorSRAM      [2]uint16
+	linkColorFresh     bool
+	linkColorSkipReads int
 	last15             uint8
 
 	// serializable ViewModel:
@@ -265,14 +268,12 @@ func (g *Game) ConfigurationModel() interface{} {
 func (g *Game) FirstFrame() {
 	// must reset any state waiting on connected device:
 	g.updateStage = 0
-	g.colorPendingUpdate = 0
+	g.linkColorFresh = false
+	g.linkColorSkipReads = 0
 	g.lastUpdateTarget = 0xFFFFFF
 	g.updateGenerators = make([]games.AsmExecConfirmer, 0, 20)
 	g.notFirstFrame = false
 	g.lastGameFrame = 0xFF
-
-	// an impossible color in 15-bit BGR:
-	g.colorUpdatedTo = 0xffff
 
 	// don't set WRAM timestamps on first read from SNES:
 	g.notFirstWRAMRead = false
