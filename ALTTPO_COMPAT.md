@@ -23,8 +23,8 @@ alone in a group. alttpo stores `player_time` / `server_time` per remote player 
 
 Both clients set `playerInSector` on every message to alttpo's `broadcast_sector()` value (the location, with the dark
 world bit cleared in the underworld), so they agree on sectors. Both send room-specific state as broadcastSector to their own sector: the star switch
-state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and events and underworld manipulable objects (both), and sprites,
-torches and enemies (alttpo).
+state, room state (trap doors, chests, keys, key doors, switches), overworld map16 changes and events, underworld manipulable objects
+and torches (both), and sprites and enemies (alttpo).
 Everything else is sent as broadcastAll.
 
 Older o2 and alttpo versions used protocol 02 (alttpo) or a mix of 02 and 03 (o2). The server does not translate
@@ -53,7 +53,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x07 | tilemaps | no | no | retired; replaced by 0x17 and 0x18 |
 | 0x08 | objects | no | no | reserved; not parsed by either |
 | 0x09 | ancillae | yes | no | parsed, ignored |
-| 0x0A | torches | yes | no | parsed, ignored |
+| 0x0A | torches | yes (per sector) | yes (per sector) | used |
 | 0x0B | PvP | yes (PvP mode) | no | skipped (o2 used to panic) |
 | 0x0C | player name | yes | yes | used |
 | 0x0D | SM events | SMZ3 | no | skipped |
@@ -122,7 +122,7 @@ more messages, which corrupted the rest of the packet.
   only runs while one exists. alttpo draws remote sprites only with palettes the remote player sent, so o2 sends
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
   from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (items in use, held
-  items like the lamp, followers) are not sent. o2 also does not send sfx, ancillae, tilemaps, torches or PvP.
+  items like the lamp, followers) are not sent. o2 also does not send sfx, ancillae, tilemaps or PvP.
 - **o2 players see much less of other players than alttpo players do.** See "Drawing remote players" below.
 - **Sword and shield tiles are rebuilt from ROM.** The game decompresses sprite sheets `$5E`/`$5F` and converts the
   current sword/shield to 4bpp in WRAM `$7E9000..$947F` (`DecompressSwordGraphics`, `DecompressShieldGraphics`); o2
@@ -344,7 +344,7 @@ still be taken by the other.
   lever sprite is not drawn pulled for other players. Enemies are not synced by o2, so a kill room opened by another
   player stays open even if its enemies are alive here, and keys dropped by enemies get their index in the order they
   spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
-  also trigger on lit torches.
+  also trigger on lit torches, which are synced on their own (see [Torches](#torches)).
 - **o2 only:** o2 used to send `$0400` in message 0x05 and unlock doors from it; that is replaced by message 0x1B. Door
   bits received through the SRAM room flags of the current room (another player left it) unlock key doors the same
   way.
@@ -460,7 +460,7 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   dungeon's push block table at `$7EF940`: `room u16`, `pos u16` per block, `$18C` bytes, loaded from ROM at the
   dungeon entrance and overlapping the overworld log arrays), `$0540` the tilemap position (`$2000` set for the upper
   layer) and `$0560`/`$0580`/`$05A0`/`$05C0` the tiles drawn when the object goes away. Slots `[0, $0478/2)` are
-  manipulables; the room's torches follow (synced by alttpo's torch messages).
+  manipulables; the room's torches follow (see [Torches](#torches)).
 - **What changes.** Each manipulable except bombable floors gets the tile attribute `$70+slot` in `$7F2000`. Lifting a
   pot, pounding a peg or lifting a big rock (all four quarters) calls `RoomDraw_16x16Single` (`$01D828` US, `$01D826`
   JP), which draws the replacement tiles and their attributes and leaves `$0500` alone; a pot may first replace its
@@ -496,6 +496,42 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
 - **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".
+
+## Torches
+
+o2 (`games/alttp/synctorches.go`) and alttpo (`torches.as`) share the lit torches of the current room and their
+timers, so a torch another player lights is lit here too and goes out at the same time.
+
+- **The torches.** The room loader registers the room's lightable torches (`RoomDraw_LightableTorch`) in the
+  manipulable object slots after the manipulables: torch t is slot `$0478/2 + t`, with its tilemap position in `$0540`
+  (bit 15 set while lit). `Underworld_LightTorch` (`$0333` = `$C0 + t`; `$01F3EC` US, `$01F3EA` JP) sets bit 15, draws
+  the lit torch and sets its timer `$04F0+t` to `$C0`; `Underworld_ProcessTorchesAndDoors` decrements the timers every
+  4 frames and extinguishes a torch when its timer reaches 0, about 13 seconds later. Torches the room loader lights
+  have a timer of 0 and stay lit.
+- **Doors and chests follow.** `RoomTag_TorchPuzzleDoor` (`$33`) counts the lit torches every frame and opens the trap
+  doors while at least 4 are lit, closing them again as soon as fewer are (e.g. Turtle Rock room `$C7`, where 4 torches
+  open the north trap door); `RoomTag_TorchPuzzleChest` (`$3E`) reveals a chest and the moving wall tags (`$1E`/`$1F`)
+  move a wall the same way. With the torches and their timers shared, every player in the room gets the same result,
+  including the doors closing again when the first torch goes out. The room state sync skips `$33` rooms' trap doors
+  for this reason (see above).
+- **Message 0x0A**, broadcastSector: `count u8`, then per torch `t u8`, `timer u8` for the torches the sender owns.
+  alttpo sends it every other frame, o2 every frame in the dungeon module (first in the room state packet). A receiver
+  drops a player's torches whenever that player's location changes.
+- **Owners.** A player owns a torch it lit. alttpo intercepts `Underworld_LightTorch` and `Underworld_ExtinguishTorch`;
+  o2 cannot, so it reads `$0540` and `$04F0..$04FF` in submodule 0 and takes a torch that turns lit without o2
+  lighting it as lit by the local player. A torch stops being owned when it goes out, and both disown their torches
+  when their location changes. A torch lit from a remote player belongs to that player; when that player leaves the
+  room while it still burns here, it becomes ours and is sent to the others, and when that player stops sending it
+  (it went out there) it burns out by itself here.
+- **Applying.** In submodule 0 of the dungeon module, not in Ganon's room (`$A0` = 0), from remote players in the same
+  room (o2: and team): a remote torch that is unlit here is lit like the game does (`$0333` = `$C0 + t`, `JSL
+  Underworld_LightTorch`, which may switch to submodule `$0A` to brighten a dark room), one per frame since they all
+  draw through the tilemap buffer at `$1100`, and its timer set to the owner's. A torch is only lit while the owner's
+  timer is at least 8: one that just went out here may still be lit for its owner with a timer of 1 or 2, and lighting
+  it again would only put it out a second time a few frames later. Timers of 0 and timers of torches that stay unlit
+  are not written; the game would extinguish an unlit torch whose timer runs out, lowering a dark room's light level
+  once more. alttpo writes the owner's timer every frame; o2 only when it differs by more than 2.
+- **Settings.** o2 uses "Sync underworld"; alttpo always syncs torches.
 
 ## Secrets under lifted objects
 
