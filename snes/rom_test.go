@@ -141,3 +141,18 @@ func TestROM_BusWriter_Bank01_Success(t *testing.T) {
 		t.Fatal("expected NMI vector at $FFEA")
 	}
 }
+
+func TestROM_PatchedFilename(t *testing.T) {
+	tests := []struct {
+		name, version, expected string
+	}{
+		{"zelda3.sfc", "1a2b3c4d", "o2-zelda3-1a2b3c4d.sfc"},
+		{"/roms/Zelda no Densetsu.smc", "00ff00ff", "o2-Zelda no Densetsu-00ff00ff.smc"},
+		{"zelda3.sfc", "", "o2-zelda3.sfc"},
+	}
+	for _, tt := range tests {
+		if got := (&ROM{Name: tt.name, PatchVersion: tt.version}).PatchedFilename(); got != tt.expected {
+			t.Errorf("PatchedFilename(%q, %q) = %q; expected %q", tt.name, tt.version, got, tt.expected)
+		}
+	}
+}

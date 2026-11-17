@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path/filepath"
 	"reflect"
+	"strings"
 )
 
 type ROM struct {
@@ -304,4 +306,17 @@ func (r *ROM) BusWriter(busAddr uint32) io.Writer {
 
 func (r *ROM) Slice(offs uint32, len uint32) []byte {
 	return r.Contents[offs : offs+len]
+}
+
+// PatchedFilename names the patched ROM after the original ROM and the o2 patch version, so that users can tell which
+// patch version a ROM file has, e.g. "o2-zelda3-1a2b3c4d.sfc". It is the name of the patched ROM download and the
+// default filename the Boot command stores the ROM as.
+func (r *ROM) PatchedFilename() string {
+	_, name := filepath.Split(r.Name)
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	if r.PatchVersion != "" {
+		stem += "-" + r.PatchVersion
+	}
+	return "o2-" + stem + ext
 }

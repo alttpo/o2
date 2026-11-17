@@ -16,7 +16,6 @@ import (
 	"o2/util"
 	"o2/webui/dist"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -98,7 +97,7 @@ func NewWebServer(listenAddr string) *WebServer {
 			return
 		}
 
-		romName := patchedROMFilename(rom)
+		romName := rom.PatchedFilename()
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", romName))
 		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
 		http.ServeContent(w, r, romName, time.Now(), bytes.NewReader(rom.Contents))
@@ -372,16 +371,4 @@ func (k *Socket) writeHandler() {
 			continue
 		}
 	}
-}
-
-// patchedROMFilename names the patched ROM download after the original ROM and the o2 patch version, so that users
-// can tell which patch version a ROM file has, e.g. "o2-zelda3-1a2b3c4d.sfc":
-func patchedROMFilename(rom *snes.ROM) string {
-	_, name := filepath.Split(rom.Name)
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	if rom.PatchVersion != "" {
-		stem += "-" + rom.PatchVersion
-	}
-	return "o2-" + stem + ext
 }

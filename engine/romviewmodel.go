@@ -22,6 +22,9 @@ type ROMViewModel struct {
 	Title    string `json:"title"`
 	Region   string `json:"region"`
 	Version  string `json:"version"`
+	// PatchedFilename is the name of the patched ROM download, including the o2 patch version; the Boot command
+	// stores the ROM under this name unless Filename is set:
+	PatchedFilename string `json:"patchedFilename"`
 
 	// inputs:
 	Folder   string `json:"folder"`   // folder to store in on device
@@ -119,7 +122,9 @@ func (v *ROMViewModel) Update() {
 		v.Title = string(rom.Header.Title[:])
 		v.Region = snes.RegionNames[rom.Header.DestinationCode]
 		v.Version = fmt.Sprintf("1.%d", rom.Header.MaskROMVersion)
+		v.PatchedFilename = rom.PatchedFilename()
 	} else {
+		v.PatchedFilename = ""
 		v.Title = ""
 		v.Region = ""
 		v.Version = ""
@@ -264,7 +269,7 @@ func (ce *ROMBootCommand) Execute(_ interfaces.CommandArgs) (err error) {
 	}
 	filename := ce.v.Filename
 	if filename == "" {
-		filename = ce.v.Name
+		filename = rom.PatchedFilename()
 	}
 	path, cmds := rc.MakeUploadROMCommands(folder, filename, rom.Contents)
 	err = cmds.EnqueueTo(queue)
