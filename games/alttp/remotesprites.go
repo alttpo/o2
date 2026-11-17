@@ -54,7 +54,7 @@ import (
 
 // SRAM layout of the remote sprites table, written by o2:
 const (
-	remoteTableAddr = uint32(0x706200)
+	remoteTableAddr = uint32(0x706210)
 
 	// frames left to draw the table, counted down every frame:
 	rtTTL = 0

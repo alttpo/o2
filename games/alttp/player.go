@@ -148,6 +148,8 @@ type Player struct {
 
 	// sprites last received in message 0x03/0x04:
 	Sprites remoteSprites
+	// sound effects last received in message 0x02 and not yet played (see sfx.go):
+	Sfx sfxRemote
 
 	SmallKeys smallKeysRemote
 	Hearts    heartsRemote

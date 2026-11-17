@@ -795,6 +795,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 		// sample Link's sprites to send to alttpo clients:
 		g.readLinkSprites()
+		// send the sound effects the game played:
+		g.readLocalSfx()
 
 		// update underworld supertile state sync bit masks based on sync toggles from front-end:
 		g.setUnderworldSyncMasks()
@@ -860,6 +862,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 
 	// update the remote players the game draws:
 	g.writeRemoteSprites(now)
+	// queue remote players' sound effects for the game to play:
+	g.writeRemoteSfx(now)
 
 	// send out any network updates:
 	g.sendPackets()

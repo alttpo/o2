@@ -299,12 +299,6 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func (g *Game) DeserializeSfx(p *Player, r io.Reader) (err error) {
-	var dummy [2]byte
-	_, err = r.Read(dummy[:])
-	return
-}
-
 func (g *Game) DeserializeSprites1(p *Player, r io.Reader) (err error) {
 	return g.deserializeRemoteSprites(p, r, 0)
 }

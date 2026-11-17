@@ -122,6 +122,8 @@ type Game struct {
 	shouldUpdatePlayersList bool
 
 	linkSprites linkSpriteSync
+	// local and queued remote sound effects (see sfx.go):
+	sfx         sfxLocal
 	swordShield swordShieldGfx
 
 	// remote players drawn by the game; see remotesprites.go:

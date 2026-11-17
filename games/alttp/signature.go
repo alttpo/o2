@@ -87,6 +87,9 @@ func computePatchVersion() (v [4]byte) {
 		captureMaskAddr,
 		linkColorAddr,
 		linkColorSize,
+		linkOAMCopySfx,
+		sfxRemoteAddr,
+		sfxRemoteSize,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
 	})
