@@ -361,7 +361,10 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   `start u8`, `len u8`, then `len` × (`pos u16`, `tile u16`) for log indices `[start, start+len)`. Entries are sent as
   soon as they are seen and the whole log (in chunks of 64) every 16 frames so players entering the area catch up.
 - **Sampling.** Only in overworld modules `$09`/`$0B` during submodule 0, since `$8A` and `$04AC` change at different
-  times during an area load. A change of area, leaving the overworld modules (except for the menus in `$0E`) or `$04AC`
+  times during an area load. Not while Link lands from a mirror or portal warp (`$5D` = `$14`): the warp switches the area and
+  returns to submodule 0 but keeps the previous area's log until `LinkState_CrossingWorlds` resets it once Link lands
+  (it keeps it for a mirror bonk), so the light world's Turtle Rock pegs were sent as changes of the dark world area.
+  Changes are not applied then either. A change of area, leaving the overworld modules (except for the menus in `$0E`) or `$04AC`
   going down resets the log. o2 reads `$04AC` along with the star switch state and a 16-entry window of both arrays
   starting at the first entry it has not read yet.
 - **Applying.** Each receiver remembers how much of each remote player's log it applied and only applies new entries,
