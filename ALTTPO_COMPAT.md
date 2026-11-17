@@ -529,8 +529,10 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   well under its usual load. Otherwise, outside submodule 0 (except in dialogs) or while core updates are disabled
   outside dialogs, the player is
   drawn as a blob instead.
-- **Players with no visible sprites** (an empty sprite list: Link is invisible, e.g. flickering after a warp) are not
-  drawn at all, not even as a blob, so the flicker doesn't alternate between Link and a blob.
+- **Players without Link's head or body** in their sprites (Link is invisible, e.g. flickering after a warp; alttpo
+  still sends Link's shadow then, o2 sends nothing) are not drawn at all, not even as a blob or a shadow, so the
+  flicker doesn't alternate between Link and a blob. The "drawing N players" log line is only written once the counts
+  hold for half a second.
 - **Everyone else** (up to 8 players) is a single 16x16 blob (chr `$64`/`$66`, alternating every 8 frames, palette 4
   like the blob magic powder turns enemies into) at their Link
   coordinates.
