@@ -379,6 +379,8 @@ func (g *Game) initSync() {
 			a.BNE_imm8(0x06)
 			a.LDA_imm8_b(0x00)   // 2 bytes
 			a.STA_long(0x7EF3CC) // 4 bytes
+
+			g.takeUncleGear(a)
 		}
 
 		return
@@ -787,6 +789,41 @@ func (g *Game) removeCollectedHeartSprites(s *syncableOverworld, a *asm.Emitter,
 	a.BRA(lbl + "_next")
 	a.Label(lbl + "_kill")
 	a.STZ_abs_x(0x0DD0)
+	a.Label(lbl + "_next")
+	a.DEX()
+	a.BPL(lbl + "_loop")
+	a.Label(lbl + "_done")
+}
+
+// takeUncleGear makes Link's uncle in the secret passage give up his sword and shield once another player received
+// them, if the local player is in the passage with him and has not talked to him yet. Uncle_GrantEquipment sets bit 0
+// of $7EF3C6, which SpritePrep_UncleAndPriest only checks when the room loads, so the local player could otherwise get
+// the gear (or, in randomizers, the uncle's item) a second time. Uncle in the passage is sprite $73 with $0E90 = 0 and
+// $0E80 = 1, lying in defeat in AI state 0 ($0D80); AI state 2 is what he does after granting the equipment, drawn
+// without the sword and shield ($0DC0 = 1).
+func (g *Game) takeUncleGear(a *asm.Emitter) {
+	const lbl = "uncle_gear"
+	a.Comment("take the sword and shield away from uncle in the secret passage:")
+	a.LDA_dp(0x1B)
+	a.BEQ(lbl + "_done")
+	a.LDX_imm8_b(0x0F)
+	a.Label(lbl + "_loop")
+	a.LDA_abs_x(0x0DD0)
+	a.BEQ(lbl + "_next")
+	a.LDA_abs_x(0x0E20)
+	a.CMP_imm8_b(0x73)
+	a.BNE(lbl + "_next")
+	a.LDA_abs_x(0x0E90)
+	a.BNE(lbl + "_next")
+	a.LDA_abs_x(0x0E80)
+	a.CMP_imm8_b(0x01)
+	a.BNE(lbl + "_next")
+	a.LDA_abs_x(0x0D80)
+	a.BNE(lbl + "_next")
+	a.LDA_imm8_b(0x02)
+	a.STA_abs_x(0x0D80)
+	a.LDA_imm8_b(0x01)
+	a.STA_abs_x(0x0DC0)
 	a.Label(lbl + "_next")
 	a.DEX()
 	a.BPL(lbl + "_loop")
