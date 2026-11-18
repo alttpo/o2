@@ -273,6 +273,7 @@ func (p *Patcher) Patch() (err error) {
 	}{
 		{nmiHookPatchAddr, nmiHookPatchExpected, r.nmiHookLate},
 		{nmiEarlyPatchAddr, nmiEarlyPatchExpected, r.nmiHookEarly},
+		{nmiFollowerPatchAddr, nmiFollowerPatchExpected, r.nmiHookFollower},
 	}
 	hooksOK := true
 	for _, h := range hooks {
@@ -450,8 +451,8 @@ type patchROM struct {
 	remoteFrameTables romBlock
 	remoteTables      remoteFrameTables
 	// the NMI hooks; see emitNMIHooks:
-	nmiHooks                  romBlock
-	nmiHookLate, nmiHookEarly uint32
+	nmiHooks                                   romBlock
+	nmiHookLate, nmiHookEarly, nmiHookFollower uint32
 	// called by the NMI hooks; see emitNMIUpload:
 	nmiUpload romBlock
 	// the hook in Overworld_HandleOverlaysAndBombDoors that applies staged map16 changes, and the routine it jumps to
@@ -524,7 +525,7 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.nmiHooks, func(a *asm.Emitter) error {
-			r.nmiHookLate, r.nmiHookEarly = emitNMIHooks(a, r.nmiUpload.addr)
+			r.nmiHookLate, r.nmiHookEarly, r.nmiHookFollower = emitNMIHooks(a, r.nmiUpload.addr)
 			return nil
 		}},
 		{&r.nmiUpload, func(a *asm.Emitter) error {

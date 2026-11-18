@@ -159,7 +159,7 @@ const (
 	rsPartSlot = rsTmpEnd + 2
 	// the byte length of the list of rows for the NMI hooks to upload (u16):
 	rsNMILen = rsPartSlot + remotePartMax
-	// 0 while the late NMI hook uploads, 1 while the early one does (u16):
+	// unused (u16):
 	rsNMIMode = rsNMILen + 2
 	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
 	// DMA source address:
@@ -168,8 +168,18 @@ const (
 	// still in VRAM while the game doesn't upload its own (core updates disabled) are not uploaded again:
 	rsCacheLen = rsNMIList + remoteUploadMax*nmiRowSize
 	rsCache    = rsCacheLen + 2
+	// the follower slots ($20, $22, $24: bits 0, 1, 2) the parts got this frame, written by remoteFrame; no sprite of
+	// the game shows them, so the follower hook skips the game's upload of its own tiles there and the rows of the
+	// parts already in them are not uploaded again (u16):
+	rsSkipSlots = rsCache + remoteUploadMax*nmiRowSize
+	// the slots whose rows in rsCache are still in VRAM, as rsNMIBits: the follower hook clears the bits of the slots
+	// the game uploads its own tiles into (all but the kept follower slots), the upload sets them all (u16):
+	rsKept = rsSkipSlots + 2
+	// per row of rsNMIList, at the same offset: the bit of the slot it is in, $01, $02 or $04 for the follower slots
+	// ($20, $22, $24), else $08 (u16):
+	rsNMIBits = rsKept + 2
 
-	remoteStateSize = rsCache + remoteUploadMax*nmiRowSize
+	remoteStateSize = rsNMIBits + remoteUploadMax*nmiRowSize
 
 	remoteUploadMax = remotePartMax * 2
 	nmiRowSize      = 4
@@ -216,6 +226,24 @@ var nmiHookPatchExpected = []byte{0xAE, 0xDC, 0x0A, 0x8E, 0x02, 0x43}
 
 // nmiEarlyPatchExpected is the original code at nmiEarlyPatchAddr: LDA.b #$80; STA.w VMAIN
 var nmiEarlyPatchExpected = []byte{0xA9, 0x80, 0x8D, 0x15, 0x21}
+
+// nmiFollowerPatchAddr is where NMI_DoUpdates starts the upload of the follower's and the item get tiles into the
+// slots $20, $22 and $24 (channels 0, 1 and 2; the bottom rows are started at $008B22 with the same A); patched with a
+// JSL to the follower hook, which leaves out the channels of the slots the parts got (see rsSkipSlots):
+const nmiFollowerPatchAddr = uint32(0x008AFC)
+
+// nmiFollowerPatchExpected is the original code at nmiFollowerPatchAddr: LDA.b #$07; STA.w MDMAEN
+var nmiFollowerPatchExpected = []byte{0xA9, 0x07, 0x8D, 0x0B, 0x42}
+
+// followerSlotBits returns, for each chr $00..$3F, the bit of the follower slot ($20: 1, $22: 2, $24: 4) it is in.
+func followerSlotBits() (t [0x40]byte) {
+	for i, base := range []int{0x20, 0x22, 0x24} {
+		for _, o := range []int{0x00, 0x01, 0x10, 0x11} {
+			t[base+o] = 1 << i
+		}
+	}
+	return
+}
 
 // remoteTTLFrames is the TTL o2 writes to the table, in frames:
 const remoteTTLFrames = 60
@@ -264,7 +292,7 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 //     itself.
 //
 // upload is the routine they call with JSL (see emitNMIUpload).
-func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early uint32) {
+func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower uint32) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)
 	a.AssumeREP(0x10)
@@ -272,8 +300,6 @@ func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early uint32) {
 	late = a.Label("nmiHook")
 	a.LDA_long(st(rsNMILen))
 	a.BEQ("nmi_late_done")
-	a.LDA_imm8_b(0x00)
-	a.STA_long(st(rsNMIMode))
 	a.JSL(upload)
 	a.Label("nmi_late_done")
 	a.Comment("the code patched over:")
@@ -287,27 +313,36 @@ func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early uint32) {
 	a.STA_abs(0x2115)
 	a.LDA_long(0x7E0710)
 	a.BNE("nmi_early_disabled")
-	a.Comment("core updates are enabled: the game uploads its own tiles over every slot, and the late hook uploads:")
-	a.LDA_imm8_b(0x00)
-	a.STA_long(st(rsCacheLen))
+	a.Comment("core updates are enabled: the follower hook and the late hook upload")
 	a.RTL()
 	a.Label("nmi_early_disabled")
 	a.LDA_long(st(rsNMILen))
 	a.BEQ("nmi_early_done")
 	a.LDX_imm16_w(0x1801)
 	a.STX_abs(0x4300)
-	a.LDA_imm8_b(0x01)
-	a.STA_long(st(rsNMIMode))
 	a.JSL(upload)
 	a.Label("nmi_early_done")
+	a.RTL()
+
+	follower = a.Label("nmiHookFollower")
+	a.Comment("the game uploads Link's and his items' tiles over every other slot, and the follower and item get tiles")
+	a.Comment("over the follower slots the parts didn't get: the rows cached in those are no longer in VRAM:")
+	a.LDA_long(st(rsSkipSlots))
+	a.AND_long(st(rsKept))
+	a.STA_long(st(rsKept))
+	a.Comment("upload into the other slots; A = the channels for the bottom rows at $008B22:")
+	a.LDA_long(st(rsSkipSlots))
+	a.EOR_imm8_b(0x07)
+	a.AND_imm8_b(0x07)
+	a.STA_abs(0x420B)
 	a.RTL()
 	a.AssumeSEP(0x30)
 	return
 }
 
 // emitNMIUpload emits the routine that the NMI hooks call with JSL to upload the rows of chrs in rsNMIList, with DMA
-// channel 0 set up for VRAM writes. Called with A 8-bit and X 16-bit; clobbers A and X. While rsNMIMode is 1 it skips
-// rows still in VRAM from the last upload. linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the
+// channel 0 set up for VRAM writes. Called with A 8-bit and X 16-bit; clobbers A and X. It skips the rows still in
+// VRAM from the last upload (rsCache, rsKept). linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the
 // bank of Link's graphics.
 func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
@@ -315,7 +350,7 @@ func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.AssumeREP(0x10)
 	a.Label("nmiUpload")
 	a.PHY()
-	a.Comment("the bank of Link's graphics, the same way NMI_DoUpdates gets it, at $03,S during the loops:")
+	a.Comment("the bank of Link's graphics, the same way NMI_DoUpdates gets it, at $03,S during the loop:")
 	a.EmitBytes(linkGfxBankIns)
 	a.PHA()
 	a.REP(0x20)
@@ -326,70 +361,60 @@ func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.Comment("the byte length of the list at $01,S; X = offset into the list:")
 	a.PHA()
 	a.LDX_imm16_w(0x0000)
-	a.LDA_long(st(rsNMIMode))
-	a.AND_imm16_w(0x00FF)
-	a.BEQ("nmi_up_late")
-	a.JMP_abs("nmi_up_early")
 
-	row := func(prefix string) {
-		a.LDA_long_x(st(rsNMIList + 0))
-		a.AND_imm16_w(0x7FFF)
-		a.STA_abs(0x2116)
-		a.LDA_long_x(st(rsNMIList + 2))
-		a.STA_abs(0x4302)
-		a.LDA_imm16_w(0x0040)
-		a.STA_abs(0x4305)
-		a.SEP(0x20)
-		a.LDA_long_x(st(rsNMIList + 1))
-		a.BMI(prefix + "_wram")
-		raw(a, "lda $03,s: the bank of Link's graphics", 0xA3, 0x03)
-		a.BRA(prefix + "_bank")
-		a.Label(prefix + "_wram")
-		a.LDA_imm8_b(0x7E)
-		a.Label(prefix + "_bank")
-		a.STA_abs(0x4304)
-		a.LDA_imm8_b(0x01)
-		a.STA_abs(0x420B)
-		a.REP(0x20)
-		a.Comment("remember the row as uploaded:")
-		a.LDA_long_x(st(rsNMIList + 0))
-		a.STA_long_x(st(rsCache + 0))
-		a.LDA_long_x(st(rsNMIList + 2))
-		a.STA_long_x(st(rsCache + 2))
-	}
-	next := func(loop string) {
-		a.INX()
-		a.INX()
-		a.INX()
-		a.INX()
-		a.TXA()
-		raw(a, "cmp $01,s: the byte length of the list", 0xC3, 0x01)
-		a.BCC(loop)
-	}
-
-	a.Comment("the late hook uploads every row:")
-	a.Label("nmi_up_late")
-	row("nmi_up_late")
-	next("nmi_up_late")
-	a.JMP_abs("nmi_up_end")
-
-	a.Comment("the early hook skips rows still in VRAM from the last upload:")
-	a.Label("nmi_up_early")
+	a.Label("nmi_up_loop")
+	a.Comment("rows still in VRAM from the last upload are skipped:")
 	a.TXA()
 	a.CMP_long(st(rsCacheLen))
-	a.BCS("nmi_up_early_row")
+	a.BCS("nmi_up_row")
+	a.LDA_long_x(st(rsNMIBits))
+	a.AND_long(st(rsKept))
+	a.BEQ("nmi_up_row")
 	for o := uint32(0); o < nmiRowSize; o += 2 {
 		a.LDA_long_x(st(rsNMIList + o))
 		a.CMP_long_x(st(rsCache + o))
-		a.BNE("nmi_up_early_row")
+		a.BNE("nmi_up_row")
 	}
-	a.BRA("nmi_up_early_next")
-	a.Label("nmi_up_early_row")
-	row("nmi_up_early")
-	a.Label("nmi_up_early_next")
-	next("nmi_up_early")
+	a.JMP_abs("nmi_up_next")
+	a.Label("nmi_up_row")
+	a.LDA_long_x(st(rsNMIList + 0))
+	a.AND_imm16_w(0x7FFF)
+	a.STA_abs(0x2116)
+	a.LDA_long_x(st(rsNMIList + 2))
+	a.STA_abs(0x4302)
+	a.LDA_imm16_w(0x0040)
+	a.STA_abs(0x4305)
+	a.SEP(0x20)
+	a.LDA_long_x(st(rsNMIList + 1))
+	a.BMI("nmi_up_wram")
+	raw(a, "lda $03,s: the bank of Link's graphics", 0xA3, 0x03)
+	a.BRA("nmi_up_bank")
+	a.Label("nmi_up_wram")
+	a.LDA_imm8_b(0x7E)
+	a.Label("nmi_up_bank")
+	a.STA_abs(0x4304)
+	a.LDA_imm8_b(0x01)
+	a.STA_abs(0x420B)
+	a.REP(0x20)
+	a.Comment("remember the row as uploaded:")
+	a.LDA_long_x(st(rsNMIList + 0))
+	a.STA_long_x(st(rsCache + 0))
+	a.LDA_long_x(st(rsNMIList + 2))
+	a.STA_long_x(st(rsCache + 2))
+	a.Label("nmi_up_next")
+	a.INX()
+	a.INX()
+	a.INX()
+	a.INX()
+	a.TXA()
+	raw(a, "cmp $01,s: the byte length of the list", 0xC3, 0x01)
+	a.BCS("nmi_up_end")
+	a.JMP_abs("nmi_up_loop")
 
 	a.Label("nmi_up_end")
+	a.Comment("every row of the list is in VRAM now:")
+	a.LDA_imm16_w(0x000F)
+	a.STA_long(st(rsKept))
 	a.PLA()
 	a.Label("nmi_up_done")
 	a.STA_long(st(rsCacheLen))

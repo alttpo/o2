@@ -1390,3 +1390,63 @@ func TestRemoteSpritesScenario_SkipsUsedEntries(t *testing.T) {
 	h.expectOAM("shadow left", 0, 0x01, [4]byte{0x40, 0x60, 0x6C, 0x28}, 0x00)
 	h.expectOAM("body", 0, 0x00, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
 }
+
+// The follower slots the parts got keep their tiles: the follower hook leaves the game's uploads into them out, and
+// the late hook uploads their rows only when they change.
+func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
+	h := newRSScenario(t)
+	e, g := h.gs[0].e, h.gs[0].g
+	h.frames(8)
+	// the body got slot $20 and the head $22:
+	if skip := h.remoteState(0, rsSkipSlots)[0]; skip != 0x03 {
+		t.Fatalf("kept follower slots $%02x; expected $03", skip)
+	}
+	uploads := func(when string) map[uint16]bool {
+		t.Helper()
+		f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr)
+		if mask := f.regs[0x420B]; mask != 0x04 {
+			t.Errorf("%s: follower hook started channels $%02x; expected $04 (the item get only)", when, mask)
+		}
+		rows := map[uint16]bool{}
+		for _, w := range runNMIHook(t, e, g).writes {
+			rows[w&^0x1F] = true
+		}
+		return rows
+	}
+	if rows := uploads("first"); !rows[0x4200] || !rows[0x4300] || !rows[0x4220] || !rows[0x4320] {
+		t.Errorf("first: uploaded rows %v; expected the body's and head's", rows)
+	}
+	if rows := uploads("unchanged"); len(rows) != 0 {
+		t.Errorf("unchanged: uploaded rows %v; expected none", rows)
+	}
+
+	// a frame that keeps no follower slot (nothing drawn): the game uploads its own tiles into all of them, so the
+	// rows are uploaded again on the next frame that draws:
+	skip := h.remoteState(0, rsSkipSlots)
+	skip[0] = 0
+	if f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr); f.regs[0x420B] != 0x07 {
+		t.Errorf("nothing kept: follower hook started channels $%02x; expected $07", f.regs[0x420B])
+	}
+	skip[0] = 0x03
+	if rows := uploads("after the game's upload"); !rows[0x4200] || !rows[0x4220] {
+		t.Errorf("after the game's upload: uploaded rows %v; expected the body's and head's", rows)
+	}
+
+	// a follower shows chr $22: the head moves to slot $24; the game uploads its tiles into $22, the body's rows stay:
+	h.setModuleDraws([2]uint8{0x22, 0x02})
+	h.frames(2)
+	if skip := h.remoteState(0, rsSkipSlots)[0]; skip != 0x05 {
+		t.Fatalf("kept follower slots $%02x; expected $05", skip)
+	}
+	f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr)
+	if mask := f.regs[0x420B]; mask != 0x02 {
+		t.Errorf("follower: follower hook started channels $%02x; expected $02", mask)
+	}
+	rows := map[uint16]bool{}
+	for _, w := range runNMIHook(t, e, g).writes {
+		rows[w&^0x1F] = true
+	}
+	if rows[0x4200] || rows[0x4300] || !rows[0x4240] || !rows[0x4340] {
+		t.Errorf("follower: uploaded rows %v; expected the head's in slot $24 only", rows)
+	}
+}

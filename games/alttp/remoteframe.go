@@ -123,6 +123,7 @@ type remoteFrameTables struct {
 	chrSlotsSmall, chrSlotsLarge uint32
 	allocSlots, allocFree        uint32
 	partBits                     uint32
+	followerSlotBits             uint32
 }
 
 // emitRemoteFrameTables emits the tables of remoteFrameTables in this order and returns their addresses.
@@ -146,6 +147,9 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 	for i := 0; i < remotePartMax; i++ {
 		a.EmitBytes([]byte{1 << i, 0})
 	}
+	fol := followerSlotBits()
+	t.followerSlotBits = a.Label("followerSlotBits")
+	a.EmitBytes(fol[:])
 	return
 }
 
@@ -446,8 +450,9 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.STZ_dp(rcDraw)
 	a.STZ_dp(rcUsed)
 	a.STZ_dp(rcChr)
-	a.Comment("nothing for the NMI hooks to upload unless parts are drawn:")
+	a.Comment("nothing for the NMI hooks to upload unless parts are drawn, and no follower slots kept:")
 	a.STA_long(remoteStateAddr + rsNMILen)
+	a.STA_long(remoteStateAddr + rsSkipSlots)
 	a.SEP(0x30)
 
 	a.Comment("capture only while a remote player is in the same location:")
@@ -598,7 +603,9 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.JMP_abs("rf_exit")
 	a.Label("rf_drawing")
 	a.LDA_dp(rcSlots)
-	a.BEQ("rf_alloc_done")
+	a.BNE("rf_alloc")
+	a.JMP_abs("rf_alloc_done")
+	a.Label("rf_alloc")
 	a.Comment("the slots in use: those the sprites show, and Link's own while core updates are disabled (the game")
 	a.Comment("doesn't upload his chrs then, and he may show them again before it does):")
 	a.LDA_abs(0x0710)
@@ -624,6 +631,22 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.STA_long(remoteStateAddr + rsPartSlot + uint32(i))
 	}
 	a.Label("rf_alloc_parts_done")
+	a.Comment("the follower slots the parts got, whose game uploads the NMI follower hook skips:")
+	a.STZ_dp(rcTmp)
+	for i := 0; i < remotePartMax; i++ {
+		a.LDA_long(remoteStateAddr + rsPartSlot + uint32(i))
+		a.CMP_imm8_b(0xFF)
+		a.BEQ(fmt.Sprintf("rf_skip_%d", i))
+		a.AND_imm8_b(0x3F)
+		a.PHY()
+		a.TAY()
+		a.LDA_abs_y(lo(t.followerSlotBits))
+		a.PLY()
+		tsbDP(a, rcTmp)
+		a.Label(fmt.Sprintf("rf_skip_%d", i))
+	}
+	a.LDA_dp(rcTmp)
+	a.STA_long(remoteStateAddr + rsSkipSlots)
 	a.Comment("the body is drawn if the required parts all got a slot: min(parts, free) >= required > 0:")
 	a.LDA_long(remoteTableAddr + rtRequired)
 	a.BEQ("rf_alloc_done")
@@ -697,6 +720,16 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.ASL()
 		a.ORA_imm16_w(0x4000)
 		a.STA_dp(rcSX)
+		a.Comment("the bit of its slot for the NMI hooks (rsNMIBits):")
+		a.LDA_abs(st(rsPartSlot + p))
+		a.AND_imm16_w(0x003F)
+		a.TAX()
+		a.LDA_long_x(t.followerSlotBits)
+		a.AND_imm16_w(0x00FF)
+		a.BNE(fmt.Sprintf("rf_up_bit_%d", p))
+		a.LDA_imm16_w(0x0008)
+		a.Label(fmt.Sprintf("rf_up_bit_%d", p))
+		a.STA_dp(rcAnim)
 		a.LDA_abs(tb(rtPartFlags + p))
 		a.STA_dp(rcTmp)
 		a.AND_imm16_w(partWRAM)
@@ -716,6 +749,8 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 			a.STA_abs_y(st(rsNMIList + 0))
 			a.LDA_abs(tb(rtPartSrc + p*4 + row*2))
 			a.STA_abs_y(st(rsNMIList + 2))
+			a.LDA_dp(rcAnim)
+			a.STA_abs_y(st(rsNMIBits))
 			a.INY()
 			a.INY()
 			a.INY()
