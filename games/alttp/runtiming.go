@@ -240,6 +240,9 @@ type runTimingLocal struct {
 	// write 0 to the latches; the write is in flight; reads to skip after it completed, which may have been issued
 	// before it (they are set by the write's completion, on another goroutine):
 	clearLatches bool
+	// write the run's start frame and only the start latch, when the SRAM lost them during the run; in flight like a
+	// clear:
+	restoreStart bool
 	clearPending atomic.Bool
 	clearSkips   atomic.Int32
 
@@ -258,7 +261,9 @@ type runTimingLocal struct {
 	started, finished       bool
 	startFrame, finishFrame uint32
 	startAt, finishAt       time.Time
-	// NMI frames minus loop frames at the start, and the lag frames between the start and the finish:
+	// the lag frames of the run's earlier stretches of the counter, NMI frames minus loop frames when the current one
+	// began (or the run started in it), and the lag frames between the start and the finish:
+	lagAcc    uint32
 	lagBase   uint32
 	lagFrames uint32
 	// the gates at the start, and whether they changed since:
@@ -349,6 +354,11 @@ func (r *runTimingLocal) startStretch(s rtSample) {
 	r.samples = append(r.samples[:0], s)
 	r.stretchStart = s
 	r.rateFrom = s
+	if r.inRun() {
+		// the lag frames counted so far stay; the new stretch's are counted from its own start:
+		r.lagAcc = r.lagFrames
+		r.lagBase = s.nmi - s.loop
+	}
 }
 
 // fits reports whether the frames between a and b are about what the wall time between them predicts.
@@ -370,7 +380,8 @@ func (r *runTimingLocal) checkCounter(a, b rtSample) {
 }
 
 // checkRate compares the frames with the wall time over the last rtRateWindow during the run, and charges the wall
-// time that running fast saved.
+// time that running fast saved. Running slow can't shorten the wall time, and a console reset (whose boot runs frames
+// without NMIs) or a stalled emulator runs slow for a while, so slow windows are only logged.
 func (r *runTimingLocal) checkRate(s rtSample) {
 	wall := s.at.Sub(r.rateFrom.at)
 	if wall < rtRateWindow {
@@ -388,7 +399,6 @@ func (r *runTimingLocal) checkRate(s rtSample) {
 		r.penalty += frames - wall
 	} else if ratio < 1-rtRateTolerance {
 		log.Printf("alttp: run timing: running %.2f%% slow\n", (1-ratio)*100)
-		r.flags |= rtFlagRate
 	}
 }
 
@@ -397,11 +407,12 @@ func (r *runTimingLocal) resetRun() {
 	r.started, r.finished = false, false
 	r.startFrame, r.finishFrame = 0, 0
 	r.startAt, r.finishAt = time.Time{}, time.Time{}
-	r.lagBase, r.lagFrames = 0, 0
+	r.lagAcc, r.lagBase, r.lagFrames = 0, 0, 0
 	r.gatesAtStart, r.gatesChanged = 0, false
 	r.flags, r.penalty = 0, 0
 	r.latchRawOK = false
 	r.clearLatches = true
+	r.restoreStart = false
 }
 
 // runTimingPak is the FX Pak Pro address of the run timing state:
@@ -444,7 +455,7 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 	copy(raw[:], d[rtmStartFrame:rtmLatches+1])
 	consistent := r.latchRawOK && raw == r.latchRaw
 	r.latchRaw, r.latchRawOK = raw, true
-	if r.clearLatches || r.clearPending.Load() {
+	if r.clearLatches || r.restoreStart || r.clearPending.Load() {
 		return
 	}
 	if r.clearSkips.Load() > 0 {
@@ -469,7 +480,7 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 			return
 		}
 		r.started, r.startFrame, r.startAt = true, startFrame, startAt
-		r.lagBase = s.nmi - s.loop
+		r.lagAcc, r.lagBase = 0, s.nmi-s.loop
 		r.gatesAtStart, r.gatesChanged = r.gates, false
 		r.flags |= rtFlagStarted
 		local.GameStartTime = startAt
@@ -479,7 +490,15 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 		log.Printf("alttp: run timing: started at NMI frame $%06x, %s\n", startFrame, FormatTime(startAt))
 	}
 	if r.inRun() {
-		r.lagFrames = (s.nmi - s.loop - r.lagBase) & 0xFFFFFF
+		r.lagFrames = (r.lagAcc + s.nmi - s.loop - r.lagBase) & 0xFFFFFF
+		if latches&rtmLatchStart == 0 || startFrame != r.startFrame {
+			// the SRAM doesn't hold this run's start (the SRAM replaced, or a savestate from before the start or of
+			// another run): put it back, so that the patch latches the finish, and a finish latched against another
+			// start isn't taken for this run's:
+			log.Printf("alttp: run timing: SRAM lost the run's start (latches $%02x, start $%06x); restoring it\n", latches, startFrame)
+			r.restoreStart = true
+			return
+		}
 	}
 	if r.inRun() && latches&rtmLatchFinish != 0 {
 		finishAt, ok := g.latchTime(finishFrame, at)
@@ -522,7 +541,8 @@ func (g *Game) latchTime(frame uint32, at time.Time) (t time.Time, ok bool) {
 	return r.frameTime(frame)
 }
 
-// writeRunTiming writes the gate byte when it differs from what o2 wants, and clears the latches when asked to.
+// writeRunTiming writes the gate byte when it differs from what o2 wants, and clears the latches or restores the run's
+// start when asked to.
 func (g *Game) writeRunTiming(now time.Time) {
 	if !g.ROMVerified || g.IsResetting() {
 		return
@@ -536,6 +556,13 @@ func (g *Game) writeRunTiming(now time.Time) {
 	var writes []snes.Write
 	if r.clearLatches {
 		writes = append(writes, snes.Write{Address: runTimingPak + rtmLatches, Size: 1, Data: []byte{0}})
+	} else if r.restoreStart {
+		f := r.startFrame
+		// the frame first; the patch only reads the latches:
+		writes = append(writes,
+			snes.Write{Address: runTimingPak + rtmStartFrame, Size: 3, Data: []byte{uint8(f), uint8(f >> 8), uint8(f >> 16)}},
+			snes.Write{Address: runTimingPak + rtmLatches, Size: 1, Data: []byte{rtmLatchStart}},
+		)
 	}
 
 	want := uint8(0)
@@ -559,7 +586,7 @@ func (g *Game) writeRunTiming(now time.Time) {
 		return
 	}
 
-	clear := r.clearLatches
+	clear := r.clearLatches || r.restoreStart
 	var done snes.Completion
 	if clear {
 		r.clearPending.Store(true)
@@ -577,7 +604,7 @@ func (g *Game) writeRunTiming(now time.Time) {
 		return
 	}
 	if clear {
-		r.clearLatches = false
+		r.clearLatches, r.restoreStart = false, false
 		r.latchRawOK = false
 	}
 }

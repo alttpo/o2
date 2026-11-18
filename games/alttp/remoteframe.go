@@ -408,8 +408,8 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 // emitDyingEnemiesList. Called with any register sizes; preserves P, DB and
 // D.
 //
-// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,300, measured 5,973 (about 13% of a frame)
-// with the OAM buffer otherwise empty; budget 12,500, measured 11,789 (about 26%) with the game's sprites filling all
+// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,300, measured 5,977 (about 13% of a frame)
+// with the OAM buffer otherwise empty; budget 12,500, measured 11,716 (about 26%) with the game's sprites filling all
 // but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
 // per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one, and about
 // 33 per time check), drawing the sprites (about 150 each), and with a full OAM buffer, the search for unused

@@ -258,7 +258,7 @@ func timingFlagNames(flags uint8) string {
 		s = append(s, "frame counter discontinuity")
 	}
 	if flags&rtFlagRate != 0 {
-		s = append(s, "frame rate out of tolerance")
+		s = append(s, "ran more than 1% fast")
 	}
 	if flags&rtFlagStateLoad != 0 {
 		s = append(s, "savestate loaded")

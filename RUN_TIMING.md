@@ -65,6 +65,10 @@ code zeroes only the gate byte. All values are little-endian:
 - preMain latches before it calls the module, so the latched value is the NMI count of the frame the module first ran
   in. It writes the counter first and the latch bit last.
 - A client resets the run by writing 0 to `latches` (and nothing else).
+- During the run, a client that reads SRAM without the run's start (the start latch clear, or a `startFrame` other than
+  the run's: another ROM or SRAM file, or a savestate from before the start) writes the run's `startFrame` back and
+  then `latches = $01`. It takes a finish latch only when `startFrame` is the run's. Fresh SRAM reads `$FF`
+  everywhere, so both latch bits look set, which this keeps from finishing the run.
 - The counters are 24-bit: at 60.0988 frames per second they wrap after 77.5 hours. Readers compute differences
   modulo 2²⁴.
 - SNES devices don't read SRAM atomically. A reader accepts a latch only after two consecutive reads return the same
@@ -109,9 +113,9 @@ since the last sample:
 | within ±1% of 60.0988 per second | normal play | |
 | counter went backwards | savestate load, SRAM replaced | 2, and 4 if the client knows a state was loaded |
 | more frames than wall time allows | fast-forward, forward savestate | 3 (more than 1% fast), else 2 |
-| fewer frames than wall time allows | emulator paused or slowed down, console off | 3 if the client is still connected, else none |
+| fewer frames than wall time allows | emulator paused or slowed down, console off or reset (booting runs frames without NMIs) | none |
 
-The player's time is always wall time; these flags only mark it. Fast-forward is the only one of these that can make
+The player's time is always wall time; these flags only mark it. Running slow can't shorten it, so it isn't flagged. Fast-forward is the only one of these that can make
 wall time shorter, so a player who ran more than 1% fast over the run has the wall time they saved added as
 `penaltyMs`: `(frames run fast × period) - (wall time of those samples)`.
 
@@ -125,7 +129,7 @@ until all supported clients know it.
 |---|---|---|
 | version | u8 | 1 |
 | size | u8 | the number of bytes after this field (72 for version 1); receivers skip messages of versions they don't know by it, and ignore bytes past the fields they know |
-| flags | u8 | bit 0 started, bit 1 finished, bit 2 counter discontinuity, bit 3 rate out of tolerance, bit 4 savestate load detected, bit 5 no NMI counter in this ROM |
+| flags | u8 | bit 0 started, bit 1 finished, bit 2 counter discontinuity, bit 3 running more than 1% fast, bit 4 savestate load detected, bit 5 no NMI counter in this ROM |
 | resetID | u64 | id of the last group reset the player finalized (0x81), 0 if none |
 | resetInitiator | u16 | its initiator's player index |
 | signature | [16]byte | the patch signature read from `$707FF0` |
@@ -138,7 +142,7 @@ until all supported clients know it.
 | nmiFrames | u24 | latest sample |
 | loopFrames | u24 | latest sample |
 | sampleAt | i64 | server clock, Unix ns, of the latest sample |
-| lagFrames | u24 | lag frames since the start (to the finish once finished) |
+| lagFrames | u24 | lag frames since the start (to the finish once finished), summed over the stretches of the counter: each new stretch counts from its own `nmiFrames - loopFrames` |
 | penaltyMs | u32 | see [Discontinuities](#discontinuities-both) |
 
 o2 keeps sending its old o2-only 0x80 run times for one release, so that older o2 clients still show a timer.

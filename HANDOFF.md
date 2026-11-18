@@ -68,7 +68,31 @@ message 0x84, clock sync, discontinuities, verification and display.
    its own time in the settings window. It compiles in bsnes-as and, on an alttpo-patcher ROM, reads the signature,
    counts frames and writes the gate. ALTTPO_COMPAT.md updated.
 
-`go test ./...` passes. Nothing has been run on an FX Pak, or with o2 and alttpo connected to a server together.
+10. First real test (2026-11-18), o2 on an FX Pak and alttpo in bsnes-as, after loading a newly patched ROM into a
+    running bsnes-as. alttpo showed a finish without reaching the triforce room, 16,776,239 lag frames and "frame rate
+    out of tolerance". The SRAM file bsnes-as wrote for the new ROM showed why: fresh SRAM reads `$FF`, so
+    `latches = $FF` and `startFrame = finishFrame = $FFFFFF`. bsnes-as keeps the script loaded across ROM loads, so
+    alttpo was still in the run it had started on the previous ROM. Three bugs, fixed in both clients:
+    - A finish latch was taken whatever start the SRAM held: the fresh SRAM's `$FF` was taken for the finish (at the
+      read's time, since `$FFFFFF` isn't in the counter's stretch). Now, during the run, SRAM that doesn't hold the
+      run's start (start latch clear or a different `startFrame`: another ROM or SRAM file, or a savestate from before
+      the start) gets the run's start frame and only the start latch written back, and only a finish latched against
+      it is taken. This also fixes a savestate from before the start, after which the patch would never latch the
+      finish.
+    - Lag frames were `nmi - loop - lagBase` with `lagBase` from the start, so a counter from another SRAM (or a
+      savestate with fewer lag frames) made them negative: 16,776,239 is -977 mod 2²⁴. They now carry over each new
+      stretch of the counter, counted from that stretch's own `nmi - loop`.
+    - Running more than 1% slow over a 10 s window set the rate flag. bsnes-as itself is on rate (measured with a
+      script: 0.998 to 1.002 of 60.0988 fps over 5 s windows, audio sync, OpenAL at 48 kHz). But booting a ROM runs
+      frames without NMIs (about 80 frames after loading it), and a stall of more than 100 ms is 1% of a window; any one
+      of these during the run set the flag for good. Slow can't shorten the wall time, so it's now only logged.
+    - alttpo also follows a new ROM's counter from scratch when the patch signature changes, rather than charge an
+      SRAM counter that happens to be ahead as fast-forward.
+
+    o2: `runtiming.go` (`restoreStart`, `lagAcc`), tests `TestRunTiming_RestoreStart` and
+    `TestRunTiming_SlowNotFlagged`. alttpo: `RunTiming.as` (compiles in bsnes-as).
+
+`go test ./...` passes. Not yet run with o2 and alttpo connected to a server together since these fixes.
 
 ## Next steps
 
@@ -76,19 +100,27 @@ message 0x84, clock sync, discontinuities, verification and display.
    - `nmiFrames` advances at about 60.0988/s; `nmiFrames - loopFrames` grows only on lag frames.
    - Start and finish latch on a vanilla ROM and a randomizer ROM, and o2 and alttpo show the same run time.
    - A group reset started from either client clears both, and both then report the same reset id in 0x84.
-   - Toggle `syncSprites` mid-game and look for glitches; measure frames run with NMI off to set `rtRateTolerance`.
+   - Toggle `syncSprites` mid-game and look for glitches.
+   - Load another ROM in bsnes-as mid-run: alttpo logs "SRAM lost the run's start", the run goes on, and the triforce
+     room finishes it with the lag frames still counting up from before.
    - Fresh SRAM reads `latches = $FF`; both clients clear it as a stale latch once they have the server clock. Check
      that the first start after that latches.
-2. **Per-frame costs.** remoteFrame is still the biggest (5,973 cycles usually, 11,789 with a nearly full OAM
-   buffer). It now reads the scanline (and the NMI count, for lag) before each 16 entries of the scan and before
+2. **Per-frame costs.** remoteFrame is still the biggest (5,977 cycles usually, 11,716 with a nearly full OAM
+   buffer; measured 2026-11-18 at `7174cd0`, 3 remote players). By part, empty / nearly full OAM buffer: setup, capture
+   checks and module checks 555 / 561; the scan 1,180 / 6,201 (with its time checks); storing the captured length 22;
+   handing out VRAM slots 247; drawing 3,531 for 20 sprites / 4,243 for the 16 that fit (the search for unused entries
+   grows with a full buffer); listing the rows to upload 423; exit 19. These come from checkpoints at `rf_start`,
+   `rf_scan_check`, `rf_scan_done`, `rf_drawing`, `rf_alloc_done`, `rf_draw_done` and `rf_exit` with the
+   `TestCycleBudgets_RemoteSprites*` scenarios (`cycleProfile.checkpoints`). The time checks measure a worst case scan
+   of 5,517 cycles (budget 5,800) and drawing of 6,740 (budget 7,000). It now reads the scanline (and the NMI count, for lag) before each 16 entries of the scan and before
    drawing, and skips the rest rather than finish after the NMI: from line 175 for the scan and 167 for drawing
    (`rfScanCycles`, `rfDrawCycles`, `timecheck_test.go`). o2 now leaves out enemy death chrs near dying enemies
    (`nearDyingEnemy`); the patch only lists the dying enemies with the captured entries (`linkOAMCopyDying`), so
    death poofs now take capture slots (16) until o2 drops them. To check on hardware: no lag
-   frames from remote sprites in busy rooms, and how often drawing is skipped (remote players flicker). What's left: the scan (921 cycles even with an empty OAM buffer, run whenever there are parts), drawing
-   (about 150 cycles per sprite, of which about 40 are the extended attributes: x bit 8 and the index of the entry),
-   listing the rows to upload (344; o2 could precompute each row's WRAM bit and row offset, at the cost of about 2
-   table entries), and the capture checks of carried sprites and ancillae (about 300 while a remote player is in the
+   frames from remote sprites in busy rooms, and how often drawing is skipped (remote players flicker). What's left:
+   the scan (1,180 cycles even with an empty OAM buffer, run whenever there are parts), drawing (about 150 cycles per
+   sprite, of which about 40 are the extended attributes: x bit 8 and the index of the entry), listing the rows to
+   upload (423; o2 could precompute each row's WRAM bit and row offset, at the cost of about 2 table entries), and the capture checks of carried sprites and ancillae (about 300 while a remote player is in the
    location; o2 could set the capture mask from its own WRAM reads, a few frames late). Also measure the busy paths of link color, sfx and manip pending (only their
    idle paths are measured), and consider gates for tunic color and sfx. Push the `snes` emulator fix and bump
    `go.mod`; without go.work, `TestRemoteSpritesScenario_OnlyOwnShadowsSent` fails on the old emulator.

@@ -401,3 +401,97 @@ func TestRunTiming_MessageRoundTrip(t *testing.T) {
 		t.Errorf("left % x unread after a later version; expected ee", rest)
 	}
 }
+
+// During the run, SRAM that doesn't hold the run's start (fresh SRAM reads $FF everywhere, so both latch bits look
+// set) has the start restored instead of its finish latch taken; a finish latched after that is taken. Lag frames carry
+// across a rewound counter.
+func TestRunTiming_RestoreStart(t *testing.T) {
+	gs, err := createTestGameSync("ZELDANODENSETSU", "g1", testWriter{t})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := gs.g
+	g.ROMVerified = true
+	r := &g.runTiming
+	t0 := time.Unix(1_700_000_000, 0)
+	at := t0
+	read := func(nmi, loop uint32, latches uint8, start, finish uint32) {
+		t.Helper()
+		d := make([]byte, runTimingReadSize)
+		setU24(d[rtmNMIFrames:], nmi)
+		setU24(d[rtmLoopFrames:], loop)
+		setU24(d[rtmStartFrame:], start)
+		setU24(d[rtmFinishFrame:], finish)
+		d[rtmLatches] = latches
+		g.readRunTimingResponse(snes.Response{Address: runTimingPak, Size: uint8(len(d)), Data: d}, at)
+	}
+	step := func(frames int64) { at = at.Add(framesToDuration(frames)) }
+
+	read(0x1000, 0x0FF0, 0, 0, 0)
+	step(8)
+	read(0x1008, 0x0FF8, rtmLatchStart, 0x1008, 0)
+	step(1)
+	read(0x1009, 0x0FF9, rtmLatchStart, 0x1008, 0)
+	if !r.started {
+		t.Fatal("not started")
+	}
+	// 3 lag frames:
+	step(100)
+	read(0x106D, 0x105A, rtmLatchStart, 0x1008, 0)
+	step(1)
+	read(0x106E, 0x105B, rtmLatchStart, 0x1008, 0)
+	if r.lagFrames != 3 {
+		t.Fatalf("%d lag frames; expected 3", r.lagFrames)
+	}
+
+	// another SRAM, fresh: its counter is far behind, with fewer lag frames, and its latches are $FF:
+	step(60)
+	read(0x000010, 0x000010, 0xFF, 0xFFFFFF, 0xFFFFFF)
+	step(1)
+	read(0x000011, 0x000011, 0xFF, 0xFFFFFF, 0xFFFFFF)
+	step(1)
+	read(0x000012, 0x000012, 0xFF, 0xFFFFFF, 0xFFFFFF)
+	if r.finished {
+		t.Fatal("took a fresh SRAM's latches for the finish")
+	}
+	if !r.restoreStart {
+		t.Fatal("start not restored")
+	}
+	if r.lagFrames != 3 {
+		t.Errorf("%d lag frames after the jump; expected 3", r.lagFrames)
+	}
+	// as if written:
+	r.restoreStart = false
+
+	// 2 more lag frames, then the finish:
+	step(200)
+	read(0x0000DA, 0x0000D8, rtmLatchStart, 0x1008, 0)
+	step(1)
+	read(0x0000DB, 0x0000D9, rtmLatchStart|rtmLatchFinish, 0x1008, 0x0000DA)
+	step(1)
+	read(0x0000DC, 0x0000DA, rtmLatchStart|rtmLatchFinish, 0x1008, 0x0000DA)
+	if !r.finished || r.finishFrame != 0x0000DA {
+		t.Fatalf("finished %v at $%06x; expected $0000DA", r.finished, r.finishFrame)
+	}
+	if r.lagFrames != 5 {
+		t.Errorf("%d lag frames; expected 5", r.lagFrames)
+	}
+	if r.flags&rtFlagDiscontinuity == 0 {
+		t.Errorf("flags $%02x; expected the discontinuity flagged", r.flags)
+	}
+}
+
+// Running slow (a console reset's boot runs frames without NMIs) isn't flagged.
+func TestRunTiming_SlowNotFlagged(t *testing.T) {
+	var r runTimingLocal
+	r.started = true
+	t0 := time.Unix(1_700_000_000, 0)
+	for i := 0; i <= 200; i++ {
+		wall := time.Duration(i) * 100 * time.Millisecond
+		frames := durationToFrames(wall * 95 / 100)
+		r.sample(rtSample{nmi: uint32(frames) & 0xFFFFFF, at: t0.Add(wall)})
+	}
+	if r.flags&rtFlagRate != 0 {
+		t.Errorf("flags $%02x; expected running slow not flagged", r.flags)
+	}
+}
