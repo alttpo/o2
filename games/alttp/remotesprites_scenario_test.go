@@ -1556,4 +1556,28 @@ func TestRemoteSpritesScenario_FollowerUploadsInPlace(t *testing.T) {
 			}
 		}
 	}
+	// no follower slot kept: the game's own single start of all three channels, which uploads them one after another
+	// into the three slots, and no cached rows are left in VRAM:
+	h.remoteState(0, rsSkipSlots)[0] = 0
+	h.remoteState(0, rsKept)[0] = 0x0F
+	for _, c := range []struct {
+		addr, vaddr uint32
+	}{{nmiFollowerPatchAddr, 0x4200}, {nmiFollowerBottomPatchAddr, 0x4300}} {
+		d := runNMIHookAt(t, e, g, c.addr, channels(uint16(c.vaddr)))
+		if d.started != 0x07 {
+			t.Errorf("$%06x nothing kept: started channels $%02x; expected $07", c.addr, d.started)
+		}
+		if len(d.writes) != 0x60 {
+			t.Errorf("$%06x nothing kept: %d words uploaded; expected $60", c.addr, len(d.writes))
+		}
+		for i, w := range d.writes {
+			if w != uint16(c.vaddr)+uint16(i) {
+				t.Errorf("$%06x nothing kept: word %d uploaded to VRAM $%04x; expected $%04x", c.addr, i, w, c.vaddr+uint32(i))
+				break
+			}
+		}
+	}
+	if kept := h.remoteState(0, rsKept)[0]; kept != 0 {
+		t.Errorf("nothing kept: rsKept $%02x; expected 0", kept)
+	}
 }
