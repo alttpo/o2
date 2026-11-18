@@ -200,7 +200,8 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 	case protocol04.BroadcastAll, protocol04.BroadcastSector:
 		err = g.Deserialize(bytes.NewReader(gm.Data), p)
 	case protocol04.Echo:
-		// nothing to do
+		// our own echo, sent back by the server with our send time and its own time:
+		g.clock.echo(gm.PlayerTime, gm.ServerTime, time.Now())
 	}
 
 	if err != nil {

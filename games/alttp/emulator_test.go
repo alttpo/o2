@@ -103,6 +103,8 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	}
 
 	g.Reset()
+	// the test server's clock is simulated and advanced by the tests:
+	g.clock.lastMessageOnly = true
 
 	g.ProvideQueue(&testQueue{E: system})
 

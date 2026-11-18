@@ -58,6 +58,8 @@ type Game struct {
 	lastServerTime     time.Time // server's clock when the last received message passed through the server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
 	lastServerRecvTime time.Time // our local clock when we received the last message
+	// the offset of the server's clock from ours, from echo round trips; see clock.go:
+	clock serverClock
 
 	running bool
 	stopped chan struct{}
@@ -530,6 +532,9 @@ func (g *Game) RemoteSyncablePlayers() []games.SyncablePlayer {
 }
 
 func (g *Game) ServerNow() time.Time {
+	if offset, ok := g.clock.offset(); ok {
+		return time.Now().Add(offset)
+	}
 	return g.lastServerTime.Add(time.Now().Sub(g.lastServerRecvTime))
 }
 
