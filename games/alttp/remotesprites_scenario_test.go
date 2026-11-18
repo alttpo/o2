@@ -449,6 +449,8 @@ type dmaSim struct {
 	regs   [0x10000]byte
 	vram   map[uint16]uint16
 	writes []uint16
+	// the channels started, of every write to MDMAEN:
+	started uint8
 }
 
 func (d *dmaSim) Read(address uint32) byte { return d.regs[address&0xFFFF] }
@@ -458,6 +460,7 @@ func (d *dmaSim) Write(address uint32, value byte) {
 	if a != 0x420B {
 		return
 	}
+	d.started |= value
 	for ch := uint16(0); ch < 8; ch++ {
 		if value&(1<<ch) == 0 {
 			continue
@@ -501,8 +504,9 @@ func runNMIHook(t *testing.T, e *emulator.System, g *Game) *dmaSim {
 	return runNMIHookAt(t, e, g, nmiHookPatchAddr)
 }
 
-// runNMIHookAt calls the NMI hook patched in at addr the way NMI_DoUpdates does.
-func runNMIHookAt(t *testing.T, e *emulator.System, g *Game, addr uint32) *dmaSim {
+// runNMIHookAt calls the NMI hook patched in at addr the way NMI_DoUpdates does; setup, if any, sets up the simulated
+// registers before.
+func runNMIHookAt(t *testing.T, e *emulator.System, g *Game, addr uint32, setup ...func(d *dmaSim)) *dmaSim {
 	t.Helper()
 	pak, _ := lorom.BusAddressToPak(addr)
 	c := g.rom.Contents[pak : pak+4]
@@ -521,10 +525,14 @@ func runNMIHookAt(t *testing.T, e *emulator.System, g *Game, addr uint32) *dmaSi
 		d.regs[0x4300+ch<<4], d.regs[0x4301+ch<<4], d.regs[0x4304+ch<<4] = 0x01, 0x18, 0x7E
 	}
 	e.WRAM[0x0ADC], e.WRAM[0x0ADD] = 0x34, 0x12
+	for _, f := range setup {
+		f(d)
+	}
 
 	stub := []byte{
 		0x18, 0xFB, // CLC; XCE
 		0xC2, 0x30, // REP #$30
+		0xA2, 0x40, 0x00, // LDX #$0040: the size of a row, as NMI_DoUpdates has it
 		0xA9, 0x00, 0x00, // LDA #$0000
 		0x5B,       // TCD
 		0xE2, 0x20, // SEP #$20
@@ -1396,7 +1404,12 @@ func TestRemoteSpritesScenario_SkipsUsedEntries(t *testing.T) {
 func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
 	h := newRSScenario(t)
 	e, g := h.gs[0].e, h.gs[0].g
+	// Link shows his shield (chr $07, the last slot), as he does nearly all the time:
+	h.setModuleDraws([2]uint8{0x07, 0x00})
 	h.frames(8)
+	if used := h.remoteState(0, rsUsed)[0]; used != 0x40 {
+		t.Fatalf("slots in use $%02x; expected $40", used)
+	}
 	// the body got slot $20 and the head $22:
 	if skip := h.remoteState(0, rsSkipSlots)[0]; skip != 0x03 {
 		t.Fatalf("kept follower slots $%02x; expected $03", skip)
@@ -1404,7 +1417,7 @@ func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
 	uploads := func(when string) map[uint16]bool {
 		t.Helper()
 		f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr)
-		if mask := f.regs[0x420B]; mask != 0x04 {
+		if mask := f.started; mask != 0x04 {
 			t.Errorf("%s: follower hook started channels $%02x; expected $04 (the item get only)", when, mask)
 		}
 		rows := map[uint16]bool{}
@@ -1424,8 +1437,8 @@ func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
 	// rows are uploaded again on the next frame that draws:
 	skip := h.remoteState(0, rsSkipSlots)
 	skip[0] = 0
-	if f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr); f.regs[0x420B] != 0x07 {
-		t.Errorf("nothing kept: follower hook started channels $%02x; expected $07", f.regs[0x420B])
+	if f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr); f.started != 0x07 {
+		t.Errorf("nothing kept: follower hook started channels $%02x; expected $07", f.started)
 	}
 	skip[0] = 0x03
 	if rows := uploads("after the game's upload"); !rows[0x4200] || !rows[0x4220] {
@@ -1433,13 +1446,13 @@ func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
 	}
 
 	// a follower shows chr $22: the head moves to slot $24; the game uploads its tiles into $22, the body's rows stay:
-	h.setModuleDraws([2]uint8{0x22, 0x02})
+	h.setModuleDraws([2]uint8{0x07, 0x00}, [2]uint8{0x22, 0x02})
 	h.frames(2)
 	if skip := h.remoteState(0, rsSkipSlots)[0]; skip != 0x05 {
 		t.Fatalf("kept follower slots $%02x; expected $05", skip)
 	}
 	f := runNMIHookAt(t, e, g, nmiFollowerPatchAddr)
-	if mask := f.regs[0x420B]; mask != 0x02 {
+	if mask := f.started; mask != 0x02 {
 		t.Errorf("follower: follower hook started channels $%02x; expected $02", mask)
 	}
 	rows := map[uint16]bool{}
@@ -1448,5 +1461,40 @@ func TestRemoteSpritesScenario_FollowerSlotsKept(t *testing.T) {
 	}
 	if rows[0x4200] || rows[0x4300] || !rows[0x4240] || !rows[0x4340] {
 		t.Errorf("follower: uploaded rows %v; expected the head's in slot $24 only", rows)
+	}
+}
+
+// The follower hooks upload the follower and item get tiles into the slots the parts didn't get, at their own VRAM
+// addresses: leaving channels out must not shift the others' tiles into the kept slots.
+func TestRemoteSpritesScenario_FollowerUploadsInPlace(t *testing.T) {
+	h := newRSScenario(t)
+	e, g := h.gs[0].e, h.gs[0].g
+	h.frames(8)
+	if skip := h.remoteState(0, rsSkipSlots)[0]; skip != 0x03 {
+		t.Fatalf("kept follower slots $%02x; expected $03", skip)
+	}
+	// NMI_DoUpdates set VMADDR and the three channels (64 bytes each) before each hook:
+	channels := func(vaddr uint16) func(d *dmaSim) {
+		return func(d *dmaSim) {
+			d.regs[0x2116], d.regs[0x2117] = uint8(vaddr), uint8(vaddr>>8)
+			for ch := uint16(0); ch < 3; ch++ {
+				r := 0x4300 + ch<<4
+				d.regs[r+0], d.regs[r+1], d.regs[r+4], d.regs[r+5], d.regs[r+6] = 0x01, 0x18, 0x7E, 0x40, 0x00
+			}
+		}
+	}
+	for _, c := range []struct {
+		addr, vaddr uint32
+	}{{nmiFollowerPatchAddr, 0x4200}, {nmiFollowerBottomPatchAddr, 0x4300}} {
+		d := runNMIHookAt(t, e, g, c.addr, channels(uint16(c.vaddr)))
+		if len(d.writes) != 0x20 {
+			t.Errorf("$%06x: %d words uploaded; expected the item get's $20", c.addr, len(d.writes))
+		}
+		for _, w := range d.writes {
+			if w < uint16(c.vaddr)+0x40 || w >= uint16(c.vaddr)+0x60 {
+				t.Errorf("$%06x: uploaded VRAM $%04x; expected only slot $24 at $%04x..$%04x", c.addr, w, c.vaddr+0x40, c.vaddr+0x5F)
+				break
+			}
+		}
 	}
 }

@@ -108,6 +108,7 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 				{0x00FFB0, 0x010000},
 				{hudHookAddr, hudHookAddr + uint32(len(hudHookExpected))},
 				{nmiFollowerPatchAddr, nmiFollowerPatchAddr + uint32(len(nmiFollowerPatchExpected))},
+				{nmiFollowerBottomPatchAddr, nmiFollowerBottomPatchAddr + uint32(len(nmiFollowerBottomPatchExpected))},
 			}
 			fns := make(map[romFunction]uint32)
 			fillRomFunctions(rom, fns)
@@ -135,7 +136,7 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 			}
 
 			// every routine is in patchRegion: the hooks call into it:
-			for _, hook := range []uint32{0x00802F, 0x008056, nmiEarlyPatchAddr, nmiHookPatchAddr, nmiFollowerPatchAddr} {
+			for _, hook := range []uint32{0x00802F, 0x008056, nmiEarlyPatchAddr, nmiHookPatchAddr, nmiFollowerPatchAddr, nmiFollowerBottomPatchAddr} {
 				pak, _ := lorom.BusAddressToPak(hook)
 				target := uint32(rom.Contents[pak+1]) | uint32(rom.Contents[pak+2])<<8 | uint32(rom.Contents[pak+3])<<16
 				if !patchRegion.contains(target &^ 0x800000) {

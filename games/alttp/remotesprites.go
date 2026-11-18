@@ -235,6 +235,14 @@ const nmiFollowerPatchAddr = uint32(0x008AFC)
 // nmiFollowerPatchExpected is the original code at nmiFollowerPatchAddr: LDA.b #$07; STA.w MDMAEN
 var nmiFollowerPatchExpected = []byte{0xA9, 0x07, 0x8D, 0x0B, 0x42}
 
+// nmiFollowerBottomPatchAddr is where NMI_DoUpdates starts the upload of the bottom rows of the same tiles; patched
+// with a JSL to the follower bottom hook. The game starts the channels at once, which uploads each one's tiles right
+// after the previous one's: the hooks start them one at a time, at the VRAM address of each one's slot.
+const nmiFollowerBottomPatchAddr = uint32(0x008B1F)
+
+// nmiFollowerBottomPatchExpected is the original code at nmiFollowerBottomPatchAddr: STX.w DMA2SIZE; STA.w MDMAEN
+var nmiFollowerBottomPatchExpected = []byte{0x8E, 0x25, 0x43, 0x8D, 0x0B, 0x42}
+
 // followerSlotBits returns, for each chr $00..$3F, the bit of the follower slot ($20: 1, $22: 2, $24: 4) it is in.
 func followerSlotBits() (t [0x40]byte) {
 	for i, base := range []int{0x20, 0x22, 0x24} {
@@ -292,7 +300,7 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 //     itself.
 //
 // upload is the routine they call with JSL (see emitNMIUpload).
-func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower uint32) {
+func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower, followerBottom uint32) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)
 	a.AssumeREP(0x10)
@@ -324,17 +332,51 @@ func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower uint32) 
 	a.Label("nmi_early_done")
 	a.RTL()
 
+	a.Comment("start channels 0, 1 and 2 (slots $20, $22, $24) but those of the kept slots, each at its slot's VRAM")
+	a.Comment("address from Y; called with JSR, A 8-bit, Y 16-bit; clobbers A and Y:")
+	channels := a.Label("nmi_fol_channels")
+	for c := 0; c < 3; c++ {
+		skip := fmt.Sprintf("nmi_fol_ch%d", c)
+		a.LDA_long(st(rsSkipSlots))
+		a.AND_imm8_b(1 << c)
+		a.BNE(skip)
+		a.STY_abs(0x2116)
+		a.LDA_imm8_b(1 << c)
+		a.STA_abs(0x420B)
+		a.Label(skip)
+		if c < 2 {
+			a.REP(0x20)
+			a.TYA()
+			a.CLC()
+			a.ADC_imm16_w(0x0020)
+			a.TAY()
+			a.SEP(0x20)
+		}
+	}
+	a.RTS()
+
 	follower = a.Label("nmiHookFollower")
 	a.Comment("the game uploads Link's and his items' tiles over every other slot, and the follower and item get tiles")
 	a.Comment("over the follower slots the parts didn't get: the rows cached in those are no longer in VRAM:")
 	a.LDA_long(st(rsSkipSlots))
+	a.AND_imm8_b(0x07)
 	a.AND_long(st(rsKept))
 	a.STA_long(st(rsKept))
-	a.Comment("upload into the other slots; A = the channels for the bottom rows at $008B22:")
-	a.LDA_long(st(rsSkipSlots))
-	a.EOR_imm8_b(0x07)
-	a.AND_imm8_b(0x07)
-	a.STA_abs(0x420B)
+	a.Comment("the top rows, at VRAM $4200 (chr $20):")
+	a.PHY()
+	a.LDY_imm16_w(0x4200)
+	a.JSR_abs(uint16(channels))
+	a.PLY()
+	a.RTL()
+
+	followerBottom = a.Label("nmiHookFollowerBottom")
+	a.Comment("the code patched over: the item get bottom row's size:")
+	a.STX_abs(0x4325)
+	a.Comment("the bottom rows, at VRAM $4300 (chr $30):")
+	a.PHY()
+	a.LDY_imm16_w(0x4300)
+	a.JSR_abs(uint16(channels))
+	a.PLY()
 	a.RTL()
 	a.AssumeSEP(0x30)
 	return
