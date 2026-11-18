@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/util"
+	"strings"
 	"time"
 )
 
@@ -102,6 +103,17 @@ type PlayerViewModel struct {
 	LagFrames   uint32 `json:"lagFrames"`
 	Penalty     string `json:"penalty"`
 	TimingFlags uint8  `json:"timingFlags"`
+	// what the flags mean, for a tooltip:
+	TimingNotes string `json:"timingNotes"`
+	// "" before the player sent any run timing (e.g. an older client), "verified" or "unverified":
+	Verification string `json:"verification"`
+	// why the player is unverified:
+	Unverified string `json:"unverified"`
+}
+
+// RunWarningViewModel warns when players don't pay the same per frame (RUN_TIMING.md, Equal cost).
+type RunWarningViewModel struct {
+	Warning string `json:"warning"`
 }
 
 func FormatTime(t time.Time) string {
@@ -166,6 +178,8 @@ func (g *Game) updatePlayersList() {
 	updateMinStart := false
 	updateMaxFinish := false
 
+	common, costsDiffer := g.commonRunCost(activePlayers)
+
 	playerViewModels := make([]*PlayerViewModel, 0, len(activePlayers))
 	for _, p := range activePlayers {
 		// build player view model:
@@ -216,6 +230,14 @@ func (g *Game) updatePlayersList() {
 			}
 		}
 
+		verification, unverified := "", ""
+		if rt.OK {
+			verification = "verified"
+			if reasons := g.verifyPlayer(p, common); len(reasons) > 0 {
+				verification, unverified = "unverified", strings.Join(reasons, "; ")
+			}
+		}
+
 		playerViewModels = append(playerViewModels, &PlayerViewModel{
 			Index: p.Index(),
 			Team:  int(p.Team),
@@ -233,6 +255,10 @@ func (g *Game) updatePlayersList() {
 			LagFrames:   rt.LagFrames,
 			Penalty:     formatPenalty(rt.Penalty),
 			TimingFlags: rt.Flags,
+			TimingNotes: timingFlagNames(rt.Flags),
+
+			Verification: verification,
+			Unverified:   unverified,
 		})
 	}
 
@@ -244,6 +270,11 @@ func (g *Game) updatePlayersList() {
 
 	// send the players list:
 	g.viewModels.NotifyView("game/players", playerViewModels)
+	warning := ""
+	if costsDiffer {
+		warning = "players run with different patched ROMs or gates, so their frames don't cost the same"
+	}
+	g.viewModels.NotifyView("game/run/warning", RunWarningViewModel{Warning: warning})
 	if updateMinStart || updateMaxFinish {
 		g.viewModels.NotifyView("game/run/abs", RunTimesViewModel{
 			StartTime:  FormatTime(g.runMinStart),

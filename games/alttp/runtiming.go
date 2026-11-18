@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -683,14 +684,19 @@ func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
 		return nil
 	}
 
+	// a player that finalized another group reset than the local player is timing another run:
+	key := resetKey{id: binary.LittleEndian.Uint64(body[1:]), initiator: binary.LittleEndian.Uint16(body[9:])}
+	if own := g.reset.lastCompleted; !own.isZero() && !key.isZero() && key != own {
+		return nil
+	}
+
 	m := &p.RunTiming
+	shown := runTimingShown(m)
 	m.OK = true
 	m.Flags = body[0]
 	o := 1
-	m.ResetID = binary.LittleEndian.Uint64(body[o:])
-	o += 8
-	m.ResetInitiator = binary.LittleEndian.Uint16(body[o:])
-	o += 2
+	m.ResetID, m.ResetInitiator = key.id, key.initiator
+	o += 10
 	copy(m.Signature[:], body[o:])
 	o += patchSignatureSize
 	m.Gates = body[o]
@@ -721,12 +727,32 @@ func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
 		m.FinishSeenAt = time.Time{}
 	}
 	m.StartAt, m.FinishAt = startAt, finishAt
+	p.RunVerify.observeRunTiming(p)
+	if reasons := strings.Join(p.RunVerify.verifyReasons(m), "; "); reasons != p.RunVerify.lastReasons || runTimingShown(m) != shown {
+		p.RunVerify.lastReasons = reasons
+		g.shouldUpdatePlayersList = true
+	}
 
 	if !startAt.Equal(p.GameStartTime) || !finishAt.Equal(p.GameFinishTime) {
 		p.GameStartTime, p.GameFinishTime = startAt, finishAt
 		g.shouldUpdatePlayersList = true
 	}
 	return nil
+}
+
+// runTimingShownFields is what the players list shows of a player's run timing besides its times, or that depends on.
+type runTimingShownFields struct {
+	ok           bool
+	flags        uint8
+	signature    patchSignature
+	gates        uint8
+	gatesChanged bool
+	lagFrames    uint32
+	penalty      time.Duration
+}
+
+func runTimingShown(m *runTimingRemote) runTimingShownFields {
+	return runTimingShownFields{m.OK, m.Flags, m.Signature, m.Gates, m.GatesChanged, m.LagFrames, m.Penalty}
 }
 
 // localRunTiming makes the local player's message 0x84.

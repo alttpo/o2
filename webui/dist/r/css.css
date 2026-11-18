@@ -409,12 +409,31 @@ h5, h6 {
     overflow: auto;
     display: grid;
     grid-auto-rows: min-content;
-    grid-template-columns: max-content max-content minmax(max-content, 1fr) minmax(max-content, 2fr) max-content max-content;
+    grid-template-columns: max-content max-content minmax(max-content, 1fr) minmax(max-content, 2fr) max-content max-content max-content max-content;
     grid-column-gap: 0.75em;
 }
 
 .players > * {
     white-space: nowrap;
+}
+
+.players > .timing-warning {
+    color: orange;
+    white-space: normal;
+}
+
+.players .timing-penalty {
+    color: orange;
+}
+
+.players > .timing-verified {
+    color: limegreen;
+    text-align: center;
+}
+
+.players > .timing-unverified {
+    color: orange;
+    text-align: center;
 }
 
 .players > .players-header {

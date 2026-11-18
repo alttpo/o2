@@ -6,6 +6,22 @@ import {setField} from "../util";
 // localStorage key of the height the user resized the notification history to:
 const historyHeightKey = "o2.alttp.notificationHistoryHeight";
 
+// timingTitle describes a player's run timing verification and flags, for a tooltip.
+function timingTitle(p: any): string {
+    const lines: string[] = [];
+    if (p.verification === "verified") {
+        lines.push("Run timing verified");
+    } else if (p.verification === "unverified") {
+        lines.push("Run timing unverified: " + p.unverified);
+    } else {
+        lines.push("No run timing from this player");
+    }
+    if (p.timingNotes) {
+        lines.push("Flags: " + p.timingNotes);
+    }
+    return lines.join("\n");
+}
+
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
 
@@ -310,12 +326,17 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         </div>
         <div class="players" style="grid-row: 2; grid-column: 2; align-self: start">
             <h5 style="grid-column: 1 / -1">Players</h5>
+            {vm["game/run/warning"]?.warning
+                ? <div class="timing-warning" style="grid-column: 1 / -1">&#x26A0; {vm["game/run/warning"].warning}</div>
+                : null}
             <div class="players-header">##</div>
             <div class="players-header">team</div>
             <div class="players-header">name</div>
             <div class="players-header">location</div>
             <div class="players-header">start</div>
             <div class="players-header">finish</div>
+            <div class="players-header" title="Lag frames since the start">lag</div>
+            <div class="players-header" title="Run timing verification">ok</div>
             {
                 (vm["game/players"] || []).map((p: any) => (<Fragment key={p.index.toString()}>
                     <div class="mono" title="Player index">{("00" + p.index.toString(16).toUpperCase()).slice(-3)}</div>
@@ -328,7 +349,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                         ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
                     }</div>
                     <div class="mono" title="Start">{p.relStart}</div>
-                    <div class="mono" title="Finish">{p.relFinish}</div>
+                    <div class="mono" title={p.penalty ? "Finish, and the time added for running fast" : "Finish"}>
+                        {p.relFinish}{p.penalty ? <span class="timing-penalty"> {p.penalty}</span> : null}
+                    </div>
+                    <div class="mono" title="Lag frames since the start">{p.verification ? p.lagFrames : ""}</div>
+                    <div class={"timing-" + (p.verification || "unknown")}
+                         title={timingTitle(p)}>{
+                        p.verification === "verified" ? (p.timingNotes ? "\u2713*" : "\u2713")
+                            : p.verification === "unverified" ? "\u26A0" : ""
+                    }</div>
                 </Fragment>))
             }
         </div>

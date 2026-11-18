@@ -173,6 +173,8 @@ type Player struct {
 	GameFinishTime time.Time
 	// the player's run timing from message 0x84 (see runtiming.go):
 	RunTiming runTimingRemote
+	// what the local client keeps to verify it (see verify.go):
+	RunVerify runTimingVerify
 
 	// the server's stamp of the last message received from the player:
 	lastServerStamp time.Time

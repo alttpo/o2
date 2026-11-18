@@ -227,6 +227,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.SubSubModule); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
+	p.RunVerify.observeLocation(p)
 
 	lastLocation := p.Location
 	if p.Location, err = readU24(r); err != nil {
