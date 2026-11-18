@@ -157,6 +157,9 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 // (after its subroutines); t are the tables emitted by emitRemoteFrameTables in the same bank, dyingList and nearDying
 // the routines of emitDyingEnemiesList and emitNearDyingEnemySub. Called with any register sizes; preserves P, DB and
 // D.
+//
+// Cycles (cycles_test.go): budget 15,000, measured 13,867 with 3 remote players in the room, about 30% of a frame.
+// This is the most expensive per-frame routine of the patch, and the first one to trim.
 func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }

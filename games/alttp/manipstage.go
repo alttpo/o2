@@ -431,6 +431,8 @@ func emitManipStageBlock(a *asm.Emitter) {
 // emitManipPending emits the trampoline's code, run after the module, that works off the pending list the hook wrote
 // in the first frame of submodule 0 of the dungeon module in the room it was written for (see manipstage.go). fnDraw
 // is RoomDraw_16x16Single and fnRTL an RTL in its bank. Called with JSL with A and X 8-bit; preserves P.
+//
+// Cycles (cycles_test.go): 27 with nothing pending; the path that applies pending objects is not measured yet.
 func emitManipPending(a *asm.Emitter, fnDraw, fnRTL, block uint32) {
 	a.AssumeSEP(0x30)
 	a.Label("manipPending")

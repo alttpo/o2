@@ -327,7 +327,7 @@ func (gs *gameSync) runFrame(t testing.TB) {
 	// remote players) take up to about 8,000 cycles:
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
-	if !e.RunUntil(testROMBreakPoint, 0x4_000) {
+	if !runUntil(e, testROMBreakPoint, 0x4_000) {
 		t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, e.CPU.PC)
 		return
 	}

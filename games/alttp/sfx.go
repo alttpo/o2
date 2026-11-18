@@ -227,6 +227,8 @@ func (g *Game) writeRemoteSfx(now time.Time) {
 // emitSfx emits the trampoline's code, run right after the module, that appends the sound effects the game queued this
 // frame to the ring o2 reads, and then plays one queued remote entry in whichever of $012E/$012F the game left empty.
 // Called with A and X 8-bit.
+//
+// Cycles (cycles_test.go): 75 with no sound effects queued; the paths that queue and play them are not measured yet.
 func emitSfx(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	local := linkOAMCopyAddr + linkOAMCopySfx

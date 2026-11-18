@@ -300,6 +300,8 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 //     itself.
 //
 // upload is the routine they call with JSL (see emitNMIUpload).
+//
+// Cycles (cycles_test.go): budget 50 per frame, measured 40 with 3 remote players, not counting emitNMIUpload.
 func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower, followerBottom uint32) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)
@@ -401,6 +403,8 @@ func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower, followe
 // channel 0 set up for VRAM writes. Called with A 8-bit and X 16-bit; clobbers A and X. It skips the rows still in
 // VRAM from the last upload (rsCache, rsKept). linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the
 // bank of Link's graphics.
+//
+// Cycles (cycles_test.go): budget 600, measured 546 with 3 remote players.
 func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)

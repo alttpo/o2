@@ -542,7 +542,7 @@ func runNMIHookAt(t *testing.T, e *emulator.System, g *Game, addr uint32, setup 
 	copy(e.WRAM[0x1F00:], stub)
 	e.CPU.Reset()
 	e.SetPC(0x001F00)
-	if !e.RunUntil(0x001F00+uint32(len(stub)), 0x1_000) {
+	if !runUntil(e, 0x001F00+uint32(len(stub)), 0x1_000) {
 		t.Fatalf("NMI hook did not return; PC=$%06x", e.GetPC())
 	}
 	return d

@@ -90,7 +90,9 @@ func nmiCountHookSite(rom *snes.ROM) (ok bool, chain uint32) {
 
 // emitNMICount emits the routine that the NMI handler jumps to with JML from nmiCountHookAddr, with A, X and Y 16-bit
 // and any DB and D. It increments the NMI frame counter and then runs the replaced instructions and jumps back, or
-// jumps to chain (the routine a randomizer had hooked there, which runs them itself). About 35 cycles.
+// jumps to chain (the routine a randomizer had hooked there, which runs them itself).
+//
+// Cycles (cycles_test.go): budget 70, measured 63 when the counter carries into its high byte.
 func emitNMICount(a *asm.Emitter, chain uint32) {
 	a.AssumeREP(0x30)
 	a.Label("nmiCount")
@@ -126,7 +128,10 @@ func emitIncU24(a *asm.Emitter, addr uint32, label string) {
 
 // emitRunTiming emits preMain's code, run before the module, that counts the main loop iteration and latches the NMI
 // frame counter when the run starts or finishes. Called with A and X 8-bit and D = $0000; leaves them 8-bit and
-// clobbers A. About 50 cycles on most frames.
+// clobbers A.
+//
+// Cycles (cycles_test.go): budget 120, measured 40 on most frames and 110 on the frame that latches the start after
+// an NMI carried into the counter's high byte.
 func emitRunTiming(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	rt := func(o uint32) uint32 { return runTimingAddr + o }

@@ -51,6 +51,9 @@ func linkDarkColor(light uint16) uint16 {
 // game reloaded the palette since the colors were applied. The main buffer is only written when it showed the same
 // color as the aux buffer, i.e. no fade or filter was in progress; a fade in progress computes the main buffer from
 // the aux buffer anyway. Called with A and X 8-bit.
+//
+// Cycles (cycles_test.go): 60 with no colors to apply, including the module call before it; the path that applies them
+// is not measured yet.
 func emitLinkColor(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	a.Comment("apply the player's color to Link's palette whenever the game reloaded it:")

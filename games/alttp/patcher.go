@@ -725,6 +725,9 @@ func (r *patchROM) write(rom *snes.ROM, text io.Writer) (err error) {
 // them. Reading them from the OAM buffer in WRAM races with the next frame's ClearOAMBuffer, which sets the Y
 // coordinates of all entries to $F0 and made Link disappear for alttpo players. o2 may still read the copy while it
 // is being written, which at worst mixes two consecutive frames' entries.
+//
+// Cycles (cycles_test.go, with the gate test and the manipPending call before it): 26 with the sprites gate off, 179
+// with it on.
 func emitLinkOAMCopy(a *asm.Emitter) {
 	a.Comment("copy Link's OAM entries to SRAM before the next frame clears them, with DMA channel 5 from the WRAM port")
 	a.Comment("(neither the game nor randomizers use channel 5); the copies are contiguous in SRAM:")
