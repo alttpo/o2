@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alttpo/snes/emulator"
 	"o2/util"
@@ -260,9 +261,27 @@ func addRSPlayer(h *skScenario, name string, x, y uint16) {
 	}
 }
 
-// The remote sprites code with 3 remote players in the room: one drawn with Link's sprites and two as blobs.
-func TestCycleBudgets_RemoteSprites(t *testing.T) {
-	p := newCycleProfile(t, "VT test")
+// profileFrame runs a frame of every player in the scenario like skScenario.frame, profiling only player i's, and its
+// NMI uploads.
+func (h *skScenario) profileFrame(p *cycleProfile, i int) {
+	for j, gs := range h.gs {
+		gs.g.cooldownTime = time.Time{}
+		if j == i {
+			testCycleProfile = p
+		}
+		gs.runFrame(h.t)
+		if j == i {
+			runNMIHook(h.t, gs.e, gs.g)
+		}
+		testCycleProfile = nil
+		h.s.HandleAllClients(nil)
+	}
+	h.s.AdvanceTime(17 * time.Millisecond)
+}
+
+// newRSCycleScenario sets up the remote sprites scenario with 3 remote players in g1's room: one drawn with Link's
+// sprites and two as blobs.
+func newRSCycleScenario(t *testing.T) *skScenario {
 	h := newRSScenario(t)
 	addRSPlayer(h, "g3", 0x1030, 0x0230)
 	addRSPlayer(h, "g4", 0x1080, 0x0240)
@@ -270,20 +289,50 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 	if h.gs[0].e.SRAM[gatesAddr&0x7FFF] != gateSprites {
 		t.Fatalf("the sprites gate is off")
 	}
+	return h
+}
 
-	// profile g1's frames and NMI uploads:
-	testCycleProfile = p
-	defer func() { testCycleProfile = nil }()
+// The remote sprites code with 3 remote players in the room, and nothing else drawn.
+func TestCycleBudgets_RemoteSprites(t *testing.T) {
+	p := newCycleProfile(t, "VT test")
+	h := newRSCycleScenario(t)
 	for f := 0; f < 8; f++ {
-		h.frame()
-		runNMIHook(t, h.gs[0].e, h.gs[0].g)
+		h.profileFrame(p, 0)
 	}
 
 	p.report(t, "3 remote players")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 15_000,
+		"remoteFrame": 8_000,
 		"NMI hooks":   50,
 		"NMI upload":  600,
 		"preMain: manip pending call, gate, Link OAM copy": 200,
+	})
+}
+
+// The remote sprites code's worst case: with 3 remote players in the room, the game's sprites fill the OAM buffer but
+// for its first 16 entries, which the remote sprites are drawn into; an eighth of them show VRAM slots and an eighth have
+// chrs captured while a bomb exists.
+func TestCycleBudgets_RemoteSpritesFullOAM(t *testing.T) {
+	p := newCycleProfile(t, "VT test")
+	h := newRSCycleScenario(t)
+	g1 := h.gs[0]
+	clearOAM := g1.beforeEmulate
+	g1.beforeEmulate = func() {
+		clearOAM()
+		e := g1.e
+		for k := 0x10; k < 0x80; k++ {
+			chr := []uint8{0x20, 0x80, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0}[k%8]
+			copy(e.WRAM[0x0800+k*4:], []byte{uint8(k), 0x40, chr, 0x20})
+		}
+		e.WRAM[0x0C4A] = 0x07
+	}
+	for f := 0; f < 8; f++ {
+		h.profileFrame(p, 0)
+	}
+
+	p.report(t, "3 remote players, OAM buffer full")
+	p.expectWithin(t, map[string]uint64{
+		"remoteFrame": 14_000,
+		"NMI upload":  600,
 	})
 }

@@ -644,6 +644,9 @@ func emitMVNCopy(a *asm.Emitter, src, dst, size uint32) {
 	a.MVN(uint8(dst>>16), uint8(src>>16))
 }
 
+// maxBlockSize is the most bytes a block may assemble to:
+const maxBlockSize = 0x2000
+
 // measure assembles every block with placeholder addresses to find its size.
 func (r *patchROM) measure() (err error) {
 	r.init.name = "init"
@@ -666,7 +669,7 @@ func (r *patchROM) measure() (err error) {
 	r.nmiCount.name = "NMI count"
 
 	for _, rt := range r.routines() {
-		a := asm.NewEmitter(make([]byte, 0x1000), false)
+		a := asm.NewEmitter(make([]byte, maxBlockSize), false)
 		a.SetBase(0x008000)
 		if err = rt.emit(a); err != nil {
 			return fmt.Errorf("%s: %w", rt.block.name, err)

@@ -15,7 +15,8 @@ import (
 //
 //   - it runs from FastROM (see fastROMBank);
 //   - one unrolled pass over the 128 OAM entries finds both the VRAM slots that the game's sprites show and the
-//     entries to capture; an unused entry (Y = $F0) costs a load, a compare and a branch;
+//     entries to capture; an unused entry (Y = $F0) costs a load, a compare and a branch, and a used one a lookup of
+//     its chr in captureChrTable masked with rcMask, so that the entry handler only runs for the entries it acts on;
 //   - the VRAM slots are handed out to the parts with a table lookup (remoteAllocTable);
 //   - its scratch is the direct page $00..$0F, which the game only uses as scratch within a routine;
 //   - the tables it looks up are in ROM, in the same bank as the code, and read with absolute addressing while DB is
@@ -24,15 +25,20 @@ import (
 
 // direct page scratch of remoteFrame:
 const (
-	// scan: the capture mask (rcMask, u8; 0 while not capturing), whether to draw (rcDraw), whether to find the VRAM
-	// slots in use (rcSlots), the slots found in use (rcUsed), the chr of the entry being looked at (rcChr, u16):
+	// scan: the bits of captureChrTable to act on (rcMask, u8: the capture bits while capturing, and scanChrSlot while
+	// finding the VRAM slots in use), whether to draw (rcDraw), whether to find the VRAM slots in use (rcSlots), the
+	// slots found in use (rcUsed), the bits of the entry being looked at (rcHit), its chr (rcChr, u16):
 	rcMask = 0x00
 	// non-zero once the dying enemies are listed this frame (see emitDyingEnemiesList):
 	rcDying = 0x01
 	rcDraw  = 0x02
 	rcSlots = 0x03
 	rcUsed  = 0x04
+	rcHit   = 0x05
 	rcChr   = 0x06
+	// copying a captured entry: its OAM buffer offset and index (u16):
+	rcOff   = 0x08
+	rcIndex = 0x0A
 	// drawing: screen x and y (u16), chr and attributes (u16), scratch (u16):
 	rcSX   = 0x00
 	rcSY   = 0x02
@@ -71,7 +77,9 @@ func cpyAbs(a *asm.Emitter, addr uint16) { rawAbs(a, "cpy.w $%04x", 0xCC, addr) 
 func andAbsX(a *asm.Emitter, addr uint16) {
 	rawAbs(a, "and.w $%04x,x", 0x3D, addr)
 }
-func decA(a *asm.Emitter) { raw(a, "dec", 0x3A) }
+func decA(a *asm.Emitter)            { raw(a, "dec", 0x3A) }
+func stxDP(a *asm.Emitter, dp uint8) { rawDP(a, "stx.b $%02x", 0x86, dp) }
+func trbDP(a *asm.Emitter, dp uint8) { rawDP(a, "trb.b $%02x", 0x14, dp) }
 
 // remoteAllocTable returns, for each set of VRAM slots in use (bits of remoteSlots), the first chrs of the first
 // remotePartMax free slots in order ($FF for none), and the number of free slots.
@@ -95,9 +103,12 @@ func remoteAllocTable() (slots [0x80 * remotePartMax]byte, free [0x80]byte) {
 	return
 }
 
+// scanChrSlot is the bit of captureChrTable set for the chrs $00..$3F, which show the VRAM slots (remoteSlots):
+const scanChrSlot = 0x80
+
 // captureTables returns the capture tables: per ancilla type $00..$3F the bits of captureChrTable to capture while one
 // exists (1, or 3 for captureShadowCasters), and per chr $00..$FF its bits (1 for captureChrs, 2 for
-// captureShadowChrs, or'ed with captureChrEnemyFX for enemyDeathChrs).
+// captureShadowChrs, or'ed with captureChrEnemyFX for enemyDeathChrs and with scanChrSlot for $00..$3F).
 func captureTables() (types [0x40]byte, chrs [0x100]byte) {
 	for _, t := range captureAncillae {
 		types[t] = 1
@@ -113,6 +124,9 @@ func captureTables() (types [0x40]byte, chrs [0x100]byte) {
 	}
 	for _, c := range enemyDeathChrs {
 		chrs[c] |= captureChrEnemyFX
+	}
+	for c := 0; c < 0x40; c++ {
+		chrs[c] |= scanChrSlot
 	}
 	return
 }
@@ -158,60 +172,79 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 // the routines of emitDyingEnemiesList and emitNearDyingEnemySub. Called with any register sizes; preserves P, DB and
 // D.
 //
-// Cycles (cycles_test.go): budget 15,000, measured 13,867 with 3 remote players in the room, about 30% of a frame.
-// This is the most expensive per-frame routine of the patch, and the first one to trim.
+// Cycles (cycles_test.go), with 3 remote players in the room: budget 8,000, measured 7,385 (about 16% of a frame)
+// with the OAM buffer otherwise empty; budget 14,000, measured 12,953 (about 29%) with the game's sprites filling all
+// but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
+// per-frame routine of the patch. Most of it is the scan (9 cycles per unused entry, about 22 per used one), drawing
+// the sprites (about 170 each), and with a full OAM buffer, the search for unused entries.
 func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
 	ex := linkOAMCopyAddr + linkOAMCopyExtras
 
-	// --- the OAM entry handler, called by the scan with JSR: X = OAM buffer offset, Y = entry index; A 8-bit (B = 0),
-	// X and Y 16-bit, DB = program bank. Preserves X and Y. ---
-	a.AssumeSEP(0x20)
-	a.AssumeREP(0x10)
-	handler := a.Label("rf_entry")
-	a.Comment("name table 1: neither a VRAM slot nor captured:")
-	a.LDA_abs_x(0x0803)
-	a.LSR()
-	a.BCS("rf_entry_ret")
-	a.LDA_abs_x(0x0802)
-	a.STA_dp(rcChr)
-	a.Comment("VRAM slots shown by chrs $00..$3F:")
-	a.LDA_dp(rcSlots)
-	a.BEQ("rf_entry_capture")
-	a.LDA_dp(rcChr)
-	a.CMP_imm8_b(0x40)
-	a.BCS("rf_entry_capture")
-	a.PHY()
-	a.LDA_abs_y(0x0A20)
-	ldyDP(a, rcChr)
-	a.AND_imm8_b(0x02)
-	a.BEQ("rf_entry_small")
-	a.LDA_abs_y(lo(t.chrSlotsLarge))
-	a.BRA("rf_entry_slots")
-	a.Label("rf_entry_small")
-	a.LDA_abs_y(lo(t.chrSlotsSmall))
-	a.Label("rf_entry_slots")
-	a.PLY()
-	tsbDP(a, rcUsed)
-	a.Label("rf_entry_capture")
-	a.LDA_dp(rcMask)
-	a.BEQ("rf_entry_ret")
-	a.PHY()
-	ldyDP(a, rcChr)
-	a.LDA_abs_y(lo(t.captureChrs))
-	a.PLY()
-	andDP(a, rcMask)
-	a.BNE("rf_entry_copy")
-	a.Label("rf_entry_ret")
-	a.RTS()
+	// --- the OAM entry handlers, called by the scan with JSR for a used entry whose chr's bits in captureChrTable and
+	// rcMask have any in common: rf_entry_lo for the entries $00..$3F and rf_entry_hi for $40..$7F, with A = those bits,
+	// X = the entry's offset from $0800 or $0900, Y = its chr; A, X and Y 8-bit, DB = program bank. They return with
+	// A, X and Y 8-bit. ---
+	a.AssumeSEP(0x30)
+	var handlers [2]uint32
+	for h := uint16(0); h < 2; h++ {
+		p := []string{"rf_entry_lo", "rf_entry_hi"}[h]
+		handlers[h] = a.Label(p)
+		a.STA_dp(rcHit)
+		a.Comment("name table 1: neither a VRAM slot nor captured:")
+		a.LDA_abs_x(0x0803 + h*0x100)
+		a.LSR()
+		a.BCS(p + "_ret")
+		a.Comment("VRAM slots shown by chrs $00..$3F, 8x8 or 16x16 (X = the entry's index - $40 * half meanwhile):")
+		a.LDA_dp(rcHit)
+		a.BPL(p + "_capture")
+		a.TXA()
+		a.LSR()
+		a.LSR()
+		a.TAX()
+		a.LDA_abs_x(0x0A20 + h*0x40)
+		a.AND_imm8_b(0x02)
+		a.BEQ(p + "_small")
+		a.LDA_abs_y(lo(t.chrSlotsLarge))
+		a.BRA(p + "_slots")
+		a.Label(p + "_small")
+		a.LDA_abs_y(lo(t.chrSlotsSmall))
+		a.Label(p + "_slots")
+		tsbDP(a, rcUsed)
+		a.TXA()
+		a.ASL()
+		a.ASL()
+		a.TAX()
+		a.Label(p + "_capture")
+		a.LDA_dp(rcHit)
+		a.AND_imm8_b(^uint8(scanChrSlot))
+		a.BNE(p + "_copy")
+		a.Label(p + "_ret")
+		a.RTS()
+		a.Comment("a captured chr: X = the OAM buffer offset, Y = the entry index, 16-bit:")
+		a.Label(p + "_copy")
+		a.STY_dp(rcChr)
+		a.REP(0x30)
+		a.TXA()
+		if h != 0 {
+			a.CLC()
+			a.ADC_imm16_w(0x0100)
+		}
+		a.TAX()
+		a.LSR()
+		a.LSR()
+		a.TAY()
+		a.JMP_abs("rf_entry_copy")
+		a.AssumeSEP(0x30)
+	}
 
-	a.Comment("a captured chr: not one of Link's own entries, which are copied already:")
+	a.AssumeREP(0x30)
+	a.Comment("not one of Link's own entries, which are copied already:")
 	a.Label("rf_entry_copy")
-	a.PHX()
-	a.PHY()
-	a.REP(0x30)
+	stxDP(a, rcOff)
+	a.STY_dp(rcIndex)
 	a.TXA()
 	a.SEC()
 	a.SBC_abs(0x0352)
@@ -233,34 +266,25 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.INC_dp(rcDying)
 	a.REP(0x20)
 	a.Label("rf_copy_listed")
-	raw(a, "lda $03,s: the entry offset", 0xA3, 0x03)
-	a.TAY()
+	ldyDP(a, rcOff)
 	a.JSL(nearDying)
 	a.BCC("rf_copy")
 	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy")
-	a.Comment("Y = the entry offset; copy x, y, chr, attributes, extended attributes and the OAM index:")
-	raw(a, "lda $03,s: the entry offset", 0xA3, 0x03)
-	a.TAY()
+	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index; X = the extras' offset:")
 	a.LDA_long(ex)
 	a.TAX()
+	ldyDP(a, rcOff)
 	a.LDA_abs_y(0x0800)
 	a.STA_long_x(ex + 2 + 0)
 	a.LDA_abs_y(0x0802)
 	a.STA_long_x(ex + 2 + 2)
-	a.PHX()
-	a.TYA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.LDA_abs_x(0x0A20)
-	a.AND_imm16_w(0x0003)
-	a.PLX()
-	a.STA_long_x(ex + 2 + 4)
-	a.TYA()
-	a.LSR()
-	a.LSR()
+	ldyDP(a, rcIndex)
 	a.SEP(0x20)
+	a.LDA_abs_y(0x0A20)
+	a.AND_imm8_b(0x03)
+	a.STA_long_x(ex + 2 + 4)
+	a.LDA_dp(rcIndex)
 	a.STA_long_x(ex + 2 + 5)
 	a.REP(0x20)
 	a.TXA()
@@ -270,13 +294,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.CMP_imm16_w(linkOAMExtrasMax * linkOAMExtraSize)
 	a.BCC("rf_copy_done")
 	a.Comment("full: capture nothing more:")
-	a.STZ_dp(rcMask)
-	a.Label("rf_copy_done")
-	a.Comment("B = 0 for the 16-bit index loads of the chr:")
-	a.LDA_imm16_w(0)
 	a.SEP(0x20)
-	a.PLY()
-	a.PLX()
+	a.LDA_imm8_b(^uint8(scanChrSlot))
+	trbDP(a, rcMask)
+	a.Label("rf_copy_done")
+	a.SEP(0x30)
 	a.RTS()
 
 	// --- the sprite drawing routine, called with JSR: Y = table entry offset, X = OAM buffer offset to search down
@@ -344,12 +366,12 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	tsbDP(a, rcDrawn)
 	a.PLX()
 	a.Label("rf_sprite_find")
-	a.Comment("find the next unused OAM entry (Y = $F0) below X, 4 entries at a time while there are 4 below:")
+	a.Comment("find the next unused OAM entry (Y = $F0) below X, 8 entries at a time while there are 8 below:")
 	a.SEP(0x20)
-	a.Label("rf_sprite_find4")
-	a.CPX_imm16_w(0x0010)
+	a.Label("rf_sprite_find8")
+	a.CPX_imm16_w(0x0020)
 	a.BCC("rf_sprite_find_loop")
-	for i := 1; i <= 4; i++ {
+	for i := 1; i <= 8; i++ {
 		a.LDA_long_x(uint32(0x7E0801 - 4*i))
 		a.CMP_imm8_b(0xF0)
 		a.BEQ(fmt.Sprintf("rf_sprite_found%d", i))
@@ -357,18 +379,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.REP(0x20)
 	a.TXA()
 	a.CLC()
-	a.ADC_imm16_w(0xFFF0) // -$10
+	a.ADC_imm16_w(0xFFE0) // -$20
 	a.TAX()
 	a.SEP(0x20)
-	a.BRA("rf_sprite_find4")
-	for i := 4; i >= 1; i-- {
-		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
-		a.DEX()
-		a.DEX()
-		a.DEX()
-		a.DEX()
-	}
-	a.BRA("rf_sprite_found")
+	a.BRA("rf_sprite_find8")
+	a.Comment("one at a time:")
 	a.Label("rf_sprite_find_loop")
 	a.DEX()
 	a.DEX()
@@ -378,6 +393,30 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_long_x(0x7E0801)
 	a.CMP_imm8_b(0xF0)
 	a.BNE("rf_sprite_find_loop")
+	a.BRA("rf_sprite_found")
+	a.Label("rf_sprite_full")
+	a.Comment("no unused entries left; X = 0 stops drawing (see rf_until):")
+	a.REP(0x20)
+	a.LDX_imm16_w(0x0000)
+	a.RTS()
+	for i := 2; i >= 1; i-- {
+		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
+		a.DEX()
+		a.DEX()
+		a.DEX()
+		a.DEX()
+	}
+	a.BRA("rf_sprite_found")
+	for i := 3; i <= 8; i++ {
+		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
+		a.REP(0x20)
+		a.TXA()
+		a.CLC()
+		a.ADC_imm16_w(uint16(-4 * i))
+		a.TAX()
+		a.SEP(0x20)
+		a.BRA("rf_sprite_found")
+	}
 	a.Label("rf_sprite_found")
 	a.LDA_dp(rcSX)
 	a.STA_long_x(0x7E0800)
@@ -407,18 +446,16 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.REP(0x20)
 	a.PLX()
 	a.RTS()
-	a.Label("rf_sprite_full")
-	a.Comment("no unused entries left; stay at the start for any following sprites:")
-	a.REP(0x20)
-	a.LDX_imm16_w(0x0000)
-	a.RTS()
 
-	// --- draws the table entries from offset Y up to offset A with drawSprite; A, X and Y 16-bit, DB = $70 ---
+	// --- draws the table entries from offset Y up to offset A with drawSprite, until the OAM buffer is full (X = 0: no
+	// entries below to search); A, X and Y 16-bit, DB = $70 ---
 	drawUntil := a.Label("rf_until")
 	a.STA_abs(st(rsTmpEnd))
 	a.Label("rf_until_loop")
 	cpyAbs(a, st(rsTmpEnd))
 	a.BCS("rf_until_done")
+	a.TXA()
+	a.BEQ("rf_until_done")
 	a.JSR_abs(uint16(drawSprite))
 	a.TYA()
 	a.CLC()
@@ -577,28 +614,32 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.SEP(0x20)
 	a.LDA_long(remoteTableAddr + rtParts)
 	a.STA_dp(rcSlots)
+	a.BEQ("rf_scan_check")
+	a.LDA_imm8_b(scanChrSlot)
+	tsbDP(a, rcMask)
 
 	a.Label("rf_scan_check")
 	a.SEP(0x30)
 	a.LDA_dp(rcMask)
-	oraDP(a, rcSlots)
 	a.BNE("rf_scan")
 	a.JMP_abs("rf_scan_done")
 
 	a.Label("rf_scan")
-	a.Comment("one pass over the OAM buffer, from the last entry down (the order captured entries are copied in):")
-	a.REP(0x10)
+	a.Comment("one pass over the OAM buffer, from the last entry down (the order captured entries are copied in), calling")
+	a.Comment("the handler for the used entries whose chr has bits of rcMask:")
 	for k := 0x7F; k >= 0; k-- {
 		next := fmt.Sprintf("rf_scan_%02x", k)
 		a.LDA_abs(uint16(0x0801 + k*4))
 		a.CMP_imm8_b(0xF0)
 		a.BEQ(next)
-		a.LDX_imm16_w(uint16(k * 4))
-		a.LDY_imm16_w(uint16(k))
-		a.JSR_abs(uint16(handler))
+		a.LDY_abs(uint16(0x0802 + k*4))
+		a.LDA_abs_y(lo(t.captureChrs))
+		andDP(a, rcMask)
+		a.BEQ(next)
+		a.LDX_imm8_b(uint8(k&0x3F) * 4)
+		a.JSR_abs(uint16(handlers[k>>6]))
 		a.Label(next)
 	}
-	a.SEP(0x10)
 
 	a.Label("rf_scan_done")
 	a.LDA_dp(rcDraw)

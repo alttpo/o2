@@ -42,8 +42,17 @@ message 0x84, clock sync, discontinuities, verification and display.
    warning row when signatures or gates differ (`game/run/warning`).
 6. Cycle budgets (`cycles_test.go`): a profiler that charges each instruction to the patch routine (or part of
    preMain) its address is in, using label addresses from the patch listing. Measured and documented next to each
-   routine: NMI count 63, run timing 110 worst (40 usual), gate test 26, and with 3 remote players remoteFrame 13,867
-   (about 30% of a frame), NMI upload 546, NMI hooks 40.
+   routine: NMI count 63, run timing 110 worst (40 usual), gate test 26, and with 3 remote players NMI upload 546,
+   NMI hooks 40.
+7. remoteFrame trimmed. The old 13,867 was measured on the other players' emulators, whose OAM buffers are never
+   cleared; the budget tests now profile only g1, in two defined cases: an otherwise empty OAM buffer (7,385) and a
+   nearly full one (12,953, which was 15,925 before trimming). The scan looks each used entry's chr up in
+   captureChrTable (with `scanChrSlot` for $00..$3F) and calls the handler only for the entries it acts on; the
+   handler is split in two halves so that it runs with 8-bit index registers; a capture's copy keeps its offsets in
+   the direct page; drawing stops once the OAM buffer is full; the search for unused entries looks at 8 at a time.
+   This also found an emulator bug (`alttpo/snes`): setting the x flag didn't clear the high bytes of X and Y. Fixed
+   in `../snes` (local commit on `main`, used through go.work); `go.mod` still pins the older version until it's
+   pushed.
 7. alttpo (`../alttpo/alttpo/RunTiming.as`, branch `esync`, commit `bbc2d8c`): reads the `$707000` block and the
    signature in `post_frame`, stamps latches, detects jumps, savestate loads (sets flag bit 4) and running fast,
    writes the gate byte (bit 0 with SyncSprites, clearing the remote sprites NMI state first), min-RTT clock in
@@ -62,9 +71,11 @@ message 0x84, clock sync, discontinuities, verification and display.
    - Toggle `syncSprites` mid-game and look for glitches; measure frames run with NMI off to set `rtRateTolerance`.
    - Fresh SRAM reads `latches = $FF`; both clients clear it as a stale latch once they have the server clock. Check
      that the first start after that latches.
-2. **Trim remoteFrame.** 13,867 cycles with 3 remote players is the patch's biggest per-frame cost. Also measure the
-   busy paths of link color, sfx and manip pending (only their idle paths are measured), and consider gates for
-   tunic color and sfx.
+2. **Per-frame costs.** remoteFrame is still the biggest (7,385 cycles usually, 12,953 with a nearly full OAM
+   buffer). What's left to trim there is drawing each sprite (about 170 cycles: the extended attribute write alone
+   is about 40) and the per-entry scan. Also measure the busy paths of link color, sfx and manip pending (only their
+   idle paths are measured), and consider gates for tunic color and sfx. Push the `snes` emulator fix and bump
+   `go.mod`; without go.work, `TestRemoteSpritesScenario_OnlyOwnShadowsSent` fails on the old emulator.
 3. **Peer verification in alttpo** (port `verify.go`); alttpo only warns about differing signatures or gates.
 4. **Gates as a group setting**, so a player can't run with different gates by accident. Only the warning exists.
 5. **Smaller things:**

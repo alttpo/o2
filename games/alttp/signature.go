@@ -122,7 +122,7 @@ func computePatchVersion() (v [4]byte) {
 		linkGfxBankIns: []byte{0xA9, 0x10},
 	}
 	for _, rt := range r.routines() {
-		a := asm.NewEmitter(make([]byte, 0x1000), false)
+		a := asm.NewEmitter(make([]byte, maxBlockSize), false)
 		a.SetBase(0x008000)
 		if err := rt.emit(a); err != nil {
 			panic(fmt.Errorf("alttp: patch version: %s: %w", rt.block.name, err))
