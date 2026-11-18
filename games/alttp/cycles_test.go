@@ -157,10 +157,21 @@ func (p *cycleProfile) runUntil(e *emulator.System, target uint32, maxCycles uin
 // the profile that the scenario helpers run the CPU with, if any:
 var testCycleProfile *cycleProfile
 
-// runUntil runs the CPU until target, with testCycleProfile if set.
+// the function that the scenario helpers call after every instruction they run, if any:
+var testStepHook func(e *emulator.System)
+
+// runUntil runs the CPU until target, with testCycleProfile or testStepHook if set.
 func runUntil(e *emulator.System, target uint32, maxCycles uint64) bool {
 	if testCycleProfile != nil {
 		return testCycleProfile.runUntil(e, target, maxCycles)
+	}
+	if testStepHook != nil {
+		for cycles := uint64(0); cycles < maxCycles && e.GetPC() != target; {
+			n, _ := e.CPU.Step()
+			cycles += uint64(n)
+			testStepHook(e)
+		}
+		return e.GetPC() == target
 	}
 	return e.RunUntil(target, maxCycles)
 }

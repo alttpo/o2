@@ -164,7 +164,9 @@ more messages, which corrupted the rest of the packet.
   alttpo players. Instead, the patched ROM's frame trampoline copies `$0352`, Link's 12 OAM entries (`$0800`), their
   extended attributes (`$0A20`) and the graphics DMA source addresses (`$0AC0..$0AD7`) to SRAM (`$706140`) right after
   `Module_MainRouting` returns, and o2 reads that copy. A read can still overlap the copy being written, which at worst
-  mixes two consecutive frames' entries for one frame.
+  mixes two consecutive frames' entries for one frame. The captured entries' length is stored once the scan is done:
+  it used to be cleared first and counted up, so a read during the scan saw none of them, which made a carried bush
+  flicker for alttpo players.
 - **Extra reads per frame.** Sampling sprites adds one small SRAM read per frame, and the crystal and star switch
   states one more each, bringing a normal read cycle to 11 reads, which takes two FX Pak Pro VGET commands instead of
   one. The 16-byte patch signature (`$707FF0`, see `games/alttp/signature.go`) is read with the SRAM reads and every
@@ -172,6 +174,10 @@ more messages, which corrupted the rest of the packet.
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
   The overlord tables (`$0B00..$0B37`) are read with the SRAM reads every 8 frames in the underworld, and with every
   read cycle only while the room has a tile room overlord (17 reads there, three VGET commands).
+- **Common sprite sheet chrs are drawn from the receiver's VRAM.** alttpo used to keep the local VRAM's copy of each
+  such chr from the first time it drew a remote player's sprite with it, so after an o2 player carried a pot in a
+  dungeon, a bush they carried outside showed as that pot (with the bush's palette). alttpo now reads those chrs from
+  its VRAM on every frame (`GameState::chr_tile`).
 - **Run timer:** alttpo reports its start and finish in 0x84 (`RunTiming.as`) when it runs the o2-patched ROM, and
   shows the run timer and its own time in its settings window. It does not verify other players' run timing yet
   (RUN_TIMING.md, Verification); o2 does.

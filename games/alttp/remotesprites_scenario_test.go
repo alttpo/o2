@@ -785,6 +785,37 @@ func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
 	h.expectShadow("nothing else", 0x40, 0x60)
 }
 
+// o2 reads the copy of the captured entries at any point of a frame, so the copy's length must never drop to none
+// while the same entries are captured on every frame: alttpo players saw a carried bush flicker when it did.
+func TestRemoteSpritesScenario_CapturedLengthStable(t *testing.T) {
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	copy(e.WRAM[0x0800+0x20*4:], []byte{0x60, 0x40, 0x46, 0x0C})
+	e.WRAM[0x0A20+0x20] = 0x02
+	e.WRAM[0x0DD0+5] = 0x0A
+	h.frames(8)
+
+	lenAt := (linkOAMCopyAddr + linkOAMCopyExtras) & 0x7FFF
+	length := func() int { return int(e.SRAM[lenAt]) | int(e.SRAM[lenAt+1])<<8 }
+	if length() != linkOAMExtraSize {
+		t.Fatalf("expected the carried bush captured; length %d", length())
+	}
+	var seen []int
+	testStepHook = func(s *emulator.System) {
+		if s != e {
+			return
+		}
+		if n := length(); len(seen) == 0 || seen[len(seen)-1] != n {
+			seen = append(seen, n)
+		}
+	}
+	defer func() { testStepHook = nil }()
+	h.frames(4)
+	if len(seen) != 1 || seen[0] != linkOAMExtraSize {
+		t.Errorf("expected the captured length to stay %d through every instruction; went %v", linkOAMExtraSize, seen)
+	}
+}
+
 // Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus,
 // and the first one always with Link's head and body, in every submodule.
 func TestRemoteSpritesScenario_Modules(t *testing.T) {

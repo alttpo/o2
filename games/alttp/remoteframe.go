@@ -46,6 +46,9 @@ const (
 	// copying a captured entry: its OAM buffer offset and index (u16):
 	rcOff   = 0x08
 	rcIndex = 0x0A
+	// the byte length of the entries captured so far (u16), stored to the copy's length once the scan is done (a read
+	// of the copy during the scan saw no entries when the length was cleared first and counted up):
+	rcExLen = 0x0C
 	// handing out the VRAM slots: scratch (u8):
 	rcAllocTmp = 0x06
 	// drawing (u16): the scroll offsets, the end of the list being drawn, added to the chr of blobs, the extended
@@ -475,8 +478,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index; X = the extras' offset:")
-	a.LDA_long(ex)
-	a.TAX()
+	ldxDP(a, rcExLen)
 	ldyDP(a, rcOff)
 	a.LDA_abs_y(0x0800)
 	a.STA_long_x(ex + 2 + 0)
@@ -493,7 +495,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.TXA()
 	a.CLC()
 	a.ADC_imm16_w(linkOAMExtraSize)
-	a.STA_long(ex)
+	a.STA_dp(rcExLen)
 	a.CMP_imm16_w(linkOAMExtrasMax * linkOAMExtraSize)
 	a.BCC("rf_copy_done")
 	a.Comment("full: capture nothing more:")
@@ -540,7 +542,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.SBC_abs(0x011C)
 	a.STA_long(linkOAMCopyAddr + linkOAMCopyScroll + 2)
 	a.LDA_imm16_w(0x0000)
-	a.STA_long(ex)
+	a.STA_dp(rcExLen)
 	a.STZ_dp(rcMask)
 	a.STZ_dp(rcDraw)
 	a.STZ_dp(rcUsed)
@@ -698,6 +700,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	}
 
 	a.Label("rf_scan_done")
+	a.Comment("the entries captured this frame, all at once:")
+	a.REP(0x20)
+	a.LDA_dp(rcExLen)
+	a.STA_long(ex)
+	a.SEP(0x20)
 	a.LDA_dp(rcDraw)
 	a.BNE("rf_drawing")
 	a.JMP_abs("rf_exit")
