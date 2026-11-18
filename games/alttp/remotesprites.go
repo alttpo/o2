@@ -77,19 +77,20 @@ const (
 	rtRequired = 3
 	rtLocation = 4
 	// byte offsets into rtEntries of the end of each list of sprites, drawn in this order, each in front of the ones
-	// before:
+	// before. Each list holds one kind of sprite, so that remoteFrame draws it with a loop for that kind:
 	//
 	//   - the extra sprites (shadows, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) the
 	//     remote players draw behind Link;
 	//   - the slotted sprites: the head, body, sword and shield of the first player, drawn if the required parts got a
 	//     VRAM slot;
-	//   - otherwise that player's shadow and blob;
-	//   - every other player's shadow and blob;
+	//   - the shadows under the blobs, the first player's first if there are slotted sprites (it is skipped when they
+	//     are drawn);
+	//   - the blobs, in the same order as their shadows;
 	//   - the extra sprites the first player draws in front of Link.
 	rtExtrasEnd  = 6
 	rtSlottedEnd = 8
-	rtP0BlobEnd  = 10
-	rtEnd        = 12
+	rtShadowsEnd = 10
+	rtBlobsEnd   = 12
 	rtFrontEnd   = 14
 	// the number of parts (u16):
 	rtParts = 16
@@ -97,7 +98,9 @@ const (
 	rtPartSrc = 18
 	// per part, partTopRow, partBottomRow and partWRAM:
 	rtPartFlags = rtPartSrc + remotePartMax*4
-	// sprites to draw: world x, world y, chr, attributes, and entrySize16, entrySlotted and entryBlobAnim:
+	// sprites to draw: world x, world y, chr, attributes, and the extended attributes but for x bit 8 (entrySize16).
+	// The chr of a slotted sprite is relative to its part's VRAM slot: bits 6-7 are the part and bits 0 and 4 the chr
+	// in its 2x2 chrs:
 	rtEntries   = rtPartFlags + remotePartMax
 	rtEntrySize = 7
 
@@ -118,14 +121,10 @@ const (
 	partWRAM = 0x80
 )
 
-// entry flags:
+// the extended attributes of an entry:
 const (
 	// a 16x16 sprite:
 	entrySize16 = 0x02
-	// the chr is relative to a part's VRAM slot: bits 6-7 are the part and bits 0 and 4 the chr in its 2x2 chrs:
-	entrySlotted = 0x40
-	// a blob, whose chr alternates every 8 frames:
-	entryBlobAnim = 0x80
 )
 
 // SRAM layout of the remote sprites state, written by the game code (zeroed by the init code):
@@ -999,9 +998,11 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 		return uint16(int(p.Sprites.xoffs) + x), uint16(int(p.Sprites.yoffs) + y)
 	}
 	// a shadow and a blob over the player's lower 16 pixels:
-	blob := func(p *Player) {
+	shadow := func(p *Player) {
 		entry(p.X, p.Y+8+remoteShadowYOffs, remoteShadowChr, remoteBlobAttr, entrySize16)
-		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, entrySize16|entryBlobAnim)
+	}
+	blob := func(p *Player) {
+		entry(p.X, p.Y+8, remoteBlobChr0, remoteBlobAttr, entrySize16)
 	}
 
 	// every player's shadow, sparkles, dust, projectiles and carried and thrown objects, in the entries left; those
@@ -1033,21 +1034,20 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 
 	for _, ss := range slotted {
 		x, y := world(players[0], ss.sp)
-		entry(x, y, uint8(ss.part)<<6|ss.off, ss.sp.b[3]&^1, ss.sp.size<<1|entrySlotted)
+		entry(x, y, uint8(ss.part)<<6|ss.off, ss.sp.b[3]&^1, ss.sp.size<<1)
 	}
 	end(rtSlottedEnd)
 
-	others := players
-	if body != nil {
-		// drawn instead of the slotted sprites if the head and body get no VRAM slots:
-		blob(players[0])
-		others = players[1:]
+	// the first player's shadow and blob are drawn instead of the slotted sprites if the head and body get no VRAM
+	// slots; all shadows are drawn behind all blobs:
+	for _, p := range players {
+		shadow(p)
 	}
-	end(rtP0BlobEnd)
-	for _, p := range others {
+	end(rtShadowsEnd)
+	for _, p := range players {
 		blob(p)
 	}
-	end(rtEnd)
+	end(rtBlobsEnd)
 
 	extras(front)
 	end(rtFrontEnd)
@@ -1058,8 +1058,9 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 func remoteTableCounts(t *[remoteTableSize]byte) (players, slotted int) {
 	extrasEnd := int(binary.LittleEndian.Uint16(t[rtExtrasEnd:]))
 	slottedEnd := int(binary.LittleEndian.Uint16(t[rtSlottedEnd:]))
-	end := int(binary.LittleEndian.Uint16(t[rtEnd:]))
-	return (end - slottedEnd) / (2 * rtEntrySize), (slottedEnd - extrasEnd) / rtEntrySize
+	shadowsEnd := int(binary.LittleEndian.Uint16(t[rtShadowsEnd:]))
+	blobsEnd := int(binary.LittleEndian.Uint16(t[rtBlobsEnd:]))
+	return (blobsEnd - shadowsEnd) / rtEntrySize, (slottedEnd - extrasEnd) / rtEntrySize
 }
 
 // remoteTablePak is the FX Pak Pro address of the remote sprites table:

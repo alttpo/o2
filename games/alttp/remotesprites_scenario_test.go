@@ -132,10 +132,10 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 		t.Fatalf("unexpected table header % x", tb[:rtEntries])
 	}
 	var ends [5]uint16
-	for k, f := range []int{rtExtrasEnd, rtSlottedEnd, rtP0BlobEnd, rtEnd, rtFrontEnd} {
+	for k, f := range []int{rtExtrasEnd, rtSlottedEnd, rtShadowsEnd, rtBlobsEnd, rtFrontEnd} {
 		ends[k] = binary.LittleEndian.Uint16(tb[f:]) / rtEntrySize
 	}
-	if ends != [5]uint16{2, 4, 6, 6, 6} {
+	if ends != [5]uint16{2, 4, 5, 6, 6} {
 		t.Fatalf("expected 2 shadow sprites, 2 body sprites and a blob and its shadow; got entry ends %d", ends)
 	}
 	if parts, required := binary.LittleEndian.Uint16(tb[rtParts:]), tb[rtRequired]; parts != 2 || required != 2 {
@@ -198,6 +198,14 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	h.setScroll(0, 0x1078, 0x0270, 0x1018, 0x0208)
 	h.frames(1)
 	h.expectOAM("scrolled", 0, 0x7D, [4]byte{0x3C, 0x58, 0x20, 0x6E}, 0x02)
+	// 4 pixels off the top edge:
+	h.setScroll(0, 0x1078, 0x0270, 0x1018, 0x025C)
+	h.frames(1)
+	h.expectOAM("off the top edge", 0, 0x7C, [4]byte{0x3C, 0xFC, 0x22, 0x2E}, 0x02)
+	// below the bottom edge but on screen in x: not drawn, the entries it would use left unused:
+	h.setScroll(0, 0x1078, 0x0270, 0x1018, 0x0178)
+	h.frames(1)
+	h.expectOAMUnused("below the bottom edge", 0, 0x7F)
 	// 4 pixels off the left edge: x bit 8 set:
 	h.setScroll(0, 0x1078, 0x0270, 0x1058, 0x0208)
 	h.frames(1)

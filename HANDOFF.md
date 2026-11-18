@@ -53,7 +53,15 @@ message 0x84, clock sync, discontinuities, verification and display.
    This also found an emulator bug (`alttpo/snes`): setting the x flag didn't clear the high bytes of X and Y. Fixed
    in `../snes` (local commit on `main`, used through go.work); `go.mod` still pins the older version until it's
    pushed.
-7. alttpo (`../alttpo/alttpo/RunTiming.as`, branch `esync`, commit `bbc2d8c`): reads the `$707000` block and the
+8. remoteFrame's drawing split between o2 and the patch: 5,664 cycles with an otherwise empty OAM buffer, 11,607
+   with a nearly full one. o2 can't write finished OAM entries (the scroll offsets change every frame and o2 reads
+   them frames late; the unused OAM entries and free VRAM slots are only known after the module drew), so it does
+   what doesn't depend on the frame: it sorts the table into lists of one kind each (extras, slotted, shadows,
+   blobs, front; the first player's shadow and blob are skipped when the body is drawn), and writes each entry's
+   extended attributes but for x bit 8. Each kind has its own loop (`emitDrawLoop`) that keeps an unused OAM entry
+   in Y and writes x and y as it computes them: about 150 cycles per sprite, down from about 230. The scan compares
+   y with X = $F0 (7 cycles per unused entry). All shadows are now drawn behind all blobs.
+9. alttpo (`../alttpo/alttpo/RunTiming.as`, branch `esync`, commit `bbc2d8c`): reads the `$707000` block and the
    signature in `post_frame`, stamps latches, detects jumps, savestate loads (sets flag bit 4) and running fast,
    writes the gate byte (bit 0 with SyncSprites, clearing the remote sprites NMI state first), min-RTT clock in
    `receive.as`, sends/receives 0x84, the full 0x81 state machine including "Reset run", and shows the run timer and
@@ -71,9 +79,12 @@ message 0x84, clock sync, discontinuities, verification and display.
    - Toggle `syncSprites` mid-game and look for glitches; measure frames run with NMI off to set `rtRateTolerance`.
    - Fresh SRAM reads `latches = $FF`; both clients clear it as a stale latch once they have the server clock. Check
      that the first start after that latches.
-2. **Per-frame costs.** remoteFrame is still the biggest (7,385 cycles usually, 12,953 with a nearly full OAM
-   buffer). What's left to trim there is drawing each sprite (about 170 cycles: the extended attribute write alone
-   is about 40) and the per-entry scan. Also measure the busy paths of link color, sfx and manip pending (only their
+2. **Per-frame costs.** remoteFrame is still the biggest (5,664 cycles usually, 11,607 with a nearly full OAM
+   buffer). What's left: the scan (921 cycles even with an empty OAM buffer, run whenever there are parts), drawing
+   (about 150 cycles per sprite, of which about 40 are the extended attributes: x bit 8 and the index of the entry),
+   listing the rows to upload (344; o2 could precompute each row's WRAM bit and row offset, at the cost of about 2
+   table entries), and the capture checks of carried sprites and ancillae (about 300 while a remote player is in the
+   location; o2 could set the capture mask from its own WRAM reads, a few frames late). Also measure the busy paths of link color, sfx and manip pending (only their
    idle paths are measured), and consider gates for tunic color and sfx. Push the `snes` emulator fix and bump
    `go.mod`; without go.work, `TestRemoteSpritesScenario_OnlyOwnShadowsSent` fails on the old emulator.
 3. **Peer verification in alttpo** (port `verify.go`); alttpo only warns about differing signatures or gates.

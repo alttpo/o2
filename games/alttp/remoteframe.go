@@ -15,13 +15,20 @@ import (
 //
 //   - it runs from FastROM (see fastROMBank);
 //   - one unrolled pass over the 128 OAM entries finds both the VRAM slots that the game's sprites show and the
-//     entries to capture; an unused entry (Y = $F0) costs a load, a compare and a branch, and a used one a lookup of
+//     entries to capture; an unused entry (Y = $F0) costs a compare with X and a branch, and a used one a lookup of
 //     its chr in captureChrTable masked with rcMask, so that the entry handler only runs for the entries it acts on;
 //   - the VRAM slots are handed out to the parts with a table lookup (remoteAllocTable);
+//   - o2 does what doesn't depend on the frame: it sorts the remote sprites table into lists of one kind of sprite
+//     each (see rtExtrasEnd), which are drawn with a loop for that kind (emitDrawLoop), and writes each entry's
+//     extended attributes but for x bit 8. What o2 can't do is the rest: the scroll offsets change every frame and o2
+//     reads them frames late, and the unused OAM entries and the free VRAM slots are only known once the module drew
+//     its sprites;
+//   - each drawing loop keeps an unused OAM entry at hand (Y) and writes x and y as they are computed, so a sprite
+//     costs about 150 cycles;
 //   - its scratch is the direct page $00..$0F, which the game only uses as scratch within a routine;
 //   - the tables it looks up are in ROM, in the same bank as the code, and read with absolute addressing while DB is
 //     the program bank, which also reaches the OAM buffer ($0800..$0A9F) and the IO registers. The remote sprites table
-//     in SRAM is read with absolute addressing while DB = $70.
+//     in SRAM is read with long addressing while drawing, and with absolute addressing while DB = $70 otherwise.
 
 // direct page scratch of remoteFrame:
 const (
@@ -39,16 +46,24 @@ const (
 	// copying a captured entry: its OAM buffer offset and index (u16):
 	rcOff   = 0x08
 	rcIndex = 0x0A
-	// drawing: screen x and y (u16), chr and attributes (u16), scratch (u16):
-	rcSX   = 0x00
-	rcSY   = 0x02
-	rcCA   = 0x04
-	rcTmp  = 0x06
-	rcScrX = 0x08
-	rcScrY = 0x0A
-	rcAnim = 0x0C
+	// handing out the VRAM slots: scratch (u8):
+	rcAllocTmp = 0x06
+	// drawing (u16): the scroll offsets, the end of the list being drawn, added to the chr of blobs, the extended
+	// attributes of the entry being drawn, its table offset, and the chr of its part's VRAM slot:
+	rcScrX = 0x00
+	rcScrY = 0x02
+	rcEnd  = 0x04
+	rcAnim = 0x06
+	rcExt  = 0x08
+	rcTbl  = 0x0A
+	rcSlot = 0x0C
 	// bits of the parts drawn (u16):
 	rcDrawn = 0x0E
+	// listing the rows to upload (u16): a part's VRAM address, its WRAM bit, its flags and its slot's bit:
+	rcUpVRAM  = 0x00
+	rcUpWRAM  = 0x02
+	rcUpFlags = 0x04
+	rcUpBit   = 0x06
 )
 
 // raw emits an instruction that asm.Emitter has no method for, with its text as a comment.
@@ -80,6 +95,12 @@ func andAbsX(a *asm.Emitter, addr uint16) {
 func decA(a *asm.Emitter)            { raw(a, "dec", 0x3A) }
 func stxDP(a *asm.Emitter, dp uint8) { rawDP(a, "stx.b $%02x", 0x86, dp) }
 func trbDP(a *asm.Emitter, dp uint8) { rawDP(a, "trb.b $%02x", 0x14, dp) }
+func cpxDP(a *asm.Emitter, dp uint8) { rawDP(a, "cpx.b $%02x", 0xE4, dp) }
+func ldxDP(a *asm.Emitter, dp uint8) { rawDP(a, "ldx.b $%02x", 0xA6, dp) }
+func oraLongX(a *asm.Emitter, addr uint32) {
+	raw(a, fmt.Sprintf("ora.l $%06x,x", addr), 0x1F, uint8(addr), uint8(addr>>8), uint8(addr>>16))
+}
+func staAbsY(a *asm.Emitter, addr uint16) { a.STA_abs_y(addr) }
 
 // remoteAllocTable returns, for each set of VRAM slots in use (bits of remoteSlots), the first chrs of the first
 // remotePartMax free slots in order ($FF for none), and the number of free slots.
@@ -167,16 +188,198 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 	return
 }
 
+// drawKind is the kind of sprites a list of the remote sprites table holds, which remoteFrame draws with a loop of
+// their own:
+type drawKind int
+
+const (
+	// drawn as they are:
+	drawPlain drawKind = iota
+	// blobs, whose chr alternates every 8 frames (rcAnim is added):
+	drawBlob
+	// chrs relative to their part's VRAM slot; a sprite of a part without a slot is not drawn:
+	drawSlotted
+)
+
+// emitFindUnused emits the search for the next unused OAM entry (Y = $F0) below the OAM buffer offset Y, 8 entries at
+// a time while there are 8 below, with A 8-bit and X and Y 16-bit. It continues after the emitted code with Y = the
+// entry found, or returns with A 16-bit and carry clear if there is none.
+func emitFindUnused(a *asm.Emitter, p string) {
+	a.Label(p + "_8")
+	a.CPY_imm16_w(0x0020)
+	a.BCC(p + "_1")
+	for i := 1; i <= 8; i++ {
+		a.LDA_abs_y(uint16(0x0801 - 4*i))
+		a.CMP_imm8_b(0xF0)
+		a.BEQ(fmt.Sprintf("%s_found%d", p, i))
+	}
+	a.JMP_abs(p + "_next8")
+	for i := 2; i >= 1; i-- {
+		a.Label(fmt.Sprintf("%s_found%d", p, i))
+		a.DEY()
+		a.DEY()
+		a.DEY()
+		a.DEY()
+	}
+	a.JMP_abs(p + "_found")
+	a.Comment("one at a time:")
+	a.Label(p + "_1")
+	a.DEY()
+	a.DEY()
+	a.DEY()
+	a.DEY()
+	a.BMI(p + "_full")
+	a.LDA_abs_y(0x0801)
+	a.CMP_imm8_b(0xF0)
+	a.BNE(p + "_1")
+	a.JMP_abs(p + "_found")
+	a.Label(p + "_full")
+	a.REP(0x20)
+	a.CLC()
+	a.RTS()
+	a.AssumeSEP(0x20)
+	for i := 3; i <= 8; i++ {
+		a.Label(fmt.Sprintf("%s_found%d", p, i))
+		a.REP(0x20)
+		a.TYA()
+		a.CLC()
+		a.ADC_imm16_w(uint16(-4 * i))
+		a.TAY()
+		a.SEP(0x20)
+		a.JMP_abs(p + "_found")
+	}
+	a.Label(p + "_next8")
+	a.REP(0x20)
+	a.TYA()
+	a.CLC()
+	a.ADC_imm16_w(0xFFE0) // -$20
+	a.TAY()
+	a.SEP(0x20)
+	a.JMP_abs(p + "_8")
+	a.Label(p + "_found")
+}
+
+// emitDrawLoop emits the loop that draws a list of the remote sprites table of the kind (see the drawing loops in
+// emitRemoteFrame for how they are called), and returns its address.
+func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
+	p := []string{"rf_plain", "rf_blob", "rf_slotted"}[kind]
+	e := func(o uint32) uint32 { return remoteTableAddr + rtEntries + o }
+	a.AssumeREP(0x30)
+	start := a.Label(p)
+	a.STA_dp(rcEnd)
+	a.BRA(p + "_loop")
+	a.Comment("visible in x but not in y: the entry is unused again:")
+	a.Label(p + "_cull_y")
+	a.SEP(0x20)
+	a.LDA_imm8_b(0xF0)
+	staAbsY(a, 0x0801)
+	a.REP(0x20)
+	a.Label(p + "_cull")
+	if kind == drawSlotted {
+		a.PLA()
+	}
+	a.Label(p + "_next")
+	a.TXA()
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.TAX()
+	a.Label(p + "_loop")
+	cpxDP(a, rcEnd)
+	a.BCC(p + "_entry")
+	a.RTS()
+	a.Label(p + "_entry")
+	if kind == drawSlotted {
+		a.Comment("part = chr bits 6-7; a sword or shield without a VRAM slot is not drawn; its bit (partBits) is pushed:")
+		a.LDA_long_x(e(4))
+		a.AND_imm16_w(0x00C0)
+		a.ASL()
+		a.ASL()
+		a.XBA()
+		stxDP(a, rcTbl)
+		a.TAX()
+		a.LDA_long_x(remoteStateAddr + rsPartSlot)
+		a.AND_imm16_w(0x00FF)
+		a.CMP_imm16_w(0x00FF)
+		a.BNE(p + "_slot")
+		ldxDP(a, rcTbl)
+		a.BRA(p + "_next")
+		a.Label(p + "_slot")
+		a.STA_dp(rcSlot)
+		a.TXA()
+		a.ASL()
+		a.TAX()
+		a.LDA_abs_x(uint16(t.partBits))
+		a.PHA()
+		ldxDP(a, rcTbl)
+	}
+	a.Comment("screen x = world x - scroll x, visible if -16 <= x < 256; x and x bit 8 (still in y) into the entry:")
+	a.LDA_long_x(e(0))
+	a.SEC()
+	a.SBC_dp(rcScrX)
+	a.CMP_imm16_w(0x0100)
+	a.BCC(p + "_x")
+	a.CMP_imm16_w(0xFFF0)
+	a.BCC(p + "_cull")
+	a.Label(p + "_x")
+	staAbsY(a, 0x0800)
+	a.Comment("the extended attributes: x bit 8 and the size:")
+	a.XBA()
+	a.AND_imm16_w(0x0001)
+	oraLongX(a, e(6))
+	a.STA_dp(rcExt)
+	a.Comment("screen y = world y - scroll y, visible if -16 <= y < 224 (its high byte goes into the chr, written next):")
+	a.LDA_long_x(e(2))
+	a.SEC()
+	a.SBC_dp(rcScrY)
+	a.CMP_imm16_w(0x00E0)
+	a.BCC(p + "_y")
+	a.CMP_imm16_w(0xFFF0)
+	a.BCC(p + "_cull_y")
+	a.Label(p + "_y")
+	staAbsY(a, 0x0801)
+	a.Comment("chr and attributes:")
+	a.LDA_long_x(e(4))
+	switch kind {
+	case drawBlob:
+		a.CLC()
+		adcDP(a, rcAnim)
+	case drawSlotted:
+		a.AND_imm16_w(0xFF11)
+		a.CLC()
+		adcDP(a, rcSlot)
+	}
+	staAbsY(a, 0x0802)
+	if kind == drawSlotted {
+		a.PLA()
+		tsbDP(a, rcDrawn)
+	}
+	a.Comment("the extended attributes, at the entry's index:")
+	stxDP(a, rcTbl)
+	a.TYA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.SEP(0x20)
+	a.LDA_dp(rcExt)
+	a.STA_abs_x(0x0A20)
+	a.Comment("the next unused entry:")
+	emitFindUnused(a, p+"_find")
+	a.REP(0x20)
+	ldxDP(a, rcTbl)
+	a.JMP_abs(p + "_next")
+	return start
+}
+
 // emitRemoteFrame emits the routine the trampoline calls with JSL after the module ran, and returns its entry point
 // (after its subroutines); t are the tables emitted by emitRemoteFrameTables in the same bank, dyingList and nearDying
 // the routines of emitDyingEnemiesList and emitNearDyingEnemySub. Called with any register sizes; preserves P, DB and
 // D.
 //
-// Cycles (cycles_test.go), with 3 remote players in the room: budget 8,000, measured 7,385 (about 16% of a frame)
-// with the OAM buffer otherwise empty; budget 14,000, measured 12,953 (about 29%) with the game's sprites filling all
+// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,000, measured 5,664 (about 13% of a frame)
+// with the OAM buffer otherwise empty; budget 12,500, measured 11,607 (about 26%) with the game's sprites filling all
 // but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
-// per-frame routine of the patch. Most of it is the scan (9 cycles per unused entry, about 22 per used one), drawing
-// the sprites (about 170 each), and with a full OAM buffer, the search for unused entries.
+// per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one), drawing
+// the sprites (about 150 each), and with a full OAM buffer, the search for unused entries.
 func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
@@ -301,169 +504,21 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.SEP(0x30)
 	a.RTS()
 
-	// --- the sprite drawing routine, called with JSR: Y = table entry offset, X = OAM buffer offset to search down
-	// from; A, X and Y 16-bit, DB = $70. Preserves Y; updates X. ---
+	// --- the drawing loops, called with JSR: X = the offset of the first entry to draw, A = the offset of the end of
+	// the list, Y = the OAM buffer offset of an unused entry to draw the first visible one into; A, X and Y 16-bit,
+	// DB = program bank. They return with carry set and Y = an unused entry, or carry clear once the OAM buffer is
+	// full. ---
 	a.AssumeREP(0x30)
-	a.Label("rf_sprite_noslot")
-	a.PLX()
-	a.Label("rf_sprite_ret")
-	a.RTS()
-	drawSprite := a.Label("rf_sprite")
-	a.Comment("screen x = world x - scroll x, visible if -16 < x < 256:")
-	a.LDA_abs_y(tb(rtEntries + 0))
+	findFirst := a.Label("rf_find_first")
+	a.SEP(0x20)
+	emitFindUnused(a, "rf_ff")
+	a.REP(0x20)
 	a.SEC()
-	a.SBC_dp(rcScrX)
-	a.STA_dp(rcSX)
-	a.CLC()
-	a.ADC_imm16_w(0x0010)
-	a.CMP_imm16_w(0x0110)
-	a.BCS("rf_sprite_ret")
-	a.Comment("screen y = world y - scroll y, visible if -16 < y < 224:")
-	a.LDA_abs_y(tb(rtEntries + 2))
-	a.SEC()
-	a.SBC_dp(rcScrY)
-	a.STA_dp(rcSY)
-	a.CLC()
-	a.ADC_imm16_w(0x0010)
-	a.CMP_imm16_w(0x00F0)
-	a.BCS("rf_sprite_ret")
-	a.Comment("chr and attributes; blobs are animated, slotted chrs are relative to their part's VRAM slot:")
-	a.LDA_abs_y(tb(rtEntries + 4))
-	a.STA_dp(rcCA)
-	a.LDA_abs_y(tb(rtEntries + 6))
-	a.AND_imm16_w(entrySlotted | entryBlobAnim)
-	a.BEQ("rf_sprite_find")
-	a.CMP_imm16_w(entryBlobAnim)
-	a.BNE("rf_sprite_slotted")
-	a.LDA_dp(rcCA)
-	a.CLC()
-	adcDP(a, rcAnim)
-	a.STA_dp(rcCA)
-	a.BRA("rf_sprite_find")
-	a.Label("rf_sprite_slotted")
-	a.Comment("part = chr bits 6-7; a sword or shield without a VRAM slot is not drawn:")
-	a.LDA_dp(rcCA)
-	a.AND_imm16_w(0x00C0)
-	a.ASL()
-	a.ASL()
-	a.XBA()
-	a.PHX()
-	a.TAX()
-	a.LDA_abs_x(st(rsPartSlot))
-	a.AND_imm16_w(0x00FF)
-	a.CMP_imm16_w(0x00FF)
-	a.BEQ("rf_sprite_noslot")
-	a.STA_dp(rcTmp)
-	a.LDA_dp(rcCA)
-	a.AND_imm16_w(0xFF11)
-	a.CLC()
-	adcDP(a, rcTmp)
-	a.STA_dp(rcCA)
-	a.TXA()
-	a.ASL()
-	a.TAX()
-	a.LDA_long_x(t.partBits)
-	tsbDP(a, rcDrawn)
-	a.PLX()
-	a.Label("rf_sprite_find")
-	a.Comment("find the next unused OAM entry (Y = $F0) below X, 8 entries at a time while there are 8 below:")
-	a.SEP(0x20)
-	a.Label("rf_sprite_find8")
-	a.CPX_imm16_w(0x0020)
-	a.BCC("rf_sprite_find_loop")
-	for i := 1; i <= 8; i++ {
-		a.LDA_long_x(uint32(0x7E0801 - 4*i))
-		a.CMP_imm8_b(0xF0)
-		a.BEQ(fmt.Sprintf("rf_sprite_found%d", i))
-	}
-	a.REP(0x20)
-	a.TXA()
-	a.CLC()
-	a.ADC_imm16_w(0xFFE0) // -$20
-	a.TAX()
-	a.SEP(0x20)
-	a.BRA("rf_sprite_find8")
-	a.Comment("one at a time:")
-	a.Label("rf_sprite_find_loop")
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.DEX()
-	a.BMI("rf_sprite_full")
-	a.LDA_long_x(0x7E0801)
-	a.CMP_imm8_b(0xF0)
-	a.BNE("rf_sprite_find_loop")
-	a.BRA("rf_sprite_found")
-	a.Label("rf_sprite_full")
-	a.Comment("no unused entries left; X = 0 stops drawing (see rf_until):")
-	a.REP(0x20)
-	a.LDX_imm16_w(0x0000)
 	a.RTS()
-	for i := 2; i >= 1; i-- {
-		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
-		a.DEX()
-		a.DEX()
-		a.DEX()
-		a.DEX()
+	loops := map[drawKind]uint32{}
+	for _, k := range []drawKind{drawPlain, drawBlob, drawSlotted} {
+		loops[k] = emitDrawLoop(a, k, t)
 	}
-	a.BRA("rf_sprite_found")
-	for i := 3; i <= 8; i++ {
-		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
-		a.REP(0x20)
-		a.TXA()
-		a.CLC()
-		a.ADC_imm16_w(uint16(-4 * i))
-		a.TAX()
-		a.SEP(0x20)
-		a.BRA("rf_sprite_found")
-	}
-	a.Label("rf_sprite_found")
-	a.LDA_dp(rcSX)
-	a.STA_long_x(0x7E0800)
-	a.LDA_dp(rcSY)
-	a.STA_long_x(0x7E0801)
-	a.LDA_dp(rcCA)
-	a.STA_long_x(0x7E0802)
-	a.LDA_dp(rcCA + 1)
-	a.STA_long_x(0x7E0803)
-	a.Comment("extended attributes: size, x bit 8:")
-	a.LDA_abs_y(tb(rtEntries + 6))
-	a.AND_imm8_b(entrySize16)
-	a.STA_dp(rcTmp)
-	a.LDA_dp(rcSX + 1)
-	a.AND_imm8_b(0x01)
-	oraDP(a, rcTmp)
-	a.REP(0x20)
-	a.PHX()
-	a.PHA()
-	a.TXA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.PLA()
-	a.SEP(0x20)
-	a.STA_long_x(0x7E0A20)
-	a.REP(0x20)
-	a.PLX()
-	a.RTS()
-
-	// --- draws the table entries from offset Y up to offset A with drawSprite, until the OAM buffer is full (X = 0: no
-	// entries below to search); A, X and Y 16-bit, DB = $70 ---
-	drawUntil := a.Label("rf_until")
-	a.STA_abs(st(rsTmpEnd))
-	a.Label("rf_until_loop")
-	cpyAbs(a, st(rsTmpEnd))
-	a.BCS("rf_until_done")
-	a.TXA()
-	a.BEQ("rf_until_done")
-	a.JSR_abs(uint16(drawSprite))
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(rtEntrySize)
-	a.TAY()
-	a.BRA("rf_until_loop")
-	a.Label("rf_until_done")
-	a.RTS()
 
 	// --- the routine ---
 	entry = a.Label("rf_start")
@@ -626,11 +681,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 
 	a.Label("rf_scan")
 	a.Comment("one pass over the OAM buffer, from the last entry down (the order captured entries are copied in), calling")
-	a.Comment("the handler for the used entries whose chr has bits of rcMask:")
+	a.Comment("the handler for the used entries whose chr has bits of rcMask; X = $F0 to compare y with:")
+	a.LDX_imm8_b(0xF0)
 	for k := 0x7F; k >= 0; k-- {
 		next := fmt.Sprintf("rf_scan_%02x", k)
-		a.LDA_abs(uint16(0x0801 + k*4))
-		a.CMP_imm8_b(0xF0)
+		rawAbs(a, "cpx.w $%04x", 0xEC, uint16(0x0801+k*4))
 		a.BEQ(next)
 		a.LDY_abs(uint16(0x0802 + k*4))
 		a.LDA_abs_y(lo(t.captureChrs))
@@ -638,6 +693,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.BEQ(next)
 		a.LDX_imm8_b(uint8(k&0x3F) * 4)
 		a.JSR_abs(uint16(handlers[k>>6]))
+		a.LDX_imm8_b(0xF0)
 		a.Label(next)
 	}
 
@@ -676,7 +732,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	}
 	a.Label("rf_alloc_parts_done")
 	a.Comment("the follower slots the parts got, whose game uploads the NMI follower hook skips:")
-	a.STZ_dp(rcTmp)
+	a.STZ_dp(rcAllocTmp)
 	for i := 0; i < remotePartMax; i++ {
 		a.LDA_long(remoteStateAddr + rsPartSlot + uint32(i))
 		a.CMP_imm8_b(0xFF)
@@ -686,21 +742,21 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.TAX()
 		a.SEP(0x20)
 		a.LDA_abs_x(lo(t.followerSlotBits))
-		tsbDP(a, rcTmp)
+		tsbDP(a, rcAllocTmp)
 		a.Label(fmt.Sprintf("rf_skip_%d", i))
 	}
-	a.LDA_dp(rcTmp)
+	a.LDA_dp(rcAllocTmp)
 	a.STA_long(remoteStateAddr + rsSkipSlots)
 	a.Comment("the body is drawn if the required parts all got a slot: min(parts, free) >= required > 0:")
 	a.LDA_long(remoteTableAddr + rtRequired)
 	a.BEQ("rf_alloc_done")
-	a.STA_dp(rcTmp)
+	a.STA_dp(rcAllocTmp)
 	a.LDA_long(remoteTableAddr + rtParts)
 	rawAbs(a, "cmp.w $%04x,y", 0xD9, lo(t.allocFree))
 	a.BCC("rf_alloc_min")
 	a.LDA_abs_y(lo(t.allocFree))
 	a.Label("rf_alloc_min")
-	a.CMP_dp(rcTmp)
+	a.CMP_dp(rcAllocTmp)
 	a.BCC("rf_alloc_done")
 	a.LDA_imm8_b(0x01)
 	a.STA_long(remoteStateAddr + rsBodyOK)
@@ -722,30 +778,61 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LSR()
 	a.STA_dp(rcAnim)
 	a.STZ_dp(rcDrawn)
-	a.Comment("the remote sprites table: DB = $70")
+	a.Comment("the last unused OAM entry; none: draw nothing")
+	a.LDY_imm16_w(0x0200)
+	a.JSR_abs(uint16(findFirst))
+	a.BCS("rf_draw_extras")
+	a.JMP_abs("rf_draw_done")
+	a.Label("rf_draw_extras")
+	a.Comment("extra sprites behind Link:")
+	a.LDX_imm16_w(0x0000)
+	a.LDA_long(remoteTableAddr + rtExtrasEnd)
+	a.JSR_abs(uint16(loops[drawPlain]))
+	a.BCC("rf_draw_done")
+	a.Comment("the head, body, sword and shield if the head and body got VRAM slots, else the first player's shadow and blob")
+	a.Comment("too; then every other player's shadow and blob:")
+	a.LDA_long(remoteStateAddr + rsBodyOK)
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("rf_draw_no_body")
+	a.LDA_long(remoteTableAddr + rtExtrasEnd)
+	a.TAX()
+	a.LDA_long(remoteTableAddr + rtSlottedEnd)
+	a.JSR_abs(uint16(loops[drawSlotted]))
+	a.BCC("rf_draw_done")
+	a.LDA_long(remoteTableAddr + rtSlottedEnd)
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.TAX()
+	a.LDA_long(remoteTableAddr + rtShadowsEnd)
+	a.JSR_abs(uint16(loops[drawPlain]))
+	a.BCC("rf_draw_done")
+	a.LDA_long(remoteTableAddr + rtShadowsEnd)
+	a.CLC()
+	a.ADC_imm16_w(rtEntrySize)
+	a.BRA("rf_draw_blobs")
+	a.Label("rf_draw_no_body")
+	a.LDA_long(remoteTableAddr + rtSlottedEnd)
+	a.TAX()
+	a.LDA_long(remoteTableAddr + rtShadowsEnd)
+	a.JSR_abs(uint16(loops[drawPlain]))
+	a.BCC("rf_draw_done")
+	a.LDA_long(remoteTableAddr + rtShadowsEnd)
+	a.Label("rf_draw_blobs")
+	a.TAX()
+	a.LDA_long(remoteTableAddr + rtBlobsEnd)
+	a.JSR_abs(uint16(loops[drawBlob]))
+	a.BCC("rf_draw_done")
+	a.Comment("the extra sprites in front of Link:")
+	a.LDA_long(remoteTableAddr + rtBlobsEnd)
+	a.TAX()
+	a.LDA_long(remoteTableAddr + rtFrontEnd)
+	a.JSR_abs(uint16(loops[drawPlain]))
+	a.Label("rf_draw_done")
+
+	a.Comment("the remote sprites state: DB = $70")
 	a.PEA(uint16(remoteStateAddr>>16) * 0x0101)
 	a.PLB()
 	a.PLB()
-	a.LDX_imm16_w(0x0200)
-	a.LDY_imm16_w(0x0000)
-	a.Comment("extra sprites behind Link:")
-	a.LDA_abs(tb(rtExtrasEnd))
-	a.JSR_abs(uint16(drawUntil))
-	a.Comment("the head, body, sword and shield if the head and body got VRAM slots, else the player's shadow and blob:")
-	a.LDA_abs(st(rsBodyOK))
-	a.AND_imm16_w(0x00FF)
-	a.BEQ("rf_no_body")
-	a.LDA_abs(tb(rtSlottedEnd))
-	a.JSR_abs(uint16(drawUntil))
-	a.LDY_abs(tb(rtP0BlobEnd))
-	a.BRA("rf_blobs")
-	a.Label("rf_no_body")
-	a.LDY_abs(tb(rtSlottedEnd))
-	a.Label("rf_blobs")
-	a.Comment("the other players' shadows and blobs, and the extra sprites in front of Link:")
-	a.LDA_abs(tb(rtFrontEnd))
-	a.JSR_abs(uint16(drawUntil))
-
 	a.Comment("list the rows of chrs of the parts drawn for the NMI hooks to upload: Y = list offset")
 	a.LDA_dp(rcDrawn)
 	a.STA_abs(st(rsDrawnParts))
@@ -763,7 +850,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.ASL()
 		a.ASL()
 		a.ORA_imm16_w(0x4000)
-		a.STA_dp(rcSX)
+		a.STA_dp(rcUpVRAM)
 		a.Comment("the bit of its slot for the NMI hooks (rsNMIBits):")
 		a.LDA_abs(st(rsPartSlot + p))
 		a.AND_imm16_w(0x003F)
@@ -773,27 +860,27 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.BNE(fmt.Sprintf("rf_up_bit_%d", p))
 		a.LDA_imm16_w(0x0008)
 		a.Label(fmt.Sprintf("rf_up_bit_%d", p))
-		a.STA_dp(rcAnim)
+		a.STA_dp(rcUpBit)
 		a.LDA_abs(tb(rtPartFlags + p))
-		a.STA_dp(rcTmp)
+		a.STA_dp(rcUpFlags)
 		a.AND_imm16_w(partWRAM)
 		a.XBA()
-		a.STA_dp(rcSY)
+		a.STA_dp(rcUpWRAM)
 		for row := uint32(0); row < 2; row++ {
 			skipRow := fmt.Sprintf("rf_up_%d_%d", p, row)
-			a.LDA_dp(rcTmp)
+			a.LDA_dp(rcUpFlags)
 			a.AND_imm16_w(uint16(partTopRow << row))
 			a.BEQ(skipRow)
-			a.LDA_dp(rcSX)
+			a.LDA_dp(rcUpVRAM)
 			if row == 1 {
 				a.CLC()
 				a.ADC_imm16_w(0x0100)
 			}
-			oraDP(a, rcSY)
+			oraDP(a, rcUpWRAM)
 			a.STA_abs_y(st(rsNMIList + 0))
 			a.LDA_abs(tb(rtPartSrc + p*4 + row*2))
 			a.STA_abs_y(st(rsNMIList + 2))
-			a.LDA_dp(rcAnim)
+			a.LDA_dp(rcUpBit)
 			a.STA_abs_y(st(rsNMIBits))
 			a.INY()
 			a.INY()
