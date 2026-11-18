@@ -413,6 +413,9 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uin
 	a.AssumeSEP(0x30)
 	a.Label("preMain")
 	emitRunTiming(a)
+	a.Comment("the NMI count this frame starts with, for remoteFrame to tell a lag frame (see emitTimeCheck):")
+	a.LDA_long(runTimingAddr + rtmNMIFrames)
+	a.STA_long(remoteStateAddr + rsFrameNMI)
 	a.Comment("only update during safe modules:")
 	a.LDA_dp(0x10)
 	// >= $19    : bad

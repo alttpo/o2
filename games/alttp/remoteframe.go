@@ -155,6 +155,73 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 	return
 }
 
+// Time checks: remoteFrame skips its work rather than cause a lag frame. The main loop has until the NMI at the start
+// of vblank (scanline 225) to finish the frame (PrepareOAMForTransfer, then `STZ $12`); an NMI that comes before
+// skips the frame's updates. remoteFrame reads the scanline (see emitTimeCheck) before each block of rfScanBlock
+// entries of the scan, before each check for dying enemies near a death poof (whose cost has no bound but the
+// entries' count), and before drawing, and skips the rest of that work if the most it can cost until the next check
+// (or the end of the frame) would end after the deadline. A late scan check stops the scan: what was captured is
+// kept, and nothing is drawn, as the VRAM slots in use aren't all known. A late drawing check draws nothing. That only
+// costs remote sprite sync: the remote players aren't drawn that frame, nor their tiles uploaded (which also leaves
+// NMI more time), and o2 sees fewer captured extras.
+//
+// The budgets are CPU cycles as the emulator counts them (cycles_test.go checks that the code stays within them):
+// each takes at most 8 master clocks here (FastROM fetches and IO take 6, WRAM, SRAM and the game's SlowROM 8), and a
+// scanline has 1,364, less 40 for DRAM refresh and rfHDMAClocks for HDMA.
+const (
+	// the scanline the NMI comes on (vblank starts; NTSC and PAL without overscan):
+	rfNMILine = 225
+	// master clocks per scanline left for HDMA: its 18 of overhead plus 3 channels of 2 bytes each (8 + 2*8):
+	rfHDMAClocks = 18 + 3*(8+2*8)
+	// CPU cycles per scanline, rounded down:
+	rfCyclesPerLine = (1364 - 40 - rfHDMAClocks) / 8
+	// the game's work after preMain returns, until `STZ $12`: PrepareOAMForTransfer with the animated tiles' timers
+	// running out, measured on the US ROM (1,660 cycles), with a margin:
+	rfTailCycles = 1_800
+	// the OAM entries the scan looks at between time checks:
+	rfScanBlock = 16
+	// from a scan check to the next check, and then the exit if that one is late: a block of rfScanBlock entries
+	// each with the most costly path of the handler, after the first check for dying enemies near a poof (which lists
+	// them all, 16 dying, the poof near the last). Measured 7,330 (timecheck_test.go):
+	rfScanCycles = 7_600
+	// from the drawing check to the frame hook's return, drawing remoteEntryMax sprites past a full OAM buffer and
+	// listing every upload. Measured 6,736 (timecheck_test.go):
+	rfDrawCycles = 7_000
+	// the first scanline on which the scan, or drawing, starts too late to finish before the NMI: 163 and 167, with
+	// 154 cycles per line:
+	rfScanLateLine = rfNMILine - (rfScanCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
+	rfDrawLateLine = rfNMILine - (rfDrawCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
+)
+
+// emitTimeCheck emits a jump to late unless the frame has time left for work that must start before the scanline
+// lateLine to finish before the NMI. That is, unless the scanline is below lateLine, or in vblank (the frame
+// started there; lines 256..261, or ..311 on PAL, read as 0..55 in the counter's low byte, and are safe as well), and
+// no NMI came since preMain started (rsFrameNMI; one did if the frame is lagging already, and the scanline says
+// nothing then). The counters are latched by reading SLHV ($2137), which works while WRIO ($4201) bit 7 is set (the
+// game never clears it). Called with A 8-bit and DB = a bank with the IO registers; clobbers A. About 30 cycles.
+func emitTimeCheck(a *asm.Emitter, lateLine uint8, p, late string) {
+	if lateLine <= 55 || lateLine >= rfNMILine {
+		panic(fmt.Errorf("%s: late scanline %d out of range", p, lateLine))
+	}
+	a.Comment(fmt.Sprintf("time check: the scanline, latched; too late from line %d until vblank:", lateLine))
+	a.Label(p)
+	a.LDA_abs(0x2137)
+	a.LDA_abs(0x213F)
+	a.LDA_abs(0x213D)
+	a.CMP_imm8_b(rfNMILine)
+	a.BCS(p + "_vblank")
+	a.CMP_imm8_b(lateLine)
+	a.BCS(p + "_late")
+	a.Label(p + "_vblank")
+	a.Comment("an NMI since preMain started: lagging already:")
+	a.LDA_long(runTimingAddr + rtmNMIFrames)
+	a.CMP_long(remoteStateAddr + rsFrameNMI)
+	a.BEQ(p + "_ok")
+	a.Label(p + "_late")
+	a.JMP_abs(late)
+	a.Label(p + "_ok")
+}
+
 // drawKind is the kind of sprites a list of the remote sprites table holds, which remoteFrame draws with a loop of
 // their own:
 type drawKind int
@@ -342,11 +409,12 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 // the routines of emitDyingEnemiesList and emitNearDyingEnemySub. Called with any register sizes; preserves P, DB and
 // D.
 //
-// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,000, measured 5,664 (about 13% of a frame)
-// with the OAM buffer otherwise empty; budget 12,500, measured 11,607 (about 26%) with the game's sprites filling all
+// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,300, measured 5,973 (about 13% of a frame)
+// with the OAM buffer otherwise empty; budget 12,500, measured 11,789 (about 26%) with the game's sprites filling all
 // but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
-// per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one), drawing
-// the sprites (about 150 each), and with a full OAM buffer, the search for unused entries.
+// per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one, and about
+// 33 per time check), drawing the sprites (about 150 each), and with a full OAM buffer, the search for unused
+// entries. Its time checks skip the scan or drawing rather than finish after the NMI; see rfScanCycles.
 func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
@@ -427,6 +495,9 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_abs_y(lo(t.captureChrs))
 	a.AND_imm16_w(captureChrEnemyFX)
 	a.BEQ("rf_copy")
+	a.SEP(0x20)
+	emitTimeCheck(a, rfScanLateLine, "rf_fx_time", "rf_fx_late")
+	a.REP(0x20)
 	a.Comment("the screen positions of the enemies drawing their death, listed once per frame on the first one seen:")
 	a.LDA_dp(rcDying)
 	a.AND_imm16_w(0x00FF)
@@ -469,6 +540,14 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.Label("rf_copy_done")
 	a.SEP(0x30)
 	a.RTS()
+	a.Comment("too late to check for dying enemies: stop the scan, dropping the return to it:")
+	a.AssumeSEP(0x20)
+	a.AssumeREP(0x10)
+	a.Label("rf_fx_late")
+	a.REP(0x20)
+	a.PLA()
+	a.SEP(0x30)
+	a.JMP_abs("rf_scan_late")
 
 	// --- the drawing loops, called with JSR: X = the offset of the first entry to draw, A = the offset of the end of
 	// the list, Y = the OAM buffer offset of an unused entry to draw the first visible one into; A, X and Y 16-bit,
@@ -649,12 +728,19 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_dp(rcMask)
 	a.BNE("rf_scan")
 	a.JMP_abs("rf_scan_done")
+	a.Comment("too late to scan on: keep what was captured, and draw nothing, since the VRAM slots in use aren't known:")
+	a.Label("rf_scan_late")
+	a.STZ_dp(rcDraw)
+	a.JMP_abs("rf_scan_done")
 
 	a.Label("rf_scan")
 	a.Comment("one pass over the OAM buffer, from the last entry down (the order captured entries are copied in), calling")
 	a.Comment("the handler for the used entries whose chr has bits of rcMask; X = $F0 to compare y with:")
 	a.LDX_imm8_b(0xF0)
 	for k := 0x7F; k >= 0; k-- {
+		if k%rfScanBlock == rfScanBlock-1 {
+			emitTimeCheck(a, rfScanLateLine, fmt.Sprintf("rf_scan_time_%02x", k), "rf_scan_late")
+		}
 		next := fmt.Sprintf("rf_scan_%02x", k)
 		a.CPX_abs(uint16(0x0801 + k*4))
 		a.BEQ(next)
@@ -678,6 +764,8 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BNE("rf_drawing")
 	a.JMP_abs("rf_exit")
 	a.Label("rf_drawing")
+	a.Comment("too late to draw: draw nothing, so nothing is uploaded either:")
+	emitTimeCheck(a, rfDrawLateLine, "rf_draw_time", "rf_exit")
 	a.LDA_dp(rcSlots)
 	a.BNE("rf_alloc")
 	a.JMP_abs("rf_alloc_done")

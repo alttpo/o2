@@ -323,11 +323,11 @@ func (gs *gameSync) runFrame(t testing.TB) {
 		gs.beforeEmulate()
 	}
 
-	// emulate a main loop iteration; the trampoline's scans of the OAM buffer (captured sprites, and the VRAM slots for
-	// remote players) take up to about 8,000 cycles:
+	// emulate a main loop iteration; remoteFrame's scan of the OAM buffer takes up to about 28,000 cycles in
+	// timecheck_test.go's worst case, where the test's scanline never says it's too late:
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
-	if !runUntil(e, testROMBreakPoint, 0x4_000) {
+	if !runUntil(e, testROMBreakPoint, 0x10_000) {
 		t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, e.CPU.PC)
 		return
 	}

@@ -32,6 +32,60 @@ type cycleProfile struct {
 	// the cycles of the current run, and the most of any run so far, by routine:
 	run map[string]uint64
 	max map[string]uint64
+	// the address of every label in the patch listing:
+	labels map[string]uint32
+	// spans to time, and the most cycles each took in any run so far; see addSpan:
+	spans   []cycleSpan
+	spanMax map[string]uint64
+	// functions to call when the CPU is about to run the instruction at an address (bank $80+ as $00+):
+	onPC map[uint32]func()
+	// checkpoints, by address (bank $80+ as $00+): the cycles from one to the next one reached (or the end of the run)
+	// are a span named by the checkpoint's class; see addCheckpoints:
+	checkpoints map[uint32]string
+}
+
+// addCheckpoints adds the labels with the prefix as checkpoints of the class.
+func (p *cycleProfile) addCheckpoints(t *testing.T, prefix, class string) {
+	t.Helper()
+	n := 0
+	for name, a := range p.labels {
+		if strings.HasPrefix(name, prefix) {
+			p.checkpoints[a&^0x800000] = class
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatalf("no labels %s* in the patch listing", prefix)
+	}
+}
+
+// cycleSpan times the cycles from the instruction at from until the one at to, or until the run ends if to is
+// spanToEnd.
+type cycleSpan struct {
+	name     string
+	from, to uint32
+}
+
+const spanToEnd = ^uint32(0)
+
+// label returns the address of the label in the patch listing, bank $80+ as $00+.
+func (p *cycleProfile) label(t *testing.T, name string) uint32 {
+	t.Helper()
+	a, ok := p.labels[name]
+	if !ok {
+		t.Fatalf("no label %s in the patch listing", name)
+	}
+	return a &^ 0x800000
+}
+
+// addSpan times the cycles from the label from until the label to, or until the run ends if to is "".
+func (p *cycleProfile) addSpan(t *testing.T, name, from, to string) {
+	t.Helper()
+	s := cycleSpan{name: name, from: p.label(t, from), to: spanToEnd}
+	if to != "" {
+		s.to = p.label(t, to)
+	}
+	p.spans = append(p.spans, s)
 }
 
 // preMainParts are the labels in preMain that start its inline parts, with the names they are reported by:
@@ -69,13 +123,21 @@ func newCycleProfile(t *testing.T, romTitle string) *cycleProfile {
 }
 
 func parseCycleProfile(t *testing.T, r io.Reader) *cycleProfile {
-	p := &cycleProfile{run: map[string]uint64{}, max: map[string]uint64{}}
+	p := &cycleProfile{
+		run:     map[string]uint64{},
+		max:     map[string]uint64{},
+		labels:  map[string]uint32{},
+		spanMax: map[string]uint64{},
+		onPC:    map[uint32]func(){},
+
+		checkpoints: map[uint32]string{},
+	}
 	type mark struct {
 		addr uint32
 		name string
 	}
 	var marks []mark
-	var pending []string
+	var pending, pendingLabels []string
 	block := ""
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
@@ -91,10 +153,18 @@ func parseCycleProfile(t *testing.T, r io.Reader) *cycleProfile {
 			continue
 		}
 		if m := listingLabel.FindStringSubmatch(line); m != nil {
+			pendingLabels = append(pendingLabels, m[1])
 			if name, ok := preMainParts[m[1]]; ok && block == "preMain" {
 				pending = append(pending, name)
 			}
 			continue
+		}
+		if m := listingIns.FindStringSubmatch(line); m != nil && len(pendingLabels) > 0 {
+			a, _ := strconv.ParseUint(m[1], 16, 32)
+			for _, name := range pendingLabels {
+				p.labels[name] = uint32(a)
+			}
+			pendingLabels = nil
 		}
 		if m := listingIns.FindStringSubmatch(line); m != nil && len(pending) > 0 {
 			a, _ := strconv.ParseUint(m[1], 16, 32)
@@ -139,10 +209,42 @@ func (p *cycleProfile) routine(pc uint32) string {
 // runUntil runs the CPU like emulator.System.RunUntil, counting the cycles of each routine.
 func (p *cycleProfile) runUntil(e *emulator.System, target uint32, maxCycles uint64) bool {
 	clear(p.run)
-	for cycles := uint64(0); cycles < maxCycles; {
+	started := map[string]uint64{}
+	endSpan := func(name string, now uint64) {
+		if at, ok := started[name]; ok {
+			p.spanMax[name] = max(p.spanMax[name], now-at)
+			delete(started, name)
+		}
+	}
+	cycles := uint64(0)
+	lastClass, lastAt := "", uint64(0)
+	endCheckpoint := func() {
+		if lastClass != "" {
+			p.spanMax[lastClass] = max(p.spanMax[lastClass], cycles-lastAt)
+		}
+	}
+	for cycles < maxCycles {
 		pc := e.GetPC()
 		if pc == target {
 			break
+		}
+		if len(p.spans) != 0 || len(p.onPC) != 0 || len(p.checkpoints) != 0 {
+			bpc := pc &^ 0x800000
+			if f := p.onPC[bpc]; f != nil {
+				f()
+			}
+			if class, ok := p.checkpoints[bpc]; ok {
+				endCheckpoint()
+				lastClass, lastAt = class, cycles
+			}
+			for _, s := range p.spans {
+				if bpc == s.to {
+					endSpan(s.name, cycles)
+				}
+				if bpc == s.from {
+					started[s.name] = cycles
+				}
+			}
 		}
 		n, _ := e.CPU.Step()
 		cycles += uint64(n)
@@ -151,6 +253,12 @@ func (p *cycleProfile) runUntil(e *emulator.System, target uint32, maxCycles uin
 	for name, n := range p.run {
 		p.max[name] = max(p.max[name], n)
 	}
+	for _, s := range p.spans {
+		if s.to == spanToEnd {
+			endSpan(s.name, cycles)
+		}
+	}
+	endCheckpoint()
 	return e.GetPC() == target
 }
 
@@ -313,7 +421,7 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 
 	p.report(t, "3 remote players")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 6_000,
+		"remoteFrame": 6_300,
 		"NMI hooks":   50,
 		"NMI upload":  600,
 		"preMain: manip pending call, gate, Link OAM copy": 200,

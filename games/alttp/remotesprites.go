@@ -158,11 +158,12 @@ const (
 	rsPartSlot = rsTmpEnd + 2
 	// the byte length of the list of rows for the NMI hooks to upload (u16):
 	rsNMILen = rsPartSlot + remotePartMax
-	// unused (u16):
-	rsNMIMode = rsNMILen + 2
+	// the low byte of the NMI frame counter when preMain started this frame, which remoteFrame compares with the
+	// counter to tell that an NMI came during the frame (a lag frame); see emitTimeCheck (u8, and an unused byte):
+	rsFrameNMI = rsNMILen + 2
 	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
 	// DMA source address:
-	rsNMIList = rsNMIMode + 2
+	rsNMIList = rsFrameNMI + 2
 	// the byte length of rsCache (u16), and the last rows the NMI hooks uploaded, in the same format as rsNMIList; rows
 	// still in VRAM while the game doesn't upload its own (core updates disabled) are not uploaded again:
 	rsCacheLen = rsNMIList + remoteUploadMax*nmiRowSize
