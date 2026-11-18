@@ -250,6 +250,19 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
+		// not tied to a sync setting: synced prizes are what leave the player trapped in the boss room:
+		if u, ta := g.generateBossPrizeUpdate(newEmitter, genIndex); u != nil {
+			// don't emit the routine if it pushes us over the code size limit:
+			if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+				genIndex++
+				asmConfirmers = append(asmConfirmers, u)
+				g.bossPrize.inflight = u
+
+				a.Append(ta)
+				updated = true
+			}
+		}
+
 		if g.SyncUnderworld {
 			if u, ta := g.generateCrystalSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:

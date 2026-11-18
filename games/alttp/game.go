@@ -151,6 +151,7 @@ type Game struct {
 	starSwitch    starSwitchLocal
 	flyingTiles   flyingTilesLocal
 	roomState     roomStateLocal
+	bossPrize     bossPrizeLocal
 
 	map16    map16Local
 	manip    manipLocal
@@ -302,6 +303,7 @@ func (g *Game) FirstFrame() {
 	g.resetMap16()
 	g.resetManip()
 	g.resetTorches()
+	g.resetBossPrize()
 	g.resetOwEvents()
 	// rewrite the remote sprites table:
 	g.remoteSprites = remoteSpritesLocal{}

@@ -65,6 +65,7 @@ func (g *Game) initSync() {
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
 	g.resetRoomState()
+	g.resetBossPrize()
 
 	// define syncable items:
 	if !g.isVTRandomizer() {

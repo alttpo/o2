@@ -60,6 +60,10 @@ const (
 	// at X/Y in $7E2000 and its attributes in $7F2000 and queues a VRAM upload, like a flying floor tile (object 6)
 	// erasing its floor tile. JSL, RTL:
 	fnUpdateTilemapWithCommonObject
+	// RoomTag_GetHeartForPrize's spawn_prize: spawns the dungeon's prize (ancilla $29) and deletes the room tag in slot
+	// $0E; 8-bit A/X/Y. Randomizers hook the spawn itself but keep this entry point. Ends with RTS, so it is called
+	// through fnBank01RTL:
+	fnRoomTagSpawnPrize
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -109,6 +113,7 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnUnderworldLightTorch] = 0x01F3EC
 	fns[fnOverworldHandleOverlays] = 0x02EF29
 	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A9
+	fns[fnRoomTagSpawnPrize] = 0x01C731
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -136,4 +141,5 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnUnderworldLightTorch] = 0x01F3EA
 	fns[fnOverworldHandleOverlays] = 0x02EC8D
 	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A7
+	fns[fnRoomTagSpawnPrize] = 0x01C731
 }
