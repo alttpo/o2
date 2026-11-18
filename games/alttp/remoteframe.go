@@ -158,9 +158,8 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 // Time checks: remoteFrame skips its work rather than cause a lag frame. The main loop has until the NMI at the start
 // of vblank (scanline 225) to finish the frame (PrepareOAMForTransfer, then `STZ $12`); an NMI that comes before
 // skips the frame's updates. remoteFrame reads the scanline (see emitTimeCheck) before each block of rfScanBlock
-// entries of the scan, before each check for dying enemies near a death poof (whose cost has no bound but the
-// entries' count), and before drawing, and skips the rest of that work if the most it can cost until the next check
-// (or the end of the frame) would end after the deadline. A late scan check stops the scan: what was captured is
+// entries of the scan and before drawing, and skips the rest of that work if the most it can cost until the next
+// check (or the end of the frame) would end after the deadline. A late scan check stops the scan: what was captured is
 // kept, and nothing is drawn, as the VRAM slots in use aren't all known. A late drawing check draws nothing. That only
 // costs remote sprite sync: the remote players aren't drawn that frame, nor their tiles uploaded (which also leaves
 // NMI more time), and o2 sees fewer captured extras.
@@ -181,13 +180,13 @@ const (
 	// the OAM entries the scan looks at between time checks:
 	rfScanBlock = 16
 	// from a scan check to the next check, and then the exit if that one is late: a block of rfScanBlock entries
-	// each with the most costly path of the handler, after the first check for dying enemies near a poof (which lists
-	// them all, 16 dying, the poof near the last). Measured 7,330 (timecheck_test.go):
-	rfScanCycles = 7_600
+	// each with the most costly path of the handler, the first of them a death poof that lists the dying enemies
+	// (linkOAMDyingMax of them, in the last sprite slots looked at). Measured 5,517 (timecheck_test.go):
+	rfScanCycles = 5_800
 	// from the drawing check to the frame hook's return, drawing remoteEntryMax sprites past a full OAM buffer and
 	// listing every upload. Measured 6,736 (timecheck_test.go):
 	rfDrawCycles = 7_000
-	// the first scanline on which the scan, or drawing, starts too late to finish before the NMI: 163 and 167, with
+	// the first scanline on which the scan, or drawing, starts too late to finish before the NMI: 175 and 167, with
 	// 154 cycles per line:
 	rfScanLateLine = rfNMILine - (rfScanCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
 	rfDrawLateLine = rfNMILine - (rfDrawCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
@@ -405,8 +404,8 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 }
 
 // emitRemoteFrame emits the routine the trampoline calls with JSL after the module ran, and returns its entry point
-// (after its subroutines); t are the tables emitted by emitRemoteFrameTables in the same bank, dyingList and nearDying
-// the routines of emitDyingEnemiesList and emitNearDyingEnemySub. Called with any register sizes; preserves P, DB and
+// (after its subroutines); t are the tables emitted by emitRemoteFrameTables in the same bank, dyingList the routine of
+// emitDyingEnemiesList. Called with any register sizes; preserves P, DB and
 // D.
 //
 // Cycles (cycles_test.go), with 3 remote players in the room: budget 6,300, measured 5,973 (about 13% of a frame)
@@ -415,7 +414,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 // per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one, and about
 // 33 per time check), drawing the sprites (about 150 each), and with a full OAM buffer, the search for unused
 // entries. Its time checks skip the scan or drawing rather than finish after the NMI; see rfScanCycles.
-func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying uint32) (entry uint32) {
+func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
 	tb := func(o uint32) uint16 { return uint16((remoteTableAddr + o) & 0xFFFF) }
@@ -490,27 +489,19 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BCS("rf_copy_not_link")
 	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy_not_link")
-	a.Comment("not an enemy's death poof or explosion near a dying enemy:")
+	a.Comment("an enemy's death poof or explosion: list the screen positions of the enemies drawing their death, once per")
+	a.Comment("frame on the first one seen, for o2 to leave out those near them:")
 	a.LDY_dp(rcChr)
 	a.LDA_abs_y(lo(t.captureChrs))
 	a.AND_imm16_w(captureChrEnemyFX)
 	a.BEQ("rf_copy")
-	a.SEP(0x20)
-	emitTimeCheck(a, rfScanLateLine, "rf_fx_time", "rf_fx_late")
-	a.REP(0x20)
-	a.Comment("the screen positions of the enemies drawing their death, listed once per frame on the first one seen:")
 	a.LDA_dp(rcDying)
 	a.AND_imm16_w(0x00FF)
-	a.BNE("rf_copy_listed")
+	a.BNE("rf_copy")
 	a.JSL(dyingList)
 	a.SEP(0x20)
 	a.INC_dp(rcDying)
 	a.REP(0x20)
-	a.Label("rf_copy_listed")
-	a.LDY_dp(rcOff)
-	a.JSL(nearDying)
-	a.BCC("rf_copy")
-	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index; X = the extras' offset:")
 	a.LDX_dp(rcExLen)
@@ -540,14 +531,6 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.Label("rf_copy_done")
 	a.SEP(0x30)
 	a.RTS()
-	a.Comment("too late to check for dying enemies: stop the scan, dropping the return to it:")
-	a.AssumeSEP(0x20)
-	a.AssumeREP(0x10)
-	a.Label("rf_fx_late")
-	a.REP(0x20)
-	a.PLA()
-	a.SEP(0x30)
-	a.JMP_abs("rf_scan_late")
 
 	// --- the drawing loops, called with JSR: X = the offset of the first entry to draw, A = the offset of the end of
 	// the list, Y = the OAM buffer offset of an unused entry to draw the first visible one into; A, X and Y 16-bit,

@@ -318,10 +318,15 @@ func (g *Game) readLinkSprites() {
 			sp.absidx = [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
 			extras = append(extras, sp)
 		}
+		dying, dyingAll := oamCopyDying(c[:])
 		for _, sp := range extras {
 			// enemies and NPCs on screen use the same shadows as bombs and thrown objects; only send those the objects
 			// drew themselves:
 			if isCaptureShadowChr(sp.b[2]) && !isCasterShadow(sp, extras) {
+				continue
+			}
+			// enemies' deaths are synced by alttpo, so every player draws them already:
+			if isEnemyDeathChr(sp.b[2]) && (dyingAll || nearDyingEnemy(&sp, dying)) {
 				continue
 			}
 			s.sprites = append(s.sprites, sp)
@@ -461,6 +466,21 @@ func (g *Game) DeserializeNakUniqTiles(p *Player, r io.Reader) (err error) {
 			s.sent[idx] = true
 			s.pending = append(s.pending, idx)
 		}
+	}
+	return
+}
+
+// oamCopyDying returns the screen positions of the enemies drawing their death that the trampoline listed with the
+// captured entries (see linkOAMCopyDying), or all if it listed more than it holds (all death chrs are left out then).
+func oamCopyDying(c []byte) (dying [][2]int, all bool) {
+	n := int(c[linkOAMCopyDying]) | int(c[linkOAMCopyDying+1])<<8
+	if n > linkOAMDyingMax*4 {
+		return nil, true
+	}
+	for o := linkOAMCopyDying + 2; o < linkOAMCopyDying+2+n; o += 4 {
+		x := int(int16(uint16(c[o]) | uint16(c[o+1])<<8))
+		y := int(int16(uint16(c[o+2]) | uint16(c[o+3])<<8))
+		dying = append(dying, [2]int{x, y})
 	}
 	return
 }

@@ -80,9 +80,11 @@ message 0x84, clock sync, discontinuities, verification and display.
    - Fresh SRAM reads `latches = $FF`; both clients clear it as a stale latch once they have the server clock. Check
      that the first start after that latches.
 2. **Per-frame costs.** remoteFrame is still the biggest (5,973 cycles usually, 11,789 with a nearly full OAM
-   buffer). It now reads the scanline (and the NMI count, for lag) before each 16 entries of the scan, before each
-   dying-enemy check, and before drawing, and skips the rest rather than finish after the NMI: from line 163 for the
-   scan and 167 for drawing (`rfScanCycles`, `rfDrawCycles`, `timecheck_test.go`). To check on hardware: no lag
+   buffer). It now reads the scanline (and the NMI count, for lag) before each 16 entries of the scan and before
+   drawing, and skips the rest rather than finish after the NMI: from line 175 for the scan and 167 for drawing
+   (`rfScanCycles`, `rfDrawCycles`, `timecheck_test.go`). o2 now leaves out enemy death chrs near dying enemies
+   (`nearDyingEnemy`); the patch only lists the dying enemies with the captured entries (`linkOAMCopyDying`), so
+   death poofs now take capture slots (16) until o2 drops them. To check on hardware: no lag
    frames from remote sprites in busy rooms, and how often drawing is skipped (remote players flicker). What's left: the scan (921 cycles even with an empty OAM buffer, run whenever there are parts), drawing
    (about 150 cycles per sprite, of which about 40 are the extended attributes: x bit 8 and the index of the entry),
    listing the rows to upload (344; o2 could precompute each row's WRAM bit and row offset, at the cost of about 2

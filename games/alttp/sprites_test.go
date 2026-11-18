@@ -456,3 +456,54 @@ func TestLinkSprites_ScrollFromCopy(t *testing.T) {
 		t.Errorf("expected offsets ($06fe,$0dff) the sprites were drawn with; got ($%04x,$%04x)", local.XOffs, local.YOffs)
 	}
 }
+
+// o2 leaves out the death chrs near the enemies the trampoline listed, in the window the 65816 code used to check
+// (x -24..+31, y -32..+31 from the enemy), and all of them when the list overflowed.
+func TestNearDyingEnemy(t *testing.T) {
+	var c [linkOAMCopyReadSize]byte
+	setDying := func(n uint16, pos ...[2]int16) {
+		binary.LittleEndian.PutUint16(c[linkOAMCopyDying:], n)
+		for k, p := range pos {
+			binary.LittleEndian.PutUint16(c[linkOAMCopyDying+2+k*4:], uint16(p[0]))
+			binary.LittleEndian.PutUint16(c[linkOAMCopyDying+4+k*4:], uint16(p[1]))
+		}
+	}
+	at := func(x int, y uint8) *linkSprite {
+		sp := &linkSprite{}
+		sp.b[0], sp.b[1], sp.b[4] = uint8(x), y, uint8(x>>8)&1
+		return sp
+	}
+
+	setDying(8, [2]int16{0x60, 0x40}, [2]int16{-8, 0xF0})
+	dying, all := oamCopyDying(c[:])
+	if all || len(dying) != 2 || dying[1] != [2]int{-8, 0xF0} {
+		t.Fatalf("parsed %v, all %v", dying, all)
+	}
+	for _, tc := range []struct {
+		x    int
+		y    uint8
+		near bool
+	}{
+		{0x60, 0x40, true},
+		{0x60 - 24, 0x40, true},
+		{0x60 - 25, 0x40, false},
+		{0x60 + 31, 0x40, true},
+		{0x60 + 32, 0x40, false},
+		{0x60, 0x40 - 32, true},
+		{0x60, 0x40 - 33, false},
+		{0x60, 0x40 + 31, true},
+		{0x60, 0x40 + 32, false},
+		// x bit 8 set: -16; y >= $E0 is above the screen:
+		{0x1F0, 0xE8, false},
+		{0x1F0, 0xD0, true},
+	} {
+		if got := nearDyingEnemy(at(tc.x, tc.y), dying); got != tc.near {
+			t.Errorf("entry at x=$%03x y=$%02x: near %v; expected %v", tc.x, tc.y, got, tc.near)
+		}
+	}
+
+	setDying(0xFFFF)
+	if _, all := oamCopyDying(c[:]); !all {
+		t.Errorf("overflowed list: expected all death chrs left out")
+	}
+}

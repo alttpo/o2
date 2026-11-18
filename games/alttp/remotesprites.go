@@ -1144,10 +1144,11 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 // The scan of the OAM buffer only runs on frames where one of those ancillae, a carried (state $0A) or thrown
 // scenery ($EC) sprite, or thrown object debris (garnish $16) exists, and while o2 keeps rtCaptureTTL up because a
 // remote player is in the same location. Matching chrs from other sprites on screen at the same time are captured too,
-// except for enemy deaths: enemies are synced by alttpo and every player draws their deaths already, so the chrs of
-// the death poof, explosion and poof (enemyDeathChrs) are not captured within about 24 pixels of an enemy in sprite
-// state $02, $04 or $06. Their routines only change the state on frames where they draw nothing, so the enemies'
-// positions of the same frame suffice.
+// but o2 leaves out enemy deaths: enemies are synced by alttpo and every player draws their deaths already, so the
+// chrs of the death poof, explosion and poof (enemyDeathChrs) are not sent within about 24 pixels of an enemy in
+// sprite state $02, $04 or $06 (see nearDyingEnemy). The trampoline lists those enemies' screen positions with the
+// captured entries (linkOAMCopyDying) on frames that capture such a chr; their routines only change the state on
+// frames where they draw nothing, so the enemies' positions of the same frame suffice.
 
 // SRAM and ROM addresses of the capture tables and routine:
 const (
@@ -1157,15 +1158,12 @@ const (
 	captureChrsAddr  = captureTypesAddr + 0x40
 	captureMaskAddr  = sramZeroEnd - 2
 
-	// captureDyingAddr: the byte length of the list of enemy screen positions below (u16), scratch words for the capture
-	// routine, then up to 16 `x u16`, `y u16` of the enemies drawing their death this frame:
+	// captureDyingAddr: scratch words of emitDyingEnemiesList (the list is in the copy of Link's OAM entries, at
+	// linkOAMCopyDying, so that o2 reads it with the captured entries of the same frame):
 	captureDyingAddr  = uint32(0x706A70)
-	captureTmpX       = captureDyingAddr + 2
-	captureTmpY       = captureDyingAddr + 4
-	captureTmpE       = captureDyingAddr + 6
-	captureTmpZ       = captureDyingAddr + 8
-	captureDyingList  = captureDyingAddr + 10
-	captureDyingEnd   = captureDyingList + 16*4
+	captureTmpE       = captureDyingAddr
+	captureTmpZ       = captureDyingAddr + 2
+	captureDyingEnd   = captureDyingAddr + 4
 	captureChrEnemyFX = 0x10 // set in the capture chr table for enemyDeathChrs (see captureTables)
 )
 
@@ -1327,8 +1325,8 @@ func emitInitSRAMZero(a *asm.Emitter) {
 }
 
 // emitDyingEnemiesList emits the routine that lists the screen positions of the enemies drawing their death poof,
-// explosion or poof (sprite state $02, $04, $06) at captureDyingList. Called with JSL with 16-bit registers; preserves
-// DB.
+// explosion or poof (sprite state $02, $04, $06) at linkOAMCopyDying, or $FFFF for its length if more than
+// linkOAMDyingMax are. Called with JSL with 16-bit registers; preserves DB.
 func emitDyingEnemiesList(a *asm.Emitter) {
 	a.AssumeREP(0x30)
 	a.Label("captureDyingList")
@@ -1350,7 +1348,13 @@ func emitDyingEnemiesList(a *asm.Emitter) {
 	a.BNE("ce_dy_next")
 	a.Label("ce_dy_found")
 	tmpE, tmpZ := uint16(captureTmpE&0xFFFF), uint16(captureTmpZ&0xFFFF)
-	list := uint16(captureDyingList & 0xFFFF)
+	list := uint16((linkOAMCopyAddr + linkOAMCopyDying + 2) & 0xFFFF)
+	a.CPY_imm16_w(linkOAMDyingMax * 4)
+	a.BCC("ce_dy_room")
+	a.Comment("more than the list holds: o2 leaves out all death chrs this frame:")
+	a.LDY_imm16_w(0xFFFF)
+	a.BRA("ce_dy_done")
+	a.Label("ce_dy_room")
 	a.Comment("x - BG2 scroll:")
 	a.LDA_long_x(0x7E0D30)
 	a.XBA()
@@ -1387,84 +1391,38 @@ func emitDyingEnemiesList(a *asm.Emitter) {
 	a.Label("ce_dy_next")
 	a.DEX()
 	a.BPL("ce_dy_loop")
-	a.STY_abs(uint16(captureDyingAddr & 0xFFFF))
+	a.Label("ce_dy_done")
+	a.STY_abs(uint16((linkOAMCopyAddr + linkOAMCopyDying) & 0xFFFF))
 	a.PLB()
 	a.RTL()
 }
 
-// emitNearDyingEnemySub emits a routine that returns carry set if the OAM entry at $0800,Y (DB = $7E) is within about
-// 24 pixels of an enemy in captureDyingList. Called with JSL with 16-bit registers; clobbers A and X.
-func emitNearDyingEnemySub(a *asm.Emitter) {
-	a.AssumeREP(0x30)
-	a.Label("ce_near_dying")
-	tmpX, tmpY, tmpE := uint16(captureTmpX&0xFFFF), uint16(captureTmpY&0xFFFF), uint16(captureTmpE&0xFFFF)
-	list := uint16(captureDyingList & 0xFFFF)
-	a.Comment("the entry's signed screen x:")
-	a.TYA()
-	a.LSR()
-	a.LSR()
-	a.TAX()
-	a.LDA_abs_x(0x0A20)
-	a.AND_imm16_w(0x0001)
-	a.XBA()
-	a.STA_long(captureTmpE)
-	a.LDA_abs_y(0x0800)
-	a.AND_imm16_w(0x00FF)
-	a.ORA_long(captureTmpE)
-	a.CMP_imm16_w(0x0100)
-	a.BCC("ce_nd_x")
-	a.CLC()
-	a.ADC_imm16_w(0xFE00) // -$200
-	a.Label("ce_nd_x")
-	a.STA_long(captureTmpX)
-	a.Comment("and y:")
-	a.LDA_abs_y(0x0801)
-	a.AND_imm16_w(0x00FF)
-	a.CMP_imm16_w(0x00E0)
-	a.BCC("ce_nd_y")
-	a.CLC()
-	a.ADC_imm16_w(0xFF00) // -$100
-	a.Label("ce_nd_y")
-	a.STA_long(captureTmpY)
-	a.PHB()
-	a.PEA(0x7070)
-	a.PLB()
-	a.PLB()
-	a.LDX_imm16_w(0x0000)
-	a.Label("ce_nd_loop")
-	a.TXA()
-	a.CMP_abs(uint16(captureDyingAddr & 0xFFFF))
-	a.BCS("ce_nd_none")
-	a.LDA_abs_x(list)
-	a.STA_abs(tmpE)
-	a.LDA_abs(tmpX)
-	a.SEC()
-	a.SBC_abs(tmpE)
-	a.CLC()
-	a.ADC_imm16_w(24)
-	a.CMP_imm16_w(24 + 32)
-	a.BCS("ce_nd_next")
-	a.LDA_abs_x(list + 2)
-	a.STA_abs(tmpE)
-	a.LDA_abs(tmpY)
-	a.SEC()
-	a.SBC_abs(tmpE)
-	a.CLC()
-	a.ADC_imm16_w(32)
-	a.CMP_imm16_w(32 + 32)
-	a.BCS("ce_nd_next")
-	a.PLB()
-	a.SEC()
-	a.RTL()
-	a.Label("ce_nd_next")
-	a.INX()
-	a.INX()
-	a.INX()
-	a.INX()
-	a.BRA("ce_nd_loop")
-	a.Label("ce_nd_none")
-	a.PLB()
-	a.CLC()
-	a.RTL()
+// nearDyingEnemy reports whether the captured entry sp is within about 24 pixels of an enemy in dying, the screen
+// positions listed at linkOAMCopyDying (the window the game's death poofs and explosions draw in).
+func nearDyingEnemy(sp *linkSprite, dying [][2]int) bool {
+	x := oamX(sp)
+	y := int(sp.b[1])
+	if y >= 0xE0 {
+		y -= 0x100
+	}
+	for _, d := range dying {
+		if dx := x - d[0]; dx < -24 || dx >= 32 {
+			continue
+		}
+		if dy := y - d[1]; dy < -32 || dy >= 32 {
+			continue
+		}
+		return true
+	}
+	return false
+}
 
+// isEnemyDeathChr reports whether chr is one of enemyDeathChrs.
+func isEnemyDeathChr(chr uint8) bool {
+	for _, c := range enemyDeathChrs {
+		if uint16(chr) == c {
+			return true
+		}
+	}
+	return false
 }

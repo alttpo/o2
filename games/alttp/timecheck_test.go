@@ -17,9 +17,9 @@ func setScanline(h *skScenario, i int, line uint8) {
 
 // fillScanWorst fills g1's OAM buffer for the scan's worst cases between two time checks: every entry used; at the
 // top of each block of rfScanBlock entries (the first scanned of it), a death poof chr that is also a captured chr,
-// near the last of the 16 dying enemies listed (so its check looks at them all, and it isn't copied); if captures,
-// then 16 captured chrs in the VRAM slot range, which are copied (all there is room for); and the rest 16x16 chrs
-// showing VRAM slots. A bomb exists, so that captured chrs are looked at.
+// the first of which lists linkOAMDyingMax dying enemies (in the last sprite slots looked at, so that the list looks
+// at them all); if captures, then captured chrs in the VRAM slot range until linkOAMExtrasMax are copied (all there is
+// room for); and the rest 16x16 chrs showing VRAM slots. A bomb exists, so that captured chrs are looked at.
 func fillScanWorst(h *skScenario, captures bool) {
 	e := h.gs[0].e
 	scrX := binary.LittleEndian.Uint16(e.WRAM[0xE2:])
@@ -34,19 +34,24 @@ func fillScanWorst(h *skScenario, captures bool) {
 			chr, x, y, ext = 0xA9, 0x80, 0x80, 0x00
 		case captures && copies < linkOAMExtrasMax:
 			chr = 0x26
+		}
+		if chr != 0x20 {
 			copies++
 		}
 		copy(e.WRAM[0x0800+k*4:], []byte{x, y, chr, 0x20})
 		e.WRAM[0x0A20+k] = ext
 	}
 	e.WRAM[0x0C4A] = 0x07
-	// listed from the last sprite slot down, so enemy 0 is the last; the others are far from the poofs:
+	// listed from the last sprite slot down; one is near the poofs:
 	for x := 0; x < 16; x++ {
 		sx, sy := scrX+0x10, scrY+0x10
 		if x == 0 {
 			sx, sy = scrX+0x80, scrY+0x80
 		}
-		e.WRAM[0x0DD0+x] = 0x06
+		e.WRAM[0x0DD0+x] = 0
+		if x < linkOAMDyingMax {
+			e.WRAM[0x0DD0+x] = 0x06
+		}
 		e.WRAM[0x0D10+x], e.WRAM[0x0D30+x] = uint8(sx), uint8(sx>>8)
 		e.WRAM[0x0D00+x], e.WRAM[0x0D20+x] = uint8(sy), uint8(sy>>8)
 		e.WRAM[0x0F70+x] = 0
@@ -84,7 +89,6 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	newProfile := func() *cycleProfile {
 		p := newCycleProfile(t, "VT test")
 		p.addCheckpoints(t, "rf_scan_time_", "scan")
-		p.addCheckpoints(t, "rf_fx_time", "scan")
 		p.addCheckpoints(t, "rf_draw_time", "draw")
 		return p
 	}
@@ -104,8 +108,8 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 			h.profileFrame(p, 0)
 		}
 	}
-	if n := g1.e.SRAM[captureDyingAddr&0x7FFF]; n != 16*4 {
-		t.Errorf("listed %d bytes of dying enemies; expected %d", n, 16*4)
+	if n := binary.LittleEndian.Uint16(g1.e.SRAM[(linkOAMCopyAddr+linkOAMCopyDying)&0x7FFF:]); n != linkOAMDyingMax*4 {
+		t.Errorf("listed %d bytes of dying enemies; expected %d", n, linkOAMDyingMax*4)
 	}
 	// drawing:
 	g1.beforeEmulate = func() {
@@ -126,9 +130,9 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 		t.Errorf("listed no rows to upload")
 	}
 
-	// late checks: the exit after each kind (when the poof's check is late, and when drawing's is):
+	// late checks: the exit after each kind:
 	late := uint64(0)
-	for _, label := range []string{"rf_scan_time_5f", "rf_fx_time", "rf_draw_time"} {
+	for _, label := range []string{"rf_scan_time_5f", "rf_draw_time"} {
 		pl := newCycleProfile(t, "VT test")
 		pl.addCheckpoints(t, label, "late")
 		at := pl.label(t, label)

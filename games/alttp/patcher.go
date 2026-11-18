@@ -102,9 +102,17 @@ const (
 	// the screen scrolled in between, e.g. during room transitions:
 	linkOAMCopyScroll = linkOAMCopyExtrasEnd
 	// the local sound effects the trampoline captured, and its count of remote sound effects played (see sfx.go):
-	linkOAMCopySfx      = linkOAMCopyScroll + 4
-	linkOAMCopyReadSize = linkOAMCopySfx + sfxLocalSize
+	linkOAMCopySfx = linkOAMCopyScroll + 4
+	// the screen positions of the enemies drawing their death in the frame the extras were captured in, listed on the
+	// first captured chr of enemyDeathChrs (see emitDyingEnemiesList), for o2 to leave out the death chrs near them:
+	// byte length (u16; $FFFF if more than linkOAMDyingMax enemies were dying), then x and y (s16 each):
+	linkOAMCopyDying    = linkOAMCopySfx + sfxLocalSize
+	linkOAMDyingMax     = 8
+	linkOAMCopyReadSize = linkOAMCopyDying + 2 + linkOAMDyingMax*4
 )
+
+// o2 reads the copy with a single read of at most 255 bytes:
+const _ = 255 - linkOAMCopyReadSize
 
 type Patcher struct {
 	rom *snes.ROM
@@ -499,7 +507,7 @@ type patchROM struct {
 	// the routine the HUD hook calls; see emitHUDCheck:
 	hudCheck romBlock
 	// called by remoteFrame; see emitDyingEnemiesList and emitNearDyingEnemySub:
-	captureDyingList, captureNearDying romBlock
+	captureDyingList romBlock
 	// the NMI entry hook that counts NMI frames, and the routine it jumps to when done if a randomizer had hooked the
 	// same instructions (0: it runs them itself); see emitNMICount:
 	nmiCount      romBlock
@@ -556,7 +564,7 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.remoteFrame, func(a *asm.Emitter) error {
-			r.remoteFrameAddr = emitRemoteFrame(a, r.remoteTables, r.captureDyingList.addr, r.captureNearDying.addr)
+			r.remoteFrameAddr = emitRemoteFrame(a, r.remoteTables, r.captureDyingList.addr)
 			return nil
 		}},
 		{&r.nmiHooks, func(a *asm.Emitter) error {
@@ -593,10 +601,6 @@ func (r *patchROM) routines() []patchRoutine {
 		}},
 		{&r.captureDyingList, func(a *asm.Emitter) error {
 			emitDyingEnemiesList(a)
-			return nil
-		}},
-		{&r.captureNearDying, func(a *asm.Emitter) error {
-			emitNearDyingEnemySub(a)
 			return nil
 		}},
 		{&r.nmiCount, func(a *asm.Emitter) error {
@@ -668,7 +672,6 @@ func (r *patchROM) measure() (err error) {
 	r.manipStageBlock.name = "manip stage block"
 	r.manipPendingBlock.name = "manip pending block"
 	r.captureDyingList.name = "capture dying list"
-	r.captureNearDying.name = "capture near dying"
 	r.nmiCount.name = "NMI count"
 
 	for _, rt := range r.routines() {
