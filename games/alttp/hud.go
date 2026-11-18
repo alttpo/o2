@@ -106,7 +106,7 @@ func emitHUDCheck(a *asm.Emitter) {
 	a.SEP(0x20)
 	a.Comment("only if it was checked on the frame before, and built from the inputs in the cache:")
 	a.LDA_long(hudCacheFrame)
-	raw(a, "inc", 0x1A)
+	a.INC()
 	a.CMP_dp(0x1A)
 	a.BNE("hud_changed")
 	a.LDA_long(hudCacheValid)

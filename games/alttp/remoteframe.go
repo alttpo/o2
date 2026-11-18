@@ -69,42 +69,6 @@ const (
 	rcUpBit   = 0x06
 )
 
-// raw emits an instruction that asm.Emitter has no method for, with its text as a comment.
-func raw(a *asm.Emitter, text string, b ...byte) {
-	a.Comment(text)
-	a.EmitBytes(b)
-}
-
-func rawAbs(a *asm.Emitter, text string, op byte, addr uint16) {
-	raw(a, fmt.Sprintf(text, addr), op, uint8(addr), uint8(addr>>8))
-}
-
-func rawDP(a *asm.Emitter, text string, op byte, dp uint8) {
-	raw(a, fmt.Sprintf(text, dp), op, dp)
-}
-
-func tsbDP(a *asm.Emitter, dp uint8) { rawDP(a, "tsb.b $%02x", 0x04, dp) }
-func andDP(a *asm.Emitter, dp uint8) { rawDP(a, "and.b $%02x", 0x25, dp) }
-func oraDP(a *asm.Emitter, dp uint8) { rawDP(a, "ora.b $%02x", 0x05, dp) }
-func adcDP(a *asm.Emitter, dp uint8) { rawDP(a, "adc.b $%02x", 0x65, dp) }
-func ldyDP(a *asm.Emitter, dp uint8) { rawDP(a, "ldy.b $%02x", 0xA4, dp) }
-func ldyAbsX(a *asm.Emitter, addr uint16) {
-	rawAbs(a, "ldy.w $%04x,x", 0xBC, addr)
-}
-func cpyAbs(a *asm.Emitter, addr uint16) { rawAbs(a, "cpy.w $%04x", 0xCC, addr) }
-func andAbsX(a *asm.Emitter, addr uint16) {
-	rawAbs(a, "and.w $%04x,x", 0x3D, addr)
-}
-func decA(a *asm.Emitter)            { raw(a, "dec", 0x3A) }
-func stxDP(a *asm.Emitter, dp uint8) { rawDP(a, "stx.b $%02x", 0x86, dp) }
-func trbDP(a *asm.Emitter, dp uint8) { rawDP(a, "trb.b $%02x", 0x14, dp) }
-func cpxDP(a *asm.Emitter, dp uint8) { rawDP(a, "cpx.b $%02x", 0xE4, dp) }
-func ldxDP(a *asm.Emitter, dp uint8) { rawDP(a, "ldx.b $%02x", 0xA6, dp) }
-func oraLongX(a *asm.Emitter, addr uint32) {
-	raw(a, fmt.Sprintf("ora.l $%06x,x", addr), 0x1F, uint8(addr), uint8(addr>>8), uint8(addr>>16))
-}
-func staAbsY(a *asm.Emitter, addr uint16) { a.STA_abs_y(addr) }
-
 // remoteAllocTable returns, for each set of VRAM slots in use (bits of remoteSlots), the first chrs of the first
 // remotePartMax free slots in order ($FF for none), and the number of free slots.
 func remoteAllocTable() (slots [0x80 * remotePartMax]byte, free [0x80]byte) {
@@ -275,7 +239,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.Label(p + "_cull_y")
 	a.SEP(0x20)
 	a.LDA_imm8_b(0xF0)
-	staAbsY(a, 0x0801)
+	a.STA_abs_y(0x0801)
 	a.REP(0x20)
 	a.Label(p + "_cull")
 	if kind == drawSlotted {
@@ -287,7 +251,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.ADC_imm16_w(rtEntrySize)
 	a.TAX()
 	a.Label(p + "_loop")
-	cpxDP(a, rcEnd)
+	a.CPX_dp(rcEnd)
 	a.BCC(p + "_entry")
 	a.RTS()
 	a.Label(p + "_entry")
@@ -298,13 +262,13 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 		a.ASL()
 		a.ASL()
 		a.XBA()
-		stxDP(a, rcTbl)
+		a.STX_dp(rcTbl)
 		a.TAX()
 		a.LDA_long_x(remoteStateAddr + rsPartSlot)
 		a.AND_imm16_w(0x00FF)
 		a.CMP_imm16_w(0x00FF)
 		a.BNE(p + "_slot")
-		ldxDP(a, rcTbl)
+		a.LDX_dp(rcTbl)
 		a.BRA(p + "_next")
 		a.Label(p + "_slot")
 		a.STA_dp(rcSlot)
@@ -313,7 +277,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 		a.TAX()
 		a.LDA_abs_x(uint16(t.partBits))
 		a.PHA()
-		ldxDP(a, rcTbl)
+		a.LDX_dp(rcTbl)
 	}
 	a.Comment("screen x = world x - scroll x, visible if -16 <= x < 256; x and x bit 8 (still in y) into the entry:")
 	a.LDA_long_x(e(0))
@@ -324,11 +288,11 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.CMP_imm16_w(0xFFF0)
 	a.BCC(p + "_cull")
 	a.Label(p + "_x")
-	staAbsY(a, 0x0800)
+	a.STA_abs_y(0x0800)
 	a.Comment("the extended attributes: x bit 8 and the size:")
 	a.XBA()
 	a.AND_imm16_w(0x0001)
-	oraLongX(a, e(6))
+	a.ORA_long_x(e(6))
 	a.STA_dp(rcExt)
 	a.Comment("screen y = world y - scroll y, visible if -16 <= y < 224 (its high byte goes into the chr, written next):")
 	a.LDA_long_x(e(2))
@@ -339,25 +303,25 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.CMP_imm16_w(0xFFF0)
 	a.BCC(p + "_cull_y")
 	a.Label(p + "_y")
-	staAbsY(a, 0x0801)
+	a.STA_abs_y(0x0801)
 	a.Comment("chr and attributes:")
 	a.LDA_long_x(e(4))
 	switch kind {
 	case drawBlob:
 		a.CLC()
-		adcDP(a, rcAnim)
+		a.ADC_dp(rcAnim)
 	case drawSlotted:
 		a.AND_imm16_w(0xFF11)
 		a.CLC()
-		adcDP(a, rcSlot)
+		a.ADC_dp(rcSlot)
 	}
-	staAbsY(a, 0x0802)
+	a.STA_abs_y(0x0802)
 	if kind == drawSlotted {
 		a.PLA()
-		tsbDP(a, rcDrawn)
+		a.TSB_dp(rcDrawn)
 	}
 	a.Comment("the extended attributes, at the entry's index:")
-	stxDP(a, rcTbl)
+	a.STX_dp(rcTbl)
 	a.TYA()
 	a.LSR()
 	a.LSR()
@@ -368,7 +332,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.Comment("the next unused entry:")
 	emitFindUnused(a, p+"_find")
 	a.REP(0x20)
-	ldxDP(a, rcTbl)
+	a.LDX_dp(rcTbl)
 	a.JMP_abs(p + "_next")
 	return start
 }
@@ -418,7 +382,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.Label(p + "_small")
 		a.LDA_abs_y(lo(t.chrSlotsSmall))
 		a.Label(p + "_slots")
-		tsbDP(a, rcUsed)
+		a.TSB_dp(rcUsed)
 		a.TXA()
 		a.ASL()
 		a.ASL()
@@ -449,7 +413,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.AssumeREP(0x30)
 	a.Comment("not one of Link's own entries, which are copied already:")
 	a.Label("rf_entry_copy")
-	stxDP(a, rcOff)
+	a.STX_dp(rcOff)
 	a.STY_dp(rcIndex)
 	a.TXA()
 	a.SEC()
@@ -459,7 +423,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy_not_link")
 	a.Comment("not an enemy's death poof or explosion near a dying enemy:")
-	ldyDP(a, rcChr)
+	a.LDY_dp(rcChr)
 	a.LDA_abs_y(lo(t.captureChrs))
 	a.AND_imm16_w(captureChrEnemyFX)
 	a.BEQ("rf_copy")
@@ -472,19 +436,19 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.INC_dp(rcDying)
 	a.REP(0x20)
 	a.Label("rf_copy_listed")
-	ldyDP(a, rcOff)
+	a.LDY_dp(rcOff)
 	a.JSL(nearDying)
 	a.BCC("rf_copy")
 	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy")
 	a.Comment("copy x, y, chr, attributes, extended attributes and the OAM index; X = the extras' offset:")
-	ldxDP(a, rcExLen)
-	ldyDP(a, rcOff)
+	a.LDX_dp(rcExLen)
+	a.LDY_dp(rcOff)
 	a.LDA_abs_y(0x0800)
 	a.STA_long_x(ex + 2 + 0)
 	a.LDA_abs_y(0x0802)
 	a.STA_long_x(ex + 2 + 2)
-	ldyDP(a, rcIndex)
+	a.LDY_dp(rcIndex)
 	a.SEP(0x20)
 	a.LDA_abs_y(0x0A20)
 	a.AND_imm8_b(0x03)
@@ -501,7 +465,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.Comment("full: capture nothing more:")
 	a.SEP(0x20)
 	a.LDA_imm8_b(^uint8(scanChrSlot))
-	trbDP(a, rcMask)
+	a.TRB_dp(rcMask)
 	a.Label("rf_copy_done")
 	a.SEP(0x30)
 	a.RTS()
@@ -555,19 +519,19 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.Comment("capture only while a remote player is in the same location:")
 	a.LDA_long(remoteTableAddr + rtCaptureTTL)
 	a.BEQ("rf_capture_done")
-	decA(a)
+	a.DEC()
 	a.STA_long(remoteTableAddr + rtCaptureTTL)
 	a.Comment("which chrs to capture: 1 while a captured ancilla exists, 2 (shadows) while one that casts a shadow does:")
 	a.LDX_imm8_b(0x09)
 	a.Label("rf_ancilla")
-	ldyAbsX(a, 0x0C4A)
+	a.LDY_abs_x(0x0C4A)
 	if types, _ := captureTables(); types[0] == 0 {
 		a.BEQ("rf_ancilla_next")
 	}
 	a.CPY_imm8_b(0x40)
 	a.BCS("rf_ancilla_next")
 	a.LDA_abs_y(lo(t.captureTypes))
-	tsbDP(a, rcMask)
+	a.TSB_dp(rcMask)
 	a.Label("rf_ancilla_next")
 	a.DEX()
 	a.BPL("rf_ancilla")
@@ -583,7 +547,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BNE("rf_csprite_next")
 	a.Label("rf_csprite_found")
 	a.LDA_imm8_b(0x03)
-	tsbDP(a, rcMask)
+	a.TSB_dp(rcMask)
 	a.BRA("rf_csprites_done")
 	a.Label("rf_csprite_next")
 	a.DEX()
@@ -604,7 +568,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BRA("rf_capture_done")
 	a.Label("rf_garnish_found")
 	a.LDA_imm8_b(0x01)
-	tsbDP(a, rcMask)
+	a.TSB_dp(rcMask)
 	a.Label("rf_capture_on")
 	a.Label("rf_capture_done")
 
@@ -614,7 +578,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BNE("rf_ttl_ok")
 	a.JMP_abs("rf_scan_check")
 	a.Label("rf_ttl_ok")
-	decA(a)
+	a.DEC()
 	a.STA_long(remoteTableAddr + rtTTL)
 	a.LDA_dp(0x10)
 	for _, m := range []uint8{0x07, 0x09, 0x0B, 0x0F, 0x10, 0x13, 0x16} {
@@ -673,7 +637,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.STA_dp(rcSlots)
 	a.BEQ("rf_scan_check")
 	a.LDA_imm8_b(scanChrSlot)
-	tsbDP(a, rcMask)
+	a.TSB_dp(rcMask)
 
 	a.Label("rf_scan_check")
 	a.SEP(0x30)
@@ -687,11 +651,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDX_imm8_b(0xF0)
 	for k := 0x7F; k >= 0; k-- {
 		next := fmt.Sprintf("rf_scan_%02x", k)
-		rawAbs(a, "cpx.w $%04x", 0xEC, uint16(0x0801+k*4))
+		a.CPX_abs(uint16(0x0801 + k*4))
 		a.BEQ(next)
 		a.LDY_abs(uint16(0x0802 + k*4))
 		a.LDA_abs_y(lo(t.captureChrs))
-		andDP(a, rcMask)
+		a.AND_dp(rcMask)
 		a.BEQ(next)
 		a.LDX_imm8_b(uint8(k&0x3F) * 4)
 		a.JSR_abs(uint16(handlers[k>>6]))
@@ -718,7 +682,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_abs(0x0710)
 	a.BEQ("rf_used")
 	a.LDA_imm8_b(remoteLinkSlots)
-	tsbDP(a, rcUsed)
+	a.TSB_dp(rcUsed)
 	a.Label("rf_used")
 	a.REP(0x30)
 	a.LDA_dp(rcUsed)
@@ -749,7 +713,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.TAX()
 		a.SEP(0x20)
 		a.LDA_abs_x(lo(t.followerSlotBits))
-		tsbDP(a, rcAllocTmp)
+		a.TSB_dp(rcAllocTmp)
 		a.Label(fmt.Sprintf("rf_skip_%d", i))
 	}
 	a.LDA_dp(rcAllocTmp)
@@ -759,7 +723,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.BEQ("rf_alloc_done")
 	a.STA_dp(rcAllocTmp)
 	a.LDA_long(remoteTableAddr + rtParts)
-	rawAbs(a, "cmp.w $%04x,y", 0xD9, lo(t.allocFree))
+	a.CMP_abs_y(lo(t.allocFree))
 	a.BCC("rf_alloc_min")
 	a.LDA_abs_y(lo(t.allocFree))
 	a.Label("rf_alloc_min")
@@ -883,7 +847,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 				a.CLC()
 				a.ADC_imm16_w(0x0100)
 			}
-			oraDP(a, rcUpWRAM)
+			a.ORA_dp(rcUpWRAM)
 			a.STA_abs_y(st(rsNMIList + 0))
 			a.LDA_abs(tb(rtPartSrc + p*4 + row*2))
 			a.STA_abs_y(st(rsNMIList + 2))

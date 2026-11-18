@@ -115,12 +115,12 @@ func emitNMICount(a *asm.Emitter, chain uint32) {
 // high byte increment.
 func emitIncU24(a *asm.Emitter, addr uint32, label string) {
 	a.LDA_long(addr)
-	raw(a, "inc", 0x1A)
+	a.INC()
 	a.STA_long(addr)
 	a.BNE(label)
 	a.SEP(0x20)
 	a.LDA_long(addr + 2)
-	raw(a, "inc", 0x1A)
+	a.INC()
 	a.STA_long(addr + 2)
 	a.REP(0x20)
 	a.Label(label)
