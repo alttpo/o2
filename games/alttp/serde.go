@@ -56,7 +56,7 @@ const (
 // these are sent in their own packets, separate from message types alttpo uses; see makeO2BroadcastMessage.
 const (
 	MsgO2RunTimes MessageType = 0x80 // o2-only
-	MsgReset      MessageType = 0x81 // o2-only
+	MsgReset      MessageType = 0x81 // group reset, also understood and sent by alttpo (RunTiming.as)
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
 	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go

@@ -75,10 +75,10 @@ Values match alttpo's `GameState::deserialize`.
 | 0x1C | overworld entrance animations and other events | yes (per sector, own packet) | yes (per sector, own packet) | used |
 | 0x1D | flying floor tiles (tile room overlord) | yes (per sector, last) | yes (per sector, last) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
-| 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
+| 0x81 | group reset state machine | yes, own packet (`RunTiming.as`) | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
 | 0x83 | hearts (delta based) | yes (main packet) | yes, own packet (after 0x82) | used |
-| 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | not yet | yes, own packet | used; takes precedence over 0x80 |
+| 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | yes, own packet (`RunTiming.as`) | yes, own packet | used; takes precedence over 0x80 |
 
 Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
@@ -172,7 +172,9 @@ more messages, which corrupted the rest of the packet.
   one-byte attribute reads and the room state one read ($0641..$06EB) in the underworld (16 reads, still two VGET commands).
   The overlord tables (`$0B00..$0B37`) are read with the SRAM reads every 8 frames in the underworld, and with every
   read cycle only while the room has a tile room overlord (17 reads there, three VGET commands).
-- **Run timer:** alttpo does not report game start/finish times, so alttpo players have no times in o2's run timer.
+- **Run timer:** alttpo reports its start and finish in 0x84 (`RunTiming.as`) when it runs the o2-patched ROM, and
+  shows the run timer and its own time in its settings window. It does not verify other players' run timing yet
+  (RUN_TIMING.md, Verification); o2 does.
 - **SRAM ranges and sync rules:** each project chooses which SRAM ranges to send per ROM type, and each applies its own
   rules (max value, bit OR, VT item swaps, bottles, etc.) to received data. Item sync from alttpo to o2 is covered by a
   test for one item; the rules were not compared item by item.
@@ -181,9 +183,9 @@ more messages, which corrupted the rest of the packet.
   drops a packet from any player (o2 or alttpo) each time that player's frame counter wraps from `$FF` to `$00`.
 - **alttpo sprite size of disabled sprites:** alttpo's `Sprite::decodeOAMTableBytes` returns early when `b1 == $F0`
   without setting `size`. o2 assumes the default of 0 when parsing.
-- **Group reset:** alttpo does not take part in o2's group reset. The initiating o2 player only waits for o2 players to
-  acknowledge, and alttpo players keep broadcasting their state, which o2 players accept again once the reset
-  finalizes. A mixed group should reset alttpo players by hand at the same time.
+- **Group reset:** alttpo takes part in the group reset (0x81) and can initiate one ("Reset run"). When it clears its
+  state it forgets the remote players' state, starts new small key and heart sessions, and resets its run timing and
+  the latches in SRAM; it doesn't reset the emulator.
 
 ## Sound effects
 

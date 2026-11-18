@@ -24,68 +24,57 @@ message 0x84, clock sync, discontinuities, verification and display.
 - **The server clock comes from echo round trips**: the offset from the echo with the shortest round trip out of the
   last 30. The server itself is unchanged.
 
-## Done (3 commits)
+## Done
 
-1. `b02dc4c` patch and o2 runtime (`games/alttp/runtiming.go`):
-   - NMI entry hook at `$0080CC`. It runs the replaced `PHA PHX PHY PHD` itself, or chains to a randomizer's `JML`
-     at that address.
-   - A loop counter, and start/finish latches in preMain (`emitRunTiming`).
-   - The sprites gate in preMain and all 4 NMI hooks (`remotesprites.go`).
-   - Sampling the counters in o2, mapping frames to server time (`frameTime`: the earliest projection of the last 32
-     samples), discontinuities and rate checks, and accepting a latch only after two identical reads.
-   - Writing the gate. When the sprites gate turns on, o2 first zeroes `rsNMILen`, `rsSkipSlots` and `rsKept`.
-   - Clearing the latches on a group reset, plus skipping the reads that were issued before the clear completed.
-   - `patchFormat` is 10.
-2. `95de147` `clock.go`: min-RTT echo clock. Tests set `clock.lastMessageOnly`, because the test server's clock is
-   simulated.
-3. `93a807a` message 0x84: serialize/deserialize, sent with the slowbeat and right after a latch is accepted, and it
-   takes precedence over 0x80. Also `Player.lastServerStamp` and `RunTiming.StartSeenAt`/`FinishSeenAt`, the penalty
-   in the run's end, and lag frames, penalty and flags in `PlayerViewModel`.
+1. `8bdecaf` patch and o2 runtime (`games/alttp/runtiming.go`): NMI entry hook at `$0080CC` (or chaining to a
+   randomizer's `JML` there), loop counter and start/finish latches in preMain, the sprites gate in preMain and the 4
+   NMI hooks, sampling and mapping frames to server time, discontinuities and rate checks, writing the gate, clearing
+   the latches on a group reset. `patchFormat` is 10.
+2. `93d02f6` `clock.go`: min-RTT echo clock.
+3. `f73c9b3` message 0x84, sent with the slowbeat and right after a latch is accepted.
+4. Peer verification (`verify.go`), run from `updatePlayersList`: no backdating or forward dating (2 s, and the
+   minimum one-way delay), module agreement with the location messages (the last pre-game to in-game change before the
+   start, the first $19 after it), the rate from server stamps (offset `stamp - frames × period` only goes down when
+   frames run ahead; the gain must stay within the player's penalty + 2 s + 1%), and equal cost against the most
+   common signature and gates (the local player's on a tie). 0x84 of another group reset is ignored once both sides
+   finalized one. Tests in `verify_test.go`.
+5. UI: lag frames, penalty after the finish, a verification badge with the reasons and flags in its tooltip, and a
+   warning row when signatures or gates differ (`game/run/warning`).
+6. Cycle budgets (`cycles_test.go`): a profiler that charges each instruction to the patch routine (or part of
+   preMain) its address is in, using label addresses from the patch listing. Measured and documented next to each
+   routine: NMI count 63, run timing 110 worst (40 usual), gate test 26, and with 3 remote players remoteFrame 13,867
+   (about 30% of a frame), NMI upload 546, NMI hooks 40.
+7. alttpo (`../alttpo/alttpo/RunTiming.as`, branch `esync`, commit `bbc2d8c`): reads the `$707000` block and the
+   signature in `post_frame`, stamps latches, detects jumps, savestate loads (sets flag bit 4) and running fast,
+   writes the gate byte (bit 0 with SyncSprites, clearing the remote sprites NMI state first), min-RTT clock in
+   `receive.as`, sends/receives 0x84, the full 0x81 state machine including "Reset run", and shows the run timer and
+   its own time in the settings window. It compiles in bsnes-as and, on an alttpo-patcher ROM, reads the signature,
+   counts frames and writes the gate. ALTTPO_COMPAT.md updated.
 
-Tests: `runtiming_test.go`, `clock_test.go`, and the rewritten `TestRemoteSpritesScenario_SyncSpritesOff`. The test
-ROM now has an NMI handler at `$0080C9` (`testROMNMI`). `go test ./...` passes. None of this has been run on an FX Pak
-or a real emulator.
+`go test ./...` passes. Nothing has been run on an FX Pak, or with o2 and alttpo connected to a server together.
 
 ## Next steps
 
-1. **Try it on hardware and an emulator.**
-   - Check that `nmiFrames` advances at about 60.0988/s and that `nmiFrames - loopFrames` grows only on lag frames.
-   - Check that start and finish latch on a vanilla ROM and on a randomizer ROM.
-   - Toggle `syncSprites` mid-game and look for graphics glitches around the toggle.
-   - Measure how many frames the game runs with NMI disabled (boot, loads) against wall time; that sets
-     `rtRateTolerance`.
-2. **Peer verification** (RUN_TIMING.md, Verification), in a new function run from `updatePlayersList`. Mark players
-   unverified, with a reason; never change their reported times.
-   - No backdating: compare `StartSeenAt`/`FinishSeenAt` with `StartAt`/`FinishAt` (within 2 s, and not earlier than
-     the server stamp minus the player's minimum `serverStamp - SampleAt`).
-   - Rate fitted from `(NMIFrames, lastServerStamp)` of each 0x84 message.
-   - Module agreement with location messages 0x01: record the server stamp of the first one showing module ≥ $05,
-     then $19.
-   - Signatures and gates equal to everyone else's, and `GatesChanged` false.
-3. **UI:** show lag frames, penalty and flags, a verification badge per player, and a warning when signatures or gates
-   differ. `PlayerViewModel` already carries the first three; find where the web UI renders `game/players`.
-4. **Gates as a group setting**, so one player can't run with different gates by accident. At minimum, warn when they
-   differ.
-5. **Cycle budgets.** Measure the worst-case cycles of every per-frame routine in the test emulator: preMain's
-   `emitRunTiming` (about 50), `emitLinkColor`, `emitSfx`, `manipPending`, `remoteFrame`, the NMI hooks and
-   `nmiCount` (about 35). Then trim the worst and document each one's budget next to its code. Consider gates for
-   tunic color (`syncTunicColor`) and sfx.
-6. **alttpo** (`../alttpo/alttpo/*.as`):
-   - Read the `$707000` block from SRAM.
-   - Stamp `server_now()` minus the frames the latch is behind when a latch bit appears (in `post_frame`).
-   - Write the gate byte from its settings, and set bit 0 whenever the run uses remote sprites, even though alttpo
-     draws them itself.
-   - Port the min-RTT clock into `receive.as`.
-   - Send and receive 0x84, and port the 0x81 group reset state machine.
-   - Then flip the 0x84 row in ALTTPO_COMPAT.md to "yes". Compile check: run bsnes-as headless under a pty (see
-     memory).
-7. **Smaller things:**
+1. **Try it for real.** o2 on hardware and an emulator, and a mixed o2 + alttpo group on a local server:
+   - `nmiFrames` advances at about 60.0988/s; `nmiFrames - loopFrames` grows only on lag frames.
+   - Start and finish latch on a vanilla ROM and a randomizer ROM, and o2 and alttpo show the same run time.
+   - A group reset started from either client clears both, and both then report the same reset id in 0x84.
+   - Toggle `syncSprites` mid-game and look for glitches; measure frames run with NMI off to set `rtRateTolerance`.
+   - Fresh SRAM reads `latches = $FF`; both clients clear it as a stale latch once they have the server clock. Check
+     that the first start after that latches.
+2. **Trim remoteFrame.** 13,867 cycles with 3 remote players is the patch's biggest per-frame cost. Also measure the
+   busy paths of link color, sfx and manip pending (only their idle paths are measured), and consider gates for
+   tunic color and sfx.
+3. **Peer verification in alttpo** (port `verify.go`); alttpo only warns about differing signatures or gates.
+4. **Gates as a group setting**, so a player can't run with different gates by accident. Only the warning exists.
+5. **Smaller things:**
    - Lag frames are counted from when o2 accepted the start, a few frames late. Latching `loopFrames` with the start
      would fix that (it would need a bigger SRAM block).
-   - If o2 restarts mid-run, the run is lost (latches from before o2 saw the counter are cleared). Possible recovery:
-     accept a latch older than the counter stretch when the group's 0x84 history for this player has it.
-   - The flag for a detected savestate load (bit 4) is never set by o2. Only alttpo can tell, by comparing its own
-     script counter with SRAM.
+   - If o2 restarts mid-run, the run is lost. Possible recovery: accept a latch older than the counter stretch when
+     the group's 0x84 history for this player has it.
+   - o2 never sets flag bit 4 (savestate load); alttpo sets it whenever the counter goes back.
+   - alttpo's echo round trips include up to a frame of waiting for `pre_frame` to receive them; the min-RTT pick
+     mostly hides that.
 
 ## Where things are
 
@@ -98,3 +87,6 @@ or a real emulator.
 | Reads and writes in the game loop | `games/alttp/run.go` (`enqueueWRAMReads`, `readMainComplete`, `writeRunTiming` call) |
 | Players list and run timer display | `games/alttp/viewmodel.go` |
 | Group reset clearing the run | `games/alttp/reset.go` (`resetClearState`) |
+| Peer verification | `games/alttp/verify.go` |
+| Cycle budgets | `games/alttp/cycles_test.go` |
+| alttpo side | `../alttpo/alttpo/RunTiming.as` |
