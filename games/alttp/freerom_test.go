@@ -109,6 +109,7 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 				{hudHookAddr, hudHookAddr + uint32(len(hudHookExpected))},
 				{nmiFollowerPatchAddr, nmiFollowerPatchAddr + uint32(len(nmiFollowerPatchExpected))},
 				{nmiFollowerBottomPatchAddr, nmiFollowerBottomPatchAddr + uint32(len(nmiFollowerBottomPatchExpected))},
+				{nmiCountHookAddr, nmiCountHookAddr + uint32(len(nmiCountHookExpected))},
 			}
 			fns := make(map[romFunction]uint32)
 			fillRomFunctions(rom, fns)

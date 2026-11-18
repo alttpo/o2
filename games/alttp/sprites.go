@@ -212,6 +212,10 @@ func (g *Game) readLinkSprites() {
 	if !s.oamCopyFresh {
 		return
 	}
+	if !g.spritesGated() {
+		// the patch doesn't copy Link's OAM entries while the sprites gate is clear; the copy is stale:
+		return
+	}
 
 	// send the scroll offsets Link's entries were drawn with, so receivers place the sprites with the offsets of the
 	// same frame (see linkOAMCopyScroll); not on the overworld map, like the offsets read from WRAM:

@@ -213,6 +213,8 @@ func (p *Patcher) Patch() (err error) {
 		fnBank01RTL:    fns[fnBank01RTL],
 		linkGfxBankIns: linkGfxBankInstruction(p.rom),
 	}
+	nmiCountOK, nmiCountChain := nmiCountHookSite(p.rom)
+	r.nmiCountChain = nmiCountChain
 	stageAddr := fns[fnOverworldHandleOverlays]
 	stageOK, stageChain := map16StageHookSite(p.rom, stageAddr)
 	r.stageChain = stageChain
@@ -309,6 +311,21 @@ func (p *Patcher) Patch() (err error) {
 		}
 	}
 
+	// the NMI entry hook that counts NMI frames for the run timing (see runtiming.go):
+	if !nmiCountOK {
+		pcAddr, _ = lorom.BusAddressToPak(nmiCountHookAddr)
+		log.Printf("alttp: patch: unexpected code at $%06x: % x; no NMI frame counter for the run timing\n", nmiCountHookAddr, p.rom.Slice(pcAddr, uint32(len(nmiCountHookExpected))))
+	} else {
+		pcAddr, _ = lorom.BusAddressToPak(nmiCountHookAddr)
+		a = asm.NewEmitter(p.rom.Slice(pcAddr, uint32(len(nmiCountHookExpected))), true)
+		a.SetBase(nmiCountHookAddr)
+		a.JML(r.nmiCount.addr)
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
+	}
+
 	// the hook that applies staged remote map16 changes to every overworld area load; without it, they are applied
 	// once the area finished loading. Randomizers already replace the same instructions with a JSL to their own
 	// routine; that JSL is pointed at the hook instead, which jumps to their routine when done:
@@ -389,12 +406,13 @@ func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
 }
 
 // emitPreMain emits the trampoline that the frame hook calls with JSL every frame instead of `JSL Module_MainRouting`
-// (gameModes is its operand). It runs the update routine during safe modules, the module, and then copies Link's OAM
-// entries and the captured sprites for o2 and draws the remote players with the routine at remoteFrame. Called with A
-// and X 8-bit.
+// (gameModes is its operand). It counts the frame and latches the run's start and finish (see runtiming.go), runs the
+// update routine during safe modules, the module, and then, if the sprites gate is set, copies Link's OAM entries and
+// the captured sprites for o2 and draws the remote players with the routine at remoteFrame. Called with A and X 8-bit.
 func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uint32) {
 	a.AssumeSEP(0x30)
 	a.Label("preMain")
+	emitRunTiming(a)
 	a.Comment("only update during safe modules:")
 	a.LDA_dp(0x10)
 	// >= $19    : bad
@@ -419,13 +437,15 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uin
 	// jsl to mainrouting that we patched over:
 	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
 
-	emitLinkOAMCopy(a)
 	emitLinkColor(a)
 	emitSfx(a)
 	a.Comment("apply the attributes of manipulable objects the room load applied:")
 	a.JSL(manipPending)
-	a.Comment("copy sparkles and dust for o2 to send, and draw remote players:")
+	a.Comment("remote sprites: copy Link's OAM entries, sparkles and dust for o2 to send, and draw remote players:")
+	emitGateTest(a, gateSprites, "preMainExit")
+	emitLinkOAMCopy(a)
 	a.JSL(remoteFrame)
+	a.Label("preMainExit")
 	a.RTL()
 }
 
@@ -477,6 +497,10 @@ type patchROM struct {
 	hudCheck romBlock
 	// called by remoteFrame; see emitDyingEnemiesList and emitNearDyingEnemySub:
 	captureDyingList, captureNearDying romBlock
+	// the NMI entry hook that counts NMI frames, and the routine it jumps to when done if a randomizer had hooked the
+	// same instructions (0: it runs them itself); see emitNMICount:
+	nmiCount      romBlock
+	nmiCountChain uint32
 }
 
 // patchRoutine emits a block's code at its address:
@@ -572,6 +596,10 @@ func (r *patchROM) routines() []patchRoutine {
 			emitNearDyingEnemySub(a)
 			return nil
 		}},
+		{&r.nmiCount, func(a *asm.Emitter) error {
+			emitNMICount(a, r.nmiCountChain)
+			return nil
+		}},
 	}
 }
 
@@ -592,6 +620,11 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	a.Comment("copy the patch signature to SRAM:")
 	emitMVNCopy(a, patchSignatureROMAddr, patchSignatureAddr, patchSignatureSize)
 	emitInitSRAMZero(a)
+	a.Comment("no optional features until a client turns them on (see runtiming.go):")
+	a.SEP(0x20)
+	a.LDA_imm8_b(0x00)
+	a.STA_long(gatesAddr)
+	a.REP(0x20)
 	emitRemoteInit(a)
 	emitMap16StageInit(a)
 	emitManipStageInit(a)
@@ -630,6 +663,7 @@ func (r *patchROM) measure() (err error) {
 	r.manipPendingBlock.name = "manip pending block"
 	r.captureDyingList.name = "capture dying list"
 	r.captureNearDying.name = "capture near dying"
+	r.nmiCount.name = "NMI count"
 
 	for _, rt := range r.routines() {
 		a := asm.NewEmitter(make([]byte, 0x1000), false)

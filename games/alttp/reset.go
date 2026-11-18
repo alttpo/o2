@@ -243,7 +243,8 @@ func (g *Game) resetClearState() {
 	}
 	g.activePlayersClean = false
 
-	// clear the run timer:
+	// clear the run timer, and have the latches in SRAM cleared so the run starts again with the next file load:
+	g.runTiming.resetRun()
 	g.runMinStart = time.Time{}
 	g.runMaxFinish = time.Time{}
 	g.runPlayersFinished = 0

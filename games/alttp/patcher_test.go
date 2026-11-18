@@ -18,6 +18,9 @@ const testROMJSLMainRouting = 0x00_8056
 // testROMModuleRouting stands in for Module_MainRouting with just an RTL:
 const testROMModuleRouting = 0x00_8100
 
+// testROMNMI is the start of the NMI handler: SEI; REP #$30, then the instructions the NMI count hook replaces:
+const testROMNMI = 0x00_80C9
+
 // testROMBreakPoint is where a frame ends, after the patched frame hook returned:
 const testROMBreakPoint = 0x00_805A
 
@@ -95,6 +98,13 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 		return
 	}
 	a.WriteTextTo(log.Writer())
+
+	// the start of the NMI handler, which the patch hooks to count NMI frames; STP after the hooked instructions:
+	pakAddr, err = lorom.BusAddressToPak(testROMNMI)
+	if err != nil {
+		return
+	}
+	copy(rom.Slice(pakAddr, 9), append([]byte{0x78, 0xC2, 0x30}, append(append([]byte(nil), nmiCountHookExpected...), 0xDB)...))
 
 	// NMI_DoUpdates code that the patcher looks for: the LinkGraphics bank and the NMI hook location:
 	for addr, code := range map[uint32][]byte{

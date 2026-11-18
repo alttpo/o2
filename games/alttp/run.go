@@ -437,6 +437,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 
 	// Link's sprites; this pushes the read cycle beyond a single FX Pak Pro batch of 8 reads:
 	q = g.enqueueSpriteReads(q)
+	// the frame counters, the run's start and finish latches and the features the patch runs:
+	q = g.enqueueRunTimingRead(q)
 
 	return q
 }
@@ -586,6 +588,12 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		}
 		g.linkSprites.oamCopyFresh = false
 
+		// the server time the reads completed at, for the run timing; unknown until a message from the server came:
+		var readAt time.Time
+		if !g.lastServerTime.IsZero() {
+			readAt = g.ServerNow()
+		}
+
 		// copy the read data into our view of memory:
 		for _, rsp := range rsps {
 			// $F5-F6:xxxx is WRAM, aka $7E-7F:xxxx
@@ -600,6 +608,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 			if _, _, ok := g.isReadSRAM(rsp); ok {
 				g.readSpriteResponse(rsp)
 				g.readLinkColorResponse(rsp)
+				g.readRunTimingResponse(rsp, readAt)
 			}
 		}
 
@@ -616,21 +625,6 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				// key counts without attributing any changes to the local player and re-adopt the group's counts:
 				g.invalidateSmallKeys(true)
 				g.invalidateHearts(true)
-			}
-			if moduleStaging == 0x05 {
-				// game load:
-				if g.local.GameStartTime.IsZero() {
-					g.local.GameStartTime = g.ServerNow()
-					g.shouldUpdatePlayersList = true
-					g.PushNotification("game started")
-				}
-			} else if moduleStaging == 0x19 {
-				// triforce room module:
-				if g.local.GameFinishTime.IsZero() {
-					g.local.GameFinishTime = g.ServerNow()
-					g.shouldUpdatePlayersList = true
-					g.PushNotification(fmt.Sprintf("game finished in %s", g.local.FormatTimer(g.ServerNow())))
-				}
 			}
 		}
 		g.lastModule = moduleStaging
@@ -864,6 +858,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 		}
 	}
 
+	// the features the patch runs, and clearing the run's latches:
+	g.writeRunTiming(now)
 	// update the remote players the game draws:
 	g.writeRemoteSprites(now)
 	// queue remote players' sound effects for the game to play:

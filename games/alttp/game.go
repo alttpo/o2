@@ -134,6 +134,8 @@ type Game struct {
 
 	// remote players drawn by the game; see remotesprites.go:
 	remoteSprites remoteSpritesLocal
+	// the local player's run timing; see runtiming.go:
+	runTiming runTimingLocal
 
 	smallKeys smallKeysLocal
 	hearts    heartsLocal

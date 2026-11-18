@@ -584,23 +584,42 @@ func TestRemoteSpritesScenario_ThirdPlayerIsBlob(t *testing.T) {
 	h.expectOAMUnused("nothing else", 0, 0x79)
 }
 
-// With SyncSprites off nothing is drawn, but the local player's sparkles and dust are still captured for others.
+// With SyncSprites off the patch's remote sprites code doesn't run at all (see runtiming.go): nothing is drawn, the
+// local player's sprites are neither captured nor sent, and the NMI hooks run only the game's own code.
 func TestRemoteSpritesScenario_SyncSpritesOff(t *testing.T) {
 	h := newRSScenario(t)
 	h.frames(8)
 	h.expectOAM("on", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	e1, e2 := h.gs[0].e, h.gs[1].e
+	if gates := e2.SRAM[gatesAddr&0x7FFF]; gates != gateSprites {
+		t.Fatalf("g2 gates $%02x; expected $%02x", gates, gateSprites)
+	}
 
 	h.gs[0].g.SyncSprites = false
+	h.gs[1].g.SyncSprites = false
 	h.frames(2)
 	h.expectOAMUnused("off", 0, 0x7F)
-	tb := h.gs[0].e.SRAM[remoteTableAddr&0x7FFF:]
-	if tb[rtTTL] != 0 || tb[rtCaptureTTL] == 0 {
-		t.Errorf("TTL %d, capture TTL %d; expected 0 and non-zero", tb[rtTTL], tb[rtCaptureTTL])
+	if gates := e2.SRAM[gatesAddr&0x7FFF]; gates != 0 {
+		t.Fatalf("g2 gates $%02x; expected 0", gates)
+	}
+	// g2's game doesn't copy Link's OAM entries any more:
+	copyAt := linkOAMCopyAddr & 0x7FFF
+	before := append([]byte(nil), e2.SRAM[copyAt:copyAt+linkOAMCopySize]...)
+	e2.WRAM[0x0800+0x65*4] = 0x51 // the body
+	h.frames(2)
+	if after := e2.SRAM[copyAt : copyAt+linkOAMCopySize]; !bytes.Equal(before, after) {
+		t.Errorf("g2 copied Link's OAM entries with the sprites gate clear")
+	}
+	// g1's late NMI hook only runs the code it was patched over:
+	d := runNMIHook(t, e1, h.gs[0].g)
+	if len(d.vram) != 0 {
+		t.Errorf("g1 NMI hook uploaded %d words with the sprites gate clear", len(d.vram))
 	}
 
 	h.gs[0].g.SyncSprites = true
-	h.frames(2)
-	h.expectOAM("on again", 0, 0x7D, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.gs[1].g.SyncSprites = true
+	h.frames(8)
+	h.expectOAM("on again", 0, 0x7D, [4]byte{0x41, 0x58, 0x20, 0x6E}, 0x02)
 }
 
 // Sword sparkles and dash dust are sent along with Link's sprites while one of their ancillae exists.

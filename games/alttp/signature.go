@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 9
+	patchFormat = 10
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}
@@ -107,6 +107,10 @@ func computePatchVersion() (v [4]byte) {
 		captureDyingEnd,
 		patchSignatureAddr,
 		patchSignatureROMAddr,
+		runTimingAddr,
+		runTimingSize,
+		gatesAddr,
+		nmiCountHookAddr,
 	})
 	// the ROM the routines are placed in, and the size of the patched ROM:
 	_ = binary.Write(h, binary.LittleEndian, [3]uint32{patchRegion.start, patchRegion.end, patchedROMSize})
