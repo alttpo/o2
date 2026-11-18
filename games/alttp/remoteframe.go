@@ -587,7 +587,12 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	}
 	a.CMP_imm8_b(0x0E)
 	a.BNE("rf_no_draw")
-	a.Comment("dialogs and menus (Module0E_Interface): not on the dungeon or overworld map or the flute menu:")
+	a.Comment("dialogs and menus (Module0E_Interface): not in the item menu, whose NMI_UploadTilemap of the BG3 tilemap")
+	a.Comment("leaves no time in vblank for the parts' uploads (the frame would start late, with black lines at the top),")
+	a.Comment("nor on the dungeon or overworld map or the flute menu:")
+	a.LDA_dp(0x11)
+	a.CMP_imm8_b(0x01)
+	a.BEQ("rf_no_draw")
 	a.LDA_dp(0x1B)
 	a.BEQ("rf_interface_ow")
 	a.LDA_dp(0x11)

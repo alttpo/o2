@@ -816,8 +816,8 @@ func TestRemoteSpritesScenario_CapturedLengthStable(t *testing.T) {
 	}
 }
 
-// Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus,
-// and the first one always with Link's head and body, in every submodule.
+// Remote players are drawn whenever the game draws the underworld or overworld sprites, including dialogs and menus but
+// the item menu, and the first one always with Link's head and body, in every submodule.
 func TestRemoteSpritesScenario_Modules(t *testing.T) {
 	const (
 		nothing = iota
@@ -837,7 +837,8 @@ func TestRemoteSpritesScenario_Modules(t *testing.T) {
 		{"spiral staircase", false, 0x07, 0x0E, 0, body},
 		{"straight staircase", false, 0x07, 0x12, 0, body},
 		{"dialog", false, 0x0E, 0x02, 0, body},
-		{"item menu", false, 0x0E, 0x01, 0, body},
+		{"item menu", false, 0x0E, 0x01, 0, nothing},
+		{"overworld item menu", true, 0x0E, 0x01, 0, nothing},
 		{"dungeon map opening", false, 0x0E, 0x03, 0, body},
 		{"dungeon map shown", false, 0x0E, 0x03, 1, nothing},
 		{"dungeon map closing", false, 0x0E, 0x03, 7, body},

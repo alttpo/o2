@@ -733,7 +733,9 @@ picture. o2 can only use the game's own OAM buffer and VRAM, so it draws a simpl
   (alttpo's `is_it_a_bad_time`; o2 used to also require its own "in game" check, which depends on the module before
   a dialog or menu that remote players don't send, so remote players disappeared during their dialogs) are drawn, and only while the local game draws the underworld or overworld sprites: modules `$07`, `$09`,
   `$0B`, spotlight open/close (`$0F`/`$10`), boss victories (`$13`/`$16`), and dialogs and menus (`$0E`) except
-  while the dungeon map, overworld map or flute menu is shown (the same condition as `Module0E_Interface`).
+  in the item menu (submodule `$01`: its per-frame BG3 tilemap upload leaves no vblank time for the remote player's
+  chr uploads, which drew black lines at the top of the screen) and while the dungeon map, overworld map or flute
+  menu is shown (the same condition as `Module0E_Interface`).
 - **Switched off** with "Sync Sprites" in the web UI (on by default).
 - **Players leaving the room or area are not drawn**, although their reported location only changes once their
   screen transition or warp finishes: not while they are in a screen transition (alttpo's `is_in_screen_transition`,
