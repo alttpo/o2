@@ -26,7 +26,9 @@ import (
 const (
 	// scan: the capture mask (rcMask, u8; 0 while not capturing), whether to draw (rcDraw), whether to find the VRAM
 	// slots in use (rcSlots), the slots found in use (rcUsed), the chr of the entry being looked at (rcChr, u16):
-	rcMask  = 0x00
+	rcMask = 0x00
+	// non-zero once the dying enemies are listed this frame (see emitDyingEnemiesList):
+	rcDying = 0x01
 	rcDraw  = 0x02
 	rcSlots = 0x03
 	rcUsed  = 0x04
@@ -207,16 +209,28 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.SEC()
 	a.SBC_abs(0x0352)
 	a.CMP_imm16_w(linkOAMCount * 4)
-	a.BCC("rf_copy_done")
+	a.BCS("rf_copy_not_link")
+	a.JMP_abs("rf_copy_done")
+	a.Label("rf_copy_not_link")
 	a.Comment("not an enemy's death poof or explosion near a dying enemy:")
 	ldyDP(a, rcChr)
 	a.LDA_abs_y(lo(t.captureChrs))
 	a.AND_imm16_w(captureChrEnemyFX)
 	a.BEQ("rf_copy")
+	a.Comment("the screen positions of the enemies drawing their death, listed once per frame on the first one seen:")
+	a.LDA_dp(rcDying)
+	a.AND_imm16_w(0x00FF)
+	a.BNE("rf_copy_listed")
+	a.JSL(dyingList)
+	a.SEP(0x20)
+	a.INC_dp(rcDying)
+	a.REP(0x20)
+	a.Label("rf_copy_listed")
 	raw(a, "lda $03,s: the entry offset", 0xA3, 0x03)
 	a.TAY()
 	a.JSL(nearDying)
-	a.BCS("rf_copy_done")
+	a.BCC("rf_copy")
+	a.JMP_abs("rf_copy_done")
 	a.Label("rf_copy")
 	a.Comment("Y = the entry offset; copy x, y, chr, attributes, extended attributes and the OAM index:")
 	raw(a, "lda $03,s: the entry offset", 0xA3, 0x03)
@@ -261,6 +275,8 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	// --- the sprite drawing routine, called with JSR: Y = table entry offset, X = OAM buffer offset to search down
 	// from; A, X and Y 16-bit, DB = $70. Preserves Y; updates X. ---
 	a.AssumeREP(0x30)
+	a.Label("rf_sprite_noslot")
+	a.PLX()
 	a.Label("rf_sprite_ret")
 	a.RTS()
 	drawSprite := a.Label("rf_sprite")
@@ -321,8 +337,31 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	tsbDP(a, rcDrawn)
 	a.PLX()
 	a.Label("rf_sprite_find")
-	a.Comment("find the next unused OAM entry (Y = $F0) below X:")
+	a.Comment("find the next unused OAM entry (Y = $F0) below X, 4 entries at a time while there are 4 below:")
 	a.SEP(0x20)
+	a.Label("rf_sprite_find4")
+	a.CPX_imm16_w(0x0010)
+	a.BCC("rf_sprite_find_loop")
+	for i := 1; i <= 4; i++ {
+		a.LDA_long_x(uint32(0x7E0801 - 4*i))
+		a.CMP_imm8_b(0xF0)
+		a.BEQ(fmt.Sprintf("rf_sprite_found%d", i))
+	}
+	a.REP(0x20)
+	a.TXA()
+	a.CLC()
+	a.ADC_imm16_w(0xFFF0) // -$10
+	a.TAX()
+	a.SEP(0x20)
+	a.BRA("rf_sprite_find4")
+	for i := 4; i >= 1; i-- {
+		a.Label(fmt.Sprintf("rf_sprite_found%d", i))
+		a.DEX()
+		a.DEX()
+		a.DEX()
+		a.DEX()
+	}
+	a.BRA("rf_sprite_found")
 	a.Label("rf_sprite_find_loop")
 	a.DEX()
 	a.DEX()
@@ -332,6 +371,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_long_x(0x7E0801)
 	a.CMP_imm8_b(0xF0)
 	a.BNE("rf_sprite_find_loop")
+	a.Label("rf_sprite_found")
 	a.LDA_dp(rcSX)
 	a.STA_long_x(0x7E0800)
 	a.LDA_dp(rcSY)
@@ -358,9 +398,6 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.SEP(0x20)
 	a.STA_long_x(0x7E0A20)
 	a.REP(0x20)
-	a.PLX()
-	a.RTS()
-	a.Label("rf_sprite_noslot")
 	a.PLX()
 	a.RTS()
 	a.Label("rf_sprite_full")
@@ -422,6 +459,9 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDX_imm8_b(0x09)
 	a.Label("rf_ancilla")
 	ldyAbsX(a, 0x0C4A)
+	if types, _ := captureTables(); types[0] == 0 {
+		a.BEQ("rf_ancilla_next")
+	}
 	a.CPY_imm8_b(0x40)
 	a.BCS("rf_ancilla_next")
 	a.LDA_abs_y(lo(t.captureTypes))
@@ -464,9 +504,6 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 	a.LDA_imm8_b(0x01)
 	tsbDP(a, rcMask)
 	a.Label("rf_capture_on")
-	a.REP(0x30)
-	a.JSL(dyingList)
-	a.SEP(0x30)
 	a.Label("rf_capture_done")
 
 	a.Comment("draw only while a table is current, the game draws the underworld or overworld sprites, and in the room or")
@@ -661,12 +698,13 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList, nearDying u
 		a.ORA_imm16_w(0x4000)
 		a.STA_dp(rcSX)
 		a.LDA_abs(tb(rtPartFlags + p))
+		a.STA_dp(rcTmp)
 		a.AND_imm16_w(partWRAM)
 		a.XBA()
 		a.STA_dp(rcSY)
 		for row := uint32(0); row < 2; row++ {
 			skipRow := fmt.Sprintf("rf_up_%d_%d", p, row)
-			a.LDA_abs(tb(rtPartFlags + p))
+			a.LDA_dp(rcTmp)
 			a.AND_imm16_w(uint16(partTopRow << row))
 			a.BEQ(skipRow)
 			a.LDA_dp(rcSX)

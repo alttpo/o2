@@ -1344,3 +1344,49 @@ func TestRemoteSpritesScenario_AlttpoSwordPose(t *testing.T) {
 		t.Errorf("received %+v", sp)
 	}
 }
+
+// setModuleDrawsAt makes g1's module draw 8x8 sprites with chr at the OAM entries index.
+func (h *skScenario) setModuleDrawsAt(chr uint8, index ...int) {
+	var code []byte
+	for _, i := range index {
+		o := uint16(0x0800 + i*4)
+		code = append(code,
+			0xA9, chr, 0x8D, uint8(o+2), uint8((o+2)>>8),
+			0xA9, 0x20, 0x8D, uint8(o+1), uint8((o+1)>>8))
+	}
+	code = append(code, 0x6B)
+	for i, b := range code {
+		h.gs[0].e.Bus.EaWrite(testROMModuleRouting+uint32(i), b)
+	}
+}
+
+// Remote sprites go into the unused OAM entries from the end of the buffer down, skipping those the game used.
+func TestRemoteSpritesScenario_SkipsUsedEntries(t *testing.T) {
+	h := newRSScenario(t)
+	if isCaptureChr(0x45) {
+		t.Fatal("chr $45 is captured; pick another")
+	}
+	h.setModuleDrawsAt(0x45, 0x7F, 0x7D, 0x7C, 0x78, 0x77, 0x76, 0x75, 0x74)
+	h.frames(8)
+	for _, i := range []int{0x7F, 0x7D, 0x7C, 0x78, 0x77, 0x76, 0x75, 0x74} {
+		if entry, _ := h.oamEntry(0, i); entry[1] != 0x20 || entry[2] != 0x45 {
+			t.Errorf("game's OAM[$%02x] = % x was overwritten", i, entry[:])
+		}
+	}
+	h.expectOAM("shadow right", 0, 0x7E, [4]byte{0x48, 0x60, 0x6C, 0x68}, 0x00)
+	h.expectOAM("shadow left", 0, 0x7B, [4]byte{0x40, 0x60, 0x6C, 0x28}, 0x00)
+	h.expectOAM("body", 0, 0x7A, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x79, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("nothing else", 0, 0x73)
+
+	// all but the first 3 entries used: the sprites go into those, and what doesn't fit is not drawn:
+	used := make([]int, 0, 0x80)
+	for i := 0x03; i < 0x80; i++ {
+		used = append(used, i)
+	}
+	h.setModuleDrawsAt(0x45, used...)
+	h.frames(2)
+	h.expectOAM("shadow right", 0, 0x02, [4]byte{0x48, 0x60, 0x6C, 0x68}, 0x00)
+	h.expectOAM("shadow left", 0, 0x01, [4]byte{0x40, 0x60, 0x6C, 0x28}, 0x00)
+	h.expectOAM("body", 0, 0x00, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+}
