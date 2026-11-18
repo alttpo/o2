@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"o2/snes"
+	"o2/util"
 	"slices"
 	"strings"
 )
@@ -177,7 +178,13 @@ func (p *Patcher) Patch() (err error) {
 
 	textBuf := &strings.Builder{}
 	defer func() {
-		log.Print(textBuf.String())
+		// the listing of the generated code is too long for the log, so it goes to a file next to it:
+		path, werr := util.WriteLogSibling("-patch.asm", []byte(textBuf.String()))
+		if werr != nil {
+			log.Printf("alttp: patch: could not write the patch listing: %v\n", werr)
+		} else if path != "" {
+			log.Printf("alttp: patch: wrote the patch listing to '%s'\n", path)
+		}
 	}()
 
 	// frame hook:

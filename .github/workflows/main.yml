@@ -21,7 +21,19 @@ jobs:
         with:
           go-version: '^1.22.1'
 
-      - run: go test ./...
+      - name: Test
+        run: |
+          mkdir -p "$O2_TEST_LOG_DIR"
+          go test ./...
+        env:
+          O2_TEST_LOG_DIR: ${{ runner.temp }}/test-logs
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: ${{ runner.temp }}/test-logs
 
   windows:
     strategy:
