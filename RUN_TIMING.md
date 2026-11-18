@@ -124,6 +124,7 @@ until all supported clients know it.
 | Field | Type | Meaning |
 |---|---|---|
 | version | u8 | 1 |
+| size | u8 | the number of bytes after this field (72 for version 1); receivers skip messages of versions they don't know by it, and ignore bytes past the fields they know |
 | flags | u8 | bit 0 started, bit 1 finished, bit 2 counter discontinuity, bit 3 rate out of tolerance, bit 4 savestate load detected, bit 5 no NMI counter in this ROM |
 | resetID | u64 | id of the last group reset the player finalized (0x81), 0 if none |
 | resetInitiator | u16 | its initiator's player index |

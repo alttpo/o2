@@ -1,6 +1,8 @@
 package alttp
 
 import (
+	"bytes"
+	"io"
 	"testing"
 	"time"
 
@@ -330,3 +332,72 @@ func TestRunTiming_AcceptLatches(t *testing.T) {
 type testWriter struct{ t *testing.T }
 
 func (w testWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestRunTiming_MessageRoundTrip(t *testing.T) {
+	t0 := time.Unix(1_700_000_000, 123_456_789)
+	m := &runTimingRemote{
+		Flags:          rtFlagStarted | rtFlagFinished | rtFlagRate,
+		ResetID:        0x0102030405060708,
+		ResetInitiator: 3,
+		Gates:          gateSprites,
+		GatesChanged:   true,
+		StartAt:        t0,
+		FinishAt:       t0.Add(2 * time.Hour),
+		StartFrame:     0x123456,
+		FinishFrame:    0xABCDEF,
+		NMIFrames:      0xABCDF0,
+		LoopFrames:     0xAB0000,
+		SampleAt:       t0.Add(2*time.Hour + time.Second),
+		LagFrames:      0x00CDEF,
+		Penalty:        1234 * time.Millisecond,
+	}
+	copy(m.Signature[:], "O2-PATCH12345678")
+
+	var b bytes.Buffer
+	if err := SerializeRunTiming(&b, m); err != nil {
+		t.Fatal(err)
+	}
+	if b.Len() != 3+runTimingMessageSize {
+		t.Fatalf("message is %d bytes; expected %d", b.Len(), 3+runTimingMessageSize)
+	}
+	data := b.Bytes()
+	if data[0] != byte(MsgRunTiming) {
+		t.Fatalf("type $%02x", data[0])
+	}
+
+	g := &Game{}
+	p := &Player{lastServerStamp: t0.Add(time.Millisecond)}
+	// followed by another message, which must still be parsed:
+	r := bytes.NewReader(append(append([]byte(nil), data[1:]...), 0xEE))
+	if err := g.DeserializeRunTiming(p, r); err != nil {
+		t.Fatal(err)
+	}
+	if rest, _ := io.ReadAll(r); len(rest) != 1 || rest[0] != 0xEE {
+		t.Fatalf("left % x unread; expected ee", rest)
+	}
+	got := p.RunTiming
+	got.OK, got.StartSeenAt, got.FinishSeenAt = false, time.Time{}, time.Time{}
+	if got != *m {
+		t.Errorf("got %+v\nexpected %+v", got, *m)
+	}
+	if !p.GameStartTime.Equal(m.StartAt) || !p.GameFinishTime.Equal(m.FinishAt) {
+		t.Errorf("player times %v, %v", p.GameStartTime, p.GameFinishTime)
+	}
+	if !p.RunTiming.StartSeenAt.Equal(p.lastServerStamp) {
+		t.Errorf("start seen at %v; expected the message's server stamp", p.RunTiming.StartSeenAt)
+	}
+
+	// a later version with more fields is skipped by its size:
+	p2 := &Player{}
+	later := []byte{runTimingVersion + 1, 2, 0xAA, 0xBB, 0xEE}
+	r = bytes.NewReader(later)
+	if err := g.DeserializeRunTiming(p2, r); err != nil {
+		t.Fatal(err)
+	}
+	if p2.RunTiming.OK {
+		t.Errorf("accepted version %d", runTimingVersion+1)
+	}
+	if rest, _ := io.ReadAll(r); len(rest) != 1 || rest[0] != 0xEE {
+		t.Errorf("left % x unread after a later version; expected ee", rest)
+	}
+}

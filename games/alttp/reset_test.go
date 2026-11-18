@@ -81,11 +81,18 @@ func (h *resetTestHarness) tick(d time.Duration) {
 	h.exchange()
 }
 
+// setLocalRunTimes sets the local player's run start and finish, as if the run timing had accepted the latches.
+func setLocalRunTimes(g *Game, start, finish time.Time) {
+	r := &g.runTiming
+	r.started, r.startAt = !start.IsZero(), start
+	r.finished, r.finishAt = !finish.IsZero(), finish
+	g.local.GameStartTime, g.local.GameFinishTime = start, finish
+}
+
 func (h *resetTestHarness) setRunTimes() {
 	for i := range h.gs {
 		g := h.gs[i].g
-		g.local.GameStartTime = h.now.Add(-time.Hour)
-		g.local.GameFinishTime = h.now.Add(-time.Minute)
+		setLocalRunTimes(g, h.now.Add(-time.Hour), h.now.Add(-time.Minute))
 		g.sendPlayerName()
 	}
 	h.exchange()
@@ -218,7 +225,7 @@ func TestReset_StateMachine(t *testing.T) {
 	}
 
 	// normal syncing resumes:
-	h.gs[1].g.local.GameStartTime = h.now
+	setLocalRunTimes(h.gs[1].g, h.now, time.Time{})
 	h.gs[1].g.sendPlayerName()
 	h.exchange()
 	if h.gs[0].g.players[localIndices[1]].GameStartTime.IsZero() {

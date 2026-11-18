@@ -78,7 +78,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x81 | o2: group reset state machine | n/a | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
 | 0x83 | hearts (delta based) | yes (main packet) | yes, own packet (after 0x82) | used |
-| 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | planned | planned, own packet | planned |
+| 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | not yet | yes, own packet | used; takes precedence over 0x80 |
 
 Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it

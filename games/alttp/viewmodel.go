@@ -97,6 +97,11 @@ type PlayerViewModel struct {
 	AbsFinish string `json:"gameFinish"`
 	RelStart  string `json:"relStart"`
 	RelFinish string `json:"relFinish"`
+
+	// run timing (see RUN_TIMING.md): lag frames since the start, the time added for running fast, and the flags:
+	LagFrames   uint32 `json:"lagFrames"`
+	Penalty     string `json:"penalty"`
+	TimingFlags uint8  `json:"timingFlags"`
 }
 
 func FormatTime(t time.Time) string {
@@ -197,13 +202,16 @@ func (g *Game) updatePlayersList() {
 				updateMinStart = true
 			}
 		}
+		rt := g.playerRunTiming(p)
 		if !p.GameFinishTime.IsZero() {
 			g.runPlayersFinished++
+			// the time a player saved by running fast is added to its finish:
+			finish := p.GameFinishTime.Add(rt.Penalty)
 			if g.runMaxFinish.IsZero() {
-				g.runMaxFinish = p.GameFinishTime
+				g.runMaxFinish = finish
 				updateMaxFinish = true
-			} else if p.GameFinishTime.After(g.runMaxFinish) {
-				g.runMaxFinish = p.GameFinishTime
+			} else if finish.After(g.runMaxFinish) {
+				g.runMaxFinish = finish
 				updateMaxFinish = true
 			}
 		}
@@ -221,6 +229,10 @@ func (g *Game) updatePlayersList() {
 
 			AbsStart:  FormatTime(p.GameStartTime),
 			AbsFinish: FormatTime(p.GameFinishTime),
+
+			LagFrames:   rt.LagFrames,
+			Penalty:     formatPenalty(rt.Penalty),
+			TimingFlags: rt.Flags,
 		})
 	}
 

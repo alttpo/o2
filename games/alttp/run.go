@@ -335,13 +335,18 @@ func (g *Game) sendPlayerName() {
 	m.Write(name[:])
 	g.send(m)
 
-	// broadcast run timer to o2 clients only:
+	// broadcast run timer to o2 clients only (older o2 versions read only this):
 	o := g.makeO2BroadcastMessage()
 	if err := SerializeRunTimes(o, p.GameStartTime, p.GameFinishTime); err != nil {
 		log.Printf("alttp: serialize run times: %v\n", err)
 		return
 	}
 	g.send(o)
+
+	// and the run timing, shared with alttpo:
+	g.stateLock.Lock()
+	g.sendRunTiming()
+	g.stateLock.Unlock()
 }
 
 func (g *Game) isReadWRAM(rsp snes.Response) (start, end uint32, ok bool) {

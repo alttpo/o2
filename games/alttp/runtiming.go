@@ -2,7 +2,9 @@ package alttp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"sync/atomic"
 	"time"
@@ -466,6 +468,7 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 		r.flags |= rtFlagStarted
 		local.GameStartTime = startAt
 		g.shouldUpdatePlayersList = true
+		g.sendRunTiming()
 		g.PushNotification("game started")
 		log.Printf("alttp: run timing: started at NMI frame $%06x, %s\n", startFrame, FormatTime(startAt))
 	}
@@ -483,6 +486,7 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 		r.flags |= rtFlagFinished
 		local.GameFinishTime = finishAt
 		g.shouldUpdatePlayersList = true
+		g.sendRunTiming()
 		g.PushNotification(fmt.Sprintf("game finished in %s", local.FormatTimer(finishAt)))
 		log.Printf("alttp: run timing: finished at NMI frame $%06x, %s\n", finishFrame, FormatTime(finishAt))
 	}
@@ -578,4 +582,208 @@ var remoteStatePak = remoteTablePak + (remoteStateAddr - remoteTableAddr)
 // spritesGated reports whether the patch runs the remote sprites code, as last read from SRAM.
 func (g *Game) spritesGated() bool {
 	return g.runTiming.gatesOK && g.runTiming.gates&gateSprites != 0
+}
+
+// run timing message 0x84 (RUN_TIMING.md):
+const (
+	runTimingVersion = 1
+	// the bytes after the size byte:
+	runTimingMessageSize = 1 + 8 + 2 + patchSignatureSize + 1 + 1 + 8 + 8 + 3 + 3 + 3 + 3 + 8 + 3 + 4
+)
+
+// runTimingRemote is a player's run timing as last received in message 0x84.
+type runTimingRemote struct {
+	OK             bool
+	Flags          uint8
+	ResetID        uint64
+	ResetInitiator uint16
+	Signature      patchSignature
+	Gates          uint8
+	GatesChanged   bool
+	StartAt        time.Time
+	FinishAt       time.Time
+	StartFrame     uint32
+	FinishFrame    uint32
+	NMIFrames      uint32
+	LoopFrames     uint32
+	SampleAt       time.Time
+	LagFrames      uint32
+	Penalty        time.Duration
+
+	// the server's stamps of the first messages that reported the start and the finish, for verifying them:
+	StartSeenAt  time.Time
+	FinishSeenAt time.Time
+}
+
+func unixNanoOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+func timeOrZero(ns int64) time.Time {
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns)
+}
+
+func putU24(b *bytes.Buffer, v uint32) {
+	b.Write([]byte{byte(v), byte(v >> 8), byte(v >> 16)})
+}
+
+// SerializeRunTiming writes message 0x84.
+func SerializeRunTiming(w io.Writer, m *runTimingRemote) error {
+	var b bytes.Buffer
+	b.WriteByte(byte(MsgRunTiming))
+	b.WriteByte(runTimingVersion)
+	b.WriteByte(runTimingMessageSize)
+	b.WriteByte(m.Flags)
+	_ = binary.Write(&b, binary.LittleEndian, m.ResetID)
+	_ = binary.Write(&b, binary.LittleEndian, m.ResetInitiator)
+	b.Write(m.Signature[:])
+	b.WriteByte(m.Gates)
+	if m.GatesChanged {
+		b.WriteByte(1)
+	} else {
+		b.WriteByte(0)
+	}
+	_ = binary.Write(&b, binary.LittleEndian, unixNanoOrZero(m.StartAt))
+	_ = binary.Write(&b, binary.LittleEndian, unixNanoOrZero(m.FinishAt))
+	putU24(&b, m.StartFrame)
+	putU24(&b, m.FinishFrame)
+	putU24(&b, m.NMIFrames)
+	putU24(&b, m.LoopFrames)
+	_ = binary.Write(&b, binary.LittleEndian, unixNanoOrZero(m.SampleAt))
+	putU24(&b, m.LagFrames)
+	ms := m.Penalty.Milliseconds()
+	if ms < 0 {
+		ms = 0
+	} else if ms > 0xFFFFFFFF {
+		ms = 0xFFFFFFFF
+	}
+	_ = binary.Write(&b, binary.LittleEndian, uint32(ms))
+	_, err := w.Write(b.Bytes())
+	return err
+}
+
+// DeserializeRunTiming reads message 0x84 into the player's run timing, and its start and finish into the times the
+// players list shows. Versions other than runTimingVersion are skipped.
+func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
+	var hdr [2]byte
+	if _, err = io.ReadFull(r, hdr[:]); err != nil {
+		return
+	}
+	body := make([]byte, hdr[1])
+	if _, err = io.ReadFull(r, body); err != nil {
+		return
+	}
+	if hdr[0] != runTimingVersion || len(body) < runTimingMessageSize {
+		return nil
+	}
+
+	m := &p.RunTiming
+	m.OK = true
+	m.Flags = body[0]
+	o := 1
+	m.ResetID = binary.LittleEndian.Uint64(body[o:])
+	o += 8
+	m.ResetInitiator = binary.LittleEndian.Uint16(body[o:])
+	o += 2
+	copy(m.Signature[:], body[o:])
+	o += patchSignatureSize
+	m.Gates = body[o]
+	m.GatesChanged = body[o+1] != 0
+	o += 2
+	startAt := timeOrZero(int64(binary.LittleEndian.Uint64(body[o:])))
+	finishAt := timeOrZero(int64(binary.LittleEndian.Uint64(body[o+8:])))
+	o += 16
+	m.StartFrame, m.FinishFrame = u24(body[o:]), u24(body[o+3:])
+	m.NMIFrames, m.LoopFrames = u24(body[o+6:]), u24(body[o+9:])
+	o += 12
+	m.SampleAt = timeOrZero(int64(binary.LittleEndian.Uint64(body[o:])))
+	o += 8
+	m.LagFrames = u24(body[o:])
+	o += 3
+	m.Penalty = time.Duration(binary.LittleEndian.Uint32(body[o:])) * time.Millisecond
+
+	if !startAt.IsZero() && m.StartAt.IsZero() {
+		m.StartSeenAt = p.lastServerStamp
+	}
+	if !finishAt.IsZero() && m.FinishAt.IsZero() {
+		m.FinishSeenAt = p.lastServerStamp
+	}
+	if startAt.IsZero() {
+		m.StartSeenAt = time.Time{}
+	}
+	if finishAt.IsZero() {
+		m.FinishSeenAt = time.Time{}
+	}
+	m.StartAt, m.FinishAt = startAt, finishAt
+
+	if !startAt.Equal(p.GameStartTime) || !finishAt.Equal(p.GameFinishTime) {
+		p.GameStartTime, p.GameFinishTime = startAt, finishAt
+		g.shouldUpdatePlayersList = true
+	}
+	return nil
+}
+
+// localRunTiming makes the local player's message 0x84.
+func (g *Game) localRunTiming() *runTimingRemote {
+	r := &g.runTiming
+	m := &runTimingRemote{
+		OK:           true,
+		Flags:        r.flags,
+		Gates:        r.gates,
+		GatesChanged: r.gatesChanged,
+		StartAt:      r.startAt,
+		FinishAt:     r.finishAt,
+		StartFrame:   r.startFrame,
+		FinishFrame:  r.finishFrame,
+		LagFrames:    r.lagFrames,
+		Penalty:      r.penalty,
+	}
+	if r.noCounter {
+		m.Flags |= rtFlagNoCounter
+	}
+	key := g.reset.lastCompleted
+	m.ResetID, m.ResetInitiator = key.id, key.initiator
+	if g.ROMVerified {
+		m.Signature = g.patchSignature
+	}
+	if n := len(r.samples); n > 0 {
+		s := r.samples[n-1]
+		m.NMIFrames, m.LoopFrames, m.SampleAt = s.nmi, s.loop, s.at
+	}
+	return m
+}
+
+// sendRunTiming broadcasts the local player's message 0x84, in its own packet since older alttpo versions stop parsing
+// a packet at it.
+func (g *Game) sendRunTiming() {
+	if g.IsResetting() || g.LocalPlayer().Index() < 0 {
+		return
+	}
+	o := g.makeO2BroadcastMessage()
+	if err := SerializeRunTiming(o, g.localRunTiming()); err != nil {
+		log.Printf("alttp: serialize run timing: %v\n", err)
+		return
+	}
+	g.send(o)
+}
+
+// playerRunTiming returns a player's run timing: the local player's own, else the last received.
+func (g *Game) playerRunTiming(p *Player) *runTimingRemote {
+	if p == g.local {
+		return g.localRunTiming()
+	}
+	return &p.RunTiming
+}
+
+func formatPenalty(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("+%.3fs", d.Seconds())
 }

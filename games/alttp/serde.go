@@ -59,6 +59,7 @@ const (
 	MsgReset      MessageType = 0x81 // o2-only
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
+	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -95,6 +96,7 @@ func (g *Game) initSerde() {
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
 		MsgHearts:           g.DeserializeHearts,
+		MsgRunTiming:        g.DeserializeRunTiming,
 	}
 }
 
@@ -469,7 +471,8 @@ func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
 	return
 }
 
-// DeserializeRunTimes reads the o2-only game start and finish times used for the run timer.
+// DeserializeRunTimes reads the o2-only game start and finish times used for the run timer. Players that send the run
+// timing message 0x84 (see runtiming.go) send these too, for older o2 versions; 0x84 takes precedence.
 func (g *Game) DeserializeRunTimes(p *Player, r io.Reader) (err error) {
 	var isZero bool
 
@@ -497,6 +500,9 @@ func (g *Game) DeserializeRunTimes(p *Player, r io.Reader) (err error) {
 		finishTime = time.Unix(finishNano/1e9, finishNano%1e9)
 	}
 
+	if p.RunTiming.OK {
+		return
+	}
 	if startTime != p.GameStartTime {
 		p.GameStartTime = startTime
 		g.shouldUpdatePlayersList = true

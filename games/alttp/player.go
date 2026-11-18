@@ -171,6 +171,11 @@ type Player struct {
 
 	GameStartTime  time.Time
 	GameFinishTime time.Time
+	// the player's run timing from message 0x84 (see runtiming.go):
+	RunTiming runTimingRemote
+
+	// the server's stamp of the last message received from the player:
+	lastServerStamp time.Time
 }
 
 func (p *Player) Index() int {

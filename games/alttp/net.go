@@ -198,6 +198,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 			p.IndexF = index
 		}
 	case protocol04.BroadcastAll, protocol04.BroadcastSector:
+		p.lastServerStamp = time.Unix(0, gm.ServerTime)
 		err = g.Deserialize(bytes.NewReader(gm.Data), p)
 	case protocol04.Echo:
 		// our own echo, sent back by the server with our send time and its own time:
