@@ -92,6 +92,11 @@ message 0x84, clock sync, discontinuities, verification and display.
     o2: `runtiming.go` (`restoreStart`, `lagAcc`), tests `TestRunTiming_RestoreStart` and
     `TestRunTiming_SlowNotFlagged`. alttpo: `RunTiming.as` (compiles in bsnes-as).
 
+11. The group reset asks first, in o2's web UI (a dialog) and in alttpo (`ResetRunWindow.as`, from both "Reset run"
+    buttons): it resets the run timer for every player and clears all synchronized game state for everyone, and to
+    reset fully every player first resets their console or emulator and then one player presses Reset, so that no
+    player still in the old game syncs its state back.
+
 `go test ./...` passes. Not yet run with o2 and alttpo connected to a server together since these fixes.
 
 ## Next steps

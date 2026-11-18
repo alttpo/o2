@@ -25,6 +25,21 @@ function timingTitle(p: any): string {
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
 
+    // the group reset asks first, so that a stray click doesn't reset everyone else's run:
+    const [confirmReset, setConfirmReset] = useState(false);
+    useEffect(() => {
+        if (!confirmReset) { return; }
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") { setConfirmReset(false); }
+        };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+    }, [confirmReset]);
+    const resetForEveryone = () => {
+        setConfirmReset(false);
+        sendGameCommand("reset", {});
+    };
+
     const [colorRed, setcolorRed] = useState(31);
     const [colorGreen, setcolorGreen] = useState(31);
     const [colorBlue, setcolorBlue] = useState(31);
@@ -187,9 +202,32 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     title="Fix small keys"
                     onClick={e => sendGameCommand("fixSmallKeys", {})}>Fix Small Keys</button>
             <button type="button"
-                    title="Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator"
-                    onClick={e => sendGameCommand("reset", {})}>Reset</button>
+                    title="Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator; asks first"
+                    onClick={e => setConfirmReset(true)}>Reset</button>
         </div>
+        {confirmReset && (
+            <div class="confirm-backdrop" onClick={e => { if (e.target === e.currentTarget) { setConfirmReset(false); } }}>
+                <div class="confirm-reset rounded darken padded" role="alertdialog" aria-modal="true"
+                     aria-labelledby="confirm-reset-title" aria-describedby="confirm-reset-body">
+                    <h3 id="confirm-reset-title">Reset the run for everyone?</h3>
+                    <div id="confirm-reset-body">
+                        <p>
+                            This resets the run timer for every player in the group, alttpo players included, and
+                            clears all synchronized game state for everyone.
+                        </p>
+                        <p class="confirm-reset-howto">
+                            To fully reset, every player first resets their console or emulator, and then one player
+                            presses Reset. A player still in the old game would sync its state back to everyone after
+                            the reset.
+                        </p>
+                    </div>
+                    <div class="confirm-buttons">
+                        <button type="button" autofocus={true} onClick={e => setConfirmReset(false)}>Cancel</button>
+                        <button type="button" class="confirm-danger" onClick={e => resetForEveryone()}>Reset for everyone</button>
+                    </div>
+                </div>
+            </div>
+        )}
         <div style="grid-column: 1">
             <div style="display: grid; grid-template-columns: 1fr 1fr 6fr;">
                 <label for="syncTunicColor" style="grid-column: 1 / span 2">

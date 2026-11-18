@@ -386,6 +386,49 @@ h5, h6 {
     animation: 1.5s ease-in-out infinite alternate fadeIn;
 }
 
+/* the group reset's confirmation: */
+.confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.confirm-reset {
+    max-width: 32em;
+    border-color: #a22;
+    background: rgba(10, 0, 0, 0.9);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.8);
+}
+
+.confirm-reset h3 {
+    color: #ff6b6b;
+    margin-bottom: 0.5em;
+}
+
+.confirm-reset p {
+    margin: 0.5em 0 0 0;
+}
+
+.confirm-reset-howto {
+    color: #ffef00;
+}
+
+.confirm-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 1em;
+}
+
+.confirm-danger {
+    color: #ff6b6b;
+}
+
 /* the notification history; the user can drag its bottom edge to resize it: */
 .notification-history {
     display: grid;
