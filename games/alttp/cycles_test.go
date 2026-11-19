@@ -422,7 +422,7 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 
 	p.report(t, "3 remote players")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 7_500,
+		"remoteFrame": 7_800,
 		"NMI hooks":   50,
 		"NMI upload":  600,
 		"preMain: manip pending call, gate, Link OAM copy": 200,
@@ -452,7 +452,7 @@ func TestCycleBudgets_RemoteSpritesFullOAM(t *testing.T) {
 
 	p.report(t, "3 remote players, OAM buffer full")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 13_200,
+		"remoteFrame": 13_500,
 		"NMI upload":  600,
 	})
 }

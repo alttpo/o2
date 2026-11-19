@@ -30,7 +30,7 @@ import (
 //	$706A70..$706AB9  enemies drawing their death this frame and scratch of the capture routine; see remotesprites.go
 //	$706AC0..$706BBE  remote sprites table (written by o2; zeroed by the init code); see remotesprites.go
 //	$706BC0..$706C4D  remote sprites state (written by the game code; zeroed by the init code)
-//	$706C50..$706CFC  remoteFrame's recording of the last frame drawn, for a late frame to replay, and its counters of
+//	$706C50..$706D1B  remoteFrame's recording of the last frame drawn, for a late frame to replay, and its counters of
 //	                  late frames; see remoteReplayAddr
 //	$707000..$70700F  run timing and gates; see runtiming.go
 //	$7070F0..$7070F7  scratch of the ROM routines that generated update routines call; see updatedata.go

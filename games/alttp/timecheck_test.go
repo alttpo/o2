@@ -236,6 +236,8 @@ type timeCheck struct {
 	line                            int
 	scanLate, drawLate, replay, lag bool
 	scrollX                         uint16
+	// setup, if set, is called before the frame, after the OAM buffer is cleared:
+	setup func()
 }
 
 // timeCheckResult runs a frame of the scenario as c says, and returns the remote sprites drawn, the captured entries'
@@ -251,6 +253,9 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCh
 		e.WRAM[0x0C4A] = 0x07
 		copy(e.WRAM[0x0800+0x10*4:], []byte{0x40, 0x40, 0x26, 0x20})
 		binary.LittleEndian.PutUint16(e.WRAM[0xE2:], binary.LittleEndian.Uint16(e.WRAM[0xE2:])+c.scrollX)
+		if c.setup != nil {
+			c.setup()
+		}
 	}
 	defer func() {
 		g1.beforeEmulate = clearOAM
@@ -311,7 +316,10 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 		{"just before all checks' lines", timeCheck{line: int(min(rfDrawLateLine(remoteEntryMax), rfScanLateLine)) - 1}, true, true, true},
 		{"vblank", timeCheck{line: rfNMILine + 5}, true, true, true},
 		{"line 259 (reads as 3)", timeCheck{line: 259}, true, true, true},
-		{"too late to scan and draw", timeCheck{line: rfScanLateLine}, false, false, false},
+		// started past the drawing check's line: no capture nor scan, the last frame drawn replayed:
+		{"started too late to scan and draw", timeCheck{line: rfScanLateLine}, true, false, true},
+		// started too late even to replay:
+		{"started too late to replay", timeCheck{line: rfNMILine - 10}, false, false, false},
 		{"too late to draw", timeCheck{drawLate: true}, false, true, false},
 		// remoteFrame takes a few lines to reach its first check, so starting it on line 224 checks in vblank; put the
 		// checks themselves on line 224:
@@ -533,9 +541,52 @@ func TestRemoteFrameReplay(t *testing.T) {
 		t.Errorf("after a frame too late to replay: drew %d sprites; expected nothing", drawn)
 	}
 
+	// an OAM entry it was drawn into is the game's this frame: that sprite is left out, the rest replayed into theirs:
+	timeCheckResult(t, h, labels, timeCheck{})
+	want = remoteOAM(h)
+	taken := int(e.SRAM[(remoteReplayAddr+rpEntries+5)&0x7FFF])
+	game := [5]byte{0x10, 0x20, 0xC0, 0x20, 0x00}
+	occupy := func() {
+		copy(e.WRAM[0x0800+taken*4:], game[:4])
+		e.WRAM[0x0A20+taken] = game[4]
+	}
+	timeCheckResult(t, h, labels, timeCheck{drawLate: true, replay: true, setup: occupy})
+	got := remoteOAM(h)
+	if got[game] != 1 {
+		t.Errorf("game's sprite in OAM entry $%02x overwritten", taken)
+	}
+	delete(got, game)
+	for k, v := range got {
+		if want[k] < v {
+			t.Errorf("replayed %v %d times; drawn %d times", k, v, want[k])
+		}
+	}
+	if n, m := len(remoteOAMEntries(h)), countOAM(want); n != m {
+		t.Errorf("replayed with entry $%02x taken: %d entries used; expected %d (%d drawn, less the one left out, plus "+
+			"the game's)", taken, n, m, m)
+	}
+
 	// the screen scrolled since the frame drawn: nothing:
 	timeCheckResult(t, h, labels, timeCheck{})
 	if drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{drawLate: true, replay: true, scrollX: 1}); drawn != 0 {
 		t.Errorf("scrolled: replayed %d sprites; expected nothing", drawn)
 	}
+}
+
+// remoteOAMEntries returns the indices of g1's used OAM entries but entry $10.
+func remoteOAMEntries(h *skScenario) (l []int) {
+	e := h.gs[0].e
+	for k := 0; k < 0x80; k++ {
+		if k != 0x10 && e.WRAM[0x0801+k*4] != 0xF0 {
+			l = append(l, k)
+		}
+	}
+	return
+}
+
+func countOAM(m map[[5]byte]int) (n int) {
+	for _, v := range m {
+		n += v
+	}
+	return
 }
