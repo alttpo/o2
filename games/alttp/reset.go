@@ -142,18 +142,25 @@ func (g *Game) resetNow() time.Time {
 // initiateReset is called on the game loop goroutine when the local player presses "reset".
 func (g *Game) initiateReset(now time.Time) {
 	r := &g.reset
-	if r.phase != resetPhaseIdle {
-		log.Printf("alttp: reset: already in progress (phase=%s); ignoring request\n", r.phase)
+	localIndex := g.local.Index()
+	if localIndex < 0 || g.client == nil || !g.client.IsConnected() {
+		// not connected to a group; there is nobody to coordinate with, so just clear our own state, dropping any
+		// group reset that the disconnect left unfinished:
+		log.Println("alttp: reset: not connected; resetting local state only")
+		r.phase = resetPhaseIdle
+		r.key = resetKey{}
+		r.isInitiator = false
+		r.acks = nil
+		g.resetClearState()
+		g.shouldUpdatePlayersList = true
+		g.clean = false
+		g.NotifyView()
+		g.PushNotification("reset local state (offline)")
 		return
 	}
 
-	localIndex := g.local.Index()
-	if localIndex < 0 || g.client == nil || !g.client.IsConnected() {
-		// not connected to a group; there is nobody to coordinate with:
-		log.Println("alttp: reset: not connected; resetting local state only")
-		g.resetClearState()
-		g.NotifyView()
-		g.PushNotification("reset game")
+	if r.phase != resetPhaseIdle {
+		log.Printf("alttp: reset: already in progress (phase=%s); ignoring request\n", r.phase)
 		return
 	}
 

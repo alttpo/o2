@@ -39,6 +39,8 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setConfirmReset(false);
         sendGameCommand("reset", {});
     };
+    // without a server connection there is no group to reset; Reset only clears this client's own state:
+    const online = !!vm.server?.isConnected;
 
     const [colorRed, setcolorRed] = useState(31);
     const [colorGreen, setcolorGreen] = useState(31);
@@ -202,15 +204,17 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     title="Fix small keys"
                     onClick={e => sendGameCommand("fixSmallKeys", {})}>Fix Small Keys</button>
             <button type="button"
-                    title="Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator; asks first"
+                    title={online
+                        ? "Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator; asks first"
+                        : "Offline: forget this client's own game state and run timer; does not reset the console/emulator; asks first"}
                     onClick={e => setConfirmReset(true)}>Reset</button>
         </div>
         {confirmReset && (
             <div class="confirm-backdrop" onClick={e => { if (e.target === e.currentTarget) { setConfirmReset(false); } }}>
                 <div class="confirm-reset rounded darken padded" role="alertdialog" aria-modal="true"
                      aria-labelledby="confirm-reset-title" aria-describedby="confirm-reset-body">
-                    <h3 id="confirm-reset-title">Reset the run for everyone?</h3>
-                    <div id="confirm-reset-body">
+                    <h3 id="confirm-reset-title">{online ? "Reset the run for everyone?" : "Reset your own client state?"}</h3>
+                    {online ? (<div id="confirm-reset-body">
                         <p>
                             This resets the run timer for every player in the group, alttpo players included, and
                             clears all synchronized game state for everyone.
@@ -220,10 +224,16 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                             presses Reset. A player still in the old game would sync its state back to everyone after
                             the reset.
                         </p>
-                    </div>
+                    </div>) : (<div id="confirm-reset-body">
+                        <p>
+                            You are offline: not connected to the server. This only resets your own client state:
+                            it clears the game state and players o2 remembers, and your run timer. No other player is
+                            affected.
+                        </p>
+                    </div>)}
                     <div class="confirm-buttons">
                         <button type="button" autofocus={true} onClick={e => setConfirmReset(false)}>Cancel</button>
-                        <button type="button" class="confirm-danger" onClick={e => resetForEveryone()}>Reset for everyone</button>
+                        <button type="button" class="confirm-danger" onClick={e => resetForEveryone()}>{online ? "Reset for everyone" : "Reset my state"}</button>
                     </div>
                 </div>
             </div>
