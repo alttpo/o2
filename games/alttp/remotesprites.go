@@ -158,8 +158,10 @@ const (
 	rsPartSlot = rsTmpEnd + 2
 	// the byte length of the list of rows for the NMI hooks to upload (u16):
 	rsNMILen = rsPartSlot + remotePartMax
-	// unused (u16):
-	_ = rsNMILen + 2
+	// how many more frames in a row a late drawing check may replay the last frame drawn (see remoteReplayAddr); 0
+	// once nothing was drawn, or the recording can't be replayed. Cleared with rsNMILen before turning the sprites gate
+	// on (u8; the high byte is unused):
+	rsReplay = rsNMILen + 2
 	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
 	// DMA source address:
 	rsNMIList = rsNMILen + 4

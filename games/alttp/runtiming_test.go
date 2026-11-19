@@ -33,6 +33,7 @@ func runTestNMI(t *testing.T, e *emulator.System) {
 // runTestFrame runs one main loop iteration of the test ROM, which calls the patched frame hook.
 func runTestFrame(t *testing.T, e *emulator.System) {
 	t.Helper()
+	setPPULine(e, 0)
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
 	if !e.RunUntil(testROMBreakPoint, 0x2_000) {

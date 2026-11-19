@@ -575,7 +575,7 @@ func (g *Game) writeRunTiming(now time.Time) {
 			// so that the NMIs before the next remoteFrame upload and skip nothing:
 			st := remoteStatePak
 			writes = append(writes,
-				snes.Write{Address: st + rsNMILen, Size: 2, Data: []byte{0, 0}},
+				snes.Write{Address: st + rsNMILen, Size: 4, Data: []byte{0, 0, 0, 0}}, // and rsReplay
 				snes.Write{Address: st + rsSkipSlots, Size: 4, Data: []byte{0, 0, 0, 0}},
 			)
 		}

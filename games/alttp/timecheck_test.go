@@ -164,6 +164,30 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 		if draw > budget {
 			t.Errorf("drawing %d sprites: %d cycles; budget rfDrawBaseCycles + n*rfDrawEntryCycles %d", n, draw, budget)
 		}
+
+		// then a frame too late to draw that replays them:
+		pr := newCycleProfile(t, "VT test")
+		pr.addCheckpoints(t, "rf_replay_time", "replay")
+		pr.onPC[pr.label(t, "rf_draw_time")] = func() { setScanline(h, 0, rfNMILine-1) }
+		pr.onPC[pr.label(t, "rf_replay_time")] = func() { setScanline(h, 0, 0) }
+		h.profileFrame(pr, 0)
+		replayed := 0
+		for k := 0; k < 0x20; k++ {
+			if g1.e.WRAM[0x0801+k*4] != 0xF0 {
+				replayed++
+			}
+		}
+		if replayed != drawn {
+			t.Errorf("%d sprites: replayed %d; expected the %d drawn", n, replayed, drawn)
+		}
+		replay := pr.spanMax["replay"]
+		budget = uint64(rfReplayBaseCycles + n*rfReplayEntryCycles)
+		t.Logf("replaying %d sprites: %d cycles (budget %d, late from line %d)", replayed, replay, budget,
+			rfReplayLateLine(n))
+		if replay > budget {
+			t.Errorf("replaying %d sprites: %d cycles; budget rfReplayBaseCycles + n*rfReplayEntryCycles %d", n, replay,
+				budget)
+		}
 	}
 
 	// late checks: the exit after each kind:
@@ -206,10 +230,12 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 
 // timeCheck is a frame for timeCheckResult to run: the scanline remoteFrame starts on (the PPU counts on from there),
 // whether the scan's first check starts on line 224 (and the drawing check on line 0), whether the drawing check
-// starts on line 224, and whether an NMI is counted when remoteFrame starts (a lag frame).
+// starts on line 224, whether the replay's check then starts on line 0 (else it is late too), whether an NMI is counted
+// when remoteFrame starts (a lag frame), and how far g1's screen is scrolled right from where it is.
 type timeCheck struct {
-	line                    int
-	scanLate, drawLate, lag bool
+	line                            int
+	scanLate, drawLate, replay, lag bool
+	scrollX                         uint16
 }
 
 // timeCheckResult runs a frame of the scenario as c says, and returns the remote sprites drawn, the captured entries'
@@ -224,6 +250,7 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCh
 		// a bomb and a captured chr, so that the scan runs and captures:
 		e.WRAM[0x0C4A] = 0x07
 		copy(e.WRAM[0x0800+0x10*4:], []byte{0x40, 0x40, 0x26, 0x20})
+		binary.LittleEndian.PutUint16(e.WRAM[0xE2:], binary.LittleEndian.Uint16(e.WRAM[0xE2:])+c.scrollX)
 	}
 	defer func() {
 		g1.beforeEmulate = clearOAM
@@ -232,8 +259,16 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCh
 	}()
 	rfStart := labels.label(t, "rf_start")
 	rfScanTime, rfDrawTime := labels.label(t, "rf_scan_time_7f"), labels.label(t, "rf_draw_time")
+	rfReplayTime := labels.label(t, "rf_replay_time")
 	testStepHook = func(e2 *emulator.System) {
+		if e2 != e {
+			return
+		}
 		switch e2.GetPC() &^ 0x800000 {
+		case rfReplayTime:
+			if c.replay {
+				setScanline(h, 0, 0)
+			}
 		case rfStart:
 			setScanline(h, 0, c.line)
 			if c.lag {
@@ -271,6 +306,8 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 		draw, capture, body bool
 	}{
 		{"top of the frame", timeCheck{line: 0}, true, true, true},
+		// the drawing check too late, the replay's in time: the frame just drawn again:
+		{"too late to draw, in time to replay", timeCheck{drawLate: true, replay: true}, true, true, true},
 		{"just before all checks' lines", timeCheck{line: int(min(rfDrawLateLine(remoteEntryMax), rfScanLateLine)) - 1}, true, true, true},
 		{"vblank", timeCheck{line: rfNMILine + 5}, true, true, true},
 		{"line 259 (reads as 3)", timeCheck{line: 259}, true, true, true},
@@ -410,5 +447,95 @@ func TestRemoteFrameTimeChecks_FinishBeforeNMI(t *testing.T) {
 		}
 		t.Logf("%s: remoteFrame took %d..%d clocks; least to spare for the tail %d, from line %d", c.name, least, most,
 			spare, spareLine)
+	}
+}
+
+// remoteOAM returns g1's used OAM entries but entry $10 (the captured chr timeCheckResult puts there), with their
+// extended attributes, as a multiset.
+func remoteOAM(h *skScenario) map[[5]byte]int {
+	e := h.gs[0].e
+	m := map[[5]byte]int{}
+	for k := 0; k < 0x80; k++ {
+		if k == 0x10 || e.WRAM[0x0801+k*4] == 0xF0 {
+			continue
+		}
+		var v [5]byte
+		copy(v[:4], e.WRAM[0x0800+k*4:])
+		v[4] = e.WRAM[0x0A20+k]
+		m[v]++
+	}
+	return m
+}
+
+func equalOAM(a, b map[[5]byte]int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// A drawing check too late to draw replays the last frame drawn: the same OAM entries and rows to upload, for up to
+// rfReuseFrames frames in a row, and only with the scroll offsets it was drawn with. The counters say what happened.
+func TestRemoteFrameReplay(t *testing.T) {
+	labels := newCycleProfile(t, "VT test")
+	h := newRSCycleScenario(t)
+	e := h.gs[0].e
+	rp := func(o uint32) uint16 {
+		return binary.LittleEndian.Uint16(e.SRAM[(remoteReplayAddr+o)&0x7FFF:])
+	}
+	nmiLen := func() uint16 { return binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)) }
+
+	if drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{line: 17}); drawn == 0 {
+		t.Fatalf("drew nothing in time")
+	}
+	if got := rp(rpStartLine); got != 17 {
+		t.Errorf("rpStartLine = %d; expected 17", got)
+	}
+	want, wantLen := remoteOAM(h), nmiLen()
+	lateDraws, replays := rp(rpLateDraws), rp(rpReplays)
+	for f := 0; f <= rfReuseFrames; f++ {
+		drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{line: 40, drawLate: true, replay: true})
+		got := remoteOAM(h)
+		if f < rfReuseFrames {
+			if !equalOAM(got, want) {
+				t.Errorf("replay %d: OAM entries %v; expected the last drawn, %v", f, got, want)
+			}
+			if n := nmiLen(); n != wantLen {
+				t.Errorf("replay %d: listed %d bytes of rows to upload; expected the last drawn's %d", f, n, wantLen)
+			}
+		} else if drawn != 0 || nmiLen() != 0 {
+			t.Errorf("replay %d: drew %d sprites and listed %d bytes of rows; expected nothing after %d replays", f,
+				drawn, nmiLen(), rfReuseFrames)
+		}
+	}
+	if got := rp(rpLateDraws) - lateDraws; got != rfReuseFrames+1 {
+		t.Errorf("rpLateDraws counted %d; expected %d", got, rfReuseFrames+1)
+	}
+	if got := rp(rpReplays) - replays; got != rfReuseFrames {
+		t.Errorf("rpReplays counted %d; expected %d", got, rfReuseFrames)
+	}
+	if got := rp(rpLateDrawLine); got != 40 {
+		t.Errorf("rpLateDrawLine = %d; expected 40", got)
+	}
+
+	// no time even for the replay: nothing:
+	timeCheckResult(t, h, labels, timeCheck{})
+	if drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{drawLate: true}); drawn != 0 || nmiLen() != 0 {
+		t.Errorf("too late to replay: drew %d sprites and listed %d bytes of rows; expected nothing", drawn, nmiLen())
+	}
+	// nor once the recording can't be replayed any more, though in time for it:
+	if drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{drawLate: true, replay: true}); drawn != 0 {
+		t.Errorf("after a frame too late to replay: drew %d sprites; expected nothing", drawn)
+	}
+
+	// the screen scrolled since the frame drawn: nothing:
+	timeCheckResult(t, h, labels, timeCheck{})
+	if drawn, _, _ := timeCheckResult(t, h, labels, timeCheck{drawLate: true, replay: true, scrollX: 1}); drawn != 0 {
+		t.Errorf("scrolled: replayed %d sprites; expected nothing", drawn)
 	}
 }

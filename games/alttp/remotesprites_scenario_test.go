@@ -407,6 +407,7 @@ func TestRemoteSpritesScenario_OtherRoom(t *testing.T) {
 	e := h.gs[0].e
 	e.WRAM[0xA0] = uint8(rsOtherRoom)
 	h.gs[0].beforeEmulate()
+	setPPULine(e, 0)
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
 	if !e.RunUntil(testROMBreakPoint, 0x2_000) {
@@ -437,6 +438,7 @@ func TestRemoteSpritesScenario_TTL(t *testing.T) {
 	}
 	emulate := func() {
 		h.gs[0].beforeEmulate()
+		setPPULine(e, 0)
 		e.CPU.Reset()
 		e.SetPC(testROMMainGameLoop)
 		if !e.RunUntil(testROMBreakPoint, 0x2_000) {

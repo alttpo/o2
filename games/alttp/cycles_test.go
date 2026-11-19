@@ -320,6 +320,7 @@ func TestCycleBudgets_GatesOff(t *testing.T) {
 		setU24(nmi, nmiFrames)
 		setU24(rtSRAM(e, rtmLoopFrames), loopFrames)
 		e.WRAM[0x10] = module
+		setPPULine(e, 0)
 		e.CPU.Reset()
 		e.SetPC(testROMMainGameLoop)
 		if !p.runUntil(e, testROMBreakPoint, 0x2_000) {
@@ -421,7 +422,7 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 
 	p.report(t, "3 remote players")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 6_300,
+		"remoteFrame": 7_500,
 		"NMI hooks":   50,
 		"NMI upload":  600,
 		"preMain: manip pending call, gate, Link OAM copy": 200,
@@ -451,7 +452,7 @@ func TestCycleBudgets_RemoteSpritesFullOAM(t *testing.T) {
 
 	p.report(t, "3 remote players, OAM buffer full")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 12_500,
+		"remoteFrame": 13_200,
 		"NMI upload":  600,
 	})
 }

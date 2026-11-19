@@ -126,7 +126,7 @@ type remoteFrameTables struct {
 	allocSlots, allocFree        uint32
 	partBits                     uint32
 	followerSlotBits             uint32
-	drawLate                     uint32
+	drawLate, replayLate         uint32
 }
 
 // emitRemoteFrameTables emits the tables of remoteFrameTables in this order and returns their addresses.
@@ -156,6 +156,9 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 	late := drawLateTable()
 	t.drawLate = a.Label("drawLateTable")
 	a.EmitBytes(late[:])
+	late = replayLateTable()
+	t.replayLate = a.Label("replayLateTable")
+	a.EmitBytes(late[:])
 	return
 }
 
@@ -168,8 +171,11 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 //   - a late scan check stops the scan: what was captured is kept, and the parts are drawn in the VRAM slots they got
 //     in the last frames (rsReuse; see rfReuseFrames), since the slots in use aren't all known. Without slots to reuse,
 //     the first player is drawn as a blob;
-//   - a late drawing check draws nothing, nor uploads anything. Its deadline depends on the number of sprites in the
-//     table (drawLateTable), so a few sprites are still drawn late in the frame.
+//   - a late drawing check replays the last frame drawn instead (see remoteReplayAddr): the same OAM entries, and the
+//     same rows uploaded, which is much cheaper than drawing. Only while the scroll offsets are the same as when it was
+//     drawn, for up to rfReuseFrames frames in a row, and with a time check of its own (replayLateTable); else nothing
+//     is drawn, nor uploaded. The drawing check's deadline depends on the number of sprites in the table
+//     (drawLateTable), so a few sprites are still drawn late in the frame.
 //
 // A lag frame is not special: the NMI that came during it starts the next frame's time, and the scanline counts from
 // there as in any other frame.
@@ -199,22 +205,79 @@ const (
 	// looked at), then the rest of a block as for rfScanCycles. Measured 5,469 (timecheck_test.go):
 	rfDyingCycles = 5_800
 	// from the drawing check to the frame hook's return, drawing n sprites of the table past a full OAM buffer and
-	// listing every upload: rfDrawBaseCycles + n * rfDrawEntryCycles. Measured (timecheck_test.go) with slotted sprites,
-	// the costliest kind: 1,873 for none, then about 233 per sprite (3,913 for 8, 9,286 for remoteEntryMax):
-	rfDrawBaseCycles  = 2_100
-	rfDrawEntryCycles = 240
+	// listing every upload, recording the sprites for a replay: rfDrawBaseCycles + n * rfDrawEntryCycles. Measured
+	// (timecheck_test.go) with slotted sprites, the costliest kind: about 2,105 for none, then about 290 per sprite
+	// (4,425 for 8, 11,109 for remoteEntryMax):
+	rfDrawBaseCycles  = 2_250
+	rfDrawEntryCycles = 300
 	// the first scanline on which a block of the scan, or listing the dying enemies, starts too late to finish before
 	// the NMI, with 154 cycles per line:
 	rfScanLateLine  = rfNMILine - (rfScanCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
 	rfDyingLateLine = rfNMILine - (rfDyingCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
-	// how many frames in a row a late scan may reuse the VRAM slots the parts last got. The slots were free when they
-	// got them; the longer they are reused, the likelier one of the game's sprites has started to show one:
+	// how many frames in a row a late scan may reuse the VRAM slots the parts last got, or a late drawing check replay
+	// the last frame drawn. The slots were free when they got them; the longer they are reused, the likelier one of the
+	// game's sprites has started to show one:
 	rfReuseFrames = 8
+	// from the replay's check to the frame hook's return, replaying n sprites past a full OAM buffer:
+	// rfReplayBaseCycles + n * rfReplayEntryCycles. Measured (timecheck_test.go): about 1,315 for none, most of it the
+	// search past the game's sprites, then about 129 per sprite (2,347 for 8, 5,326 for remoteEntryMax):
+	rfReplayBaseCycles  = 1_400
+	rfReplayEntryCycles = 135
 )
+
+// SRAM layout of what remoteFrame records of the last frame it drew, for a late drawing check to replay, and its
+// counters for watching the time checks in an emulator's memory viewer (not zeroed by the init code; rsReplay, which
+// is, says whether the recording may be replayed):
+const (
+	remoteReplayAddr = uint32(0x706C50)
+
+	// the scanline remoteFrame last started on, and the one it last started on in a frame too late to draw (u16, as
+	// OPVCT reads, 0..261 or 311):
+	rpStartLine    = 0
+	rpLateDrawLine = 2
+	// frames in which the scan was too late, the drawing check was too late, and a late drawing check replayed (u16,
+	// wrapping):
+	rpLateScans = 4
+	rpLateDraws = 6
+	rpReplays   = 8
+	// the scroll offsets the recorded entries were drawn with (as rcScrX and rcScrY):
+	rpScrX = 10
+	rpScrY = 12
+	// rsNMILen of the frame drawn:
+	rpNMILen = 14
+	// the byte length of the entries recorded (u16):
+	rpLen = 16
+	// per sprite drawn: x, y, chr, attributes, extended attributes:
+	rpEntries   = 18
+	rpEntrySize = 5
+
+	remoteReplaySize = rpEntries + remoteEntryMax*rpEntrySize
+)
+
+const _ = remoteReplayAddr - (remoteStateAddr + remoteStateSize)
+const _ = runTimingAddr - (remoteReplayAddr + remoteReplaySize)
 
 // rfDrawLateLine returns the first scanline on which drawing n sprites starts too late to finish before the NMI.
 func rfDrawLateLine(n int) uint8 {
 	return uint8(rfNMILine - (rfDrawBaseCycles+n*rfDrawEntryCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine)
+}
+
+// rfReplayLateLine returns the first scanline on which replaying n sprites starts too late to finish before the NMI.
+func rfReplayLateLine(n int) uint8 {
+	return uint8(rfNMILine - (rfReplayBaseCycles+n*rfReplayEntryCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine)
+}
+
+// replayLateTable returns, for each byte length of the recorded entries (rpLen's low byte), the first scanline on
+// which replaying them starts too late (rfReplayLateLine of their number, at most remoteEntryMax).
+func replayLateTable() (t [0x100]byte) {
+	for o := range t {
+		n := min((o+rpEntrySize-1)/rpEntrySize, remoteEntryMax)
+		t[o] = rfReplayLateLine(n)
+		if t[o] <= 55 || t[o] >= rfNMILine {
+			panic(fmt.Errorf("replayLateTable: late scanline %d out of range", t[o]))
+		}
+	}
+	return
 }
 
 // drawLateTable returns, for each byte length of the remote sprites table's entries (rtFrontEnd's low byte), the
@@ -437,6 +500,20 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 	a.SEP(0x20)
 	a.LDA_dp(rcExt)
 	a.STA_abs_x(0x0A20)
+	a.Comment("record the entry for a replay (X = its offset in the recording):")
+	a.REP(0x20)
+	a.LDA_long(remoteReplayAddr + rpLen)
+	a.TAX()
+	a.CLC()
+	a.ADC_imm16_w(rpEntrySize)
+	a.STA_long(remoteReplayAddr + rpLen)
+	a.LDA_abs_y(0x0800)
+	a.STA_long_x(remoteReplayAddr + rpEntries + 0)
+	a.LDA_abs_y(0x0802)
+	a.STA_long_x(remoteReplayAddr + rpEntries + 2)
+	a.SEP(0x20)
+	a.LDA_dp(rcExt)
+	a.STA_long_x(remoteReplayAddr + rpEntries + 4)
 	a.Comment("the next unused entry:")
 	emitFindUnused(a, p+"_find")
 	a.REP(0x20)
@@ -450,12 +527,13 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 // emitDyingEnemiesList. Called with any register sizes; preserves P, DB and
 // D.
 //
-// Cycles (cycles_test.go), with 3 remote players in the room: budget 6,300, measured 5,977 (about 13% of a frame)
-// with the OAM buffer otherwise empty; budget 12,500, measured 11,716 (about 26%) with the game's sprites filling all
+// Cycles (cycles_test.go), with 3 remote players in the room: budget 7,500, measured 7,142 (about 15% of a frame)
+// with the OAM buffer otherwise empty; budget 13,200, measured 12,743 (about 28%) with the game's sprites filling all
 // but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
 // per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one, and about
-// 33 per time check), drawing the sprites (about 150 each), and with a full OAM buffer, the search for unused
-// entries. Its time checks skip the scan or drawing rather than finish after the NMI; see rfScanCycles.
+// 33 per time check), drawing the sprites (about 200 each, recording them for a replay), and with a full OAM buffer,
+// the search for unused entries. Its time checks skip the scan or drawing rather than finish after the NMI; see
+// rfScanCycles.
 func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (entry uint32) {
 	lo := func(addr uint32) uint16 { return uint16(addr) }
 	st := func(o uint32) uint16 { return uint16((remoteStateAddr + o) & 0xFFFF) }
@@ -618,6 +696,15 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.PLD()
 	a.PHK()
 	a.PLB()
+	a.Comment("the scanline it starts on (rpStartLine), latched; reading STAT78 first resets OPVCT's low/high flip-flop:")
+	a.SEP(0x20)
+	a.LDA_abs(0x2137)
+	a.LDA_abs(0x213F)
+	a.LDA_abs(0x213D)
+	a.STA_long(remoteReplayAddr + rpStartLine)
+	a.LDA_abs(0x213D)
+	a.AND_imm8_b(0x01)
+	a.STA_long(remoteReplayAddr + rpStartLine + 1)
 	a.REP(0x30)
 	a.Comment("capture: the scroll offsets Link's copied OAM entries were drawn with (linkOAMCopyScroll), no extras yet:")
 	a.LDA_dp(0xE2)
@@ -736,10 +823,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.LDA_abs(0x0200)
 	a.BEQ("rf_module_ok")
 	a.Label("rf_no_draw")
-	a.Comment("not drawing: no follower slots kept, and none to reuse:")
+	a.Comment("not drawing: no follower slots kept, none to reuse, nothing to replay:")
 	a.LDA_imm8_b(0x00)
 	a.STA_long(remoteStateAddr + rsSkipSlots)
 	a.STA_long(remoteStateAddr + rsReuse)
+	a.STA_long(remoteStateAddr + rsReplay)
 	a.JMP_abs("rf_scan_check")
 	a.Label("rf_module_ok")
 	a.LDA_dp(0x1B)
@@ -772,6 +860,11 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.Comment("too late to scan on: keep what was captured; the VRAM slots in use aren't known, so the parts are drawn in")
 	a.Comment("the slots they last got (rcDraw = 2) if they may still be reused:")
 	a.Label("rf_scan_late")
+	a.REP(0x20)
+	a.LDA_long(remoteReplayAddr + rpLateScans)
+	a.INC()
+	a.STA_long(remoteReplayAddr + rpLateScans)
+	a.SEP(0x20)
 	a.LDA_dp(rcDraw)
 	a.BEQ("rf_scan_late_done")
 	a.LDA_imm8_b(0x02)
@@ -828,12 +921,6 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.DEC()
 	a.STA_long(remoteStateAddr + rsReuse)
 	a.JMP_abs("rf_alloc_done")
-	a.Label("rf_draw_late")
-	a.Comment("nothing drawn: no follower slots kept, and none to reuse:")
-	a.LDA_imm8_b(0x00)
-	a.STA_long(remoteStateAddr + rsSkipSlots)
-	a.STA_long(remoteStateAddr + rsReuse)
-	a.JMP_abs("rf_exit")
 	a.Label("rf_alloc_none")
 	a.Comment("no slots (no parts, or none to reuse); the first player is drawn as a blob:")
 	a.JSR_abs(uint16(slotsReset))
@@ -901,15 +988,20 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.Label("rf_alloc_done")
 
 	a.REP(0x30)
+	a.Comment("nothing recorded for a replay yet:")
+	a.LDA_imm16_w(0x0000)
+	a.STA_long(remoteReplayAddr + rpLen)
 	a.Comment("local scroll offsets; the blob chr alternates every 8 frames:")
 	a.LDA_dp(0xE2)
 	a.SEC()
 	a.SBC_abs(0x011A)
 	a.STA_dp(rcScrX)
+	a.STA_long(remoteReplayAddr + rpScrX)
 	a.LDA_dp(0xE8)
 	a.SEC()
 	a.SBC_abs(0x011C)
 	a.STA_dp(rcScrY)
+	a.STA_long(remoteReplayAddr + rpScrY)
 	a.LDA_dp(0x1A)
 	a.AND_imm16_w(0x0008)
 	a.LSR()
@@ -1029,12 +1121,110 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 		a.Label(skip)
 	}
 	a.STY_abs(st(rsNMILen))
+	a.Comment("what a replay needs besides the recorded entries and their scroll offsets: the rows listed; replays")
+	a.Comment("allowed only if anything was drawn:")
+	a.TYA()
+	a.STA_long(remoteReplayAddr + rpNMILen)
+	a.SEP(0x20)
+	a.LDA_long(remoteReplayAddr + rpLen)
+	a.BEQ("rf_replay_set")
+	a.LDA_imm8_b(rfReuseFrames)
+	a.Label("rf_replay_set")
+	a.STA_abs(st(rsReplay))
+	a.REP(0x20)
 
 	a.Label("rf_exit")
 	a.PLD()
 	a.PLB()
 	a.PLP()
 	a.RTL()
+
+	a.Comment("too late to draw: replay the last frame drawn, or draw nothing; with A, X and Y 8-bit, DB = program bank:")
+	a.AssumeSEP(0x30)
+	a.Label("rf_draw_late")
+	a.REP(0x20)
+	a.LDA_long(remoteReplayAddr + rpLateDraws)
+	a.INC()
+	a.STA_long(remoteReplayAddr + rpLateDraws)
+	a.LDA_long(remoteReplayAddr + rpStartLine)
+	a.STA_long(remoteReplayAddr + rpLateDrawLine)
+	a.SEP(0x20)
+	a.Comment("replay the last frame drawn if it may be, and there is time for it (its line in replayLateTable):")
+	a.LDA_long(remoteStateAddr + rsReplay)
+	a.BEQ("rf_draw_none")
+	a.LDA_long(remoteReplayAddr + rpLen)
+	a.TAX()
+	a.LDA_abs_x(lo(t.replayLate))
+	a.STA_dp(rcHit)
+	emitTimeCheck(a, rcHit, true, "rf_replay_time", "rf_draw_none")
+	a.Comment("only with the scroll offsets it was drawn with, as its screen positions are:")
+	a.REP(0x30)
+	a.LDA_dp(0xE2)
+	a.SEC()
+	a.SBC_abs(0x011A)
+	a.CMP_long(remoteReplayAddr + rpScrX)
+	a.BNE("rf_draw_none_16")
+	a.LDA_dp(0xE8)
+	a.SEC()
+	a.SBC_abs(0x011C)
+	a.CMP_long(remoteReplayAddr + rpScrY)
+	a.BNE("rf_draw_none_16")
+	a.JMP_abs("rf_replay")
+	a.Label("rf_draw_none_16")
+	a.SEP(0x30)
+	a.Label("rf_draw_none")
+	a.Comment("nothing drawn: no follower slots kept, none to reuse, nothing to replay:")
+	a.LDA_imm8_b(0x00)
+	a.STA_long(remoteStateAddr + rsSkipSlots)
+	a.STA_long(remoteStateAddr + rsReuse)
+	a.STA_long(remoteStateAddr + rsReplay)
+	a.JMP_abs("rf_exit")
+
+	a.Comment("the replay: each recorded entry into the next unused OAM entry from the last down; then the rows the frame")
+	a.Comment("drawn listed for the NMI hooks again (rsNMIList is as it left it), into the follower slots it kept:")
+	a.AssumeREP(0x30)
+	a.Label("rf_replay")
+	a.SEP(0x20)
+	a.LDA_long(remoteStateAddr + rsReplay)
+	a.DEC()
+	a.STA_long(remoteStateAddr + rsReplay)
+	a.REP(0x20)
+	a.LDA_long(remoteReplayAddr + rpReplays)
+	a.INC()
+	a.STA_long(remoteReplayAddr + rpReplays)
+	a.LDA_long(remoteReplayAddr + rpLen)
+	a.STA_dp(rcEnd)
+	a.LDX_imm16_w(0x0000)
+	a.LDY_imm16_w(0x0200)
+	a.Label("rf_replay_loop")
+	a.CPX_dp(rcEnd)
+	a.BCS("rf_replay_done")
+	a.JSR_abs(uint16(findFirst))
+	a.BCC("rf_replay_done")
+	a.LDA_long_x(remoteReplayAddr + rpEntries + 0)
+	a.STA_abs_y(0x0800)
+	a.LDA_long_x(remoteReplayAddr + rpEntries + 2)
+	a.STA_abs_y(0x0802)
+	a.LDA_long_x(remoteReplayAddr + rpEntries + 4)
+	a.STA_dp(rcExt)
+	a.TXA()
+	a.CLC()
+	a.ADC_imm16_w(rpEntrySize)
+	a.STA_dp(rcTbl)
+	a.TYA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.SEP(0x20)
+	a.LDA_dp(rcExt)
+	a.STA_abs_x(0x0A20)
+	a.REP(0x20)
+	a.LDX_dp(rcTbl)
+	a.BRA("rf_replay_loop")
+	a.Label("rf_replay_done")
+	a.LDA_long(remoteReplayAddr + rpNMILen)
+	a.STA_long(remoteStateAddr + rsNMILen)
+	a.JMP_abs("rf_exit")
 	a.AssumeSEP(0x30)
 	return
 }
