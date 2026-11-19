@@ -172,6 +172,13 @@ type roomStateLocal struct {
 	// readSprites is true while a remote player in the room took the boss's heart container and we did not; the sprite
 	// tables are read to see whether it lies on the floor here:
 	readSprites bool
+
+	// tags are the room tags ($AE, $AF) last sampled; kills are the kill triggers fired here (see syncroomkills.go):
+	tags  [2]uint8
+	kills uint8
+	// killsDone are remote kill bits with no enemies left here to kill; killRetry is when to kill again (msec):
+	killsDone uint8
+	killRetry uint32
 }
 
 // roomBlockLocal remembers that the block of a push block door room was pushed ($0641 odd). An intra-room transition
@@ -382,6 +389,7 @@ func (g *Game) readRoomState() {
 			doors: g.wram[roomDoorsOffs],
 			since: timestampFromTime(g.ServerSNESTimestamp()),
 			block: rs.block,
+			tags:  tags,
 		}
 		rs.pulled = roomHasTag(tags, roomTagIsPull) && g.wram[roomPullOffs] != 0
 		rs.pulledQuad = roomQuadrant(local)
@@ -415,6 +423,7 @@ func (g *Game) readRoomState() {
 		log.Printf("alttp: room: local: doors $%02x -> $%02x\n", rs.doors, doors)
 		rs.doors = doors
 	}
+	g.readRoomKills(tags, rs.door, door)
 	if switchesFresh {
 		if hold := g.localHolds(tags, door); hold != rs.hold {
 			log.Printf("alttp: room: local: hold switch pressed = %v\n", hold)
@@ -530,6 +539,9 @@ type roomStateUpdate struct {
 	holdOff  bool // $0646 cleared
 	holdFrom *Player
 
+	kill     uint8 // kill bit whose enemies are killed (see syncroomkills.go)
+	killFrom *Player
+
 	cancelled bool
 }
 
@@ -588,6 +600,9 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	}
 	if u.holdOff {
 		log.Printf("alttp: room: update: hold switch released\n")
+	}
+	if u.kill != 0 {
+		g.confirmRoomKill(u, value)
 	}
 	if u.setDoor {
 		rs.door = u.door
@@ -732,7 +747,11 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		}
 	}
 
-	if u.flags == 0 && u.keyDoorBit == 0 && !u.blockDoor && !u.pull && !u.hold && !u.holdOff && !u.setDoor {
+	// enemies killed by remote players' kill triggers:
+	u.kill, u.killFrom = g.roomKillWanted(remotes)
+
+	if u.flags == 0 && u.keyDoorBit == 0 && !u.blockDoor && !u.pull && !u.hold && !u.holdOff && !u.setDoor &&
+		u.kill == 0 {
 		u = nil
 		return
 	}
@@ -871,6 +890,15 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		a.STA_dp(0x11)
 	}
 
+	if u.kill != 0 {
+		a.Comment(fmt.Sprintf("kill trigger $%02x fired by %s:", u.kill, u.killFrom.Name()))
+		emitRoomKill(a, u.kill)
+		a.TYA()
+		a.BNE("rm_killed")
+		a.LDA_imm8_b(roomKillNone)
+		a.BRA("rm_report")
+		a.Label("rm_killed")
+	}
 	a.LDA_imm8_b(crystalSwitchWritten)
 	a.BRA("rm_report")
 	a.Label("rm_skip")

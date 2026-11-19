@@ -60,6 +60,7 @@ const (
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
 	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
+	MsgRoomKills  MessageType = 0x85 // o2-only: kill triggers fired in a room, broadcastSector; see syncroomkills.go
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -92,6 +93,7 @@ func (g *Game) initSerde() {
 		MsgRoomDoors:        g.DeserializeRoomDoors,
 		MsgOwEvents:         g.DeserializeOwEvents,
 		MsgFlyingTiles:      g.DeserializeFlyingTiles,
+		MsgRoomKills:        g.DeserializeRoomKills,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -248,6 +250,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		p.FlyingTiles.valid = false
 		p.Room.valid = false
 		p.Doors.valid = false
+		p.Kills.valid = false
 		p.Manip.reset()
 		p.Torches.valid = false
 		p.Map16.reset(0)

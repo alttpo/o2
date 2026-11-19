@@ -79,6 +79,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
 | 0x83 | hearts (delta based) | yes (main packet) | yes, own packet (after 0x82) | used |
 | 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | yes, own packet (`RunTiming.as`) | yes, own packet | used; takes precedence over 0x80 |
+| 0x85 | o2: kill triggers fired in a room | n/a | yes, **own packet** (per sector) | used |
 
 Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
@@ -409,10 +410,20 @@ still be taken by the other.
     recomputes `$0646` every frame and wins while it exists.
 - **Settings.** o2 uses "Sync Underworld (Local)" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
   "Sync chests").
+- **Kill triggers (o2 only).** Room tags that wait for the enemies of a quadrant or the whole room to die (trap doors
+  `$01`-`$0A`, kill room block `$26`, chest reveal `$29`-`$32`) are seen firing locally from the tag going to 0 (chest
+  reveal, block) or the trap doors opening locally in a room with a trap door kill tag, and recorded as a kill bit:
+  the quadrant Link was in, or the whole room for `$0A`/`$32`. o2-only message 0x85 (`room u16`, `kills u8`: bit q for
+  quadrant q = east + 2 × south, bit 4 whole room) goes in its own packet to the room's sector. A
+  receiver in the same room, in submodule 0 while Link is in that quadrant (any quadrant for the whole room), kills the
+  enemies the tag's check still counts there like `Sprite_KillFriends` (`$0DD0` = 6, `$0DF0` = `$0F`, `$0E60` and
+  `$0BE0` cleared so nothing drops but keys, `$0E40` = 3): sprites in state 9 or more without `$0F60` bit 6 or `$0CAA`
+  bit 1, but for Agahnim, the evil barrier and bonk items, on the camera's screen for a quadrant. The game's own tag then
+  fires (reveals the chest, frees the block). It tries again a second later until a try finds nothing left to kill.
+  Overlords (invisible stalfos `$18`, tile room `$14`) are left alone. alttpo neither sends nor applies it.
 - **Not synced.** The pulled
-  lever sprite is not drawn pulled for other players. Enemies are not synced by o2, so a kill room opened by another
-  player stays open even if its enemies are alive here, and keys dropped by enemies get their index in the order they
-  spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
+  lever sprite is not drawn pulled for other players. Enemies are not synced by o2 beyond kill triggers, and keys
+  dropped by enemies get their index in the order they spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
   also trigger on lit torches, which are synced on their own (see [Torches](#torches)).
 - **o2 only:** o2 used to send `$0400` in message 0x05 and unlock doors from it; that is replaced by message 0x1B. Door
   bits received through the SRAM room flags of the current room (another player left it) unlock key doors the same

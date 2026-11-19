@@ -93,6 +93,15 @@ func (g *Game) sendPackets() {
 		g.send(m)
 	}
 
+	if g.SyncUnderworldLocal && local.Module == 0x07 && g.roomState.valid {
+		// kill triggers fired in the room (o2-only), in their own packet to the players in the same room:
+		m := g.makeSectorMessage()
+		if err := g.SerializeRoomKills(m); err != nil {
+			panic(err)
+		}
+		g.send(m)
+	}
+
 	if g.SyncUnderworldLocal && g.manip.valid && (local.Module == 0x07 || local.Module == 0x0E) {
 		// the manipulable objects again, to all players whenever they change and every 32 frames, so that players
 		// entering the room have them while it loads (see manipstage.go):
