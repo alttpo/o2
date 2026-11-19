@@ -210,55 +210,118 @@ func (b *searchBench) run(s *oamSnap, k int) (cycles, clocks uint64, found int) 
 	return cycles, clocks, int(e.WRAM[2]) | int(e.WRAM[3])<<8
 }
 
-func loadOAMSnaps(t *testing.T) (snaps []oamSnap, kinds []uint8) {
-	b, err := os.ReadFile(oamSnapsPath())
-	if err != nil {
-		t.Skipf("no snapshots (run TestOAMSearch_Collect with OAM_COLLECT=1): %v", err)
+// loadOAMSnaps reads the snapshots of the files in $OAM_SNAPS (separated by commas), and skips the test without it:
+// records of a
+// kind byte (0 underworld, 1 overworld), the module and submodule, and the 128 Y bytes; in files that start with
+// "OAM2", also the scene (u16, after the submodule; see sceneName).
+func loadOAMSnaps(t *testing.T) (snaps []oamSnap) {
+	if os.Getenv("OAM_SNAPS") == "" {
+		t.Skip("set OAM_SNAPS to the snapshots of TestOAMSearch_Collect, _Survey or _Busy")
 	}
-	for o := 0; o+131 <= len(b); o += 131 {
-		var s oamSnap
-		s.module, s.sub = b[o+1], b[o+2]
-		copy(s.y[:], b[o+3:o+131])
-		if (o/131)%4 == 0 {
+	for _, path := range strings.Split(os.Getenv("OAM_SNAPS"), ",") {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Skipf("no snapshots (run TestOAMSearch_Collect with OAM_COLLECT=1): %v", err)
+		}
+		size, hdr := 131, 0
+		if len(b) >= 4 && string(b[:4]) == "OAM2" {
+			size, hdr = 133, 4
+		}
+		for o := hdr; o+size <= len(b); o += size {
+			s := oamSnap{kind: b[o], module: b[o+1], sub: b[o+2], scene: 0xFFFF}
+			if size == 133 {
+				s.scene = uint16(b[o+3]) | uint16(b[o+4])<<8
+			}
+			copy(s.y[:], b[o+size-128:o+size])
 			snaps = append(snaps, s)
-			kinds = append(kinds, b[o])
 		}
 	}
 	return
 }
 
-func pct(v []uint64, p float64) uint64 {
-	if len(v) == 0 {
-		return 0
+// usedMask returns the entries the snapshot uses, as a bitmask: the search's cost only depends on it.
+func (s *oamSnap) usedMask() (m [16]byte) {
+	for i := 0; i < 0x80; i++ {
+		if s.used(i) {
+			m[i>>3] |= 1 << (i & 7)
+		}
 	}
-	return v[int(float64(len(v)-1)*p)]
+	return
 }
+
+func (s *oamSnap) usedCount() (n int) {
+	for i := 0; i < 0x80; i++ {
+		if s.used(i) {
+			n++
+		}
+	}
+	return
+}
+
+// weighted is a sample of values with their weights (how many frames each stands for).
+type weighted struct {
+	v []uint64
+	w []int
+}
+
+func (d *weighted) add(v uint64, w int) { d.v, d.w = append(d.v, v), append(d.w, w) }
+
+func (d *weighted) stats() (mean float64, p50, p90, p99, maxv uint64) {
+	idx := make([]int, len(d.v))
+	total := 0
+	sum := 0.0
+	for i := range idx {
+		idx[i] = i
+		total += d.w[i]
+		sum += float64(d.v[i]) * float64(d.w[i])
+	}
+	if total == 0 {
+		return
+	}
+	sort.Slice(idx, func(a, b int) bool { return d.v[idx[a]] < d.v[idx[b]] })
+	at := func(p float64) uint64 {
+		target := int(float64(total-1) * p)
+		c := 0
+		for _, i := range idx {
+			c += d.w[i]
+			if c > target {
+				return d.v[i]
+			}
+		}
+		return d.v[idx[len(idx)-1]]
+	}
+	return sum / float64(total), at(.5), at(.9), at(.99), d.v[idx[len(idx)-1]]
+}
+
+// snapKinds are the groups the tests report: underworld, overworld, and all.
+var snapKinds = []string{"underworld", "overworld", "all"}
+
+func inKind(s *oamSnap, kind int) bool { return kind == 2 || int(s.kind) == kind }
 
 // TestOAMSearch_Occupancy shows how the game fills the OAM buffer: the entries used per frame, and how often each
 // entry is used.
 func TestOAMSearch_Occupancy(t *testing.T) {
-	snaps, kinds := loadOAMSnaps(t)
-	for kind, kname := range []string{"underworld", "overworld"} {
-		var counts []uint64
+	snaps := loadOAMSnaps(t)
+	for kind := 0; kind < 2; kind++ {
+		var d weighted
 		var freq [0x80]int
 		n := 0
-		for i, s := range snaps {
-			if int(kinds[i]) != kind {
+		for i := range snaps {
+			s := &snaps[i]
+			if !inKind(s, kind) {
 				continue
 			}
 			n++
-			u := 0
 			for j := 0; j < 0x80; j++ {
 				if s.used(j) {
-					u++
 					freq[j]++
 				}
 			}
-			counts = append(counts, uint64(u))
+			d.add(uint64(s.usedCount()), 1)
 		}
-		sort.Slice(counts, func(i, j int) bool { return counts[i] < counts[j] })
-		t.Logf("%s: %d frames; entries used: p50 %d, p90 %d, p99 %d, max %d", kname, n, pct(counts, .5), pct(counts, .9),
-			pct(counts, .99), pct(counts, 1))
+		mean, p50, p90, p99, mx := d.stats()
+		t.Logf("%s: %d frames; entries used: mean %.1f, p50 %d, p90 %d, p99 %d, max %d", snapKinds[kind], n, mean, p50,
+			p90, p99, mx)
 		var sb strings.Builder
 		for j := 0; j < 0x80; j++ {
 			if j%16 == 0 {
@@ -266,45 +329,61 @@ func TestOAMSearch_Occupancy(t *testing.T) {
 			}
 			fmt.Fprintf(&sb, " %3d", freq[j]*100/max(n, 1))
 		}
-		t.Logf("%s: %% of frames each entry is used:%s", kname, sb.String())
+		t.Logf("%s: %% of frames each entry is used:%s", snapKinds[kind], sb.String())
 	}
 }
 
-// TestOAMSearch_Cycles runs each search variant over every snapshot for k entries (the remote sprites to draw).
+// TestOAMSearch_Cycles runs each search variant over the snapshots for k entries (the remote sprites to draw), once
+// per distinct set of used entries, weighted by the frames that had it.
 func TestOAMSearch_Cycles(t *testing.T) {
-	snaps, kinds := loadOAMSnaps(t)
+	snaps := loadOAMSnaps(t)
+	type uniq struct {
+		snap  *oamSnap
+		count [2]int
+	}
+	byMask := map[[16]byte]*uniq{}
+	var order []*uniq
+	for i := range snaps {
+		s := &snaps[i]
+		m := s.usedMask()
+		u := byMask[m]
+		if u == nil {
+			u = &uniq{snap: s}
+			byMask[m] = u
+			order = append(order, u)
+		}
+		u.count[min(int(s.kind), 1)]++
+	}
+	t.Logf("%d frames, %d distinct sets of used entries", len(snaps), len(order))
 	for _, k := range []int{6, 12, 18, 36} {
 		t.Logf("--- %d entries wanted ---", k)
 		for _, v := range searchVariants {
 			b := newSearchBench(t, v, oamRegionEnds)
-			for kind, kname := range []string{"underworld", "overworld", "all"} {
-				var cyc, clk []uint64
-				short := 0
-				for i := range snaps {
-					if kind < 2 && int(kinds[i]) != kind {
+			var cyc, clk [3]weighted
+			var short [3]int
+			for _, u := range order {
+				c, m, f := b.run(u.snap, k)
+				isShort := f < min(k, 0x80-u.snap.usedCount())
+				for kind := 0; kind < 3; kind++ {
+					w := u.count[0] + u.count[1]
+					if kind < 2 {
+						w = u.count[kind]
+					}
+					if w == 0 {
 						continue
 					}
-					c, m, f := b.run(&snaps[i], k)
-					free := 0
-					for j := 0; j < 0x80; j++ {
-						if !snaps[i].used(j) {
-							free++
-						}
+					cyc[kind].add(c, w)
+					clk[kind].add(m, w)
+					if isShort {
+						short[kind] += w
 					}
-					if f < min(k, free) {
-						short++
-					}
-					cyc = append(cyc, c)
-					clk = append(clk, m)
 				}
-				var sum uint64
-				for _, c := range cyc {
-					sum += c
-				}
-				sort.Slice(cyc, func(i, j int) bool { return cyc[i] < cyc[j] })
-				sort.Slice(clk, func(i, j int) bool { return clk[i] < clk[j] })
-				t.Logf("%-55s %-10s cycles mean %5d p50 %5d p90 %5d p99 %5d max %5d | clocks p99 %6d | frames short of entries: %d",
-					v.name, kname, sum/uint64(len(cyc)), pct(cyc, .5), pct(cyc, .9), pct(cyc, .99), pct(cyc, 1), pct(clk, .99), short)
+			}
+			for kind := 0; kind < 3; kind++ {
+				mean, p50, p90, p99, mx := cyc[kind].stats()
+				_, _, _, cp99, _ := clk[kind].stats()
+				t.Logf("%-55s %-10s cycles mean %6.0f p50 %5d p90 %5d p99 %5d max %5d | clocks p99 %6d | frames short of entries: %d",
+					v.name, snapKinds[kind], mean, p50, p90, p99, mx, cp99, short[kind])
 			}
 		}
 	}

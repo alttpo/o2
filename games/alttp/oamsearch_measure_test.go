@@ -36,6 +36,8 @@ type realGame struct {
 	ppu   *emulator.PPU
 	pad   *emulator.Joypads
 	frame int
+	// crashed is set once a frame panicked (the game ran off into unmapped memory) or never returned to the frame hook:
+	crashed bool
 }
 
 func newRealGame(t *testing.T) *realGame {
@@ -58,14 +60,27 @@ func newRealGame(t *testing.T) *realGame {
 }
 
 // runFrame runs until the module returns to the frame hook (the OAM buffer as remoteFrame sees it).
-func (g *realGame) runFrame(input uint16) bool {
+func (g *realGame) runFrame(input uint16) (ok bool) {
+	if g.crashed {
+		return false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			g.t.Logf("crashed: %v: %s", r, g.where())
+			g.crashed, ok = true, false
+		}
+	}()
 	g.pad.Input[0] = input
 	// step off the hook first:
 	for i := 0; i < 4 && g.e.GetPC() == 0x00805A; i++ {
 		g.e.Step()
 	}
-	ok := g.e.RunUntil(0x00805A, 20_000_000)
+	ok = g.e.RunUntil(0x00805A, 20_000_000)
 	g.frame++
+	if !ok {
+		g.t.Logf("crashed: no frame: %s PC=$%06x", g.where(), g.e.GetPC())
+		g.crashed = true
+	}
 	return ok
 }
 
@@ -138,8 +153,10 @@ func (g *realGame) editSave(edit func(f []byte)) {
 
 // oamSnap is the OAM buffer's Y bytes as remoteFrame sees them, after the module drew its sprites.
 type oamSnap struct {
-	module, sub uint8
-	y           [0x80]uint8
+	// kind: 0 underworld, 1 overworld; scene: see sceneName ($FFFF unknown):
+	kind, module, sub uint8
+	scene             uint16
+	y                 [0x80]uint8
 }
 
 func (s *oamSnap) used(i int) bool { return s.y[i] != 0xF0 }
