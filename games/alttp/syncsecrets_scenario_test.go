@@ -32,7 +32,7 @@ func (h *skScenario) romWrite(i int, addr uint32, b ...byte) {
 }
 
 // stubSecrets (also called by newManipScenario) stubs Overworld_RevealSecret, RevealPotItem and Sprite_SpawnThrowableTerrain_silently to record their
-// calls at $7FE000, and makes the bush tile a small liftable object of thrown object type 2.
+// calls at $7FE000 (MakeTestROM made the bush tile a small liftable object; see writeTestLiftables).
 func (h *skScenario) stubSecrets() {
 	for i, gs := range h.gs {
 		fns := gs.g.romFunctions
@@ -76,13 +76,25 @@ func (h *skScenario) stubSecrets() {
 			0x8D, 0xB2, 0x0F, // STA $0FB2
 			0x6B, // RTL
 		)
-		// the small liftable objects: only the bush, whose top left 8x8 tile has the bush tile type $50:
-		h.romWrite(i, owLiftableTileOperands[0], uint8(scBushTile), uint8(scBushTile>>8))
-		h.romWrite(i, owMap16DefinitionsOperand, uint8(scDefsAddr&0xFF), uint8(scDefsAddr>>8&0xFF), uint8(scDefsAddr>>16))
-		h.romWrite(i, owOverworldTileTypesOperand, uint8(scTypesAddr&0xFF), uint8(scTypesAddr>>8&0xFF), uint8(scTypesAddr>>16))
-		h.romWrite(i, scDefsAddr+uint32(scBushTile)<<3, uint8(scBushChr&0xFF), uint8(scBushChr>>8))
-		h.romWrite(i, scTypesAddr+uint32(scBushChr), 0x50)
 	}
+}
+
+// writeTestLiftables makes the bush tile the only small liftable object, of thrown object type 2: its top left 8x8
+// tile has the bush tile type $50. MakeTestROM calls it before the ROM is patched, since the patch reads the liftable
+// objects from the ROM (see emitMap16Update).
+func writeTestLiftables(rom *snes.ROM) {
+	write := func(addr uint32, b ...byte) {
+		pak, err := lorom.BusAddressToPak(addr)
+		if err != nil {
+			panic(err)
+		}
+		copy(rom.Contents[pak:], b)
+	}
+	write(owLiftableTileOperands[0], uint8(scBushTile), uint8(scBushTile>>8))
+	write(owMap16DefinitionsOperand, uint8(scDefsAddr&0xFF), uint8(scDefsAddr>>8&0xFF), uint8(scDefsAddr>>16))
+	write(owOverworldTileTypesOperand, uint8(scTypesAddr&0xFF), uint8(scTypesAddr>>8&0xFF), uint8(scTypesAddr>>16))
+	write(scDefsAddr+uint32(scBushTile)<<3, uint8(scBushChr&0xFF), uint8(scBushChr>>8))
+	write(scTypesAddr+uint32(scBushChr), 0x50)
 }
 
 func (h *skScenario) spawnCalls(i int) int { return int(h.gs[i].e.WRAM[scRecord+8]) }

@@ -47,6 +47,8 @@ func (g *Game) updateWRAM(q snes.Queue) (writes []snes.Write, ok bool) {
 	// create an assembler:
 	a := asm.NewEmitter(make([]byte, updateBufSize*2), true)
 	var updated bool
+	g.updData = &updateData{base: updateDataAddrFor(targetSNES)}
+	defer func() { g.updData = nil }()
 	updated, err = g.generateSRAMRoutine(a, targetSNES)
 	if err != nil {
 		log.Printf("alttp: error generating asm update routine: %v\n", err)
@@ -72,7 +74,17 @@ func (g *Game) updateWRAM(q snes.Queue) (writes []snes.Write, ok bool) {
 	var targetJSR uint32
 	targetJSR, err = lorom.BusAddressToPak(updateJSRAddr)
 	code := a.Bytes()
-	writes = []snes.Write{
+	writes = nil
+	if data := g.updData.buf; len(data) > 0 {
+		// the tables the routine passes to the ROM routines (see updatedata.go), before the routine:
+		var dataPak uint32
+		dataPak, err = lorom.BusAddressToPak(g.updData.base)
+		if err != nil {
+			return
+		}
+		writes = append(writes, snes.Write{Address: dataPak, Data: data})
+	}
+	writes = append(writes, []snes.Write{
 		{
 			// may be larger than 255 bytes; the device drivers split it into chunks (e.g. FX Pak Pro VPUTs) and write
 			// them in order. Write all but the first two bytes first: if callUpdate still points at this buffer
@@ -94,7 +106,7 @@ func (g *Game) updateWRAM(q snes.Queue) (writes []snes.Write, ok bool) {
 			Size:    1,
 			Data:    []byte{uint8(targetSNES >> 8)},
 		},
-	}
+	}...)
 	ok = true
 
 	return
@@ -154,6 +166,7 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 
 	// dump asm:
 	logAsm(a)
+	logUpdateData(g.updData)
 
 	if a.Len() > updateBufSize {
 		err = fmt.Errorf("alttp: generated update ASM larger than %d bytes: %d", updateBufSize, a.Len())
@@ -275,6 +288,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					updated = true
 				}
 			}
+			mark := g.updData.mark()
 			if u, ta := g.generateRoomStateUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -284,6 +298,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 					a.Append(ta)
 					updated = true
+				} else {
+					g.updData.reset(mark)
 				}
 			}
 			if u, ta := g.generateTorchesUpdate(newEmitter, genIndex); u != nil {
@@ -308,6 +324,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					updated = true
 				}
 			}
+			mark = g.updData.mark()
 			if u, ta := g.generateFlyingTilesUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -317,6 +334,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 					a.Append(ta)
 					updated = true
+				} else {
+					g.updData.reset(mark)
 				}
 			}
 		}
@@ -399,6 +418,9 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		// waiting for confirmation of a dropped routine would wait forever:
 		var commit16 []func()
 
+		// the tables of the 16-bit section are dropped with it:
+		mark16 := g.updData.mark()
+
 		// clone to a temporary assembler for 16-bit mode:
 		tmp := [updateBufSize * 2]byte{}
 		a16 := a.Clone(tmp[:])
@@ -439,6 +461,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 		// apply map16 changes made by players in the same overworld area:
 		if g.SyncOverworld {
+			mark := g.updData.mark()
 			if u, ta := g.generateMap16Update(newEmitter, gen16Index); u != nil {
 				if n := ta.Len() + a16.Len() + a.Len() + epilogSize; n > updateBufSize {
 					log.Printf("alttp: map16: update routine too big: %d + %d + %d + %d = %d > %d\n", ta.Len(), a16.Len(), a.Len(), epilogSize, n, updateBufSize)
@@ -450,12 +473,15 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 					a16.Append(ta)
 					updated16 = true
+				} else {
+					g.updData.reset(mark)
 				}
 			}
 		}
 
 		// reveal objects and move push blocks like the players in the same room did:
 		if g.SyncUnderworld {
+			mark := g.updData.mark()
 			if u, ta := g.generateManipUpdate(newEmitter, gen16Index); u != nil {
 				if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {
 					gen16Index++
@@ -464,6 +490,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 					a16.Append(ta)
 					updated16 = true
+				} else {
+					g.updData.reset(mark)
 				}
 			}
 		}
@@ -519,7 +547,10 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 				updated = true
 			} else {
 				log.Printf("alttp: update: 16-bit section too big: %d + %d + %d > %d; dropped\n", a.Len(), a16.Len(), epilogSize, updateBufSize)
+				g.updData.reset(mark16)
 			}
+		} else {
+			g.updData.reset(mark16)
 		}
 	}
 
@@ -533,6 +564,18 @@ func logAsm(a *asm.Emitter) {
 	sb := &strings.Builder{}
 	_ = a.WriteTextTo(sb)
 	log.Print(sb.String())
+}
+
+// logUpdateData logs the tables of the update routine (see updatedata.go) as db lines at their addresses.
+func logUpdateData(d *updateData) {
+	if d == nil || len(d.buf) == 0 {
+		return
+	}
+	t := asm.NewEmitter(make([]byte, len(d.buf)), true)
+	t.SetBase(d.base)
+	t.Comment("update data:")
+	t.EmitBytes(d.buf)
+	logAsm(t)
 }
 
 // emitReport stores the low byte of A (16-bit mode) as this generator's result for ConfirmAsmExecuted.

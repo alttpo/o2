@@ -37,6 +37,9 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 		}
 	}
 
+	// the small liftable objects that the patch reveals secrets under:
+	writeTestLiftables(rom)
+
 	// build ROM header:
 	copy(rom.Header.Title[:], title)
 	rom.EmulatedVectors.RESET = 0x8000

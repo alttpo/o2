@@ -275,7 +275,7 @@ func (g *Game) generateFlyingTilesUpdate(newEmitter func() *asm.Emitter, index u
 	if local.Module != 0x07 || local.SubModule != 0 {
 		return
 	}
-	fnErase, ok := g.romFunctions[fnUpdateTilemapWithCommonObject]
+	_, ok := g.romFunctions[fnUpdateTilemapWithCommonObject]
 	if !ok {
 		return
 	}
@@ -300,9 +300,20 @@ func (g *Game) generateFlyingTilesUpdate(newEmitter func() *asm.Emitter, index u
 		timer = 0xE0
 	}
 
+	k := uint16(ft.slot)
+	// the table for flyingTilesErase (see emitFlyingTilesErase):
+	data := binary.LittleEndian.AppendUint16(nil, k)
+	data = binary.LittleEndian.AppendUint16(data, uint16(newCount-ft.count))
+	for i := ft.count; i < newCount; i++ {
+		data = append(data, flyingTileX[i], flyingTileY[i])
+	}
+	table, ok := g.updData.add(data)
+	if !ok {
+		return
+	}
+
 	u = &flyingTilesUpdate{g: g, room: ft.room, count: newCount, timer: timer, from: winner}
 
-	k := uint16(ft.slot)
 	a = newEmitter()
 	a.Comment(fmt.Sprintf("tile room overlord %d tiles -> %d, timer $%02x from %s:", ft.count, newCount, timer, winner.Name()))
 	a.LDA_dp(0x10)
@@ -327,22 +338,12 @@ func (g *Game) generateFlyingTilesUpdate(newEmitter func() *asm.Emitter, index u
 	a.BRA("ft_apply")
 	a.Label("ft_skip")
 	a.LDA_imm8_b(crystalSwitchSkipped)
-	a.Comment("the erased tiles put the end out of reach of a branch:")
-	a.JMP_abs("ft_report")
+	a.BRA("ft_report")
 	a.Label("ft_apply")
-	for i := ft.count; i < newCount; i++ {
-		a.Comment(fmt.Sprintf("erase floor tile %d like Tile_DeleteFloor:", i))
-		a.LDA_imm8_b(flyingTileX[i])
-		a.STA_dp(0x00)
-		a.LDA_abs(overlordXHi + k)
-		a.STA_dp(0x01)
-		a.LDA_imm8_b(flyingTileY[i])
-		a.STA_dp(0x02)
-		a.LDA_abs(overlordYHi + k)
-		a.STA_dp(0x03)
-		a.LDY_imm8_b(0x06)
-		a.JSL(fnErase)
-	}
+	a.Comment(fmt.Sprintf("erase floor tiles %d..%d like Tile_DeleteFloor, table at $%06x:", ft.count, newCount-1, table))
+	a.REP(0x30)
+	emitCallUpdateROM(a, flyingTilesStubAddr, table)
+	a.SEP(0x30)
 	if newCount >= flyingTilesCount {
 		a.Comment("the overlord is done:")
 		a.STZ_abs(overlordType + k)
@@ -379,4 +380,65 @@ func (g *Game) DeserializeFlyingTiles(p *Player, r io.Reader) (err error) {
 	}
 	p.FlyingTiles = flyingTilesRemote{valid: true, room: m.Room, count: m.Count, timer: m.Timer}
 	return nil
+}
+
+// emitFlyingTilesErase emits the routine in ROM which erases floor tiles lifted by a remote tile room overlord like
+// Tile_DeleteFloor. It is called by generated flying tiles update routines in 16-bit mode (REP #$30) with JSL through
+// the SRAM stub at flyingTilesStubAddr, with A = address of the table in updateDataBank:
+//
+//	dw slot            ; the overlord's slot, for the high bytes of its coordinates
+//	dw count           ; how many tiles follow
+//	db x, y ...        ; the low bytes of each tile's coordinates
+//
+// fnErase is UpdateTilemapWithCommonObject, called with A and X 8-bit. Returns with 16-bit registers.
+func emitFlyingTilesErase(a *asm.Emitter, fnErase uint32) {
+	bank := uint32(updateDataBank)
+	ptr, count, slot := updScratchPtr, updScratchCount, updScratchTmp
+
+	a.AssumeREP(0x30)
+	a.Label("flyingTilesErase")
+	a.TAX()
+	a.LDA_long_x(bank + 0)
+	a.STA_long(slot)
+	a.LDA_long_x(bank + 2)
+	a.STA_long(count)
+	a.INX()
+	a.INX()
+	a.INX()
+	a.INX()
+	a.TXA()
+	a.STA_long(ptr)
+	a.Label("fe_loop")
+	a.LDA_long(count)
+	a.BEQ("fe_done")
+	a.Comment("$00/$01 = X, $02/$03 = Y of the tile:")
+	a.LDA_long(slot)
+	a.TAY()
+	a.LDA_long(ptr)
+	a.TAX()
+	a.SEP(0x20)
+	a.LDA_long_x(bank + 0)
+	a.STA_dp(0x00)
+	a.LDA_abs_y(overlordXHi)
+	a.STA_dp(0x01)
+	a.LDA_long_x(bank + 1)
+	a.STA_dp(0x02)
+	a.LDA_abs_y(overlordYHi)
+	a.STA_dp(0x03)
+	a.SEP(0x30)
+	a.LDY_imm8_b(0x06)
+	if fnErase != 0 {
+		a.JSL(fnErase)
+	}
+	a.REP(0x30)
+	a.LDA_long(ptr)
+	a.INC()
+	a.INC()
+	a.STA_long(ptr)
+	a.LDA_long(count)
+	a.DEC()
+	a.STA_long(count)
+	a.BRA("fe_loop")
+	a.Label("fe_done")
+	a.RTL()
 }

@@ -737,6 +737,20 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		return
 	}
 
+	// the table for openChests (see emitOpenChests):
+	var chestTable uint32
+	if len(chests) > 0 {
+		var data []byte
+		for _, i := range chests {
+			data = appendOpenChest(data, i, g.wramU16(uint32(roomChestPos)+uint32(i<<1)))
+		}
+		data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
+		var ok bool
+		if chestTable, ok = g.updData.add(data); !ok {
+			return nil, nil
+		}
+	}
+
 	a = newEmitter()
 	a.Comment(fmt.Sprintf("room $%03x state:", rs.room))
 	a.LDA_dp(0x10)
@@ -767,11 +781,10 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 	if keys, boss := u.flags&(roomFlagKey0|roomFlagKey1), u.flags&roomFlagBoss != 0; keys != 0 || boss {
 		emitRemoveTakenSprites(a, keys, boss)
 	}
-	if len(chests) > 0 {
+	if chestTable != 0 {
+		a.Comment(fmt.Sprintf("draw chests opened remotely open, table at $%06x:", chestTable))
 		a.REP(0x30)
-		for _, i := range chests {
-			g.emitOpenChest(a, i, g.wramU16(uint32(roomChestPos)+uint32(i<<1)))
-		}
+		emitCallUpdateROM(a, openChestsStubAddr, chestTable)
 		a.SEP(0x30)
 	}
 
@@ -875,50 +888,107 @@ func roomStripeAddr(v uint16) uint16 {
 	return a<<8 | a>>8
 }
 
-// emitOpenChest draws small chest i at pos open if it is still closed here, the way OpenItemChest does, without giving
-// its item. 16-bit registers.
-func (g *Game) emitOpenChest(a *asm.Emitter, i int, pos uint16) {
-	done := fmt.Sprintf("rm_chest_%d", i)
-	tile := pos & 0x7FFF
-	attr := uint32(tile >> 1)
-	closed := uint16(0x5858) + uint16(i)*0x0101
+// the entries of the table for openChests, 8 words each:
+//
+//	dw i*2        ; the chest's index in roomChestPos
+//	dw pos        ; its position as read
+//	dw attr       ; the attribute index of its top left tile
+//	dw closed     ; the attributes of a closed small chest i
+//	dw stripe[4]  ; the VRAM stripe headers of its 4 tiles
+const openChestEntry = 16
 
-	a.Comment(fmt.Sprintf("draw chest %d at $%04x open if it is a small chest still closed:", i, pos))
-	a.LDA_abs(roomChestPos + uint16(i<<1))
-	a.CMP_imm16_w(pos)
-	a.BNE_far(done)
-	a.LDA_long(0x7F2000 + attr)
-	a.CMP_imm16_w(closed)
-	a.BNE_far(done)
+// appendOpenChest appends the entry of small chest i at pos to the table for openChests.
+func appendOpenChest(data []byte, i int, pos uint16) []byte {
+	tile := pos & 0x7FFF
+	data = binary.LittleEndian.AppendUint16(data, uint16(i<<1))
+	data = binary.LittleEndian.AppendUint16(data, pos)
+	data = binary.LittleEndian.AppendUint16(data, tile>>1)
+	data = binary.LittleEndian.AppendUint16(data, uint16(0x5858)+uint16(i)*0x0101)
+	for _, o := range roomChestTileOffs {
+		data = binary.LittleEndian.AppendUint16(data, roomStripeAddr(tile+o))
+	}
+	return data
+}
+
+// roomChestTileOffs are the tilemap offsets of the tiles of a chest from its top left tile:
+var roomChestTileOffs = [4]uint16{0x0000, 0x0080, 0x0002, 0x0082}
+
+// emitOpenChests emits the routine in ROM which draws small chests open if they are still closed here, the way
+// OpenItemChest does, without giving their items. It is called by generated room state update routines in 16-bit mode
+// (REP #$30) with JSL through the SRAM stub at openChestsStubAddr, with A = address of the table in updateDataBank:
+// entries (see openChestEntry), then updateTableEnd. Chests are skipped when the VRAM stripe buffer is getting full.
+func emitOpenChests(a *asm.Emitter) {
+	bank := uint32(updateDataBank)
+	ptr, tmp, tmp2 := updScratchPtr, updScratchTmp, updScratchTmp2
+	loadPtr := func() {
+		a.LDA_long(ptr)
+		a.TAX()
+	}
+
+	a.AssumeREP(0x30)
+	a.Label("openChests")
+	a.STA_long(ptr)
+	a.Label("oc_loop")
+	loadPtr()
+	a.LDA_long_x(bank + 0)
+	a.CMP_imm16_w(updateTableEnd)
+	a.BNE("oc_entry")
+	a.JMP_abs("oc_done")
+	a.Label("oc_entry")
+	a.Comment("still the chest at the position read:")
+	a.TAY()
+	a.LDA_abs_y(roomChestPos)
+	a.CMP_long_x(bank + 2)
+	a.BEQ("oc_pos")
+	a.JMP_abs("oc_next")
+	a.Label("oc_pos")
+	a.LDA_long_x(bank + 4)
+	a.TAX()
+	a.LDA_long_x(0x7F2000)
+	a.STA_long(tmp)
+	a.LDA_long_x(0x7F2042)
+	a.STA_long(tmp2)
+	loadPtr()
+	a.Comment("a small chest still closed:")
+	a.LDA_long(tmp)
+	a.CMP_long_x(bank + 6)
+	a.BEQ("oc_closed")
+	a.JMP_abs("oc_next")
+	a.Label("oc_closed")
 	a.Comment("big chests are 4 tiles wide:")
-	a.LDA_long(0x7F2042 + attr)
-	a.CMP_imm16_w(closed)
-	a.BNE(done + "_small")
-	a.JMP_abs(done)
-	a.Label(done + "_small")
+	a.LDA_long(tmp2)
+	a.CMP_long_x(bank + 6)
+	a.BNE("oc_small")
+	a.JMP_abs("oc_next")
+	a.Label("oc_small")
 	a.LDA_abs(0x1000)
 	a.CMP_imm16_w(roomStripeLimit)
-	a.BCC(done + "_room")
-	a.JMP_abs(done)
-	a.Label(done + "_room")
-	a.TAX()
-
-	offs := [4]uint16{0x0000, 0x0080, 0x0002, 0x0082}
-	for t := 0; t < 4; t++ {
+	a.BCC("oc_room")
+	a.JMP_abs("oc_next")
+	a.Label("oc_room")
+	a.Comment("Y = the stripe buffer offset:")
+	a.TAY()
+	for t, o := range roomChestTileOffs {
+		a.LDA_long_x(bank + 2)
+		a.AND_imm16_w(0x7FFF)
+		a.TAX()
 		a.LDA_imm16_w(roomOpenChestTiles[t])
-		a.STA_long(0x7E2000 + uint32(tile+offs[t]))
-		a.STA_abs_x(0x1006 + uint16(t)*6)
-		a.LDA_imm16_w(roomStripeAddr(tile + offs[t]))
-		a.STA_abs_x(0x1002 + uint16(t)*6)
+		a.STA_long_x(0x7E2000 + uint32(o))
+		a.STA_abs_y(0x1006 + uint16(t)*6)
+		loadPtr()
+		a.LDA_long_x(bank + 8 + 2*uint32(t))
+		a.STA_abs_y(0x1002 + uint16(t)*6)
 		a.LDA_imm16_w(0x0100)
-		a.STA_abs_x(0x1004 + uint16(t)*6)
+		a.STA_abs_y(0x1004 + uint16(t)*6)
 	}
 	a.LDA_imm16_w(0xFFFF)
-	a.STA_abs_x(0x101A)
+	a.STA_abs_y(0x101A)
+	a.LDA_long_x(bank + 4)
+	a.TAX()
 	a.LDA_imm16_w(0x2727)
-	a.STA_long(0x7F2000 + attr)
-	a.STA_long(0x7F2040 + attr)
-	a.TXA()
+	a.STA_long_x(0x7F2000)
+	a.STA_long_x(0x7F2040)
+	a.TYA()
 	a.CLC()
 	a.ADC_imm16_w(0x0018)
 	a.STA_abs(0x1000)
@@ -926,7 +996,14 @@ func (g *Game) emitOpenChest(a *asm.Emitter, i int, pos uint16) {
 	a.LDA_imm8_b(0x01)
 	a.STA_dp(0x14)
 	a.REP(0x20)
-	a.Label(done)
+	a.Label("oc_next")
+	a.LDA_long(ptr)
+	a.CLC()
+	a.ADC_imm16_w(openChestEntry)
+	a.STA_long(ptr)
+	a.JMP_abs("oc_loop")
+	a.Label("oc_done")
+	a.RTL()
 }
 
 // emitUnlockDoor unlocks a key door if it is still closed here, the way Underworld_ProcessTorchesAndDoors does once

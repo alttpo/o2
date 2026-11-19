@@ -83,6 +83,8 @@ type Game struct {
 	updateLock       sync.Mutex
 	updateStage      int
 	lastUpdateTarget uint32
+	// updData collects the tables of the update routine being generated; see updatedata.go:
+	updData          *updateData
 	lastUpdateFrame  uint8
 	lastUpdateTime   time.Time
 	updateGenerators []games.AsmExecConfirmer

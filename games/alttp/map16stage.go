@@ -30,7 +30,7 @@ import (
 //     starts, the logs must be known before the player enters the area: message 0x17 is sent to all players
 //     (broadcastAll), not just to the players in the same area.
 //   - The hook does not add the changes to the local log ($04AC is reset after it in scroll transitions); the update
-//     routines in submodule 0 then find the tiles already there and only memorize them (see emitMap16Apply).
+//     routines in submodule 0 then find the tiles already there and only memorize them (see emitMap16Update).
 //
 // Small areas and the parts of large areas around the screen are drawn from $7E2000 by the load, the rest when the
 // player scrolls to it, so nothing needs to be drawn by the hook.

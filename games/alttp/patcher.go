@@ -30,12 +30,19 @@ import (
 //	$706A70..$706AB9  enemies drawing their death this frame and scratch of the capture routine; see remotesprites.go
 //	$706AC0..$706BBE  remote sprites table (written by o2; zeroed by the init code); see remotesprites.go
 //	$706BC0..$706C47  remote sprites state (written by the game code; zeroed by the init code)
+//	$707000..$70700F  run timing and gates; see runtiming.go
+//	$7070F0..$7070F7  scratch of the ROM routines that generated update routines call; see updatedata.go
+//	$707100..$70727F  update data buffer A: tables for the ROM routines called by the routine in buffer A
+//	$707280..$7073FF  update data buffer B: the same for buffer B
 //	$707400..$7077FF  update routine buffer A
 //	$707800..$707BFF  update routine buffer B
-//	$707C00..$707C08  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
+//	$707C00..$707C14  SRAM stub, copied from ROM by the patched init code; see emitSRAMStub:
 //	  $707C00           update stub: RTS, which callUpdate's JSR points at after a reset
 //	  $707C01           callUpdate: `JSR` to the update routine o2 wrote last, called by preMain
-//	  $707C05           `JML map16Apply`, called by generated map16 update routines
+//	  $707C05           `JML map16Update`, called by generated map16 update routines
+//	  $707C09           `JML manipUpdate`, called by generated manipulable object update routines
+//	  $707C0D           `JML openChests`, called by generated room state update routines
+//	  $707C11           `JML flyingTilesErase`, called by generated flying tiles update routines
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. callUpdate's JSR is only pointed
@@ -47,10 +54,10 @@ const (
 	updateBufSize = 0x400
 
 	// the SRAM stub: the only code in SRAM, since o2 rewrites part of it at runtime. The rest of the patch's code runs
-	// from ROM (see patchROM), at addresses that depend on the ROM; the stub's JML lets o2's generated update routines
-	// call map16Apply without knowing where it is:
+	// from ROM (see patchROM), at addresses that depend on the ROM; the stub's JMLs let o2's generated update routines
+	// call the ROM routines without knowing where they are:
 	sramStubAddr = uint32(0x707C00)
-	sramStubEnd  = uint32(0x707C09)
+	sramStubEnd  = uint32(0x707C15)
 	// updateStubAddr is an RTS that callUpdate's JSR points at after a reset, until the first update routine is
 	// written. o2 only rewrites the high byte of the JSR's operand (a single byte write cannot be torn), so the low
 	// byte must be the same as the update buffers':
@@ -59,10 +66,12 @@ const (
 	callUpdateAddr = uint32(0x707C01)
 	// updateJSRAddr is the high byte of callUpdate's JSR operand, which o2 points at the update routine it wrote:
 	updateJSRAddr = callUpdateAddr + 2
-	// map16ApplyStubAddr is `JML map16Apply`, which generated map16 update routines call with JSL:
-	map16ApplyStubAddr = uint32(0x707C05)
-	// map16TableBank is the bank of the tables that map16Apply applies, in the update routine buffers:
-	map16TableBank = updateBufAAddr & 0xFF0000
+	// the JMLs to the ROM routines that generated update routines call with JSL, with A = the address of their table
+	// in the update data buffer (see updatedata.go):
+	map16UpdateStubAddr = uint32(0x707C05)
+	manipUpdateStubAddr = uint32(0x707C09)
+	openChestsStubAddr  = uint32(0x707C0D)
+	flyingTilesStubAddr = uint32(0x707C11)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
@@ -220,6 +229,9 @@ func (p *Patcher) Patch() (err error) {
 		fnRoomDraw:     fns[fnRoomDraw16x16Single],
 		fnBank01RTL:    fns[fnBank01RTL],
 		linkGfxBankIns: linkGfxBankInstruction(p.rom),
+		reveal:         owRevealROMFor(p.rom, fns),
+		fnRevealPot:    fns[fnRevealPotItem],
+		fnEraseTile:    fns[fnUpdateTilemapWithCommonObject],
 	}
 	nmiCountOK, nmiCountChain := nmiCountHookSite(p.rom)
 	r.nmiCountChain = nmiCountChain
@@ -391,8 +403,9 @@ func (p *Patcher) Patch() (err error) {
 	return nil
 }
 
-// emitSRAMStub emits the SRAM stub at sramStubAddr; map16Apply is the ROM address of emitMap16Apply's routine.
-func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
+// emitSRAMStub emits the SRAM stub at sramStubAddr; jmls are the ROM addresses of the routines that its JMLs at
+// map16UpdateStubAddr, manipUpdateStubAddr, openChestsStubAddr and flyingTilesStubAddr jump to.
+func emitSRAMStub(a *asm.Emitter, map16Update, manipUpdate, openChests, flyingTiles uint32) {
 	a.AssumeSEP(0x30)
 	if a.Label("updateStub") != updateStubAddr {
 		panic(fmt.Errorf("updateStubAddr expected to be $%06x but got $%06x", a.PC(), updateStubAddr))
@@ -404,10 +417,21 @@ func emitSRAMStub(a *asm.Emitter, map16Apply uint32) {
 	a.Comment("o2 points this JSR at the update routine it wrote last:")
 	a.JSR_abs(uint16(updateStubAddr & 0xFFFF))
 	a.RTL()
-	if a.Label("map16ApplyStub") != map16ApplyStubAddr {
-		panic(fmt.Errorf("map16ApplyStubAddr expected to be $%06x but got $%06x", a.PC(), map16ApplyStubAddr))
+	for _, j := range []struct {
+		name string
+		addr uint32
+		to   uint32
+	}{
+		{"map16UpdateStub", map16UpdateStubAddr, map16Update},
+		{"manipUpdateStub", manipUpdateStubAddr, manipUpdate},
+		{"openChestsStub", openChestsStubAddr, openChests},
+		{"flyingTilesStub", flyingTilesStubAddr, flyingTiles},
+	} {
+		if a.Label(j.name) != j.addr {
+			panic(fmt.Errorf("%s expected to be $%06x but got $%06x", j.name, a.PC(), j.addr))
+		}
+		a.JML(j.to)
 	}
-	a.JML(map16Apply)
 	if a.PC() != sramStubEnd {
 		panic(fmt.Errorf("sramStubEnd expected to be $%06x but got $%06x", a.PC(), sramStubEnd))
 	}
@@ -466,8 +490,14 @@ type patchROM struct {
 	code802F []byte
 	// the operand of the `JSL Module_MainRouting` at the frame hook:
 	gameModes []byte
-	// Overworld_DrawMap16_Persist; see emitMap16Apply:
+	// Overworld_DrawMap16_Persist; see emitMap16Update:
 	fnDrawMap16 uint32
+	// the routines and objects that reveal the secrets under objects lifted remotely; see emitMap16Update:
+	reveal owRevealROM
+	// RevealPotItem; see emitManipUpdate:
+	fnRevealPot uint32
+	// UpdateTilemapWithCommonObject; see emitFlyingTilesErase:
+	fnEraseTile uint32
 	// RoomDraw_16x16Single and an RTL in its bank; see emitManipPending:
 	fnRoomDraw, fnBank01RTL uint32
 	// the instruction that loads the bank of Link's graphics; see emitNMIHooks:
@@ -481,8 +511,9 @@ type patchROM struct {
 	sramStub romBlock
 	// the trampoline called by the frame hook; see emitPreMain:
 	preMain romBlock
-	// called by the generated map16 update routines through the SRAM stub; see emitMap16Apply:
-	map16Apply romBlock
+	// called by generated update routines through the SRAM stub; see emitMap16Update, emitManipUpdate, emitOpenChests
+	// and emitFlyingTilesErase:
+	map16Update, manipUpdate, openChests, flyingTiles romBlock
 	// the routine preMain calls to capture the local player's sprites and draw the remote players, and the tables it
 	// reads (in the same bank); see emitRemoteFrame:
 	remoteFrame       romBlock
@@ -537,7 +568,7 @@ func (r *patchROM) routines() []patchRoutine {
 		{&r.sramStub, func(a *asm.Emitter) error {
 			s := asm.NewEmitter(make([]byte, sramStubEnd-sramStubAddr), r.text != nil)
 			s.SetBase(sramStubAddr)
-			emitSRAMStub(s, r.map16Apply.addr)
+			emitSRAMStub(s, r.map16Update.addr, r.manipUpdate.addr, r.openChests.addr, r.flyingTiles.addr)
 			if err := s.Finalize(); err != nil {
 				return err
 			}
@@ -552,8 +583,20 @@ func (r *patchROM) routines() []patchRoutine {
 			emitPreMain(a, r.gameModes, r.remoteFrameAddr, r.manipPending.addr)
 			return nil
 		}},
-		{&r.map16Apply, func(a *asm.Emitter) error {
-			return emitMap16Apply(a, r.fnDrawMap16)
+		{&r.map16Update, func(a *asm.Emitter) error {
+			return emitMap16Update(a, r.fnDrawMap16, r.reveal)
+		}},
+		{&r.manipUpdate, func(a *asm.Emitter) error {
+			emitManipUpdate(a, r.fnRoomDraw, r.fnBank01RTL, r.fnRevealPot, r.reveal.fnSpawn)
+			return nil
+		}},
+		{&r.openChests, func(a *asm.Emitter) error {
+			emitOpenChests(a)
+			return nil
+		}},
+		{&r.flyingTiles, func(a *asm.Emitter) error {
+			emitFlyingTilesErase(a, r.fnEraseTile)
+			return nil
 		}},
 		{&r.hudCheck, func(a *asm.Emitter) error {
 			emitHUDCheck(a)
@@ -659,7 +702,10 @@ func (r *patchROM) measure() (err error) {
 	r.init.name = "init"
 	r.sramStub.name = "SRAM stub"
 	r.preMain.name = "preMain"
-	r.map16Apply.name = "map16Apply"
+	r.map16Update.name = "map16Update"
+	r.manipUpdate.name = "manipUpdate"
+	r.openChests.name = "openChests"
+	r.flyingTiles.name = "flyingTilesErase"
 	r.remoteFrame.name = "remoteFrame"
 	r.hudCheck.name = "HUD check"
 	r.remoteFrameTables.name = "remoteFrame tables"

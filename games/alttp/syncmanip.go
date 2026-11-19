@@ -453,18 +453,17 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 	if local.Module != 0x07 || local.SubModule != 0 {
 		return
 	}
-	fnDraw, ok1 := g.romFunctions[fnRoomDraw16x16Single]
-	fnRTL, ok2 := g.romFunctions[fnBank01RTL]
+	_, ok1 := g.romFunctions[fnRoomDraw16x16Single]
+	_, ok2 := g.romFunctions[fnBank01RTL]
 	if !ok1 || !ok2 {
 		return
 	}
-	fnRevealPot, ok3 := g.romFunctions[fnRevealPotItem]
-	fnSpawn, ok4 := g.romFunctions[fnSpawnThrowableTerrainSilently]
+	_, ok3 := g.romFunctions[fnRevealPotItem]
+	_, ok4 := g.romFunctions[fnSpawnThrowableTerrainSilently]
 	canReveal := ok3 && ok4
 
 	items := make([]manipItem, 0, 4)
 	queued := [manipSlots]bool{}
-	size := 0
 	for _, p := range g.RemotePlayers() {
 		// compare rooms like the star switch sync; o2 and alttpo set the dark world bit differently in dungeons:
 		if p.Team != local.Team || p.Module != 0x07 || p.Location&0x010000 == 0 || p.DungeonRoom != m.room {
@@ -482,7 +481,6 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 			}
 			s := &m.slots[j]
 			var it manipItem
-			cost := 0
 			if manipIsPushBlock(rs.Type) {
 				if rs.Pos == s.Pos {
 					m.skip(j, p, "")
@@ -507,7 +505,6 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 				}
 				m.skip(j, p, "")
 				it = manipItem{slot: j, move: true, to: rs.Pos, tiles: s.Tiles}
-				cost = 120
 			} else {
 				if rs.Flags&manipFlagRevealed == 0 || !manipIsLiftable(s.Type) || !s.present || s.revealed {
 					continue
@@ -516,18 +513,15 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 				if rs.Flags&manipFlagTiles != 0 {
 					it.tiles = rs.Tiles
 				}
-				cost = 40
 				// pots hide items:
 				if rs.live && canReveal && s.Type&0x00F0 == 0x0010 {
 					it.reveal = true
-					cost += 40
 				}
 			}
-			if size+cost > 160 {
+			if len(items) >= manipMaxPerUpdate {
 				continue
 			}
 			it.player = p.Name()
-			size += cost
 			queued[j] = true
 			items = append(items, it)
 		}
@@ -536,140 +530,321 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 		return
 	}
 
+	// the table for manipUpdate (see emitManipUpdate):
+	data := make([]byte, 0, 2+len(items)*manipUpdEntry+2)
+	data = binary.LittleEndian.AppendUint16(data, m.room)
+	for _, it := range items {
+		s := &m.slots[it.slot]
+		var e [manipUpdEntry / 2]uint16
+		e[1] = uint16(it.slot << 1)
+		e[2] = s.Pos
+		if it.move {
+			e[0] = manipUpdMove
+			if it.to&0x4000 == 0 && roomHasTag(g.roomTags(), roomTagIsBlockDoor) {
+				e[0] = manipUpdMoveDoor
+			}
+			e[3] = it.to
+			e[4] = s.ObjX
+		} else {
+			e[0] = manipUpdReveal
+			if it.reveal {
+				e[0] = manipUpdRevealItem
+			}
+			e[3], e[4] = potCoords(m.room, s.Pos)
+			for t := 0; t < 4; t++ {
+				if it.tiles[t] != s.Tiles[t] {
+					e[0] |= 0x0100 << t
+				}
+				e[5+t] = it.tiles[t]
+			}
+		}
+		for _, w := range e {
+			data = binary.LittleEndian.AppendUint16(data, w)
+		}
+	}
+	data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
+	table, ok := g.updData.add(data)
+	if !ok {
+		return nil, nil
+	}
+
 	u = &manipUpdate{g: g, room: m.room, items: items}
 
 	a = newEmitter()
-	a.Comment(fmt.Sprintf("manipulables in room $%03x:", m.room))
-	var spawnSub uint16
-	for _, it := range items {
-		if it.reveal {
-			a.JMP_abs("mn_start")
-			spawnSub = emitSpawnSecretSub(a, fnSpawn)
-			a.Label("mn_start")
-			break
-		}
-	}
-	a.LDA_dp(0x10)
-	a.CMP_imm16_w(0x0007)
-	a.BNE_far("mn_skip")
-	a.LDA_dp(0xA0)
-	a.CMP_imm16_w(m.room)
-	a.BNE_far("mn_skip")
-	for k, it := range items {
-		s := &m.slots[it.slot]
-		o := uint16(it.slot << 1)
-		next := fmt.Sprintf("mn_next_%d", k)
-		ok := fmt.Sprintf("mn_ok_%d", k)
-
-		a.Comment("stop when the VRAM stripe buffer is getting full:")
-		a.LDA_abs(0x1000)
-		a.CMP_imm16_w(0x0068)
-		a.BCC(ok)
-		a.LDA_imm16_w(uint16(k))
-		a.JMP_abs("mn_report")
-		a.Label(ok)
-
-		if !it.move {
-			a.Comment(fmt.Sprintf("reveal slot %d if still there:", it.slot))
-			a.LDA_long(0x7F2000 + manipAttrIndex(s.Pos))
-			a.AND_imm16_w(0x00FF)
-			a.CMP_imm16_w(uint16(manipAttrBase) + uint16(it.slot))
-			a.BNE_far(next)
-			if it.reveal {
-				a.Comment("reveal the item under it like lifting it does:")
-				emitPotReveal(a, m.room, s.Pos, fnRevealPot, fnRTL, spawnSub)
-			}
-			for t := uint16(0); t < 4; t++ {
-				if it.tiles[t] != s.Tiles[t] {
-					a.LDA_imm16_w(it.tiles[t])
-					a.STA_abs(manipTiles + t<<5 + o)
-				}
-			}
-			a.LDY_imm16_w(o)
-			a.JSRBanked(fnDraw, fnRTL)
-			a.Label(next)
-			continue
-		}
-
-		notPit := fmt.Sprintf("mn_not_pit_%d", k)
-		notSwitch := fmt.Sprintf("mn_not_switch_%d", k)
-		setType := fmt.Sprintf("mn_set_type_%d", k)
-		attr := 0x7F2000 + manipAttrIndex(it.to)
-		a.Comment(fmt.Sprintf("move push block in slot %d from $%04x to $%04x if it did not move:", it.slot, s.Pos, it.to))
-		a.LDA_abs(manipType + o)
-		a.BNE_far(next)
-		a.LDA_abs(manipPos + o)
-		a.CMP_imm16_w(s.Pos)
-		a.BNE_far(next)
-		a.Comment("nothing else there (e.g. a hammer peg still up):")
-		a.LDA_long(attr)
-		a.AND_imm16_w(0x00F0)
-		a.CMP_imm16_w(uint16(manipAttrBase))
-		a.BNE(fmt.Sprintf("mn_free_%d", k))
-		a.JMP_abs(next)
-		a.Label(fmt.Sprintf("mn_free_%d", k))
-		a.Comment("draw what was under it:")
-		a.LDY_imm16_w(o)
-		a.JSRBanked(fnDraw, fnRTL)
-		a.LDA_imm16_w(it.to)
-		a.STA_abs(manipPos + o)
-		a.Comment("do what PushBlock_CheckForPit does:")
-		if it.to&0x4000 == 0 {
-			a.Comment("upper layer block pushed; push block door ($0B-$13) and chest ($3C) tags act on $0641:")
-			a.LDA_abs(0x0641)
-			a.EOR_imm16_w(0x0001)
-			a.STA_abs(0x0641)
-			if roomHasTag(g.roomTags(), roomTagIsBlockDoor) {
-				emitOperateBlockDoor(a, fmt.Sprintf("mn_block_door_%d", k))
-			}
-		}
-		a.LDA_long(attr)
-		a.AND_imm16_w(0x00FF)
-		a.CMP_imm16_w(0x0020)
-		a.BNE(notPit)
-		a.Comment("fell into a pit; record where it lands in the room below:")
-		a.LDX_imm16_w(s.ObjX)
-		a.LDA_long(0x7EC000)
-		a.AND_imm16_w(0x00FF)
-		a.STA_long_x(pushBlockTable)
-		a.LDA_imm16_w(it.to)
-		a.STA_long_x(pushBlockTable + 2)
-		a.BRA(next)
-		a.Label(notPit)
-		a.CMP_imm16_w(0x0023)
-		a.BNE(notSwitch)
-		a.Comment("on a switch:")
-		a.LDA_abs(0x0468)
-		a.EOR_imm16_w(0x0001)
-		a.STA_abs(0x0466)
-		a.Comment("PushBlock_CheckForPit leaves $0004 and PushBlock_Main increments it:")
-		a.LDA_imm16_w(0x0005)
-		a.BRA(setType)
-		a.Label(notSwitch)
-		a.Comment("PushBlock_CheckForPit leaves $FFFF and PushBlock_Main increments it:")
-		a.LDA_imm16_w(0x0000)
-		a.Label(setType)
-		a.STA_abs(manipType + o)
-		a.Comment("draw the block at its new position:")
-		for t, tile := range [4]uint16{0x0922, 0x0932, 0x0923, 0x0933} {
-			a.LDA_imm16_w(tile)
-			a.STA_abs(manipTiles + uint16(t)<<5 + o)
-		}
-		a.LDY_imm16_w(o)
-		a.JSRBanked(fnDraw, fnRTL)
-		a.LDA_imm16_w(0x2727)
-		a.STA_long(attr)
-		a.STA_long(attr + 0x40)
-		a.Label(next)
-	}
-	a.LDA_imm16_w(uint16(len(items)))
-	a.BRA("mn_report")
-	a.Label("mn_skip")
-	a.LDA_imm16_w(manipAsmSkipped)
-	a.Label("mn_report")
+	a.Comment(fmt.Sprintf("manipulables in room $%03x, table at $%06x:", m.room, table))
+	emitCallUpdateROM(a, manipUpdateStubAddr, table)
 	emitReport(a, index)
 
 	return
+}
+
+// the entries of the table for manipUpdate, 9 words each:
+//
+//	dw kind     ; manipUpd*; for reveals, bits 8-11 are set for the replacement tiles 0-3 to write
+//	dw slot*2
+//	dw pos      ; the object's position; for moves, the block's position before the move
+//	dw x / to   ; reveals: the pot's coordinates for the item; moves: the block's position after the move
+//	dw y / objx ; moves: the block's room data offset, for the pit table
+//	dw tiles[4] ; reveals: the replacement tiles
+const (
+	manipUpdEntry = 18
+	// manipMaxPerUpdate is the most entries in a table:
+	manipMaxPerUpdate = 8
+
+	manipUpdReveal     = 0
+	manipUpdRevealItem = 1
+	manipUpdMove       = 2
+	// a move on the upper layer in a room with a push block door tag:
+	manipUpdMoveDoor = 3
+)
+
+// emitManipUpdate emits the routine in ROM which applies a table of remote manipulable object changes. It is called by
+// generated manip update routines in 16-bit mode (REP #$30) with JSL through the SRAM stub at manipUpdateStubAddr,
+// with A = address of the table in updateDataBank:
+//
+//	dw room              ; $A0 the changes are for
+//	entries ...          ; see manipUpdEntry
+//	dw updateTableEnd
+//
+// Revealed objects get their replacement tiles and are drawn with RoomDraw_16x16Single if still there (marked
+// $70+slot); for manipUpdRevealItem, the item under the pot is revealed first like lifting it does. Push blocks still
+// where they were are moved like PushBlock_CheckForPit does. It returns A = the number of entries handled (it stops
+// early when the VRAM stripe buffer is getting full), or manipAsmSkipped if the player is no longer in the room in
+// the dungeon module. fnDraw is RoomDraw_16x16Single and fnRTL an RTL in its bank; fnRevealPot is RevealPotItem and
+// fnSpawn Sprite_SpawnThrowableTerrain_silently, without which items are not revealed.
+func emitManipUpdate(a *asm.Emitter, fnDraw, fnRTL, fnRevealPot, fnSpawn uint32) {
+	bank := uint32(updateDataBank)
+	ptr, count, tmp := updScratchPtr, updScratchCount, updScratchTmp
+	canReveal := fnRevealPot != 0 && fnSpawn != 0 && fnRTL != 0
+	draw := func() {
+		if fnDraw != 0 {
+			a.JSRBanked(fnDraw, fnRTL)
+		}
+		a.REP(0x30)
+	}
+	// loadPtr: X = the entry:
+	loadPtr := func() {
+		a.LDA_long(ptr)
+		a.TAX()
+	}
+	// attrIndex: X = the attribute index of the position in A:
+	attrIndex := func() {
+		a.AND_imm16_w(0x3FFF)
+		a.LSR()
+		a.TAX()
+	}
+
+	a.AssumeREP(0x30)
+	a.Label("manipUpdate")
+	var spawnSub uint16
+	if canReveal {
+		a.Comment("the subroutine that spawns the items precedes the code:")
+		a.JMP_abs("mu_start")
+		spawnSub = emitSpawnSecretSub(a, fnSpawn)
+		a.Label("mu_start")
+	}
+	a.Comment("in the dungeon module, in the table's room:")
+	a.TAX()
+	a.LDA_dp(0x10)
+	a.CMP_imm16_w(0x0007)
+	a.BNE_far("mu_skip")
+	a.LDA_dp(0xA0)
+	a.CMP_long_x(bank)
+	a.BNE_far("mu_skip")
+	a.INX()
+	a.INX()
+	a.TXA()
+	a.STA_long(ptr)
+	a.LDA_imm16_w(0x0000)
+	a.STA_long(count)
+
+	a.Label("mu_loop")
+	a.Comment("stop when the VRAM stripe buffer is getting full or at the end of the table:")
+	a.LDA_abs(0x1000)
+	a.CMP_imm16_w(0x0068)
+	a.BCC("mu_room")
+	a.JMP_abs("mu_done")
+	a.Label("mu_room")
+	loadPtr()
+	a.LDA_long_x(bank + 0)
+	a.CMP_imm16_w(updateTableEnd)
+	a.BNE("mu_entry")
+	a.JMP_abs("mu_done")
+	a.Label("mu_entry")
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(manipUpdMove)
+	a.BCC("mu_reveal")
+	a.JMP_abs("mu_move")
+
+	a.Label("mu_reveal")
+	a.Comment("reveal the object if still there:")
+	a.LDA_long_x(bank + 4)
+	attrIndex()
+	a.LDA_long_x(0x7F2000)
+	a.AND_imm16_w(0x00FF)
+	a.STA_long(tmp)
+	loadPtr()
+	a.LDA_long_x(bank + 2)
+	a.LSR()
+	a.CLC()
+	a.ADC_imm16_w(uint16(manipAttrBase))
+	a.CMP_long(tmp)
+	a.BEQ("mu_reveal_ok")
+	a.JMP_abs("mu_next")
+	a.Label("mu_reveal_ok")
+	if canReveal {
+		a.LDA_long_x(bank + 0)
+		a.AND_imm16_w(0x00FF)
+		a.CMP_imm16_w(manipUpdRevealItem)
+		a.BNE("mu_tiles")
+		a.Comment("reveal the item under it like lifting it does:")
+		a.LDA_abs(0x0B9C)
+		a.PHA()
+		a.LDA_long_x(bank + 4)
+		a.AND_imm16_w(0x3FFF)
+		a.LSR()
+		a.STA_dp(0x06)
+		a.LDA_long_x(bank + 4)
+		a.JSRBanked(fnRevealPot, fnRTL)
+		a.REP(0x30)
+		loadPtr()
+		a.LDA_long_x(bank + 6)
+		a.STA_dp(0x00)
+		a.LDA_long_x(bank + 8)
+		a.STA_dp(0x02)
+		a.Comment("a pot:")
+		a.LDY_imm16_w(0x0000)
+		a.JSR_abs(spawnSub)
+		a.PLA()
+		a.STA_abs(0x0B9C)
+		loadPtr()
+	}
+	a.Label("mu_tiles")
+	a.Comment("the replacement tiles that differ, then draw it:")
+	a.LDA_long_x(bank + 2)
+	a.TAY()
+	for t := uint16(0); t < 4; t++ {
+		skip := fmt.Sprintf("mu_tile_%d", t)
+		a.LDA_long_x(bank + 0)
+		a.AND_imm16_w(0x0100 << t)
+		a.BEQ(skip)
+		a.LDA_long_x(bank + 10 + 2*uint32(t))
+		a.STA_abs_y(manipTiles + t<<5)
+		a.Label(skip)
+	}
+	draw()
+	a.JMP_abs("mu_next")
+
+	a.Label("mu_move")
+	a.Comment("move the push block if it did not move:")
+	a.LDA_long_x(bank + 2)
+	a.TAY()
+	a.LDA_abs_y(manipType)
+	a.BEQ("mu_move_1")
+	a.JMP_abs("mu_next")
+	a.Label("mu_move_1")
+	a.LDA_abs_y(manipPos)
+	a.CMP_long_x(bank + 4)
+	a.BEQ("mu_move_2")
+	a.JMP_abs("mu_next")
+	a.Label("mu_move_2")
+	a.Comment("nothing else there (e.g. a hammer peg still up):")
+	a.LDA_long_x(bank + 6)
+	attrIndex()
+	a.LDA_long_x(0x7F2000)
+	a.AND_imm16_w(0x00F0)
+	a.CMP_imm16_w(uint16(manipAttrBase))
+	a.BNE("mu_move_3")
+	a.JMP_abs("mu_next")
+	a.Label("mu_move_3")
+	a.Comment("draw what was under it:")
+	draw()
+	loadPtr()
+	a.LDA_long_x(bank + 2)
+	a.TAY()
+	a.LDA_long_x(bank + 6)
+	a.STA_abs_y(manipPos)
+	a.Comment("do what PushBlock_CheckForPit does:")
+	a.AND_imm16_w(0x4000)
+	a.BNE("mu_attr")
+	a.Comment("upper layer block pushed; push block door ($0B-$13) and chest ($3C) tags act on $0641:")
+	a.LDA_abs(0x0641)
+	a.EOR_imm16_w(0x0001)
+	a.STA_abs(0x0641)
+	a.LDA_long_x(bank + 0)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(manipUpdMoveDoor)
+	a.BNE("mu_attr")
+	emitOperateBlockDoor(a, "mu_block_door")
+	a.Label("mu_attr")
+	loadPtr()
+	a.LDA_long_x(bank + 6)
+	attrIndex()
+	a.LDA_long_x(0x7F2000)
+	a.AND_imm16_w(0x00FF)
+	a.CMP_imm16_w(0x0020)
+	a.BNE("mu_not_pit")
+	a.Comment("fell into a pit; record where it lands in the room below:")
+	loadPtr()
+	a.LDA_long_x(bank + 6)
+	a.STA_long(tmp)
+	a.LDA_long_x(bank + 8)
+	a.TAX()
+	a.LDA_long(0x7EC000)
+	a.AND_imm16_w(0x00FF)
+	a.STA_long_x(pushBlockTable)
+	a.LDA_long(tmp)
+	a.STA_long_x(pushBlockTable + 2)
+	a.JMP_abs("mu_next")
+	a.Label("mu_not_pit")
+	a.CMP_imm16_w(0x0023)
+	a.BNE("mu_not_switch")
+	a.Comment("on a switch:")
+	a.LDA_abs(0x0468)
+	a.EOR_imm16_w(0x0001)
+	a.STA_abs(0x0466)
+	a.Comment("PushBlock_CheckForPit leaves $0004 and PushBlock_Main increments it:")
+	a.LDA_imm16_w(0x0005)
+	a.BRA("mu_set_type")
+	a.Label("mu_not_switch")
+	a.Comment("PushBlock_CheckForPit leaves $FFFF and PushBlock_Main increments it:")
+	a.LDA_imm16_w(0x0000)
+	a.Label("mu_set_type")
+	a.STA_long(tmp)
+	loadPtr()
+	a.LDA_long_x(bank + 2)
+	a.TAY()
+	a.LDA_long(tmp)
+	a.STA_abs_y(manipType)
+	a.Comment("draw the block at its new position:")
+	for t, tile := range [4]uint16{0x0922, 0x0932, 0x0923, 0x0933} {
+		a.LDA_imm16_w(tile)
+		a.STA_abs_y(manipTiles + uint16(t)<<5)
+	}
+	draw()
+	loadPtr()
+	a.LDA_long_x(bank + 6)
+	attrIndex()
+	a.LDA_imm16_w(0x2727)
+	a.STA_long_x(0x7F2000)
+	a.STA_long_x(0x7F2040)
+
+	a.Label("mu_next")
+	a.LDA_long(count)
+	a.INC()
+	a.STA_long(count)
+	a.LDA_long(ptr)
+	a.CLC()
+	a.ADC_imm16_w(manipUpdEntry)
+	a.STA_long(ptr)
+	a.JMP_abs("mu_loop")
+	a.Label("mu_done")
+	a.Comment("return how many entries were handled:")
+	a.LDA_long(count)
+	a.RTL()
+	a.Label("mu_skip")
+	a.LDA_imm16_w(manipAsmSkipped)
+	a.RTL()
 }
 
 // emitOperateBlockDoor does what RoomTag_OperateBlockDoor does ($0468 = $0641 ^ 1, then move the shutters), unless

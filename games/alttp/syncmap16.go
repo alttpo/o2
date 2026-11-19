@@ -65,8 +65,9 @@ const (
 	map16MaxPerUpdate = 8
 	map16ChunkMax     = 0x40 // entries per message
 	map16AsmSkipped   = 0xFF
-	// map16TableEnd terminates the table passed to the map16 apply routine; tilemap offsets are even and < $2000:
-	map16TableEnd = uint16(0xFFFF)
+	// map16RevealFlag is set in the tilemap offset of a change in the table for map16Update (see emitMap16Update) to
+	// reveal the secret under the object there; tilemap offsets are even and < $2000:
+	map16RevealFlag = uint16(0x8000)
 	// map16LiveAfter is how many reads of the log in an area pass before entries received are taken as live; senders
 	// resend their whole log every 32 frames (older versions every 16), so entries made before the local player arrived
 	// come in before that:
@@ -572,86 +573,84 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		return
 	}
 
-	fnReveal, ok1 := g.romFunctions[fnOverworldRevealSecret]
-	fnRTL, ok2 := g.romFunctions[fnBank1BRTL]
-	fnSpawn, ok3 := g.romFunctions[fnSpawnThrowableTerrainSilently]
-	liftables := g.owLiftablesFor()
-	if !ok1 || !ok2 || !ok3 || len(liftables) == 0 {
+	_, ok1 := g.romFunctions[fnOverworldRevealSecret]
+	_, ok2 := g.romFunctions[fnBank1BRTL]
+	_, ok3 := g.romFunctions[fnSpawnThrowableTerrainSilently]
+	if !ok1 || !ok2 || !ok3 || len(g.owLiftablesFor()) == 0 {
 		reveals = nil
+	}
+	revealAt := make(map[uint16]bool, len(reveals))
+	for _, pos := range reveals {
+		revealAt[pos] = true
+	}
+
+	// the table for map16Update (see emitMap16Update):
+	area := owLocationArea(m.loc)
+	data := make([]byte, 0, 4+len(entries)*4+2)
+	data = binary.LittleEndian.AppendUint16(data, area)
+	data = binary.LittleEndian.AppendUint16(data, uint16(m.loc>>17)&1)
+	for _, e := range entries {
+		pos := e.Pos
+		if revealAt[pos] {
+			pos |= map16RevealFlag
+		}
+		data = binary.LittleEndian.AppendUint16(data, pos)
+		data = binary.LittleEndian.AppendUint16(data, e.Tile)
+	}
+	data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
+	table, ok := g.updData.add(data)
+	if !ok {
+		return nil, nil
 	}
 
 	u = &map16Update{g: g, loc: m.loc, entries: entries, ends: ends, live: live}
 	log.Printf("alttp: map16: generating update for %d of %d pending changes\n", len(entries), len(list))
-
-	area := owLocationArea(m.loc)
-	a = newEmitter()
-	a.Comment(fmt.Sprintf("map16 changes for location $%06x:", m.loc))
-	if len(reveals) > 0 {
-		// the subroutines follow the table:
-		a.JMP_abs("m16_start")
-	} else {
-		a.BRA("m16_start")
-	}
-	table := a.PC()
-	a.EmitBytes([]byte{byte(area), byte(area >> 8)})
-	for _, e := range entries {
-		a.EmitBytes([]byte{byte(e.Pos), byte(e.Pos >> 8), byte(e.Tile), byte(e.Tile >> 8)})
-	}
-	a.EmitBytes(binary.LittleEndian.AppendUint16(nil, map16TableEnd))
-	var revealSub uint16
-	if len(reveals) > 0 {
-		spawnSub := emitSpawnSecretSub(a, fnSpawn)
-		revealSub = emitOwRevealSub(a, liftables, fnReveal, fnRTL, spawnSub)
-	}
-	a.Label("m16_start")
-	emitWorldCheck(a, m.loc, "m16_wrong_world")
 	if len(reveals) > 0 {
 		log.Printf("alttp: map16: revealing secrets at %d positions\n", len(reveals))
-		a.Comment("reveal secrets in the overworld module, submodule 0, in the area, before the tiles change:")
-		a.LDA_dp(0x10)
-		a.CMP_imm16_w(0x0009)
-		a.BEQ("m16_reveal_module_ok")
-		a.CMP_imm16_w(0x000B)
-		a.BNE_far("m16_skip_reveals")
-		a.Label("m16_reveal_module_ok")
-		a.LDA_dp(0x8A)
-		a.CMP_imm16_w(area)
-		a.BNE_far("m16_skip_reveals")
-		for _, pos := range reveals {
-			a.LDX_imm16_w(pos)
-			a.JSR_abs(revealSub)
-		}
-		a.Label("m16_skip_reveals")
 	}
-	a.LDA_imm16_w(uint16(table))
-	a.JSL(map16ApplyStubAddr)
-	a.BRA("m16_report")
-	a.Label("m16_wrong_world")
-	a.LDA_imm16_w(map16AsmSkipped)
-	a.Label("m16_report")
+
+	a = newEmitter()
+	a.Comment(fmt.Sprintf("map16 changes for location $%06x, table at $%06x:", m.loc, table))
+	emitCallUpdateROM(a, map16UpdateStubAddr, table)
 	emitReport(a, index)
 
 	return
 }
 
-// emitMap16Apply emits the routine in ROM which applies a table of map16 changes. It is called by generated map16 update
-// routines in 16-bit mode (REP #$30) with JSL through the SRAM stub at map16ApplyStubAddr, with A = address of the
-// table in map16TableBank:
+// emitMap16Update emits the routine in ROM which applies a table of map16 changes. It is called by generated map16
+// update routines in 16-bit mode (REP #$30) with JSL through the SRAM stub at map16UpdateStubAddr, with A = address
+// of the table in updateDataBank:
 //
 //	dw area                ; $8A the changes are for
-//	dw pos, tile ...       ; tilemap offset ($7E2000,X) and map16 tile of each change
-//	dw map16TableEnd
+//	dw world               ; $0FFF & 1 the changes are for
+//	dw pos, tile ...       ; tilemap offset ($7E2000,X) and map16 tile of each change; map16RevealFlag set in pos
+//	                       ; to first reveal the secret under the small liftable object there, if it still is
+//	dw updateTableEnd
 //
-// A change whose tile $7E2000 already holds is only memorized. It returns A = the number of changes applied (it stops early when the VRAM stripe buffer is getting full), or
-// map16AsmSkipped if the player is no longer in the area in the overworld module, submodule 0. fnDraw is
-// Overworld_DrawMap16_Persist.
-func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
-	a.Label("map16Apply")
-	bank := uint32(map16TableBank)
+// The secrets are revealed before any tile changes (rv has the routines and objects; nothing is revealed if it is not
+// ok). A change whose tile $7E2000 already holds is only memorized. It returns A = the number of changes applied (it
+// stops early when the VRAM stripe buffer is getting full), or map16AsmSkipped if the player is no longer in the
+// area and world in the overworld module, submodule 0. fnDraw is Overworld_DrawMap16_Persist.
+func emitMap16Update(a *asm.Emitter, fnDraw uint32, rv owRevealROM) error {
+	bank := uint32(updateDataBank)
 
 	a.AssumeREP(0x30)
-	a.Comment("X = table address; in the overworld module, submodule 0, in the table's area:")
+	a.Label("map16Update")
+	var revealSub uint16
+	if rv.ok {
+		a.Comment("the subroutines that reveal secrets precede the code:")
+		a.JMP_abs("m16_start")
+		spawnSub := emitSpawnSecretSub(a, rv.fnSpawn)
+		revealSub = emitOwRevealSub(a, rv.liftables, rv.fnReveal, rv.fnRTL, spawnSub)
+		a.Label("m16_start")
+	}
+	a.Comment("X = table address; in the table's world ($0FFF):")
 	a.TAX()
+	a.LDA_abs(0x0FFF)
+	a.AND_imm16_w(0x0001)
+	a.CMP_long_x(bank + 2)
+	a.BNE_far("m16_skip")
+	a.Comment("in the overworld module, submodule 0, in the table's area:")
 	a.LDA_dp(0x10)
 	a.CMP_imm16_w(0x0009)
 	a.BEQ("m16_module_ok")
@@ -661,9 +660,35 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.LDA_dp(0x8A)
 	a.CMP_long_x(bank)
 	a.BNE_far("m16_skip")
-	a.Comment("X = first entry, also pushed to count the entries applied:")
+	a.Comment("X = first entry:")
 	a.INX()
 	a.INX()
+	a.INX()
+	a.INX()
+	if rv.ok {
+		a.Comment("reveal the secrets under the objects at the flagged positions while they are still there:")
+		a.PHX()
+		a.Label("m16_rv_loop")
+		a.LDA_long_x(bank + 0)
+		a.CMP_imm16_w(updateTableEnd)
+		a.BEQ("m16_rv_done")
+		a.BIT_imm16_w(map16RevealFlag)
+		a.BEQ("m16_rv_next")
+		a.PHX()
+		a.AND_imm16_w(0x1FFE)
+		a.TAX()
+		a.JSR_abs(revealSub)
+		a.PLX()
+		a.Label("m16_rv_next")
+		a.INX()
+		a.INX()
+		a.INX()
+		a.INX()
+		a.BRA("m16_rv_loop")
+		a.Label("m16_rv_done")
+		a.PLX()
+	}
+	a.Comment("the first entry is pushed to count the entries applied:")
 	a.PHX()
 	a.Comment("$06 = $0712 (0 in small areas, which are entirely in VRAM):")
 	a.LDA_abs(0x0712)
@@ -684,7 +709,7 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.JMP_abs("m16_done")
 	a.Label("m16_room")
 	a.LDA_long_x(bank + 0)
-	a.CMP_imm16_w(map16TableEnd)
+	a.CMP_imm16_w(updateTableEnd)
 	a.BNE("m16_entry")
 	a.JMP_abs("m16_done")
 	a.Label("m16_entry")
@@ -692,6 +717,7 @@ func emitMap16Apply(a *asm.Emitter, fnDraw uint32) error {
 	a.LDA_long_x(bank + 2)
 	a.STA_dp(0x0E)
 	a.LDA_long_x(bank + 0)
+	a.AND_imm16_w(0x1FFE)
 	a.TAX()
 	a.Comment("$0C = 1 if the tilemap already has this tile (e.g. applied by the stage hook while the area loaded); it is")
 	a.Comment("memorized but not drawn then:")

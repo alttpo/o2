@@ -17,8 +17,8 @@ import (
 // in $7EF580 (except keys, whose sprite checks the room's key flags).
 //
 // The map16 and manipulable object syncs only show the remote player's lifted object as gone. When a remote player
-// lifts one while the local player is in the same area or room, the generated update routine first does the same
-// lookup at that position (Overworld_RevealSecret or RevealPotItem) and calls Sprite_SpawnThrowableTerrain_silently
+// lifts one while the local player is in the same area or room, the ROM routine the generated update routine calls
+// (map16Update or manipUpdate) first does the same lookup at that position (Overworld_RevealSecret or RevealPotItem) and calls Sprite_SpawnThrowableTerrain_silently
 // there like the game, so the local player gets the same item (or the game's own random prize) to pick up, then
 // removes the carried object sprite it spawned. $0B9C, $0314 and $0FB2 are restored afterwards.
 
@@ -192,27 +192,6 @@ func emitOwRevealSub(a *asm.Emitter, liftables []owLiftable, fnReveal, fnRTL uin
 	a.PLY()
 	a.RTS()
 	return addr
-}
-
-// emitPotReveal emits code (16-bit A/X/Y) that reveals the item under the pot at tilemap position pos in room like
-// lifting it does. spawnSub is the subroutine emitted by emitSpawnSecretSub.
-func emitPotReveal(a *asm.Emitter, room, pos uint16, fnReveal, fnRTL uint32, spawnSub uint16) {
-	a.LDA_abs(0x0B9C)
-	a.PHA()
-	a.LDA_imm16_w(uint16(manipAttrIndex(pos)))
-	a.STA_dp(0x06)
-	a.LDA_imm16_w(pos)
-	a.JSRBanked(fnReveal, fnRTL)
-	x, y := potCoords(room, pos)
-	a.LDA_imm16_w(x)
-	a.STA_dp(0x00)
-	a.LDA_imm16_w(y)
-	a.STA_dp(0x02)
-	a.Comment("a pot:")
-	a.LDY_imm16_w(0x0000)
-	a.JSR_abs(spawnSub)
-	a.PLA()
-	a.STA_abs(0x0B9C)
 }
 
 // potCoords returns the coordinates of the top left of the underworld tilemap position pos in room. Rooms are
