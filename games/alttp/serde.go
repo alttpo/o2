@@ -50,6 +50,7 @@ const (
 	MsgRoomDoors        MessageType = 0x1B // key doors and switches of a room, broadcastSector; see syncroom.go
 	MsgOwEvents         MessageType = 0x1C // overworld entrance animations and other events, broadcastSector; see syncowevents.go
 	MsgFlyingTiles      MessageType = 0x1D // tile room overlord state of a room, broadcastSector; see synctiles.go
+	MsgRoomKills        MessageType = 0x1E // kill triggers fired in a room, broadcastSector; see syncroomkills.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -60,7 +61,6 @@ const (
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
 	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
-	MsgRoomKills  MessageType = 0x85 // o2-only: kill triggers fired in a room, broadcastSector; see syncroomkills.go
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error

@@ -73,13 +73,13 @@ Values match alttpo's `GameState::deserialize`.
 | 0x1A | room trap doors, chest and key flags | yes (per sector) | yes (per sector) | used |
 | 0x1B | room key doors and switches | yes (per sector) | yes (per sector) | used |
 | 0x1C | overworld entrance animations and other events | yes (per sector, own packet) | yes (per sector, own packet) | used |
-| 0x1D | flying floor tiles (tile room overlord) | yes (per sector, last) | yes (per sector, last) | used |
+| 0x1D | flying floor tiles (tile room overlord) | yes (per sector) | yes (per sector) | used |
+| 0x1E | room kill triggers fired | yes (per sector, last) | yes (per sector, last) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | group reset state machine | yes, own packet (`RunTiming.as`) | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
 | 0x83 | hearts (delta based) | yes (main packet) | yes, own packet (after 0x82) | used |
 | 0x84 | run timing (see [RUN_TIMING.md](RUN_TIMING.md)) | yes, own packet (`RunTiming.as`) | yes, own packet | used; takes precedence over 0x80 |
-| 0x85 | o2: kill triggers fired in a room | n/a | yes, **own packet** (per sector) | used |
 
 Message types from `0x80` originated in o2 and are only sent in their own packets (`Game.makeO2BroadcastMessage`),
 never together with message types alttpo uses. alttpo stops parsing a packet at the first unknown message type (it
@@ -410,19 +410,24 @@ still be taken by the other.
     recomputes `$0646` every frame and wins while it exists.
 - **Settings.** o2 uses "Sync Underworld (Local)" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
   "Sync chests").
-- **Kill triggers (o2 only).** Room tags that wait for the enemies of a quadrant or the whole room to die (trap doors
-  `$01`-`$0A`, kill room block `$26`, chest reveal `$29`-`$32`) are seen firing locally from the tag going to 0 (chest
-  reveal, block) or the trap doors opening locally in a room with a trap door kill tag, and recorded as a kill bit:
-  the quadrant Link was in, or the whole room for `$0A`/`$32`. o2-only message 0x85 (`room u16`, `kills u8`: bit q for
-  quadrant q = east + 2 × south, bit 4 whole room) goes in its own packet to the room's sector. A
-  receiver in the same room, in submodule 0 while Link is in that quadrant (any quadrant for the whole room), kills the
-  enemies the tag's check still counts there like `Sprite_KillFriends` (`$0DD0` = 6, `$0DF0` = `$0F`, `$0E60` and
-  `$0BE0` cleared so nothing drops but keys, `$0E40` = 3): sprites in state 9 or more without `$0F60` bit 6 or `$0CAA`
-  bit 1, but for Agahnim, the evil barrier and bonk items, on the camera's screen for a quadrant. The game's own tag then
-  fires (reveals the chest, frees the block). It tries again a second later until a try finds nothing left to kill.
-  Overlords (invisible stalfos `$18`, tile room `$14`) are left alone. alttpo neither sends nor applies it.
+- **Kill triggers.** Room tags that wait for the enemies of a quadrant or the whole room to die: trap doors `$01`-`$0A`
+  (`Dung_TagRoutine_TrapdoorsUp`; the tag stays), the kill room block `$26` (clears itself so the block can be pushed)
+  and chest reveal `$29`-`$32` (`RoomTag_OperateChestReveal`, clears itself). Enemies are not synced, so players
+  disagree about them. A trigger is seen firing from a chest or block tag going to 0, or the trap doors opening locally
+  (not from sync) in a room with a trap door kill tag that checks in Link's quadrant ($01 NW, $02 NE, $03 SW, $04 SE,
+  $05 W, $06 E, $07 N, $08 S, $09 any, $0A the whole room), and is recorded as bit k for the tag in `$AE+k`.
+  **Message 0x1E** (`room u16`, `fired u8`) is sent last in the room's sector packet, after 0x1D, once the room state
+  was sampled there. A trigger fired by a remote player in the same room that did not fire here is applied once per
+  visit in submodule 0, the way the tag does it and without touching the enemies: the trap doors are opened if still
+  closed (`$0468` = 0, `$068E`/`$0690` cleared, SFX3 `$1B`, submodule `$05`; it waits while a key door or push block
+  door uses the submodule, and replaces a trap door change from the same update), the block tag is cleared (SFX3
+  `$1B`), or the `$0496 / 2` chests are revealed (closed small chest tiles `$19E1`, `$19F1`, `$59E1`, `$59F1` in
+  `$7E2000`, attributes `$5858 + $0101 * i` in `$7F2000`/`$7F2040`, VRAM stripes from `$1000` = 0, SFX3 `$1A`,
+  `$14` = 1; only while `$14` = 0) and the tag cleared. Unlike trap door changes, a trigger fired before the receiver
+  entered the room counts, so a player entering a room another player in it cleared finds it cleared. Which enemies
+  are dead is not synced.
 - **Not synced.** The pulled
-  lever sprite is not drawn pulled for other players. Enemies are not synced by o2 beyond kill triggers, and keys
+  lever sprite is not drawn pulled for other players. Enemies are not synced by o2, and keys
   dropped by enemies get their index in the order they spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
   also trigger on lit torches, which are synced on their own (see [Torches](#torches)).
 - **o2 only:** o2 used to send `$0400` in message 0x05 and unlock doors from it; that is replaced by message 0x1B. Door

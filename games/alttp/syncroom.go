@@ -173,12 +173,10 @@ type roomStateLocal struct {
 	// tables are read to see whether it lies on the floor here:
 	readSprites bool
 
-	// tags are the room tags ($AE, $AF) last sampled; kills are the kill triggers fired here (see syncroomkills.go):
+	// tags are the room tags ($AE, $AF) last sampled; fired has bit k set once the kill trigger in $AE+k fired here
+	// (see syncroomkills.go):
 	tags  [2]uint8
-	kills uint8
-	// killsDone are remote kill bits with no enemies left here to kill; killRetry is when to kill again (msec):
-	killsDone uint8
-	killRetry uint32
+	fired uint8
 }
 
 // roomBlockLocal remembers that the block of a push block door room was pushed ($0641 odd). An intra-room transition
@@ -539,7 +537,8 @@ type roomStateUpdate struct {
 	holdOff  bool // $0646 cleared
 	holdFrom *Player
 
-	kill     uint8 // kill bit whose enemies are killed (see syncroomkills.go)
+	killSlot int   // the slot ($AE+k) of the kill trigger applied (see syncroomkills.go)
+	killTag  uint8 // its tag
 	killFrom *Player
 
 	cancelled bool
@@ -601,7 +600,7 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	if u.holdOff {
 		log.Printf("alttp: room: update: hold switch released\n")
 	}
-	if u.kill != 0 {
+	if u.killFrom != nil {
 		g.confirmRoomKill(u, value)
 	}
 	if u.setDoor {
@@ -747,11 +746,30 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		}
 	}
 
-	// enemies killed by remote players' kill triggers:
-	u.kill, u.killFrom = g.roomKillWanted(remotes)
+	// kill triggers fired by remote players, applied without touching the enemies:
+	var revealPos []uint16
+	if k, from := g.roomKillWanted(remotes, tags); from != nil {
+		tag, ok := tags[k], true
+		switch {
+		case roomKillTagIsDoor(tag):
+			// the trap doors; a key door being unlocked or a push block door uses the submodule this time:
+			ok = u.keyDoorBit == 0 && !u.blockDoor
+			if ok && u.setDoor {
+				// the kill trigger opens them:
+				u.setDoor = false
+			}
+		case roomKillTagIsChest(tag):
+			// the reveal writes the VRAM stripes from the start of the buffer:
+			revealPos, ok = g.roomRevealChestPos()
+			ok = ok && len(chests) == 0
+		}
+		if ok {
+			u.killSlot, u.killTag, u.killFrom = k, tag, from
+		}
+	}
 
 	if u.flags == 0 && u.keyDoorBit == 0 && !u.blockDoor && !u.pull && !u.hold && !u.holdOff && !u.setDoor &&
-		u.kill == 0 {
+		u.killFrom == nil {
 		u = nil
 		return
 	}
@@ -784,6 +802,11 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 	a.LDA_dp(0xA1)
 	a.CMP_imm8_b(uint8(rs.room >> 8))
 	a.BNE_far("rm_skip")
+	if len(revealPos) > 0 && u.killFrom != nil {
+		a.Comment("no VRAM stripes pending:")
+		a.LDA_dp(0x14)
+		a.BNE_far("rm_skip")
+	}
 	if u.setDoor && u.keyDoorBit == 0 {
 		a.Comment("trap doors not changed locally since read:")
 		a.LDA_abs(roomDoorOffs)
@@ -890,14 +913,14 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		a.STA_dp(0x11)
 	}
 
-	if u.kill != 0 {
-		a.Comment(fmt.Sprintf("kill trigger $%02x fired by %s:", u.kill, u.killFrom.Name()))
-		emitRoomKill(a, u.kill)
-		a.TYA()
-		a.BNE("rm_killed")
+	if u.killFrom != nil {
+		a.Comment(fmt.Sprintf("kill trigger $%02x in slot %d fired by %s:", u.killTag, u.killSlot, u.killFrom.Name()))
+		emitRoomKill(a, u.killSlot, u.killTag, revealPos)
+		a.LDA_imm8_b(crystalSwitchWritten)
+		a.BRA("rm_report")
+		a.Label("rm_kill_none")
 		a.LDA_imm8_b(roomKillNone)
 		a.BRA("rm_report")
-		a.Label("rm_killed")
 	}
 	a.LDA_imm8_b(crystalSwitchWritten)
 	a.BRA("rm_report")

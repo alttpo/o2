@@ -89,15 +89,9 @@ func (g *Game) sendPackets() {
 			if err := g.SerializeFlyingTiles(m); err != nil {
 				panic(err)
 			}
-		}
-		g.send(m)
-	}
-
-	if g.SyncUnderworldLocal && local.Module == 0x07 && g.roomState.valid {
-		// kill triggers fired in the room (o2-only), in their own packet to the players in the same room:
-		m := g.makeSectorMessage()
-		if err := g.SerializeRoomKills(m); err != nil {
-			panic(err)
+			if err := g.SerializeRoomKills(m); err != nil {
+				panic(err)
+			}
 		}
 		g.send(m)
 	}

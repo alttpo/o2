@@ -117,6 +117,8 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			skip(2 + 1 + 4 + 1)
 		case 0x1B: // room key doors and switches
 			skip(2 + 1 + 1 + 4)
+		case 0x1E: // room kill triggers
+			skip(2 + 1)
 		case 0x18: // manipulables
 			u16() // room
 			n := int(u8())
