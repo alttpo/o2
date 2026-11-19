@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/alttpo/snes/asm"
@@ -129,7 +130,7 @@ type remoteFrameTables struct {
 	allocSlots, allocFree        uint32
 	partBits                     uint32
 	followerSlotBits             uint32
-	drawLate, replayLate         uint32
+	replayLate                   uint32
 }
 
 // emitRemoteFrameTables emits the tables of remoteFrameTables in this order and returns their addresses.
@@ -156,10 +157,7 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 	fol := followerSlotBits()
 	t.followerSlotBits = a.Label("followerSlotBits")
 	a.EmitBytes(fol[:])
-	late := drawLateTable()
-	t.drawLate = a.Label("drawLateTable")
-	a.EmitBytes(late[:])
-	late = replayLateTable()
+	late := replayLateTable()
 	t.replayLate = a.Label("replayLateTable")
 	a.EmitBytes(late[:])
 	return
@@ -181,8 +179,8 @@ func emitRemoteFrameTables(a *asm.Emitter) (t remoteFrameTables) {
 //     entries they were drawn into (but those the game's sprites use this frame), and the same rows uploaded, which
 //     costs a third of drawing or less. Only while the scroll offsets are the same as when it was
 //     drawn, for up to rfReuseFrames frames in a row, and with a time check of its own (replayLateTable); else nothing
-//     is drawn, nor uploaded. The drawing check's deadline depends on the number of sprites in the table
-//     (drawLateTable), so a few sprites are still drawn late in the frame.
+//     is drawn, nor uploaded. The drawing check's deadline is the table's own (rtDrawLate), which o2 computes from the
+//     number of sprites of each kind it holds (rfDrawLateLine), so a few sprites are still drawn late in the frame.
 //
 // A lag frame is not special: the NMI that came during it starts the next frame's time, and the scanline counts from
 // there as in any other frame.
@@ -211,13 +209,19 @@ const (
 	// scan check, and then the exit if that one is late: listing linkOAMDyingMax of them (in the last sprite slots
 	// looked at), then the rest of a block as for rfScanCycles. Measured 5,469 (timecheck_test.go):
 	rfDyingCycles = 5_800
-	// from the drawing check to the frame hook's return, drawing n sprites of the table past a full OAM buffer and
-	// listing every upload, recording the sprites for a replay: rfDrawBaseCycles + n * rfDrawEntryCycles. Measured
-	// (timecheck_test.go) with slotted sprites, the costliest kind, with the game's sprites in all but the first 32
-	// entries for the one-at-a-time search to pass: 2,758 for none, 3,238 for one, then about 310 per sprite (12,358 for
-	// remoteEntryMax):
-	rfDrawBaseCycles  = 2_950
-	rfDrawEntryCycles = 315
+	// from the drawing check to the frame hook's return, drawing the table's sprites and recording them for a replay,
+	// with the game's sprites in all but the first 32 entries for the one-at-a-time search to pass, and listing the
+	// uploads of the parts drawn: rfDrawBaseCycles, plus per sprite of each kind (plain: the extras and the shadows;
+	// blobs; slotted), plus rfDrawSlottedCycles once and rfDrawPartCycles per part if there are slotted sprites (see
+	// rfDrawCycles). Measured (timecheck_test.go, TestCycleBudgets_RemoteFrameDraw): 2,495 for none, then 222 per
+	// plain sprite, 229 per blob, 304 per slotted sprite, 214 per part and 190 once (12,955 for remoteEntryMax slotted
+	// sprites in 4 parts):
+	rfDrawBaseCycles        = 2_600
+	rfDrawPlainCycles       = 230
+	rfDrawBlobCycles        = 238
+	rfDrawSlottedCycles     = 315
+	rfDrawSlottedBaseCycles = 200
+	rfDrawPartCycles        = 225
 	// the first scanline on which a block of the scan, or listing the dying enemies, starts too late to finish before
 	// the NMI, with 154 cycles per line:
 	rfScanLateLine  = rfNMILine - (rfScanCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
@@ -265,9 +269,36 @@ const (
 const _ = remoteReplayAddr - (remoteStateAddr + remoteStateSize)
 const _ = runTimingAddr - (remoteReplayAddr + remoteReplaySize)
 
-// rfDrawLateLine returns the first scanline on which drawing n sprites starts too late to finish before the NMI.
-func rfDrawLateLine(n int) uint8 {
-	return uint8(rfNMILine - (rfDrawBaseCycles+n*rfDrawEntryCycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine)
+// rfDrawCycles returns the most drawing a remote sprites table costs (see rfDrawBaseCycles), from its lists' lengths
+// (in sprites) and its number of parts. The first player's shadow and blob, at the start of their lists, are drawn
+// only if its slotted sprites are not, so only the costlier of the two is counted.
+func rfDrawCycles(extras, slotted, shadows, blobs, parts int) int {
+	c := rfDrawBaseCycles + extras*rfDrawPlainCycles + shadows*rfDrawPlainCycles + blobs*rfDrawBlobCycles
+	if slotted > 0 {
+		c += max(0, rfDrawSlottedBaseCycles+slotted*rfDrawSlottedCycles+parts*rfDrawPartCycles-
+			min(shadows, 1)*rfDrawPlainCycles-min(blobs, 1)*rfDrawBlobCycles)
+	}
+	return c
+}
+
+// rfDrawLateLine returns the first scanline on which drawing that costs cycles (rfDrawCycles) starts too late to
+// finish before the NMI.
+func rfDrawLateLine(cycles int) uint8 {
+	l := rfNMILine - (cycles+rfTailCycles+rfCyclesPerLine-1)/rfCyclesPerLine
+	if l < lagMinLateLine || l >= rfNMILine {
+		panic(fmt.Errorf("rfDrawLateLine: late scanline %d out of range", l))
+	}
+	return uint8(l)
+}
+
+// drawLateLineOf returns the late scanline of drawing the remote sprites table (rtDrawLate).
+func drawLateLineOf(t *[remoteTableSize]byte) uint8 {
+	end := func(o int) int { return int(binary.LittleEndian.Uint16(t[o:])) / rtEntrySize }
+	extras := end(rtExtrasEnd) + end(rtFrontEnd) - end(rtBlobsEnd)
+	slotted := end(rtSlottedEnd) - end(rtExtrasEnd)
+	shadows := end(rtShadowsEnd) - end(rtSlottedEnd)
+	blobs := end(rtBlobsEnd) - end(rtShadowsEnd)
+	return rfDrawLateLine(rfDrawCycles(extras, slotted, shadows, blobs, int(t[rtParts])))
 }
 
 // rfReplayLateLine returns the first scanline on which replaying n sprites starts too late to finish before the NMI.
@@ -283,20 +314,6 @@ func replayLateTable() (t [0x100]byte) {
 		t[o] = rfReplayLateLine(n)
 		if t[o] <= 55 || t[o] >= rfNMILine {
 			panic(fmt.Errorf("replayLateTable: late scanline %d out of range", t[o]))
-		}
-	}
-	return
-}
-
-// drawLateTable returns, for each byte length of the remote sprites table's entries (rtFrontEnd's low byte), the
-// first scanline on which drawing them starts too late (rfDrawLateLine of its number of entries, at most
-// remoteEntryMax).
-func drawLateTable() (t [0x100]byte) {
-	for o := range t {
-		n := min((o+rtEntrySize-1)/rtEntrySize, remoteEntryMax)
-		t[o] = rfDrawLateLine(n)
-		if t[o] <= 55 || t[o] >= rfNMILine {
-			panic(fmt.Errorf("drawLateTable: late scanline %d out of range", t[o]))
 		}
 	}
 	return
@@ -706,11 +723,9 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.STA_long(remoteStateAddr + rsNMILen)
 	a.SEP(0x30)
 
-	a.Comment("started too late to draw the table's sprites (its line in drawLateTable): neither capture nor scan, but go")
+	a.Comment("started too late to draw the table's sprites (its line, rtDrawLate): neither capture nor scan, but go")
 	a.Comment("straight to the late drawing path, which replays the last frame drawn if there is time (rcEarly):")
-	a.LDA_long(remoteTableAddr + rtFrontEnd)
-	a.TAX()
-	a.LDA_abs_x(lo(t.drawLate))
+	a.LDA_long(remoteTableAddr + rtDrawLate)
 	a.STA_dp(rcHit)
 	emitTimeCheck(a, rcHit, true, "rf_early_time", "rf_early_late")
 	a.BRA("rf_early_done")
@@ -899,15 +914,13 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.BNE("rf_drawing")
 	a.JMP_abs("rf_exit")
 	a.Label("rf_drawing")
-	a.Comment("too late to draw the table's sprites (its line in drawLateTable): draw nothing, so nothing is uploaded")
+	a.Comment("too late to draw the table's sprites (its line, rtDrawLate): draw nothing, so nothing is uploaded")
 	a.Comment("either:")
 	a.LDA_dp(rcEarly)
 	a.BEQ("rf_draw_check")
 	a.JMP_abs("rf_draw_late")
 	a.Label("rf_draw_check")
-	a.LDA_long(remoteTableAddr + rtFrontEnd)
-	a.TAX()
-	a.LDA_abs_x(lo(t.drawLate))
+	a.LDA_long(remoteTableAddr + rtDrawLate)
 	a.STA_dp(rcHit)
 	emitTimeCheck(a, rcHit, true, "rf_draw_time", "rf_draw_late")
 	a.Comment("no part has a VRAM slot yet, unless a late scan reuses the ones they last got:")

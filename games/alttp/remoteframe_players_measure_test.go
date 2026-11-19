@@ -119,7 +119,7 @@ func (g *realGame) writeRemoteTable(l rpLayout) {
 			{[2]uint16{0x9400, 0x9600}, partTopRow | partBottomRow | partWRAM},
 		}
 		tb[rtRequired] = 2
-		binary.LittleEndian.PutUint16(tb[rtParts:], uint16(len(parts)))
+		tb[rtParts] = uint8(len(parts))
 		for i, pt := range parts {
 			binary.LittleEndian.PutUint16(tb[rtPartSrc+i*4:], pt.src[0])
 			binary.LittleEndian.PutUint16(tb[rtPartSrc+i*4+2:], pt.src[1])
@@ -140,6 +140,7 @@ func (g *realGame) writeRemoteTable(l rpLayout) {
 	}
 	end(rtBlobsEnd)
 	end(rtFrontEnd)
+	tb[rtDrawLate] = drawLateLineOf(&tb)
 	copy(g.e.SRAM[remoteTableAddr&0x7FFF:], tb[:])
 }
 

@@ -81,29 +81,101 @@ func fillCopyBlock(h *skScenario) {
 	}
 }
 
-// fillDrawWorst fills the remote sprites table with n copies of its first slotted sprite (the costliest kind to draw;
-// the other lists are emptied), and g1's OAM buffer with the game's sprites in all but the 32 lowest entries, so that
-// each draw searches past them once.
-func fillDrawWorst(h *skScenario, n int) {
+// drawMix is what fillDrawMix puts in the remote sprites table: the sprites of each list (the extras all in front of
+// Link) and the number of parts the slotted sprites spread over.
+type drawMix struct {
+	extras, slotted, parts, shadows, blobs int
+}
+
+// drawn returns how many of the mix's sprites are drawn: all but the first shadow and blob if the slotted sprites are.
+func (m drawMix) drawn() int {
+	n := m.extras + m.slotted + m.shadows + m.blobs
+	if m.slotted > 0 {
+		n -= min(m.shadows, 1) + min(m.blobs, 1)
+	}
+	return n
+}
+
+func (m drawMix) String() string {
+	return fmt.Sprintf("%d extras, %d slotted in %d parts, %d shadows, %d blobs", m.extras, m.slotted, m.parts,
+		m.shadows, m.blobs)
+}
+
+// fillDrawMix fills the remote sprites table with the mix's sprites, all on g1's screen, with its late line as o2
+// computes it, and g1's OAM buffer with the game's sprites in all but the 32 lowest entries, so that drawing searches
+// past them once. The slotted sprites take the parts in turn, so that every part is drawn and its rows listed.
+func fillDrawMix(h *skScenario, m drawMix) {
 	e := h.gs[0].e
-	tbl := e.SRAM[remoteTableAddr&0x7FFF:]
-	end := func(o int) uint16 { return binary.LittleEndian.Uint16(tbl[o:]) }
-	ents := tbl[rtEntries:]
-	if end(rtSlottedEnd) != uint16(n*rtEntrySize) || end(rtExtrasEnd) != 0 {
-		slotted := make([]byte, rtEntrySize)
-		copy(slotted, ents[end(rtExtrasEnd):])
-		for j := 0; j < n; j++ {
-			copy(ents[j*rtEntrySize:], slotted)
-		}
-		binary.LittleEndian.PutUint16(tbl[rtExtrasEnd:], 0)
-		for _, o := range []int{rtSlottedEnd, rtShadowsEnd, rtBlobsEnd, rtFrontEnd} {
-			binary.LittleEndian.PutUint16(tbl[o:], uint16(n*rtEntrySize))
+	var tb [remoteTableSize]byte
+	copy(tb[:], e.SRAM[remoteTableAddr&0x7FFF:])
+	o := rtEntries
+	ent := func(i int, chr, attr uint8) {
+		binary.LittleEndian.PutUint16(tb[o:], 0x1030+uint16(i%8)*16)
+		binary.LittleEndian.PutUint16(tb[o+2:], 0x0230+uint16(i/8)*16)
+		tb[o+4], tb[o+5], tb[o+6] = chr, attr, entrySize16
+		o += rtEntrySize
+	}
+	end := func(f int) { binary.LittleEndian.PutUint16(tb[f:], uint16(o-rtEntries)) }
+	end(rtExtrasEnd)
+	for i := 0; i < m.slotted; i++ {
+		ent(i, uint8(i%max(m.parts, 1))<<6, 0x20)
+	}
+	end(rtSlottedEnd)
+	for i := 0; i < m.shadows; i++ {
+		ent(i, remoteShadowChr, remoteBlobAttr)
+	}
+	end(rtShadowsEnd)
+	for i := 0; i < m.blobs; i++ {
+		ent(i, remoteBlobChr0, remoteBlobAttr)
+	}
+	end(rtBlobsEnd)
+	for i := 0; i < m.extras; i++ {
+		ent(i, 0x26, 0x22)
+	}
+	end(rtFrontEnd)
+	tb[rtParts] = uint8(m.parts)
+	tb[rtRequired] = uint8(min(m.parts, 2))
+	for p := 0; p < remotePartMax; p++ {
+		binary.LittleEndian.PutUint16(tb[rtPartSrc+p*4:], 0x8000+uint16(p)*0x40)
+		binary.LittleEndian.PutUint16(tb[rtPartSrc+p*4+2:], 0x8200+uint16(p)*0x40)
+		tb[rtPartFlags+p] = partTopRow | partBottomRow
+		if p >= 2 {
+			tb[rtPartFlags+p] |= partWRAM
 		}
 	}
+	tb[rtDrawLate] = drawLateLineOf(&tb)
+	copy(e.SRAM[remoteTableAddr&0x7FFF:], tb[:])
 	for k := 0x20; k < 0x80; k++ {
 		copy(e.WRAM[0x0800+k*4:], []byte{uint8(k), 0x40, 0xC0, 0x20})
 	}
 }
+
+// fillDrawWorst is fillDrawMix with n slotted sprites in every part, the costliest kind to draw.
+func fillDrawWorst(h *skScenario, n int) {
+	fillDrawMix(h, drawMix{slotted: n, parts: remotePartMax})
+}
+
+// drawMixes are the tables the drawing budget is checked with: each kind alone, from none to a full table, and the
+// first player with Link's sprites and the rest as blobs, or with every extra sprite:
+var drawMixes = func() (l []drawMix) {
+	l = append(l, drawMix{})
+	for _, n := range []int{1, 2, 8, 16, remoteEntryMax} {
+		l = append(l, drawMix{extras: n})
+	}
+	for _, n := range []int{1, 2, 8, remoteEntryMax / 2} {
+		l = append(l, drawMix{shadows: n, blobs: n})
+	}
+	for parts := 1; parts <= remotePartMax; parts++ {
+		for _, n := range []int{parts, 8, remoteEntryMax} {
+			l = append(l, drawMix{slotted: n, parts: parts})
+		}
+	}
+	for _, n := range []int{1, 4, (remoteEntryMax - remotePartMax) / 2} {
+		l = append(l, drawMix{slotted: 4, parts: 4, shadows: n, blobs: n})
+	}
+	l = append(l, drawMix{extras: remoteExtraMax, slotted: 4, parts: 4, shadows: 1, blobs: 1})
+	return
+}()
 
 // The budgets the time checks' scanlines are computed from cover the worst cases of the work from each check to the
 // next one, or to the end of the frame.
@@ -138,12 +210,12 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	if n := binary.LittleEndian.Uint16(g1.e.SRAM[(linkOAMCopyAddr+linkOAMCopyDying)&0x7FFF:]); n != linkOAMDyingMax*4 {
 		t.Errorf("listed %d bytes of dying enemies; expected %d", n, linkOAMDyingMax*4)
 	}
-	// drawing n sprites:
-	for _, n := range []int{0, 1, 2, 4, 8, 16, 24, remoteEntryMax} {
+	// drawing each mix:
+	for _, m := range drawMixes {
 		pd := newProfile()
 		g1.beforeEmulate = func() {
 			clearOAM()
-			fillDrawWorst(h, n)
+			fillDrawMix(h, m)
 		}
 		for f := 0; f < 2; f++ {
 			h.profileFrame(pd, 0)
@@ -154,15 +226,18 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 				drawn++
 			}
 		}
-		if nl := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)); n > 0 && nl == 0 {
-			t.Errorf("%d sprites: listed no rows to upload", n)
+		if drawn != m.drawn() {
+			t.Errorf("%v: drew %d; expected %d", m, drawn, m.drawn())
+		}
+		if nl := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)); m.slotted > 0 && nl == 0 {
+			t.Errorf("%v: listed no rows to upload", m)
 		}
 		draw := pd.spanMax["draw"]
-		budget := uint64(rfDrawBaseCycles + n*rfDrawEntryCycles)
-		t.Logf("drawing %d sprites (drew %d): %d cycles (budget %d, late from line %d)", n, drawn, draw, budget,
-			rfDrawLateLine(n))
+		budget := uint64(rfDrawCycles(m.extras, m.slotted, m.shadows, m.blobs, m.parts))
+		t.Logf("drawing %v (drew %d): %d cycles (budget %d, late from line %d)", m, drawn, draw, budget,
+			rfDrawLateLine(int(budget)))
 		if draw > budget {
-			t.Errorf("drawing %d sprites: %d cycles; budget rfDrawBaseCycles + n*rfDrawEntryCycles %d", n, draw, budget)
+			t.Errorf("drawing %v: %d cycles; budget rfDrawCycles %d", m, draw, budget)
 		}
 
 		// then a frame too late to draw that replays them:
@@ -178,15 +253,15 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 			}
 		}
 		if replayed != drawn {
-			t.Errorf("%d sprites: replayed %d; expected the %d drawn", n, replayed, drawn)
+			t.Errorf("%v: replayed %d; expected the %d drawn", m, replayed, drawn)
 		}
 		replay := pr.spanMax["replay"]
-		budget = uint64(rfReplayBaseCycles + n*rfReplayEntryCycles)
+		budget = uint64(rfReplayBaseCycles + drawn*rfReplayEntryCycles)
 		t.Logf("replaying %d sprites: %d cycles (budget %d, late from line %d)", replayed, replay, budget,
-			rfReplayLateLine(n))
+			rfReplayLateLine(drawn))
 		if replay > budget {
-			t.Errorf("replaying %d sprites: %d cycles; budget rfReplayBaseCycles + n*rfReplayEntryCycles %d", n, replay,
-				budget)
+			t.Errorf("replaying %d sprites: %d cycles; budget rfReplayBaseCycles + n*rfReplayEntryCycles %d", drawn,
+				replay, budget)
 		}
 	}
 
@@ -313,7 +388,7 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 		{"top of the frame", timeCheck{line: 0}, true, true, true},
 		// the drawing check too late, the replay's in time: the frame just drawn again:
 		{"too late to draw, in time to replay", timeCheck{drawLate: true, replay: true}, true, true, true},
-		{"just before all checks' lines", timeCheck{line: int(min(rfDrawLateLine(remoteEntryMax), rfScanLateLine)) - 1}, true, true, true},
+		{"just before all checks' lines", timeCheck{line: int(min(rfDrawLateLine(rfDrawCycles(0, remoteEntryMax, 0, 0, remotePartMax)), rfScanLateLine)) - 1}, true, true, true},
 		{"vblank", timeCheck{line: rfNMILine + 5}, true, true, true},
 		{"line 259 (reads as 3)", timeCheck{line: 259}, true, true, true},
 		// started past the drawing check's line: no capture nor scan, the last frame drawn replayed:
@@ -409,8 +484,14 @@ func TestRemoteFrameTimeChecks_FinishBeforeNMI(t *testing.T) {
 		{"the scan's worst case", func() { fillScanWorst(h, true) }},
 		{"the scan's worst case without captures", func() { fillScanWorst(h, false) }},
 		{"a block copying all it can", func() { fillCopyBlock(h) }},
-		{"drawing 8 sprites", func() { fillDrawWorst(h, 8) }},
-		{fmt.Sprintf("drawing %d sprites", remoteEntryMax), func() { fillDrawWorst(h, remoteEntryMax) }},
+		{"drawing 8 slotted sprites", func() { fillDrawWorst(h, 8) }},
+		{fmt.Sprintf("drawing %d slotted sprites", remoteEntryMax), func() { fillDrawWorst(h, remoteEntryMax) }},
+		{fmt.Sprintf("drawing %d blob players", remoteEntryMax/2), func() {
+			fillDrawMix(h, drawMix{shadows: remoteEntryMax / 2, blobs: remoteEntryMax / 2})
+		}},
+		{"drawing Link and every extra sprite", func() {
+			fillDrawMix(h, drawMix{extras: remoteExtraMax, slotted: 4, parts: 4, shadows: 1, blobs: 1})
+		}},
 	} {
 		g1.beforeEmulate = func() {
 			clearOAM()

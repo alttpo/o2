@@ -138,7 +138,7 @@ func TestRemoteSpritesScenario_BodyInSameRoom(t *testing.T) {
 	if ends != [5]uint16{2, 4, 5, 6, 6} {
 		t.Fatalf("expected 2 shadow sprites, 2 body sprites and a blob and its shadow; got entry ends %d", ends)
 	}
-	if parts, required := binary.LittleEndian.Uint16(tb[rtParts:]), tb[rtRequired]; parts != 2 || required != 2 {
+	if parts, required := tb[rtParts], tb[rtRequired]; parts != 2 || required != 2 {
 		t.Fatalf("expected 2 parts, both required; got %d, %d", parts, required)
 	}
 

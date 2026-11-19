@@ -92,8 +92,11 @@ const (
 	rtShadowsEnd = 10
 	rtBlobsEnd   = 12
 	rtFrontEnd   = 14
-	// the number of parts (u16):
+	// the number of parts (u8):
 	rtParts = 16
+	// the first scanline on which drawing the table starts too late to finish before the NMI (rfDrawLateLine of its
+	// lists), computed by o2 when it makes the table, which knows how many sprites of each kind it holds:
+	rtDrawLate = 17
 	// per part, the DMA source addresses of its top and bottom row of chrs:
 	rtPartSrc = 18
 	// per part, partTopRow, partBottomRow and partWRAM:
@@ -904,6 +907,9 @@ func (g *Game) remoteBodyOK() bool {
 // draw reports whether there is anything to draw; capture whether any remote player is in the same location (and
 // would see the local player's sparkles and dust).
 func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, draw, capture bool) {
+	// every table, even one with nothing to draw, says when drawing it is late: the patch's first time check reads it
+	// to decide whether to capture and scan at all:
+	defer func() { t[rtDrawLate] = drawLateLineOf(&t) }()
 	local := g.local
 	// the game itself stops drawing while the overworld map is shown (see emitRemoteDraw), so the mode 7 map does not
 	// count as a bad time for the local player; it keeps drawing remote players while the map opens and closes:
@@ -988,7 +994,7 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	// drawn back to front: the highest OAM index first:
 	sort.SliceStable(slotted, func(i, j int) bool { return slotted[i].sp.index > slotted[j].sp.index })
 
-	binary.LittleEndian.PutUint16(t[rtParts:], uint16(len(parts)))
+	t[rtParts] = uint8(len(parts))
 	for i, pt := range parts {
 		binary.LittleEndian.PutUint16(t[rtPartSrc+i*4:], pt.src[0])
 		binary.LittleEndian.PutUint16(t[rtPartSrc+i*4+2:], pt.src[1])
