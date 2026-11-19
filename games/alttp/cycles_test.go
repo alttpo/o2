@@ -246,7 +246,7 @@ func (p *cycleProfile) runUntil(e *emulator.System, target uint32, maxCycles uin
 				}
 			}
 		}
-		n, _ := e.CPU.Step()
+		n, _ := e.Step()
 		cycles += uint64(n)
 		p.run[p.routine(pc)] += uint64(n)
 	}
@@ -275,7 +275,7 @@ func runUntil(e *emulator.System, target uint32, maxCycles uint64) bool {
 	}
 	if testStepHook != nil {
 		for cycles := uint64(0); cycles < maxCycles && e.GetPC() != target; {
-			n, _ := e.CPU.Step()
+			n, _ := e.Step()
 			cycles += uint64(n)
 			testStepHook(e)
 		}
