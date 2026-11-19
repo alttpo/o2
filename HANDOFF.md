@@ -97,6 +97,26 @@ message 0x84, clock sync, discontinuities, verification and display.
     reset fully every player first resets their console or emulator and then one player presses Reset, so that no
     player still in the old game syncs its state back.
 
+12. Remote players flickered while Link walked diagonally in the rain in the castle courtyard. The overworld scrolling
+    there runs the frame late or makes it lag, and remoteFrame's time checks then drew nothing at all. Changes:
+    - A lag frame no longer skips the work. The NMI that came during the frame starts the next frame's time, and the
+      scanline counts from there. A scanline read before an NMI is at most 224, which is late for any check, so the
+      read can't race the NMI. preMain no longer stores the NMI count (`rsFrameNMI` is gone).
+    - The drawing check's deadline depends on the table's size (`drawLateTable`, indexed by `rtFrontEnd`):
+      2,100 + 240 cycles per sprite (1,873 + about 233 measured, slotted sprites past a full OAM buffer). One remote
+      player with Link's sprites is about 6 to 10 sprites, late from line 190 to 184; it used to be 167 whatever the
+      size. The old 7,000-cycle budget was also too low for a table full of slotted sprites (9,286).
+    - Listing the dying enemies has its own time check (`rf_dying_time`, line 175). If it's late, the patch writes
+      `$FFFF`, so o2 leaves out all death chrs that frame. Without the list, a scan block costs 1,808 cycles, so the
+      scan is late from line 200 instead of 175.
+    - A late scan no longer stops drawing. The parts are drawn in the VRAM slots they got last time (`rsReuse`, the
+      high byte of `rsSkipSlots`, so the clear o2 and alttpo already do before turning the sprites gate on also
+      clears it), up to `rfReuseFrames` (8) frames in a row. After that, the first player is drawn as a blob. The kept
+      follower slots stay skipped, so the NMI uploads only rows that aren't still in VRAM.
+    - Not done: holding the previous frame's OAM entries when the drawing check itself is late. Saving them for that
+      costs about 65 cycles per sprite every frame, and it would only help when the drawing check starts within about
+      9 lines of the deadline.
+
 `go test ./...` passes. Not yet run with o2 and alttpo connected to a server together since these fixes.
 
 ## Next steps

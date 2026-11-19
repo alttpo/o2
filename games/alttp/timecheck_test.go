@@ -1,6 +1,7 @@
 package alttp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
 
@@ -58,24 +59,23 @@ func fillScanWorst(h *skScenario, captures bool) {
 	}
 }
 
-// fillDrawWorst fills the remote sprites table to remoteEntryMax entries, adding copies of its first blob to the extra
-// sprites behind Link, and g1's OAM buffer with the game's sprites in all but the 32 lowest entries, so that each
-// draw searches past them once.
-func fillDrawWorst(h *skScenario) {
+// fillDrawWorst fills the remote sprites table with n copies of its first slotted sprite (the costliest kind to draw;
+// the other lists are emptied), and g1's OAM buffer with the game's sprites in all but the 32 lowest entries, so that
+// each draw searches past them once.
+func fillDrawWorst(h *skScenario, n int) {
 	e := h.gs[0].e
 	tbl := e.SRAM[remoteTableAddr&0x7FFF:]
 	end := func(o int) uint16 { return binary.LittleEndian.Uint16(tbl[o:]) }
-	n := int(end(rtFrontEnd)) / rtEntrySize
-	if add := remoteEntryMax - n; add > 0 {
-		ents := tbl[rtEntries:]
-		blob := make([]byte, rtEntrySize)
-		copy(blob, ents[end(rtShadowsEnd):])
-		copy(ents[add*rtEntrySize:], ents[:n*rtEntrySize])
-		for j := 0; j < add; j++ {
-			copy(ents[j*rtEntrySize:], blob)
+	ents := tbl[rtEntries:]
+	if end(rtSlottedEnd) != uint16(n*rtEntrySize) || end(rtExtrasEnd) != 0 {
+		slotted := make([]byte, rtEntrySize)
+		copy(slotted, ents[end(rtExtrasEnd):])
+		for j := 0; j < n; j++ {
+			copy(ents[j*rtEntrySize:], slotted)
 		}
-		for _, o := range []int{rtExtrasEnd, rtSlottedEnd, rtShadowsEnd, rtBlobsEnd, rtFrontEnd} {
-			binary.LittleEndian.PutUint16(tbl[o:], end(o)+uint16(add*rtEntrySize))
+		binary.LittleEndian.PutUint16(tbl[rtExtrasEnd:], 0)
+		for _, o := range []int{rtSlottedEnd, rtShadowsEnd, rtBlobsEnd, rtFrontEnd} {
+			binary.LittleEndian.PutUint16(tbl[o:], uint16(n*rtEntrySize))
 		}
 	}
 	for k := 0x20; k < 0x80; k++ {
@@ -90,6 +90,7 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 		p := newCycleProfile(t, "VT test")
 		p.addCheckpoints(t, "rf_scan_time_", "scan")
 		p.addCheckpoints(t, "rf_draw_time", "draw")
+		p.addCheckpoints(t, "rf_dying_time", "dying")
 		return p
 	}
 	p := newProfile()
@@ -111,23 +112,32 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	if n := binary.LittleEndian.Uint16(g1.e.SRAM[(linkOAMCopyAddr+linkOAMCopyDying)&0x7FFF:]); n != linkOAMDyingMax*4 {
 		t.Errorf("listed %d bytes of dying enemies; expected %d", n, linkOAMDyingMax*4)
 	}
-	// drawing:
-	g1.beforeEmulate = func() {
-		clearOAM()
-		fillDrawWorst(h)
-	}
-	for f := 0; f < 2; f++ {
-		h.profileFrame(p, 0)
-	}
-	drawn := 0
-	for k := 0; k < 0x20; k++ {
-		if g1.e.WRAM[0x0801+k*4] != 0xF0 {
-			drawn++
+	// drawing n sprites:
+	for _, n := range []int{0, 1, 2, 4, 8, 16, 24, remoteEntryMax} {
+		pd := newProfile()
+		g1.beforeEmulate = func() {
+			clearOAM()
+			fillDrawWorst(h, n)
 		}
-	}
-	t.Logf("drew %d sprites", drawn)
-	if n := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)); n == 0 {
-		t.Errorf("listed no rows to upload")
+		for f := 0; f < 2; f++ {
+			h.profileFrame(pd, 0)
+		}
+		drawn := 0
+		for k := 0; k < 0x20; k++ {
+			if g1.e.WRAM[0x0801+k*4] != 0xF0 {
+				drawn++
+			}
+		}
+		if nl := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)); n > 0 && nl == 0 {
+			t.Errorf("%d sprites: listed no rows to upload", n)
+		}
+		draw := pd.spanMax["draw"]
+		budget := uint64(rfDrawBaseCycles + n*rfDrawEntryCycles)
+		t.Logf("drawing %d sprites (drew %d): %d cycles (budget %d, late from line %d)", n, drawn, draw, budget,
+			rfDrawLateLine(n))
+		if draw > budget {
+			t.Errorf("drawing %d sprites: %d cycles; budget rfDrawBaseCycles + n*rfDrawEntryCycles %d", n, draw, budget)
+		}
 	}
 
 	// late checks: the exit after each kind:
@@ -152,23 +162,33 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	setScanline(h, 0, 0)
 
 	scan := p.spanMax["scan"] + late
-	draw := p.spanMax["draw"]
-	t.Logf("scan: %d + a late check's exit %d = %d cycles (budget %d, late from line %d)",
-		p.spanMax["scan"], late, scan, rfScanCycles, rfScanLateLine)
-	t.Logf("drawing: %d cycles (budget %d, late from line %d); %d cycles per line, tail %d",
-		draw, rfDrawCycles, rfDrawLateLine, rfCyclesPerLine, rfTailCycles)
+	dying := p.spanMax["dying"] + late
+	t.Logf("scan: %d + a late check's exit %d = %d cycles (budget %d, late from line %d); %d cycles per line, tail %d",
+		p.spanMax["scan"], late, scan, rfScanCycles, rfScanLateLine, rfCyclesPerLine, rfTailCycles)
+	t.Logf("listing the dying enemies: %d + a late check's exit %d = %d cycles (budget %d, late from line %d)",
+		p.spanMax["dying"], late, dying, rfDyingCycles, rfDyingLateLine)
+	if p.spanMax["dying"] == 0 {
+		t.Errorf("the dying enemies' check not reached")
+	}
 	if scan > rfScanCycles {
 		t.Errorf("scan: %d cycles; budget rfScanCycles %d", scan, rfScanCycles)
 	}
-	if draw > rfDrawCycles {
-		t.Errorf("drawing: %d cycles; budget rfDrawCycles %d", draw, rfDrawCycles)
+	if dying > rfDyingCycles {
+		t.Errorf("listing the dying enemies: %d cycles; budget rfDyingCycles %d", dying, rfDyingCycles)
 	}
 }
 
-// timeCheckResult runs a frame of the scenario with the scanline set to line, then to 224 from the drawing check on
-// if drawLate, and, if lag, an NMI counted when remoteFrame starts; and returns the remote sprites drawn and the
-// captured entries' byte length.
-func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, line uint8, drawLate, lag bool) (drawn int, captured uint16) {
+// timeCheck is a frame for timeCheckResult to run: the scanline it starts on, whether the scan's first check reads
+// line 224 (and the drawing check line 0), whether the drawing check reads line 224, and whether an NMI is counted
+// when remoteFrame starts (a lag frame).
+type timeCheck struct {
+	line                    uint8
+	scanLate, drawLate, lag bool
+}
+
+// timeCheckResult runs a frame of the scenario as c says, and returns the remote sprites drawn, the captured entries'
+// byte length, and whether the first player's body was drawn (rsBodyOK, which is only meaningful if anything was).
+func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCheck) (drawn int, captured uint16, body bool) {
 	t.Helper()
 	g1 := h.gs[0]
 	e := g1.e
@@ -178,23 +198,30 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, line uin
 		// a bomb and a captured chr, so that the scan runs and captures:
 		e.WRAM[0x0C4A] = 0x07
 		copy(e.WRAM[0x0800+0x10*4:], []byte{0x40, 0x40, 0x26, 0x20})
-		setScanline(h, 0, line)
+		setScanline(h, 0, c.line)
 	}
 	defer func() {
 		g1.beforeEmulate = clearOAM
 		setScanline(h, 0, 0)
 		testStepHook = nil
 	}()
-	rfStart, rfDrawTime := labels.label(t, "rf_start"), labels.label(t, "rf_draw_time")
+	rfStart := labels.label(t, "rf_start")
+	rfScanTime, rfDrawTime := labels.label(t, "rf_scan_time_7f"), labels.label(t, "rf_draw_time")
 	testStepHook = func(e2 *emulator.System) {
 		switch e2.GetPC() &^ 0x800000 {
 		case rfStart:
-			if lag {
+			if c.lag {
 				rtSRAM(e2, rtmNMIFrames)[0]++
 			}
-		case rfDrawTime:
-			if drawLate {
+		case rfScanTime:
+			if c.scanLate {
 				setScanline(h, 0, rfNMILine-1)
+			}
+		case rfDrawTime:
+			if c.drawLate {
+				setScanline(h, 0, rfNMILine-1)
+			} else if c.scanLate {
+				setScanline(h, 0, 0)
 			}
 		}
 	}
@@ -205,6 +232,7 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, line uin
 		}
 	}
 	captured = binary.LittleEndian.Uint16(e.SRAM[(linkOAMCopyAddr+linkOAMCopyExtras)&0x7FFF:])
+	body = h.remoteState(0, rsBodyOK)[0] != 0
 	return
 }
 
@@ -212,31 +240,64 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 	labels := newCycleProfile(t, "VT test")
 	h := newRSCycleScenario(t)
 	for _, c := range []struct {
-		name          string
-		line          uint8
-		drawLate, lag bool
-		draw, capture bool
+		name string
+		timeCheck
+		draw, capture, body bool
 	}{
-		{"top of the frame", 0, false, false, true, true},
-		{"just before both checks' lines", min(rfDrawLateLine, rfScanLateLine) - 1, false, false, true, true},
-		{"vblank", rfNMILine + 5, false, false, true, true},
-		{"line 256+ (reads as 0..5)", 3, false, false, true, true},
-		{"too late to scan", rfScanLateLine, false, false, false, false},
-		{"too late to draw", 0, true, false, false, true},
-		{"line 224", rfNMILine - 1, false, false, false, false},
-		{"lagging", 0, false, true, false, false},
+		{"top of the frame", timeCheck{line: 0}, true, true, true},
+		{"just before all checks' lines", timeCheck{line: min(rfDrawLateLine(remoteEntryMax), rfScanLateLine) - 1}, true, true, true},
+		{"vblank", timeCheck{line: rfNMILine + 5}, true, true, true},
+		{"line 256+ (reads as 0..5)", timeCheck{line: 3}, true, true, true},
+		{"too late to scan and draw", timeCheck{line: rfScanLateLine}, false, false, false},
+		{"too late to draw", timeCheck{drawLate: true}, false, true, false},
+		{"line 224", timeCheck{line: rfNMILine - 1}, false, false, false},
+		{"lagging", timeCheck{lag: true}, true, true, true},
+		// a late scan reuses the VRAM slots the parts got rfReuseFrames times in a row, then draws the first player
+		// as a blob:
+		{"top of the frame again", timeCheck{line: 0}, true, true, true},
 	} {
-		drawn, captured := timeCheckResult(t, h, labels, c.line, c.drawLate, c.lag)
+		drawn, captured, body := timeCheckResult(t, h, labels, c.timeCheck)
 		if (drawn != 0) != c.draw {
 			t.Errorf("%s (line %d): drew %d sprites; expected drawing: %v", c.name, c.line, drawn, c.draw)
 		}
 		if (captured != 0) != c.capture {
 			t.Errorf("%s (line %d): captured %d bytes; expected capturing: %v", c.name, c.line, captured, c.capture)
 		}
+		if c.draw && body != c.body {
+			t.Errorf("%s (line %d): body drawn %v; expected %v", c.name, c.line, body, c.body)
+		}
 		if !c.draw {
 			if n := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen)); n != 0 {
 				t.Errorf("%s: listed %d bytes of rows to upload; expected none", c.name, n)
 			}
 		}
+	}
+	slots := append([]byte(nil), h.remoteState(0, rsPartSlot)[:remotePartMax]...)
+	skip := h.remoteState(0, rsSkipSlots)[0]
+	for f := 0; f <= rfReuseFrames; f++ {
+		drawn, captured, body := timeCheckResult(t, h, labels, timeCheck{scanLate: true})
+		reuse := f < rfReuseFrames
+		if drawn == 0 || captured != 0 || body != reuse {
+			t.Errorf("late scan %d: drew %d sprites, captured %d bytes, body drawn %v; expected drawing, no captures, "+
+				"body drawn %v", f, drawn, captured, body, reuse)
+		}
+		nl := binary.LittleEndian.Uint16(h.remoteState(0, rsNMILen))
+		if reuse {
+			if got := h.remoteState(0, rsPartSlot)[:remotePartMax]; !bytes.Equal(got, slots) {
+				t.Errorf("late scan %d: part slots % x; expected the last ones, % x", f, got, slots)
+			}
+			if got := h.remoteState(0, rsSkipSlots)[0]; got != skip {
+				t.Errorf("late scan %d: kept follower slots %x; expected the last ones, %x", f, got, skip)
+			}
+			if nl == 0 {
+				t.Errorf("late scan %d: listed no rows to upload", f)
+			}
+		} else if nl != 0 {
+			t.Errorf("late scan %d: listed %d bytes of rows to upload, without slots", f, nl)
+		}
+	}
+	// a scan in time hands out the slots again:
+	if _, _, body := timeCheckResult(t, h, labels, timeCheck{}); !body {
+		t.Errorf("after the late scans: body not drawn")
 	}
 }

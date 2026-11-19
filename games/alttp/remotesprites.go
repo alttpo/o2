@@ -158,20 +158,23 @@ const (
 	rsPartSlot = rsTmpEnd + 2
 	// the byte length of the list of rows for the NMI hooks to upload (u16):
 	rsNMILen = rsPartSlot + remotePartMax
-	// the low byte of the NMI frame counter when preMain started this frame, which remoteFrame compares with the
-	// counter to tell that an NMI came during the frame (a lag frame); see emitTimeCheck (u8, and an unused byte):
-	rsFrameNMI = rsNMILen + 2
+	// unused (u16):
+	_ = rsNMILen + 2
 	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
 	// DMA source address:
-	rsNMIList = rsFrameNMI + 2
+	rsNMIList = rsNMILen + 4
 	// the byte length of rsCache (u16), and the last rows the NMI hooks uploaded, in the same format as rsNMIList; rows
 	// still in VRAM while the game doesn't upload its own (core updates disabled) are not uploaded again:
 	rsCacheLen = rsNMIList + remoteUploadMax*nmiRowSize
 	rsCache    = rsCacheLen + 2
 	// the follower slots ($20, $22, $24: bits 0, 1, 2) the parts got this frame, written by remoteFrame; no sprite of
 	// the game shows them, so the follower hook skips the game's upload of its own tiles there and the rows of the
-	// parts already in them are not uploaded again (u16):
+	// parts already in them are not uploaded again (u8):
 	rsSkipSlots = rsCache + remoteUploadMax*nmiRowSize
+	// how many more frames in a row remoteFrame may draw the parts in the VRAM slots they last got, when the scan is
+	// too late to tell which slots are in use (see rfReuseFrames); 0 once nothing was drawn. It is the high byte of
+	// rsSkipSlots, so that the clear before turning the sprites gate on clears it too (u8):
+	rsReuse = rsSkipSlots + 1
 	// the slots whose rows in rsCache are still in VRAM, as rsNMIBits: the follower hook clears the bits of the slots
 	// the game uploads its own tiles into (all but the kept follower slots), the upload sets them all (u16):
 	rsKept = rsSkipSlots + 2
