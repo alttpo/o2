@@ -216,7 +216,7 @@ func isOverworldModule(module Module) bool {
 func (g *Game) enqueueMap16Reads(q []snes.Read) []snes.Read {
 	m := &g.map16
 	m.readBase = -1
-	if !g.SyncOverworld || !isOverworldModule(g.local.Module) {
+	if !g.SyncOverworldLocal || !isOverworldModule(g.local.Module) {
 		return q
 	}
 	base := 0
@@ -598,7 +598,7 @@ func (g *Game) generateMap16Update(newEmitter func() *asm.Emitter, index uint32)
 		data = binary.LittleEndian.AppendUint16(data, e.Tile)
 	}
 	data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
-	table, ok := g.updData.add(data)
+	table, ok := g.updData.add(data, updTableBaseCycles+len(entries)*updMap16EntryCycles+len(reveals)*updMap16RevealCycles)
 	if !ok {
 		return nil, nil
 	}

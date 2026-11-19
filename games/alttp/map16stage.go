@@ -130,7 +130,7 @@ func (g *Game) writeMap16Stage(now time.Time) {
 		return
 	}
 	var list []map16StagedEntry
-	if g.SyncOverworld {
+	if g.SyncOverworldLocal {
 		list = g.map16StagedEntries()
 	}
 	if s.writtenOK && equalStaged(list, s.written) && now.Sub(s.writtenTime) < map16StageRefresh {

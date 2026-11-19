@@ -185,7 +185,7 @@ func (g *Game) writeManipStage(now time.Time) {
 		return
 	}
 	var list []manipStagedEntry
-	if g.SyncUnderworld {
+	if g.SyncUnderworldLocal {
 		list = g.manipStagedEntries()
 	}
 	data := make([]byte, 0, len(list)*manipStageEntry+2)
@@ -432,6 +432,9 @@ func emitManipStageBlock(a *asm.Emitter) {
 // in the first frame of submodule 0 of the dungeon module in the room it was written for (see manipstage.go). fnDraw
 // is RoomDraw_16x16Single and fnRTL an RTL in its bank. Called with JSL with A and X 8-bit; preserves P.
 //
+// Before each object it checks the time (see lagcheck.go); without time left, or with the VRAM stripe buffer getting
+// full, it goes on with the objects not done yet in the next frame.
+//
 // Cycles (cycles_test.go): 27 with nothing pending; the path that applies pending objects is not measured yet.
 func emitManipPending(a *asm.Emitter, fnDraw, fnRTL, block uint32) {
 	a.AssumeSEP(0x30)
@@ -458,6 +461,10 @@ func emitManipPending(a *asm.Emitter, fnDraw, fnRTL, block uint32) {
 	a.BCC("mp_room")
 	a.JMP_abs("mp_done")
 	a.Label("mp_room")
+	a.Comment("try again next frame when the frame has no time left for an object (see lagcheck.go):")
+	a.SEP(0x20)
+	emitTimeCheckLong(a, mustLateLineFor(manipPendingEntryCycles, "manip pending"), "mp_time", "mp_exit")
+	a.REP(0x20)
 	a.Comment("try again next frame when the VRAM stripe buffer is getting full (all of this can be done again):")
 	a.LDA_long(0x7E1000)
 	a.CMP_imm16_w(0x0068)
@@ -508,6 +515,9 @@ func emitManipPending(a *asm.Emitter, fnDraw, fnRTL, block uint32) {
 	a.REP(0x30)
 
 	a.Label("mp_next")
+	a.Comment("done with the entry: not done again when the list is resumed next frame:")
+	a.LDA_imm16_w(manipStageRoomEnd)
+	a.STA_long_x(list + 0)
 	a.TXA()
 	a.CLC()
 	a.ADC_imm16_w(manipPendEntry)
@@ -520,7 +530,6 @@ func emitManipPending(a *asm.Emitter, fnDraw, fnRTL, block uint32) {
 	a.PLP()
 	a.RTL()
 }
-
 
 // emitManipPendingBlock emits the routine emitManipPending calls with JSL for a moved block (A = kind, X = pending
 // entry, manipStageTmpIdx = its attribute index): attribute $27 so it can't be pushed again, and for upper layer blocks

@@ -169,7 +169,7 @@ func (g *Game) treeDashed() bool {
 
 // enqueueOwEventReads reads the sprite tables in the lumberjacks' area to notice the tree top being dashed into.
 func (g *Game) enqueueOwEventReads(q []snes.Read) []snes.Read {
-	if !g.SyncOverworld || !isOverworldModule(g.local.Module) {
+	if !g.SyncOverworldLocal || !isOverworldModule(g.local.Module) {
 		return q
 	}
 	if g.wram[0x1B] != 0 || g.wramU16(0x8A) != owLumberjackArea {

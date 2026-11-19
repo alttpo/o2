@@ -316,6 +316,7 @@ func (tt *testCase) runFrameTest(t *testing.T) {
 		// execute a frame of ASM:
 		// run the CPU until it either runs away or hits the expected stopping point in the ROM code:
 		system.CPU.Reset()
+		setPPULine(system, 0)
 		system.SetPC(testROMMainGameLoop)
 		if !system.RunUntil(testROMBreakPoint, 0x1_000) {
 			t.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", testROMBreakPoint, system.CPU.PC)

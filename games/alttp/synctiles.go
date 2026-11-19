@@ -115,7 +115,7 @@ func (g *Game) resetFlyingTiles() {
 // enqueueFlyingTilesRead reads the overlord tables in the dungeon module. Called with the SRAM reads every 8 frames to
 // find a tile room overlord, and with the WRAM reads while one is active.
 func (g *Game) enqueueFlyingTilesRead(q []snes.Read, always bool) []snes.Read {
-	if !g.SyncUnderworld || g.local.Module != 0x07 {
+	if !g.SyncUnderworldLocal || g.local.Module != 0x07 {
 		return q
 	}
 	if !always && !g.flyingTiles.active {
@@ -307,7 +307,7 @@ func (g *Game) generateFlyingTilesUpdate(newEmitter func() *asm.Emitter, index u
 	for i := ft.count; i < newCount; i++ {
 		data = append(data, flyingTileX[i], flyingTileY[i])
 	}
-	table, ok := g.updData.add(data)
+	table, ok := g.updData.add(data, updTableBaseCycles+int(newCount-ft.count)*updFlyingTileEntryCycles)
 	if !ok {
 		return
 	}

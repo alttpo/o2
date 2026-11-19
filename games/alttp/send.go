@@ -51,7 +51,7 @@ func (g *Game) sendPackets() {
 	}
 
 	{
-		if g.SyncUnderworld {
+		if g.SyncUnderworldLocal {
 			m := g.makeBroadcastMessage()
 			// crystal switch state (shared with alttpo):
 			if err := g.SerializeCrystalSwitch(m); err != nil {
@@ -61,35 +61,39 @@ func (g *Game) sendPackets() {
 		}
 	}
 
-	if g.SyncUnderworld && local.Module == 0x07 {
+	if (g.SyncUnderworldLocal || g.SyncTorches) && local.Module == 0x07 {
 		// star switch state and manipulable objects are room specific; send them only to players in the same room:
 		m := g.makeSectorMessage()
-		// the torches the local player lit (shared with alttpo's torches.as):
-		if err := g.SerializeTorches(m); err != nil {
-			panic(err)
-		}
-		if err := g.SerializeStarSwitch(m); err != nil {
-			panic(err)
-		}
-		if g.manip.valid {
-			if err := g.SerializeManip(m); err != nil {
+		if g.SyncTorches {
+			// the torches the local player lit (shared with alttpo's torches.as):
+			if err := g.SerializeTorches(m); err != nil {
 				panic(err)
 			}
 		}
-		// last, since older alttpo versions stop parsing at the first message type they don't know:
-		if err := g.SerializeRoomState(m); err != nil {
-			panic(err)
-		}
-		if err := g.SerializeRoomDoors(m); err != nil {
-			panic(err)
-		}
-		if err := g.SerializeFlyingTiles(m); err != nil {
-			panic(err)
+		if g.SyncUnderworldLocal {
+			if err := g.SerializeStarSwitch(m); err != nil {
+				panic(err)
+			}
+			if g.manip.valid {
+				if err := g.SerializeManip(m); err != nil {
+					panic(err)
+				}
+			}
+			// last, since older alttpo versions stop parsing at the first message type they don't know:
+			if err := g.SerializeRoomState(m); err != nil {
+				panic(err)
+			}
+			if err := g.SerializeRoomDoors(m); err != nil {
+				panic(err)
+			}
+			if err := g.SerializeFlyingTiles(m); err != nil {
+				panic(err)
+			}
 		}
 		g.send(m)
 	}
 
-	if g.SyncUnderworld && g.manip.valid && (local.Module == 0x07 || local.Module == 0x0E) {
+	if g.SyncUnderworldLocal && g.manip.valid && (local.Module == 0x07 || local.Module == 0x0E) {
 		// the manipulable objects again, to all players whenever they change and every 32 frames, so that players
 		// entering the room have them while it loads (see manipstage.go):
 		m := g.makeBroadcastMessage()
@@ -103,7 +107,7 @@ func (g *Game) sendPackets() {
 		}
 	}
 
-	if g.SyncOverworld {
+	if g.SyncOverworldLocal {
 		// the overworld map16 change log, to all players so that it is applied while they load the area:
 		g.sendMap16()
 		// overworld entrance animations and other events, in their own packet:

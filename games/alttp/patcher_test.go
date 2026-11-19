@@ -235,8 +235,10 @@ func TestPatcher_ModuleTests(t *testing.T) {
 			e.CPU.Reset()
 			e.CPU.SetFlags(0x30)
 			e.SetPC(0x008056)
+			setPPULine(e, 0)
 			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])
-			if !e.RunUntil(testROMModuleRouting, 10_000) {
+			// the update routine runs after the module, before preMain returns to the frame hook:
+			if !e.RunUntil(testROMBreakPoint, 10_000) {
 				t.Fatal("ran too long")
 			}
 			t.Logf("$0F = $%02X\n", e.WRAM[0x0F])

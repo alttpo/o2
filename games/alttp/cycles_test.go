@@ -91,8 +91,8 @@ func (p *cycleProfile) addSpan(t *testing.T, name, from, to string) {
 // preMainParts are the labels in preMain that start its inline parts, with the names they are reported by:
 var preMainParts = map[string]string{
 	"preMain":       "preMain: run timing",
-	"rtDone":        "preMain: module check, update routine call",
-	"syncExit":      "preMain: module call, link color",
+	"rtDone":        "preMain: module call, module check, update routine call",
+	"syncExit":      "preMain: link color",
 	"linkColorExit": "preMain: sfx",
 	"sfxExit":       "preMain: manip pending call, gate, Link OAM copy",
 	"preMainExit":   "preMain: exit",
@@ -425,7 +425,8 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 		"remoteFrame": 7_800,
 		"NMI hooks":   50,
 		"NMI upload":  600,
-		"preMain: manip pending call, gate, Link OAM copy": 200,
+		// with the Link OAM copy's time check:
+		"preMain: manip pending call, gate, Link OAM copy": 230,
 	})
 }
 

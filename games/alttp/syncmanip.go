@@ -161,7 +161,8 @@ func (g *Game) resetManip() {
 
 // enqueueManipReads reads the manipulable slots and the attributes of a few slots not yet seen revealed.
 func (g *Game) enqueueManipReads(q []snes.Read) []snes.Read {
-	if !g.SyncUnderworld || g.local.Module != 0x07 {
+	// the torches are in the slots after the manipulables:
+	if !(g.SyncUnderworldLocal || g.SyncTorches) || g.local.Module != 0x07 {
 		return q
 	}
 	// $0500..$05DF:
@@ -563,7 +564,7 @@ func (g *Game) generateManipUpdate(newEmitter func() *asm.Emitter, index uint32)
 		}
 	}
 	data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
-	table, ok := g.updData.add(data)
+	table, ok := g.updData.add(data, updTableBaseCycles+len(items)*updManipEntryCycles)
 	if !ok {
 		return nil, nil
 	}

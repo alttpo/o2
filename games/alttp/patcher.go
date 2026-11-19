@@ -441,13 +441,19 @@ func emitSRAMStub(a *asm.Emitter, map16Update, manipUpdate, openChests, flyingTi
 
 // emitPreMain emits the trampoline that the frame hook calls with JSL every frame instead of `JSL Module_MainRouting`
 // (gameModes is its operand). It counts the frame and latches the run's start and finish (see runtiming.go), runs the
-// update routine during safe modules, the module, and then, if the sprites gate is set, copies Link's OAM entries and
-// the captured sprites for o2 and draws the remote players with the routine at remoteFrame. Called with A and X 8-bit.
+// module, then the update routine if the module left a safe one in $10, and then, if the sprites gate is set, copies
+// Link's OAM entries and the captured sprites for o2 and draws the remote players with the routine at remoteFrame.
+// Everything after the module checks the time first (see lagcheck.go). Called with A and X 8-bit.
 func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uint32) {
 	a.AssumeSEP(0x30)
 	a.Label("preMain")
 	emitRunTiming(a)
-	a.Comment("only update during safe modules:")
+
+	// jsl to mainrouting that we patched over:
+	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
+
+	a.Comment("only update during safe modules (the update routine checks the time itself):")
+	a.SEP(0x30)
 	a.LDA_dp(0x10)
 	// >= $19    : bad
 	a.CMP_imm8_b(0x19)
@@ -468,16 +474,16 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uin
 
 	a.Label("syncExit")
 
-	// jsl to mainrouting that we patched over:
-	a.JSL_lhb(gameModes[0], gameModes[1], gameModes[2])
-
 	emitLinkColor(a)
 	emitSfx(a)
 	a.Comment("apply the attributes of manipulable objects the room load applied:")
 	a.JSL(manipPending)
 	a.Comment("remote sprites: copy Link's OAM entries, sparkles and dust for o2 to send, and draw remote players:")
 	emitGateTest(a, gateSprites, "preMainExit")
+	emitTimeCheckLong(a, mustLateLineFor(linkOAMCopyCycles, "Link OAM copy"), "linkOAMCopy_time", "linkOAMCopy_late")
 	emitLinkOAMCopy(a)
+	a.Label("linkOAMCopy_late")
+	a.Comment("remoteFrame checks the time itself; started too late, it only draws or replays:")
 	a.JSL(remoteFrame)
 	a.Label("preMainExit")
 	a.RTL()

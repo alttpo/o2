@@ -336,8 +336,13 @@ type setFieldArgs struct {
 	SyncUnderworld   *bool `json:"syncUnderworld"`
 	SyncOverworld    *bool `json:"syncOverworld"`
 	SyncChests       *bool `json:"syncChests"`
-	SyncTunicColor   *bool `json:"syncTunicColor"`
-	SyncSprites      *bool `json:"syncSprites"`
+	// local sync (see Game):
+	SyncUnderworldLocal *bool `json:"syncUnderworldLocal"`
+	SyncOverworldLocal  *bool `json:"syncOverworldLocal"`
+	SyncTorches         *bool `json:"syncTorches"`
+	SyncSfx             *bool `json:"syncSfx"`
+	SyncTunicColor      *bool `json:"syncTunicColor"`
+	SyncSprites         *bool `json:"syncSprites"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -380,6 +385,22 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncChests != nil {
 		g.SyncChests = *f.SyncChests
+		g.clean = false
+	}
+	if f.SyncUnderworldLocal != nil {
+		g.SyncUnderworldLocal = *f.SyncUnderworldLocal
+		g.clean = false
+	}
+	if f.SyncOverworldLocal != nil {
+		g.SyncOverworldLocal = *f.SyncOverworldLocal
+		g.clean = false
+	}
+	if f.SyncTorches != nil {
+		g.SyncTorches = *f.SyncTorches
+		g.clean = false
+	}
+	if f.SyncSfx != nil {
+		g.SyncSfx = *f.SyncSfx
 		g.clean = false
 	}
 	if f.SyncTunicColor != nil {

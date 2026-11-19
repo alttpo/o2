@@ -305,7 +305,7 @@ func roomDoorBit(k int) uint8 { return 0x80 >> (k & 7) }
 
 // enqueueRoomReads adds the WRAM read of $0641..$06EB needed in the underworld.
 func (g *Game) enqueueRoomReads(q []snes.Read) []snes.Read {
-	if !g.SyncUnderworld || g.local.Module != 0x07 {
+	if !g.SyncUnderworldLocal || g.local.Module != 0x07 {
 		return q
 	}
 	q = g.readEnqueue(q, 0xF50000+uint32(roomBlockOffs), uint8(roomChestPos+12-roomBlockOffs), nil)
@@ -746,7 +746,7 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		}
 		data = binary.LittleEndian.AppendUint16(data, updateTableEnd)
 		var ok bool
-		if chestTable, ok = g.updData.add(data); !ok {
+		if chestTable, ok = g.updData.add(data, updTableBaseCycles+len(chests)*updChestEntryCycles); !ok {
 			return nil, nil
 		}
 	}

@@ -95,7 +95,7 @@ func (g *Game) readLocalSfx() {
 
 	local := g.local
 	for ; s.sent != count; s.sent++ {
-		if local == nil || g.local.Index() < 0 || !g.syncing || local.isBadTimeToDraw() {
+		if local == nil || g.local.Index() < 0 || !g.syncing || !g.SyncSfx || local.isBadTimeToDraw() {
 			continue
 		}
 		o := sfxLocalRingOffs + int(s.sent%sfxLocalCount)*2
@@ -189,7 +189,7 @@ func (g *Game) writeRemoteSfx(now time.Time) {
 		if p == local || p.Sfx.sfx == [2]uint8{} {
 			continue
 		}
-		if p.TTL() <= 0 || now.Sub(p.Sfx.received) > sfxRemoteMaxDelay || local.isBadTimeToDraw() ||
+		if !g.SyncSfx || p.TTL() <= 0 || now.Sub(p.Sfx.received) > sfxRemoteMaxDelay || local.isBadTimeToDraw() ||
 			!locationsEqual(local.Location, p.Location) {
 			p.Sfx.sfx = [2]uint8{}
 			continue
@@ -232,6 +232,7 @@ func (g *Game) writeRemoteSfx(now time.Time) {
 func emitSfx(a *asm.Emitter) {
 	a.AssumeSEP(0x30)
 	local := linkOAMCopyAddr + linkOAMCopySfx
+	emitTimeCheckLong(a, mustLateLineFor(sfxCycles, "sfx"), "sfx_time", "sfxSkip")
 	a.Comment("sound effects: append the ones the game queued this frame for o2 to send:")
 	a.PHP()
 	a.PHB()
@@ -306,4 +307,5 @@ func emitSfx(a *asm.Emitter) {
 	a.Label("sfxExit")
 	a.PLB()
 	a.PLP()
+	a.Label("sfxSkip")
 }

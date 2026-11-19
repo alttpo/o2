@@ -90,6 +90,10 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	g.SyncSmallKeys = true
 	g.SyncUnderworld = true
 	g.SyncOverworld = true
+	g.SyncUnderworldLocal = true
+	g.SyncOverworldLocal = true
+	g.SyncTorches = true
+	g.SyncSfx = true
 	g.SyncChests = true
 	g.SyncTunicColor = false
 

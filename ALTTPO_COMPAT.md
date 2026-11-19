@@ -215,6 +215,8 @@ same location, panned to where they are relative to the local player.
   slot only if empty; o2 drops sounds that waited 16 frames before they were queued, and the trampoline drops the
   queue outside the modules o2's update routines run in. Remote sounds are queued after the local ones are captured,
   so they are not sent back out.
+- **Settings.** o2 "Sync Sound Effects" (sending and playing; the trampoline still captures and plays what is in its
+  rings, which stay empty); alttpo always syncs sound effects.
 
 ## Small keys
 
@@ -276,13 +278,13 @@ the heart piece (and could collect it again) until they left and came back.
   current area's flags is set, the area's `$EA`/`$EB` sprites are removed (`$0DD0` = 0): o2 does this in the update
   routine that sets the bit, when the local player is in that area (checking `$1B` and `$8A` when it runs); alttpo
   checks every frame in modules `$09`/`$0B`.
-- **Settings.** "Sync overworld" in both.
+- **Settings.** o2 "Sync Overworld (Global)", alttpo "Sync overworld".
 
 ## Crystal switches
 
 o2 (`games/alttp/synccrystal.go`) and alttpo (`LocalGameState.as`, `crystal`) share the dungeon crystal switch state
 `$7EC172` as a last-writer-wins value in a 0x05 message (`count 1`, `offs $C172`, `timestamp u32`, `value u16`). o2
-sends and applies it when "Sync underworld" is enabled; alttpo when "Sync tilemap" is enabled.
+sends and applies it when "Sync Underworld (Local)" is enabled; alttpo when "Sync tilemap" is enabled.
 
 - **Local changes.** `$C172` is overworld scratch space, so it is only sampled in the dungeon module `$07`. A change
   there is timestamped. Leaving the dungeon module (except for the menus in `$0E`) forgets the timestamp, since the
@@ -322,7 +324,7 @@ the previous room's overlay.
   this room visit, so it never wins. A player's star state is dropped whenever its location changes, so a state from an
   earlier visit to the room is never used. If `$04BC` differs, do what stepping on the star tile does: set `$04BA` and
   `$04BC`, clear `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
-- **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap" (the same settings as for crystal switches).
+- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap" (the same settings as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
 
 ## Room state: trap doors, chests, keys, key doors and switches
@@ -405,7 +407,7 @@ still be taken by the other.
     holds the doors open here; it is cleared again once nobody does. Since a player whose `$0646` is `$80` does not
     count as holding the switch, players do not keep each other's doors open forever. A local somaria block
     recomputes `$0646` every frame and wins while it exists.
-- **Settings.** o2 uses "Sync underworld" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
+- **Settings.** o2 uses "Sync Underworld (Local)" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
   "Sync chests").
 - **Not synced.** The pulled
   lever sprite is not drawn pulled for other players. Enemies are not synced by o2, so a kill room opened by another
@@ -530,7 +532,7 @@ left and came back.
 - **Already synced.** Changes the game logs in the map16 change log are synced as map16 changes: the Turtle Rock pegs
   (area `$07`), the hammer pegs (area `$62`), gravestones, rocks and bombable walls.
 - **Notifications.** o2 names the areas' overlay bits (e.g. "got Turtle Rock entrance from ...").
-- **Settings.** "Sync overworld" in both.
+- **Settings.** o2 "Sync Overworld (Local)", alttpo "Sync overworld".
 
 ## Underworld manipulable objects
 
@@ -597,7 +599,7 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
 - **Not synced.** The push animation is not shown, and bombable floors are left to the room flags in
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
-- **Settings.** o2 uses "Sync underworld" and "Sync overworld", alttpo "Sync tilemap".
+- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap".
 
 ## Flying floor tiles
 
@@ -619,7 +621,7 @@ the same room see the same floor tiles fly at the same time.
   keep taking each other's state): erase the floor tiles its overlord already lifted (at most 4 per frame, since each
   queues a VRAM upload), take its count and timer, or free the overlord when the remote one is done. The tiles already
   flying for the remote player are not spawned here.
-- **Settings.** o2 uses "Sync underworld", alttpo "Sync tilemap". alttpo players with "Sync enemies" also copy the
+- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap". alttpo players with "Sync enemies" also copy the
   overlords of the player owning the room's enemies, which agrees with this.
 
 ## Uncle's sword and shield
@@ -666,7 +668,7 @@ timers, so a torch another player lights is lit here too and goes out at the sam
   it again would only put it out a second time a few frames later. Timers of 0 and timers of torches that stay unlit
   are not written; the game would extinguish an unlit torch whose timer runs out, lowering a dark room's light level
   once more. alttpo writes the owner's timer every frame; o2 only when it differs by more than 2.
-- **Settings.** o2 uses "Sync underworld"; alttpo always syncs torches.
+- **Settings.** o2 uses "Sync Torches"; alttpo always syncs torches.
 
 ## Secrets under lifted objects
 
@@ -713,7 +715,7 @@ revealed and anything else gets the game's usual random prize.
   bushes cut with the sword (`HandleItemTileAction_Overworld`, which logs the stump) count too, and pots smashed with
   the hammer like lifted ones. A small object
   the local player already removed reveals nothing.
-- **Settings.** The map16 and manipulable object settings: o2 "Sync overworld" / "Sync underworld", alttpo "Sync
+- **Settings.** The map16 and manipulable object settings: o2 "Sync Overworld (Local)" / "Sync Underworld (Local)", alttpo "Sync
   tilemap".
 
 ## Drawing remote players

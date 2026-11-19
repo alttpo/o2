@@ -54,6 +54,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncSmallKeys, setsyncSmallKeys] = useState(true);
     const [syncUnderworld, setsyncUnderworld] = useState(true);
     const [syncOverworld, setsyncOverworld] = useState(true);
+    const [syncUnderworldLocal, setsyncUnderworldLocal] = useState(true);
+    const [syncOverworldLocal, setsyncOverworldLocal] = useState(true);
+    const [syncTorches, setsyncTorches] = useState(true);
+    const [syncSfx, setsyncSfx] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
     const [syncSprites, setsyncSprites] = useState(true);
@@ -90,6 +94,10 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncSmallKeys(game.syncSmallKeys);
         setsyncUnderworld(game.syncUnderworld);
         setsyncOverworld(game.syncOverworld);
+        setsyncUnderworldLocal(game.syncUnderworldLocal);
+        setsyncOverworldLocal(game.syncOverworldLocal);
+        setsyncTorches(game.syncTorches);
+        setsyncSfx(game.syncSfx);
         setsyncChests(game.syncChests);
         setsyncTunicColor(game.syncTunicColor);
         setsyncSprites(game.syncSprites);
@@ -322,20 +330,58 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Sync Chests
                 </label></div>
 
-                <div><label for="syncOverworld">
+                <div><label for="syncOverworld"
+                       title="Overworld area flags kept by every player: opened entrances, bombed walls, heart pieces and other events, once the area loads">
                     <input type="checkbox"
                            id="syncOverworld"
                            checked={syncOverworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
-                    />Sync Overworld
+                    />Sync Overworld (Global)
                 </label></div>
 
-                <div><label for="syncUnderworld">
+                <div><label for="syncUnderworld"
+                       title="Dungeon room flags kept by every player: chests, keys, doors and bosses, once the room loads">
                     <input type="checkbox"
                            id="syncUnderworld"
                            checked={syncUnderworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
-                    />Sync Underworld
+                    />Sync Underworld (Global)
+                </label></div>
+
+                <div><label for="syncOverworldLocal"
+                       title="What players in the same area do while there: lifted bushes and rocks and the secrets under them, bombed walls, entrance animations">
+                    <input type="checkbox"
+                           id="syncOverworldLocal"
+                           checked={syncOverworldLocal}
+                           onChange={setField.bind(this, sendGameCommand, setsyncOverworldLocal, "syncOverworldLocal", getTargetChecked)}
+                    />Sync Overworld (Local)
+                </label></div>
+
+                <div><label for="syncUnderworldLocal"
+                       title="What players in the same room do while there: pots and the items under them, blocks, pegs, crystal switches, star tiles, trap doors, switches, chests, flying floor tiles">
+                    <input type="checkbox"
+                           id="syncUnderworldLocal"
+                           checked={syncUnderworldLocal}
+                           onChange={setField.bind(this, sendGameCommand, setsyncUnderworldLocal, "syncUnderworldLocal", getTargetChecked)}
+                    />Sync Underworld (Local)
+                </label></div>
+
+                <div><label for="syncTorches"
+                       title="Torches lit by players in the same room">
+                    <input type="checkbox"
+                           id="syncTorches"
+                           checked={syncTorches}
+                           onChange={setField.bind(this, sendGameCommand, setsyncTorches, "syncTorches", getTargetChecked)}
+                    />Sync Torches
+                </label></div>
+
+                <div><label for="syncSfx"
+                       title="Sound effects of players in the same room or area">
+                    <input type="checkbox"
+                           id="syncSfx"
+                           checked={syncSfx}
+                           onChange={setField.bind(this, sendGameCommand, setsyncSfx, "syncSfx", getTargetChecked)}
+                    />Sync Sound Effects
                 </label></div>
 
                 <div><label for="syncSprites"

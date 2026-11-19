@@ -40,7 +40,7 @@ const (
 
 	// patchFormat must be incremented for any change to the patch that patchVersion does not hash, such as to the init
 	// code or the frame hook in Patcher.Patch:
-	patchFormat = 10
+	patchFormat = 11
 )
 
 var patchSignatureMagic = [8]byte{'O', '2', '-', 'P', 'A', 'T', 'C', 'H'}

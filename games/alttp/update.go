@@ -141,6 +141,9 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 	// assume 8-bit mode for accumulator and index registers:
 	a.AssumeSEP(0x30)
 
+	// preMain calls it after the module; return unless the frame has time left for it (see lagcheck.go):
+	emitUpdateTimeCheck(a)
+
 	// custom asm overrides update asm generation:
 	if !g.generateCustomAsm(a) {
 		if !g.generateUpdateAsm(a) {
@@ -163,6 +166,11 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 		logAsm(a)
 		return
 	}
+
+	// the routine's worst case, for its time check:
+	cycles := estimateUpdateCycles(a.Bytes(), g.updCallee) + g.updData.cycles()
+	late := setUpdateLateLine(a.Bytes(), cycles)
+	log.Printf("alttp: update: at most %d cycles; late from line %d\n", cycles, late)
 
 	// dump asm:
 	logAsm(a)
@@ -276,7 +284,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
-		if g.SyncUnderworld {
+		if g.SyncUnderworldLocal {
 			if u, ta := g.generateCrystalSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -302,17 +310,6 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					g.updData.reset(mark)
 				}
 			}
-			if u, ta := g.generateTorchesUpdate(newEmitter, genIndex); u != nil {
-				// don't emit the routine if it pushes us over the code size limit:
-				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
-					genIndex++
-					asmConfirmers = append(asmConfirmers, u)
-					g.torches.inflight = u
-
-					a.Append(ta)
-					updated = true
-				}
-			}
 			if u, ta := g.generateStarSwitchUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -336,6 +333,20 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					updated = true
 				} else {
 					g.updData.reset(mark)
+				}
+			}
+		}
+
+		if g.SyncTorches {
+			if u, ta := g.generateTorchesUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.torches.inflight = u
+
+					a.Append(ta)
+					updated = true
 				}
 			}
 		}
@@ -372,7 +383,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
-		if g.SyncOverworld {
+		if g.SyncOverworldLocal {
 			if u, ta := g.generateOwEventsUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -460,7 +471,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// apply map16 changes made by players in the same overworld area:
-		if g.SyncOverworld {
+		if g.SyncOverworldLocal {
 			mark := g.updData.mark()
 			if u, ta := g.generateMap16Update(newEmitter, gen16Index); u != nil {
 				if n := ta.Len() + a16.Len() + a.Len() + epilogSize; n > updateBufSize {
@@ -480,7 +491,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		// reveal objects and move push blocks like the players in the same room did:
-		if g.SyncUnderworld {
+		if g.SyncUnderworldLocal {
 			mark := g.updData.mark()
 			if u, ta := g.generateManipUpdate(newEmitter, gen16Index); u != nil {
 				if ta.Len()+a16.Len()+a.Len()+epilogSize <= updateBufSize {

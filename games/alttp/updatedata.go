@@ -51,20 +51,40 @@ func updateDataAddrFor(target uint32) uint32 {
 	return updateDataAAddr
 }
 
-// updateData collects the tables of the update routine being generated.
+// updateData collects the tables of the update routine being generated, and the most cycles the ROM routines take
+// to apply them (see estimateUpdateCycles).
 type updateData struct {
 	base uint32
 	buf  []byte
+	// the cycles charged for each table, by its offset in buf:
+	tables []updateTable
 }
 
-// add appends a table and returns its address, or ok = false if it does not fit; the generator then emits nothing.
-func (d *updateData) add(b []byte) (addr uint32, ok bool) {
+type updateTable struct {
+	offs, cycles int
+}
+
+// add appends a table, which its ROM routine takes at most cycles to apply, and returns its address, or ok = false if
+// it does not fit; the generator then emits nothing.
+func (d *updateData) add(b []byte, cycles int) (addr uint32, ok bool) {
 	if d == nil || len(d.buf)+len(b) > updateDataSize {
 		return 0, false
 	}
 	addr = d.base + uint32(len(d.buf))
+	d.tables = append(d.tables, updateTable{len(d.buf), cycles})
 	d.buf = append(d.buf, b...)
 	return addr, true
+}
+
+// cycles returns the cycles charged for the tables.
+func (d *updateData) cycles() (n int) {
+	if d == nil {
+		return 0
+	}
+	for _, t := range d.tables {
+		n += t.cycles
+	}
+	return
 }
 
 // mark returns the length of the data so far, for reset to drop the tables of routines that were not emitted.
@@ -80,6 +100,9 @@ func (d *updateData) reset(mark int) {
 		return
 	}
 	d.buf = d.buf[:mark]
+	for len(d.tables) > 0 && d.tables[len(d.tables)-1].offs >= mark {
+		d.tables = d.tables[:len(d.tables)-1]
+	}
 }
 
 // emitCallUpdateROM emits the call of the ROM routine behind the SRAM stub's JML at stub with A = table; 16-bit A.

@@ -196,11 +196,25 @@ type Game struct {
 	SyncProgress     bool   `json:"syncProgress"`
 	SyncHearts       bool   `json:"syncHearts"`
 	SyncSmallKeys    bool   `json:"syncSmallKeys"`
-	SyncUnderworld   bool   `json:"syncUnderworld"`
-	SyncOverworld    bool   `json:"syncOverworld"`
-	SyncChests       bool   `json:"syncChests"`
-	lastSyncChests   bool
-	SyncTunicColor   bool `json:"syncTunicColor"`
+	// SyncUnderworld and SyncOverworld ("Underworld (Global)", "Overworld (Global)") share the dungeon room flags and
+	// the overworld area flags in SRAM, which every player keeps for good:
+	SyncUnderworld bool `json:"syncUnderworld"`
+	SyncOverworld  bool `json:"syncOverworld"`
+	// SyncUnderworldLocal ("Underworld (Local)") shares what players in the same room do while they are there:
+	// manipulable objects (pots, blocks, pegs, big rocks) and the items under pots, crystal switches, star tiles, room
+	// state (trap doors, chests, keys, key doors, switches) and flying floor tiles:
+	SyncUnderworldLocal bool `json:"syncUnderworldLocal"`
+	// SyncOverworldLocal ("Overworld (Local)") shares what players in the same area do while they are there: map16
+	// changes (lifted bushes and rocks, bombed walls, ...) and the secrets under them, and the area's events (entrance
+	// animations, the desert statues, the lumberjacks' tree):
+	SyncOverworldLocal bool `json:"syncOverworldLocal"`
+	// SyncTorches shares the lit torches of the room:
+	SyncTorches bool `json:"syncTorches"`
+	// SyncSfx plays the sound effects of players in the same location:
+	SyncSfx        bool `json:"syncSfx"`
+	SyncChests     bool `json:"syncChests"`
+	lastSyncChests bool
+	SyncTunicColor bool `json:"syncTunicColor"`
 	// SyncSprites draws remote players in the same room or area; see remotesprites.go:
 	SyncSprites bool `json:"syncSprites"`
 }
@@ -237,9 +251,14 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		SyncSmallKeys:    true,
 		SyncUnderworld:   true,
 		SyncOverworld:    true,
-		SyncChests:       true,
-		lastSyncChests:   false,
-		SyncSprites:      true,
+		// local sync:
+		SyncUnderworldLocal: true,
+		SyncOverworldLocal:  true,
+		SyncTorches:         true,
+		SyncSfx:             true,
+		SyncChests:          true,
+		lastSyncChests:      false,
+		SyncSprites:         true,
 	}
 
 	g.patchSignature, g.patchSignatureOK = readPatchSignature(rom)

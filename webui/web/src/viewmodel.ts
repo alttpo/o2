@@ -83,6 +83,10 @@ export interface GameALTTPViewModel extends GameViewModel {
     syncSmallKeys: boolean;
     syncUnderworld: boolean;
     syncOverworld: boolean;
+    syncUnderworldLocal: boolean;
+    syncOverworldLocal: boolean;
+    syncTorches: boolean;
+    syncSfx: boolean;
     syncChests: boolean;
     syncTunicColor: boolean;
     syncSprites: boolean;
