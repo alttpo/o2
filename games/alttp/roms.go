@@ -67,7 +67,27 @@ const (
 )
 
 func (g *Game) isVTRandomizer() bool {
-	return string(g.rom.Header.Title[0:3]) == "VT "
+	return isVTRandomizerTitle(g.rom.Header.Title[:])
+}
+
+// isVTRandomizerTitle reports whether a ROM title is one of the randomizers built on the VT randomizer's base patch
+// (z3randomizer), as alttpo's ROMMapping detect() recognizes them: ALTTPR "VT <seed>", and "XXnnn_..." for the
+// Entrance and Door Randomizers (ER, DR), Archipelago (AP) and Berserker MultiWorld (BM, BD) e.g.
+// "ER101_1_1_288795599". These all let the Y button swap the item in the bow, boomerang, mushroom and flute slots
+// ($7EF340, $7EF341, $7EF344, $7EF34C) among the items $7EF38C and $7EF38E track, so those slots must not sync as
+// in the vanilla game: the highest value would win and undo the local player's choice of e.g. shovel over flute.
+func isVTRandomizerTitle(title []byte) bool {
+	if len(title) >= 3 && string(title[0:3]) == "VT " {
+		return true
+	}
+	if len(title) < 6 || title[5] != '_' {
+		return false
+	}
+	switch string(title[0:2]) {
+	case "ER", "DR", "AP", "BM", "BD":
+		return true
+	}
+	return false
 }
 
 func (g *Game) fillRomFunctions() {
