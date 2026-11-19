@@ -454,6 +454,12 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   encoded like the location in message 0x01: bit 17 the dark world (`$0FFF & 1`), bit 16 the underworld (0) and bits
   0-15 the area (`$8A`, which is the parent screen in large areas). (Earlier versions sent `area u16` instead; they
   cannot share map16 changes with these.)
+- **Bombed openings.** `Overworld_BombTile` logs the right half (`$0DB5`) of a wall it bombs open at the left half's
+  position: the log has (`pos`, `$0DB4`) followed by (`pos`, `$0DB5`). Applied as logged, the right half replaced the
+  left half one tile left of where it belongs and the opening could not be entered (and an o2 player passing it on
+  made it come back that way to the player who bombed it, showing two right halves). Both now take such an entry as
+  (`pos + 2`, `$0DB5`) when reading the local log, so it is sent fixed, and when receiving a remote log, for senders
+  that do not fix it yet.
 - **Same world.** The log is only read, and changes are only applied, while `$0FFF` agrees with the area's world (the
   dark world areas are `$40`-`$7F`), which it does not while a warp switches worlds. o2 reads `$0FFF` in the
   overworld instead of the underworld door table (`$1980..$19E9`), which is only used in the underworld, so the read
@@ -493,7 +499,10 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   in VRAM.) Draws stop when the VRAM stripe buffer (`$1000`) passes `$80` bytes and continue later. A local
   area load makes all remote entries apply again. o2 applies them from its update routine (a table of up to 8 entries
   per routine, reporting how many were applied); alttpo checks between frames and puts the draw calls in its patch
-  buffer.
+  buffer. alttpo's patch buffer only runs in the frame it was written for (it compares `$1A`): when it ran again in a
+  later frame, its stripes (`$14` = 1) could land in the item menu's first frame, which fills the stripe buffer at
+  `$1000` with the menu's tilemap, and the NMI then took that tilemap for stripes and filled most of VRAM (BG2 and BG3)
+  with garbage.
 - **Menus.** A player in the item menu or a text box (`$0E`) keeps its log, keeps sending it and is still taken as
   being in its area, so players entering the area meanwhile catch up.
 - **Underworld.** Manipulable objects get the same treatment; see [While the room loads](#underworld-manipulable-objects).

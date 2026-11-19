@@ -55,6 +55,12 @@ import (
 // resend their whole log, so not while catching up) is live: the remote player changed the tile just now. If a live
 // entry replaces a bush, rock or sign that is still there locally, the update routine also reveals the secret under
 // it (see syncsecrets.go).
+//
+// Bombing open a cave or house wall (Overworld_BombTile) logs the opening's right half ($0DB5) at the left half's
+// position instead of 2 bytes to the right of it: the log has ($pos, $0DB4) followed by ($pos, $0DB5). Applied as
+// logged, the right half would replace the left half one tile left of where it belongs, and the opening could not be
+// entered. Such an entry is taken as ($pos + 2, $0DB5) both when the local log is read and when a remote log is
+// received (see fixMap16Entry).
 
 const (
 	map16LogIndex     = uint16(0x04AC)
@@ -79,6 +85,21 @@ const (
 type map16Entry struct {
 	Pos  uint16
 	Tile uint16
+}
+
+// the bombed wall opening Overworld_BombTile draws (left and right half), which it logs at the same position:
+const (
+	map16BombDoorLeft  = uint16(0x0DB4)
+	map16BombDoorRight = uint16(0x0DB5)
+)
+
+// fixMap16Entry returns the entry e as the change it made, given the entry before it in the same log:
+// Overworld_BombTile logs the right half of a bombed opening at the left half's position.
+func fixMap16Entry(prev, e map16Entry) map16Entry {
+	if e.Tile == map16BombDoorRight && prev.Tile == map16BombDoorLeft && prev.Pos == e.Pos {
+		e.Pos += 2
+	}
+	return e
 }
 
 // map16Local tracks the local player's map16 change log.
@@ -297,6 +318,10 @@ func (g *Game) readMap16() {
 			break
 		}
 		e := map16Entry{Pos: g.wramU16(po), Tile: g.wramU16(to)}
+		if i > 0 {
+			// send where a bombed opening's right half really went:
+			e = fixMap16Entry(m.entries[i-1], e)
+		}
 		m.entries[i] = e
 		m.known[e.Pos] = e.Tile
 		m.count = i + 1
@@ -388,6 +413,11 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 	here := m.valid && m.loc == hdr.Loc && m.age >= map16LiveAfter
 	for k, e := range entries {
 		i := start + k
+		// senders that do not fix the entries of bombed openings yet (the entry before is in this message or an
+		// earlier one; logs are sent in order):
+		if i > 0 && rm.have[i-1] {
+			e = fixMap16Entry(rm.entries[i-1], e)
+		}
 		if rm.have[i] && rm.entries[i] != e && i < rm.applied {
 			// the sender's log was replaced without us noticing; apply again from here:
 			rm.applied = i

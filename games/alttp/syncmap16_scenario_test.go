@@ -1,8 +1,11 @@
 package alttp
 
 import (
-	"github.com/alttpo/snes/mapping/lorom"
+	"bytes"
+	"encoding/binary"
 	"testing"
+
+	"github.com/alttpo/snes/mapping/lorom"
 )
 
 const (
@@ -155,6 +158,72 @@ func TestMap16Scenario_SmallAreaAlwaysDrawn(t *testing.T) {
 	h.changeMap16(0, m16PosSmallFar, m16Bush)
 	h.frames(skSettleFrames)
 	h.expectTile("small area", 1, m16PosSmallFar, m16Bush, true)
+}
+
+// bombOpening does what Overworld_BombTile does when a bomb opens a wall: it draws both halves of the opening but logs
+// the right half at the left half's position.
+func (h *skScenario) bombOpening(i int, pos uint16) {
+	h.changeMap16(i, pos, map16BombDoorLeft)
+	h.changeMap16(i, pos, map16BombDoorRight)
+	h.setWRAMU16(i, 0x2000+uint32(pos), map16BombDoorLeft)
+	h.setWRAMU16(i, 0x2000+uint32(pos+2), map16BombDoorRight)
+}
+
+func TestMap16Scenario_BombedOpening(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	h.bombOpening(0, m16Pos)
+	h.frames(skSettleFrames)
+	h.expectTile("g1 bombed an opening: left half", 1, m16Pos, map16BombDoorLeft, true)
+	h.expectTile("g1 bombed an opening: right half", 1, m16Pos+2, map16BombDoorRight, true)
+	// nothing echoes back to g1 to move the right half over the left half:
+	h.frames(skSettleFrames * 4)
+	h.expectTile("echo: left half", 0, m16Pos, map16BombDoorLeft, false)
+	h.expectTile("echo: right half", 0, m16Pos+2, map16BombDoorRight, false)
+	if h.wramU16(1, 0xF802) != m16Pos+2 || h.wramU16(1, 0xFA02) != map16BombDoorRight {
+		t.Errorf("g2: expected the right half memorized at $%04x; got $%04x <- $%04x", m16Pos+2, h.wramU16(1, 0xF802), h.wramU16(1, 0xFA02))
+	}
+}
+
+func TestMap16Scenario_BombedOpeningFromOldSender(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	// a sender that does not fix the entries sends the log as the game wrote it:
+	entries := []map16Entry{{m16Pos, map16BombDoorLeft}, {m16Pos, map16BombDoorRight}}
+	p := &h.gs[1].g.players[h.gs[0].g.local.Index()]
+	for k := range entries {
+		g := h.gs[1].g
+		var b bytes.Buffer
+		loc := uint32(m16Area)
+		b.Write([]byte{uint8(loc), uint8(loc >> 8), uint8(loc >> 16), 2, uint8(k), 1})
+		binary.Write(&b, binary.LittleEndian, entries[k])
+		if err := g.DeserializeMap16(p, &b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if e := p.Map16.entries[1]; e.Pos != m16Pos+2 || e.Tile != map16BombDoorRight {
+		t.Errorf("expected the right half at $%04x; got $%04x <- $%04x", m16Pos+2, e.Pos, e.Tile)
+	}
+	if e := p.Map16.entries[0]; e.Pos != m16Pos || e.Tile != map16BombDoorLeft {
+		t.Errorf("expected the left half at $%04x; got $%04x <- $%04x", m16Pos, e.Pos, e.Tile)
+	}
+	// the whole log again, as resent every 32 frames, does not count as a replaced log:
+	p.Map16.applied = 2
+	var b bytes.Buffer
+	b.Write([]byte{uint8(m16Area), 0, 0, 2, 0, 2})
+	binary.Write(&b, binary.LittleEndian, entries)
+	if err := h.gs[1].g.DeserializeMap16(p, &b); err != nil {
+		t.Fatal(err)
+	}
+	if p.Map16.applied != 2 {
+		t.Errorf("expected the resent log taken as the same; applied went back to %d", p.Map16.applied)
+	}
 }
 
 func TestMap16Scenario_OtherArea(t *testing.T) {
