@@ -3,6 +3,8 @@ package alttp
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/alttpo/snes/emulator"
@@ -11,9 +13,9 @@ import (
 // Time checks (see emitTimeCheck): remoteFrame skips the scan or drawing when the scanline says it would end after
 // the NMI, or when an NMI came during the frame.
 
-// setScanline makes the test emulator's V counter read as line (its IO registers are a plain register file).
-func setScanline(h *skScenario, i int, line uint8) {
-	h.gs[i].e.Bus.EaWrite(0x00213D, line)
+// setScanline puts gi's PPU at the start of line, from where it counts on as the CPU runs.
+func setScanline(h *skScenario, i int, line int) {
+	setPPULine(h.gs[i].e, line)
 }
 
 // fillScanWorst fills g1's OAM buffer for the scan's worst cases between two time checks: every entry used; at the
@@ -59,6 +61,26 @@ func fillScanWorst(h *skScenario, captures bool) {
 	}
 }
 
+// fillCopyBlock fills g1's OAM buffer for the costliest block of the scan without a death chr: its first block copies
+// linkOAMExtrasMax captured chrs in the VRAM slot range (all there is room for), and the rest are 16x16 chrs showing
+// VRAM slots. A bomb exists, so that captured chrs are looked at.
+func fillCopyBlock(h *skScenario) {
+	e := h.gs[0].e
+	e.WRAM[0x0352], e.WRAM[0x0353] = 0x00, 0x00
+	for k := 0x7F; k >= 0; k-- {
+		chr := uint8(0x20)
+		if k > 0x7F-linkOAMExtrasMax {
+			chr = 0x26
+		}
+		copy(e.WRAM[0x0800+k*4:], []byte{uint8(k), 0x40, chr, 0x20})
+		e.WRAM[0x0A20+k] = 0x02
+	}
+	e.WRAM[0x0C4A] = 0x07
+	for x := 0; x < 16; x++ {
+		e.WRAM[0x0DD0+x] = 0
+	}
+}
+
 // fillDrawWorst fills the remote sprites table with n copies of its first slotted sprite (the costliest kind to draw;
 // the other lists are emptied), and g1's OAM buffer with the game's sprites in all but the 32 lowest entries, so that
 // each draw searches past them once.
@@ -99,11 +121,15 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	clearOAM := g1.beforeEmulate
 	defer func() { g1.beforeEmulate = clearOAM }()
 
-	// the scan, with and without captures:
-	for _, captures := range []bool{true, false} {
+	// the scan, with and without captures, and a block copying all it can:
+	for _, fill := range []func(){
+		func() { fillScanWorst(h, true) },
+		func() { fillScanWorst(h, false) },
+		func() { fillCopyBlock(h) },
+	} {
 		g1.beforeEmulate = func() {
 			clearOAM()
-			fillScanWorst(h, captures)
+			fill()
 		}
 		for f := 0; f < 2; f++ {
 			h.profileFrame(p, 0)
@@ -178,11 +204,11 @@ func TestCycleBudgets_RemoteFrameTimeChecks(t *testing.T) {
 	}
 }
 
-// timeCheck is a frame for timeCheckResult to run: the scanline it starts on, whether the scan's first check reads
-// line 224 (and the drawing check line 0), whether the drawing check reads line 224, and whether an NMI is counted
-// when remoteFrame starts (a lag frame).
+// timeCheck is a frame for timeCheckResult to run: the scanline remoteFrame starts on (the PPU counts on from there),
+// whether the scan's first check starts on line 224 (and the drawing check on line 0), whether the drawing check
+// starts on line 224, and whether an NMI is counted when remoteFrame starts (a lag frame).
 type timeCheck struct {
-	line                    uint8
+	line                    int
 	scanLate, drawLate, lag bool
 }
 
@@ -198,7 +224,6 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCh
 		// a bomb and a captured chr, so that the scan runs and captures:
 		e.WRAM[0x0C4A] = 0x07
 		copy(e.WRAM[0x0800+0x10*4:], []byte{0x40, 0x40, 0x26, 0x20})
-		setScanline(h, 0, c.line)
 	}
 	defer func() {
 		g1.beforeEmulate = clearOAM
@@ -210,6 +235,7 @@ func timeCheckResult(t *testing.T, h *skScenario, labels *cycleProfile, c timeCh
 	testStepHook = func(e2 *emulator.System) {
 		switch e2.GetPC() &^ 0x800000 {
 		case rfStart:
+			setScanline(h, 0, c.line)
 			if c.lag {
 				rtSRAM(e2, rtmNMIFrames)[0]++
 			}
@@ -245,12 +271,14 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 		draw, capture, body bool
 	}{
 		{"top of the frame", timeCheck{line: 0}, true, true, true},
-		{"just before all checks' lines", timeCheck{line: min(rfDrawLateLine(remoteEntryMax), rfScanLateLine) - 1}, true, true, true},
+		{"just before all checks' lines", timeCheck{line: int(min(rfDrawLateLine(remoteEntryMax), rfScanLateLine)) - 1}, true, true, true},
 		{"vblank", timeCheck{line: rfNMILine + 5}, true, true, true},
-		{"line 256+ (reads as 0..5)", timeCheck{line: 3}, true, true, true},
+		{"line 259 (reads as 3)", timeCheck{line: 259}, true, true, true},
 		{"too late to scan and draw", timeCheck{line: rfScanLateLine}, false, false, false},
 		{"too late to draw", timeCheck{drawLate: true}, false, true, false},
-		{"line 224", timeCheck{line: rfNMILine - 1}, false, false, false},
+		// remoteFrame takes a few lines to reach its first check, so starting it on line 224 checks in vblank; put the
+		// checks themselves on line 224:
+		{"checks on line 224", timeCheck{scanLate: true, drawLate: true}, false, false, false},
 		{"lagging", timeCheck{lag: true}, true, true, true},
 		// a late scan reuses the VRAM slots the parts got rfReuseFrames times in a row, then draws the first player
 		// as a blob:
@@ -299,5 +327,88 @@ func TestRemoteFrameTimeChecks(t *testing.T) {
 	// a scan in time hands out the slots again:
 	if _, _, body := timeCheckResult(t, h, labels, timeCheck{}); !body {
 		t.Errorf("after the late scans: body not drawn")
+	}
+}
+
+// clocksLeft returns the CPU's master clocks left before the NMI on the PPU's counters: those left on this line, and
+// on each visible line after it what refresh and HDMA leave; or -1 if the NMI came already (a frame after start, or in
+// vblank).
+func clocksLeft(ppu *emulator.PPU, startFrame uint64) int {
+	if ppu.Frame != startFrame || ppu.V >= rfNMILine {
+		return -1
+	}
+	return 1364 - ppu.HClock + (rfNMILine-1-ppu.V)*(1364-40-rfHDMAClocks)
+}
+
+// remoteFrame may only make a frame late by its unavoidable least: whatever line it starts on before vblank, with the
+// worst cases of the scan and of drawing, the game's tail after it (rfTailCycles, at 8 master clocks per cycle) still
+// fits before the NMI on the PPU's counters (refresh and HDMA taking theirs), unless there wasn't room for the least
+// remoteFrame takes (its start, and the late checks skipping all its work) to begin with.
+func TestRemoteFrameTimeChecks_FinishBeforeNMI(t *testing.T) {
+	labels := newCycleProfile(t, "VT test")
+	h := newRSCycleScenario(t)
+	g1 := h.gs[0]
+	e := g1.e
+	ppu := testPPU(e)
+	rfStart := labels.label(t, "rf_start")
+	clearOAM := g1.beforeEmulate
+	defer func() {
+		g1.beforeEmulate = clearOAM
+		testStepHook = nil
+		setScanline(h, 0, 0)
+	}()
+	for _, c := range []struct {
+		name string
+		fill func()
+	}{
+		{"the scan's worst case", func() { fillScanWorst(h, true) }},
+		{"the scan's worst case without captures", func() { fillScanWorst(h, false) }},
+		{"a block copying all it can", func() { fillCopyBlock(h) }},
+		{"drawing 8 sprites", func() { fillDrawWorst(h, 8) }},
+		{fmt.Sprintf("drawing %d sprites", remoteEntryMax), func() { fillDrawWorst(h, remoteEntryMax) }},
+	} {
+		g1.beforeEmulate = func() {
+			clearOAM()
+			c.fill()
+			// over this many frames the table would go stale; keep it current, and capturing on:
+			e.SRAM[(remoteTableAddr+rtTTL)&0x7FFF] = 60
+			e.SRAM[(remoteTableAddr+rtCaptureTTL)&0x7FFF] = 60
+		}
+		// per start line: the clocks left for the tail when remoteFrame started and when the frame ended:
+		var before, after [rfNMILine]int
+		for line := 0; line < rfNMILine; line++ {
+			var startFrame uint64
+			testStepHook = func(e2 *emulator.System) {
+				if e2 == e && e2.GetPC()&^0x800000 == rfStart {
+					setScanline(h, 0, line)
+					startFrame = ppu.Frame
+					before[line] = clocksLeft(ppu, startFrame) - rfTailCycles*8
+				}
+			}
+			h.frame()
+			after[line] = clocksLeft(ppu, startFrame) - rfTailCycles*8
+		}
+		// what remoteFrame took, in the frames that ended before the NMI (whose clocks are all counted):
+		least, most := math.MaxInt, 0
+		for line := range before {
+			if after[line] >= -rfTailCycles*8 {
+				least, most = min(least, before[line]-after[line]), max(most, before[line]-after[line])
+			}
+		}
+		spare, spareLine := math.MaxInt, 0
+		for line := range before {
+			if before[line] < least {
+				continue
+			}
+			if after[line] < spare {
+				spare, spareLine = after[line], line
+			}
+			if after[line] < 0 {
+				t.Errorf("%s from line %d: %d clocks left for the tail at the start, %d at the end", c.name, line,
+					before[line], after[line])
+			}
+		}
+		t.Logf("%s: remoteFrame took %d..%d clocks; least to spare for the tail %d, from line %d", c.name, least, most,
+			spare, spareLine)
 	}
 }

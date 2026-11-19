@@ -26,9 +26,10 @@ func setupTestLogger(t *testing.T) (logger *testLogger) {
 }
 
 func createTestEmulator(romTitle string, logger io.Writer) (system *emulator.System, rom *snes.ROM, err error) {
-	// create the CPU-only SNES emulator:
+	// create the SNES emulator: a CPU, and a PPU for its scanline counter (see testPPU):
 	system = &emulator.System{
-		Logger: logger,
+		Logger:  logger,
+		Devices: []emulator.Device{&emulator.PPU{HDMAClocks: rfHDMAClocks}},
 	}
 	if err = system.CreateEmulator(); err != nil {
 		return
@@ -51,6 +52,8 @@ func createTestEmulator(romTitle string, logger io.Writer) (system *emulator.Sys
 		err = fmt.Errorf("CPU ran too long and did not reach PC=%#06x; actual=%#06x", 0x00_8034, system.CPU.PC)
 		return
 	}
+	// the init code enabled NMI; the tests run code without the NMI coming in between, unless they enable it:
+	system.Bus.EaWrite(0x00_4200, 0x00)
 
 	// setup the required ROM lookup table for the patcher's module check:
 	{
@@ -109,4 +112,21 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	g.ProvideQueue(&testQueue{E: system})
 
 	return g
+}
+
+// testPPU returns the test emulator's PPU, which counts the scanlines (HDMA halting the CPU for rfHDMAClocks per
+// visible line, as remoteFrame's time checks assume) and raises no NMI unless the code enables it.
+func testPPU(e *emulator.System) *emulator.PPU {
+	for _, d := range e.Devices {
+		if p, ok := d.(*emulator.PPU); ok {
+			return p
+		}
+	}
+	panic("test emulator without a PPU")
+}
+
+// setPPULine puts the test emulator's H and V counters at the start of line.
+func setPPULine(e *emulator.System, line int) {
+	p := testPPU(e)
+	p.V, p.HClock = line, 0
 }

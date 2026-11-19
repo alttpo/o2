@@ -190,9 +190,10 @@ const (
 	// the OAM entries the scan looks at between time checks:
 	rfScanBlock = 16
 	// from a scan check to the next check, and then the exit if that one is late: a block of rfScanBlock entries
-	// each with the most costly path of the handler but for listing the dying enemies, which has a check of its own.
-	// Measured 1,808 (timecheck_test.go):
-	rfScanCycles = 1_950
+	// each with the most costly path of the handler (a captured chr in the VRAM slot range, copied) but for listing
+	// the dying enemies, which has a check of its own; also the rest of a block after that check finds it too late to
+	// list them, which goes on with the block. Measured 4,002 (timecheck_test.go, fillCopyBlock):
+	rfScanCycles = 4_200
 	// from the check before listing the dying enemies (the first death poof or explosion the scan sees) to the next
 	// scan check, and then the exit if that one is late: listing linkOAMDyingMax of them (in the last sprite slots
 	// looked at), then the rest of a block as for rfScanCycles. Measured 5,469 (timecheck_test.go):

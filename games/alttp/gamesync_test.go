@@ -319,12 +319,15 @@ func (gs *gameSync) runFrame(t testing.TB) {
 	}
 	g.readMainComplete(rsps)
 
+	// the main loop starts on line frameLine (the top of the screen unless set), where the game's module would have
+	// left it:
+	setPPULine(e, gs.frameLine)
 	if gs.beforeEmulate != nil {
 		gs.beforeEmulate()
 	}
 
 	// emulate a main loop iteration; remoteFrame's scan of the OAM buffer takes up to about 28,000 cycles in
-	// timecheck_test.go's worst case, where the test's scanline never says it's too late:
+	// timecheck_test.go's worst case, where the scanline is pinned so that it never says it's too late:
 	e.CPU.Reset()
 	e.SetPC(testROMMainGameLoop)
 	if !runUntil(e, testROMBreakPoint, 0x10_000) {
@@ -342,6 +345,8 @@ type gameSync struct {
 	// beforeEmulate, if set, is called after the game processed reads and generated any update routine but before the
 	// emulated game frame executes it:
 	beforeEmulate func()
+	// frameLine is the scanline the emulated game frame starts on:
+	frameLine int
 }
 
 type gameSyncTestUpdateFunc func(t testing.TB, gs [2]gameSync)

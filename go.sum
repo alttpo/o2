@@ -6,6 +6,8 @@ github.com/alttpo/snes v0.0.0-20261118155653-01e76e7eeb76 h1:ShVjsz7P3r/CGlBrRom
 github.com/alttpo/snes v0.0.0-20261118155653-01e76e7eeb76/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
 github.com/alttpo/snes v0.0.0-20261119035042-e0aa9063be90 h1:2eZuFaxhpskFes9hXf/k92od4gNAYELqFjOaeSVo5UA=
 github.com/alttpo/snes v0.0.0-20261119035042-e0aa9063be90/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
+github.com/alttpo/snes v0.0.0-20261119040840-d45326293acb h1:l+YR3nJUAAgMioMhujFin2TXOflGeuLyJkomnF2pivk=
+github.com/alttpo/snes v0.0.0-20261119040840-d45326293acb/go.mod h1:hqcMbI1PDqZfNOwDdcGcsJPS5ca1nRhBIj9wwkMrS1c=
 github.com/alttpo/snes-devices v0.0.0-20261116185439-4ef7c22e44f0 h1:saSyAzM/pl/OeXptodnh3bn6Eofs5LYyS2oOO+EeF6E=
 github.com/alttpo/snes-devices v0.0.0-20261116185439-4ef7c22e44f0/go.mod h1:qqLAGElWBmskwjkBWAeLFDR1+EQfNNyNJdbwRn4oQRM=
 github.com/creack/goselect v0.1.2 h1:2DNy14+JPjRBgPzAd1thbQp4BSIihxcBf0IXhQXDRa0=
