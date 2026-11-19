@@ -249,6 +249,8 @@ func (g *Game) resetClearState() {
 		g.local.IndexF = localIndex
 	}
 	g.activePlayersClean = false
+	// the others follow our frame pacing afresh, as we do theirs:
+	g.local.Pacing.reset()
 
 	// clear the run timer, and have the latches in SRAM cleared so the run starts again with the next file load:
 	g.runTiming.resetRun()

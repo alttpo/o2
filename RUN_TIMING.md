@@ -65,9 +65,13 @@ code zeroes only the gate byte. All values are little-endian:
 - preMain latches before it calls the module, so the latched value is the NMI count of the frame the module first ran
   in. It writes the counter first and the latch bit last.
 - A client resets the run by writing 0 to `latches` (and nothing else).
+- Before the run started, a client that reads both latch bits set at once takes neither: a run can't finish before
+  its client saw it start. That's SRAM from before the run (fresh SRAM reads `$FF` everywhere, so both latch bits look
+  set and the start and finish frames are both `$FFFFFF`), and the client writes 0 to `latches` so that the next file
+  load starts the run.
 - During the run, a client that reads SRAM without the run's start (the start latch clear, or a `startFrame` other than
   the run's: another ROM or SRAM file, or a savestate from before the start) writes the run's `startFrame` back and
-  then `latches = $01`. It takes a finish latch only when `startFrame` is the run's. Fresh SRAM reads `$FF`
+  then `latches = $01`. It takes a finish latch only when `startFrame` is the run's, and `finishFrame` differs from it. Fresh SRAM reads `$FF`
   everywhere, so both latch bits look set, which this keeps from finishing the run.
 - The counters are 24-bit: at 60.0988 frames per second they wrap after 77.5 hours. Readers compute differences
   modulo 2²⁴.
@@ -170,6 +174,14 @@ the sender can't forge, and which is always later than the event it reports):
 
 A player who fails a check is shown as unverified, with the reason. Receivers don't change the reported times, so
 every client shows the same run time from the same messages.
+
+## Frame pacing reports (o2)
+
+o2 follows every player's `nmiFrames` and `sampleAt` from its 0x84 messages (the local player's from the messages it
+sends) and adds a note to the notification history when a player's speed over the last 5 seconds of samples drops
+below 95% (paused when the counter didn't advance since the previous sample) or goes above 102%, and when it's back
+between 98% and 101.5%. Counter jumps between two samples (back, or ahead by more than 2 seconds) are noted once. Every
+client checks the same values from the same messages, so every player sees the same reports. See `pacing.go`.
 
 ## Display (both)
 

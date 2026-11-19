@@ -175,6 +175,8 @@ type Player struct {
 	RunTiming runTimingRemote
 	// what the local client keeps to verify it (see verify.go):
 	RunVerify runTimingVerify
+	// its frame pacing, from the same messages (see pacing.go):
+	Pacing framePacing
 
 	// the server's stamp of the last message received from the player:
 	lastServerStamp time.Time

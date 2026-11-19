@@ -170,7 +170,7 @@ func (v *runTimingVerify) verifyReasons(m *runTimingRemote) (reasons []string) {
 		}
 		if sawBefore && !seenAt.IsZero() {
 			if late := seenAt.Sub(at); late > rvReportWithin {
-				reasons = append(reasons, fmt.Sprintf("%s reported %.1fs after it", what, late.Seconds()))
+				reasons = append(reasons, fmt.Sprintf("%s message arrived %.1fs after the %s time it reports", what, late.Seconds(), what))
 			}
 			if v.minDelayOK && at.After(maxDelay(seenAt)) {
 				reasons = append(reasons, fmt.Sprintf("%s is later than its message could have been sent", what))
@@ -186,6 +186,9 @@ func (v *runTimingVerify) verifyReasons(m *runTimingRemote) (reasons []string) {
 	}
 	check("start", m.StartAt, m.StartSeenAt, v.sawUnstarted, inGameAt)
 	check("finish", m.FinishAt, m.FinishSeenAt, v.sawUnfinished, v.triforceAt)
+	if !m.StartAt.IsZero() && !m.FinishAt.IsZero() && !m.FinishAt.After(m.StartAt) {
+		reasons = append(reasons, "finish is not after the start")
+	}
 
 	if v.rateOK {
 		allowed := m.Penalty + rvGainSlack + time.Duration(float64(v.lastStamp.Sub(v.firstStamp))*rvRateTolerance)

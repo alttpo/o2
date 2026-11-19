@@ -124,7 +124,7 @@ func TestVerify_BackdatedStart(t *testing.T) {
 	at := s.play(s.t0, 5*time.Second, 1, 40*time.Millisecond)
 	s.m.StartAt = at.Add(-5 * time.Second)
 	s.play(at, 5*time.Second, 1, 40*time.Millisecond)
-	s.expectReason("start reported")
+	s.expectReason("start message arrived")
 }
 
 func TestVerify_ForwardDatedStart(t *testing.T) {
@@ -162,7 +162,17 @@ func TestVerify_FinishAfterTriforce(t *testing.T) {
 	s.location(at.Add(-time.Second), runFinishModule)
 	s.m.FinishAt = at
 	s.play(at, 5*time.Second, 1, 40*time.Millisecond)
-	s.expectReason("finish is")
+	s.expectReason("finish is 1.0s after")
+}
+
+func TestVerify_FinishNotAfterStart(t *testing.T) {
+	s := newRVSim(t)
+	at := s.play(s.t0, 5*time.Second, 1, 40*time.Millisecond)
+	// stale latches taken for a start and a finish in the same frame:
+	s.m.StartAt = at
+	s.m.FinishAt = at
+	s.play(at, 5*time.Second, 1, 40*time.Millisecond)
+	s.expectReason("finish is not after the start")
 }
 
 func TestVerify_FastForward(t *testing.T) {

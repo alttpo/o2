@@ -460,6 +460,19 @@ h5, h6 {
     white-space: nowrap;
 }
 
+/* the game's Fix Small Keys and Reset buttons, wide enough for their labels: */
+button.game-action {
+    white-space: nowrap;
+    min-width: 7em;
+    padding: 2px 0.75em;
+}
+
+/* the run timer and the players list's times, in a smaller monospaced font so they take less width: */
+.players > .mono, .timing-mono {
+    font-size: 0.8rem;
+    align-self: center;
+}
+
 .players > .timing-warning {
     color: orange;
     white-space: normal;

@@ -496,3 +496,50 @@ func TestRunTiming_SlowNotFlagged(t *testing.T) {
 		t.Errorf("flags $%02x; expected running slow not flagged", r.flags)
 	}
 }
+
+// Fresh SRAM reads $FF everywhere, so both latch bits look set and the start and finish frames are both $FFFFFF before
+// the run started: that's neither a start nor a finish, and the latches are cleared so that the next file load starts
+// the run.
+func TestRunTiming_FreshSRAMBeforeStart(t *testing.T) {
+	gs, err := createTestGameSync("ZELDANODENSETSU", "g1", testWriter{t})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := gs.g
+	g.ROMVerified = true
+	r := &g.runTiming
+	at := time.Unix(1_700_000_000, 0)
+	read := func(nmi, loop uint32, latches uint8, start, finish uint32) {
+		t.Helper()
+		d := make([]byte, runTimingReadSize)
+		setU24(d[rtmNMIFrames:], nmi)
+		setU24(d[rtmLoopFrames:], loop)
+		setU24(d[rtmStartFrame:], start)
+		setU24(d[rtmFinishFrame:], finish)
+		d[rtmLatches] = latches
+		g.readRunTimingResponse(snes.Response{Address: runTimingPak, Size: uint8(len(d)), Data: d}, at)
+	}
+	step := func(frames int64) { at = at.Add(framesToDuration(frames)) }
+
+	// the counter itself started from $FFFFFF too and wrapped:
+	read(0x000005, 0x000005, 0xFF, 0xFFFFFF, 0xFFFFFF)
+	step(1)
+	read(0x000006, 0x000006, 0xFF, 0xFFFFFF, 0xFFFFFF)
+	if r.started || r.finished {
+		t.Fatalf("took a fresh SRAM's latches for a start (%v) or a finish (%v)", r.started, r.finished)
+	}
+	if !r.clearLatches {
+		t.Fatal("latches not cleared")
+	}
+	// as if written; then the file is loaded:
+	r.clearLatches = false
+	step(1)
+	read(0x000007, 0x000007, 0, 0xFFFFFF, 0xFFFFFF)
+	step(100)
+	read(0x00006B, 0x00006B, rtmLatchStart, 0x00006A, 0xFFFFFF)
+	step(1)
+	read(0x00006C, 0x00006C, rtmLatchStart, 0x00006A, 0xFFFFFF)
+	if !r.started || r.finished {
+		t.Fatalf("started %v, finished %v; expected only started", r.started, r.finished)
+	}
+}

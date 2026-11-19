@@ -198,12 +198,12 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     };
 
     return <div style="display: grid; min-width: 30em; width: 100%; grid-column-gap: 1.0em; grid-row-gap: 0.25em; grid-template-columns: minmax(24em, 2fr) 3fr;">
-        <div style="grid-column: 1 / auto; display: grid; grid-template-columns: 5fr 2fr 1fr;">
+        <div style="grid-column: 1 / auto; display: grid; grid-template-columns: 1fr max-content max-content; grid-column-gap: 0.5em; align-items: center;">
             <h5>Game: {game.gameName}</h5>
-            <button type="button"
+            <button type="button" class="game-action"
                     title="Fix small keys"
                     onClick={e => sendGameCommand("fixSmallKeys", {})}>Fix Small Keys</button>
-            <button type="button"
+            <button type="button" class="game-action"
                     title={online
                         ? "Forget all game state and reset the run timer for all players in the group; does not reset the console/emulator; asks first"
                         : "Offline: forget this client's own game state and run timer; does not reset the console/emulator; asks first"}
@@ -370,7 +370,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         </div>
         <div style="grid-row: 1; grid-column: 2; display: flex">
-            <div style="flex: 1">Run Timer:</div><span class="mono" title="First player start to last player finish">{runTimer}</span>
+            <div style="flex: 1">Run Timer:</div><span class="mono timing-mono" title="First player start to last player finish">{runTimer}</span>
         </div>
         <div class="players" style="grid-row: 2; grid-column: 2; align-self: start">
             <h5 style="grid-column: 1 / -1">Players</h5>

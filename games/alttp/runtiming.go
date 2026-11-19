@@ -472,6 +472,13 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 	finishFrame := u24(raw[rtmFinishFrame-rtmStartFrame:])
 	local := g.local
 	if !r.started && latches&rtmLatchStart != 0 {
+		if latches&rtmLatchFinish != 0 {
+			// a finish latched along with a start o2 never saw on its own: SRAM from before the run (fresh SRAM reads
+			// $FF everywhere, so both latch bits look set and both frames are $FFFFFF); start over:
+			log.Printf("alttp: run timing: start and finish latched together (latches $%02x, start $%06x, finish $%06x) before o2 saw the start; clearing\n", latches, startFrame, finishFrame)
+			r.clearLatches = true
+			return
+		}
 		startAt, ok := g.latchTime(startFrame, at)
 		if !ok {
 			// latched before o2 saw the counter run (e.g. before o2 connected or across a jump); start over:
@@ -491,10 +498,11 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 	}
 	if r.inRun() {
 		r.lagFrames = (r.lagAcc + s.nmi - s.loop - r.lagBase) & 0xFFFFFF
-		if latches&rtmLatchStart == 0 || startFrame != r.startFrame {
+		if latches&rtmLatchStart == 0 || startFrame != r.startFrame ||
+			(latches&rtmLatchFinish != 0 && finishFrame == r.startFrame) {
 			// the SRAM doesn't hold this run's start (the SRAM replaced, or a savestate from before the start or of
 			// another run): put it back, so that the patch latches the finish, and a finish latched against another
-			// start isn't taken for this run's:
+			// start, or in the start's own frame, isn't taken for this run's:
 			log.Printf("alttp: run timing: SRAM lost the run's start (latches $%02x, start $%06x); restoring it\n", latches, startFrame)
 			r.restoreStart = true
 			return
@@ -760,6 +768,7 @@ func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
 	}
 	m.StartAt, m.FinishAt = startAt, finishAt
 	p.RunVerify.observeRunTiming(p)
+	g.observePacing(p, m)
 	if reasons := strings.Join(p.RunVerify.verifyReasons(m), "; "); reasons != p.RunVerify.lastReasons || runTimingShown(m) != shown {
 		p.RunVerify.lastReasons = reasons
 		g.shouldUpdatePlayersList = true
@@ -824,11 +833,14 @@ func (g *Game) sendRunTiming() {
 		return
 	}
 	o := g.makeO2BroadcastMessage()
-	if err := SerializeRunTiming(o, g.localRunTiming()); err != nil {
+	m := g.localRunTiming()
+	if err := SerializeRunTiming(o, m); err != nil {
 		log.Printf("alttp: serialize run timing: %v\n", err)
 		return
 	}
 	g.send(o)
+	// the local player's frame pacing is checked on the messages the others check it on:
+	g.observePacing(g.local, m)
 }
 
 // playerRunTiming returns a player's run timing: the local player's own, else the last received.
