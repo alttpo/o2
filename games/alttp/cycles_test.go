@@ -452,7 +452,7 @@ func TestCycleBudgets_RemoteSpritesFullOAM(t *testing.T) {
 
 	p.report(t, "3 remote players, OAM buffer full")
 	p.expectWithin(t, map[string]uint64{
-		"remoteFrame": 13_500,
+		"remoteFrame": 14_500,
 		"NMI upload":  600,
 	})
 }

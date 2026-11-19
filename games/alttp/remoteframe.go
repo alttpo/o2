@@ -213,9 +213,10 @@ const (
 	rfDyingCycles = 5_800
 	// from the drawing check to the frame hook's return, drawing n sprites of the table past a full OAM buffer and
 	// listing every upload, recording the sprites for a replay: rfDrawBaseCycles + n * rfDrawEntryCycles. Measured
-	// (timecheck_test.go) with slotted sprites, the costliest kind: about 2,110 for none, then about 307 per sprite
-	// (11,628 for remoteEntryMax):
-	rfDrawBaseCycles  = 2_250
+	// (timecheck_test.go) with slotted sprites, the costliest kind, with the game's sprites in all but the first 32
+	// entries for the one-at-a-time search to pass: 2,758 for none, 3,238 for one, then about 310 per sprite (12,358 for
+	// remoteEntryMax):
+	rfDrawBaseCycles  = 2_950
 	rfDrawEntryCycles = 315
 	// the first scanline on which a block of the scan, or listing the dying enemies, starts too late to finish before
 	// the NMI, with 154 cycles per line:
@@ -346,28 +347,12 @@ const (
 	drawSlotted
 )
 
-// emitFindUnused emits the search for the next unused OAM entry (Y = $F0) below the OAM buffer offset Y, 8 entries at
-// a time while there are 8 below, with A 8-bit and X and Y 16-bit. It continues after the emitted code with Y = the
-// entry found, or returns with A 16-bit and carry clear if there is none.
+// emitFindUnused emits the search for the next unused OAM entry (Y = $F0) below the OAM buffer offset Y, one entry at
+// a time, with A 8-bit and X and Y 16-bit. It continues after the emitted code with Y = the entry found, or returns
+// with A 16-bit and carry clear if there is none. The game rarely uses the entries near the end of the OAM buffer
+// (region B, $1D0..$1FF, and above Link's entries), so the next entry down is nearly always unused: unrolling the
+// search 8 entries at a time cost more on the found path than it saved (see oamsearch_cycles_test.go).
 func emitFindUnused(a *asm.Emitter, p string) {
-	a.Label(p + "_8")
-	a.CPY_imm16_w(0x0020)
-	a.BCC(p + "_1")
-	for i := 1; i <= 8; i++ {
-		a.LDA_abs_y(uint16(0x0801 - 4*i))
-		a.CMP_imm8_b(0xF0)
-		a.BEQ(fmt.Sprintf("%s_found%d", p, i))
-	}
-	a.JMP_abs(p + "_next8")
-	for i := 2; i >= 1; i-- {
-		a.Label(fmt.Sprintf("%s_found%d", p, i))
-		a.DEY()
-		a.DEY()
-		a.DEY()
-		a.DEY()
-	}
-	a.JMP_abs(p + "_found")
-	a.Comment("one at a time:")
 	a.Label(p + "_1")
 	a.DEY()
 	a.DEY()
@@ -377,30 +362,12 @@ func emitFindUnused(a *asm.Emitter, p string) {
 	a.LDA_abs_y(0x0801)
 	a.CMP_imm8_b(0xF0)
 	a.BNE(p + "_1")
-	a.JMP_abs(p + "_found")
+	a.BRA(p + "_found")
 	a.Label(p + "_full")
 	a.REP(0x20)
 	a.CLC()
 	a.RTS()
 	a.AssumeSEP(0x20)
-	for i := 3; i <= 8; i++ {
-		a.Label(fmt.Sprintf("%s_found%d", p, i))
-		a.REP(0x20)
-		a.TYA()
-		a.CLC()
-		a.ADC_imm16_w(uint16(-4 * i))
-		a.TAY()
-		a.SEP(0x20)
-		a.JMP_abs(p + "_found")
-	}
-	a.Label(p + "_next8")
-	a.REP(0x20)
-	a.TYA()
-	a.CLC()
-	a.ADC_imm16_w(0xFFE0) // -$20
-	a.TAY()
-	a.SEP(0x20)
-	a.JMP_abs(p + "_8")
 	a.Label(p + "_found")
 }
 
@@ -541,7 +508,7 @@ func emitDrawLoop(a *asm.Emitter, kind drawKind, t remoteFrameTables) uint32 {
 // D.
 //
 // Cycles (cycles_test.go), with 3 remote players in the room: budget 7,800, measured 7,531 (about 16% of a frame)
-// with the OAM buffer otherwise empty; budget 13,500, measured 13,091 (about 28%) with the game's sprites filling all
+// with the OAM buffer otherwise empty; budget 14,500, measured 13,981 (about 30%) with the game's sprites filling all
 // but 16 entries, an eighth of them showing VRAM slots and an eighth captured. It is still the most expensive
 // per-frame routine of the patch. Most of it is the scan (7 cycles per unused entry, about 20 per used one, and about
 // 33 per time check), drawing the sprites (about 200 each, recording them for a replay), and with a full OAM buffer,
