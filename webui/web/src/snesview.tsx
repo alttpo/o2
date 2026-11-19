@@ -20,11 +20,18 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     }
 
     static getDerivedStateFromProps(props: SNESDriverProps, state: SNESDriverState): SNESDriverState {
-        if (props.drv.selectedDevice != state.selectedDevice) {
+        const devices = props.drv.devices || [];
+        if (props.drv.selectedDevice != state.selectedDevice && props.drv.selectedDevice != "") {
+            // the server chose a device (connected, or loaded from the saved configuration):
             return {deviceIndex: props.drv.selectedDevice, selectedDevice: props.drv.selectedDevice};
-        } else {
-            return {deviceIndex: state.deviceIndex, selectedDevice: props.drv.selectedDevice};
         }
+
+        // keep the user's choice while it is still detected, otherwise select the first available device:
+        let deviceIndex = state.deviceIndex;
+        if (!devices.some(dv => dv.id == deviceIndex)) {
+            deviceIndex = devices.length > 0 ? devices[0].id : "";
+        }
+        return {deviceIndex, selectedDevice: props.drv.selectedDevice};
     }
 
     render({ch, snes, drv}: SNESDriverProps, state: SNESDriverState) {
@@ -55,10 +62,6 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 
         const {name} = drv;
 
-        if (snes.isConnected && !drv.isConnected) {
-            return <Fragment key={name}/>
-        }
-
         return <Fragment key={name}>
             <label for={`device-${name}`}
                    style="white-space: nowrap; padding-top: 0.35em"
@@ -71,11 +74,11 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
                 disabled={snes.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
+                value={state.deviceIndex}
                 onChange={(e) => this.setState({deviceIndex: (e.currentTarget.value)})}>
-                <option selected={"" == drv.selectedDevice}>(Select {drv.displayName} Device)</option>
+                <option value="">(Select {drv.displayName} Device)</option>
                 {(drv.devices || []).map(dev =>
-                    <option selected={dev.id == drv.selectedDevice}
-                            value={dev.id}
+                    <option value={dev.id}
                     >{dev.displayName}</option>
                 )}
             </select>

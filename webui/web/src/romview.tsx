@@ -2,21 +2,31 @@ import {JSXInternal} from "preact/src/jsx";
 
 import {TopLevelProps} from "./index";
 import TargetedEvent = JSXInternal.TargetedEvent;
-import {useEffect, useState} from "preact/hooks";
-import {setField} from "./util";
+import {useEffect, useRef, useState} from "preact/hooks";
 
 export default ({ch, vm}: TopLevelProps) => {
     const rom = vm.rom;
 
     const [collapsed, set_collapsed] = useState(false);
 
+    // the Boot command falls back to these when the fields are blank, so show them as the fields' values:
+    const defaultFolder = "o2";
+    const defaultFilename = rom?.patchedFilename || "";
+
     const [folder, setFolder] = useState('');
     const [filename, setFilename] = useState('');
+    const folderInput = useRef<HTMLInputElement>(null);
+    const filenameInput = useRef<HTMLInputElement>(null);
 
+    // fill in the suggested values, but don't overwrite what the user is in the middle of typing:
     useEffect(() => {
-        setFilename(rom?.filename);
-        setFolder(rom?.folder);
-    }, [rom]);
+        if (document.activeElement !== folderInput.current) {
+            setFolder(rom?.folder || defaultFolder);
+        }
+        if (document.activeElement !== filenameInput.current) {
+            setFilename(rom?.filename || defaultFilename);
+        }
+    }, [rom?.folder, rom?.filename, defaultFilename]);
 
     function fileChosen(e: TargetedEvent<HTMLInputElement, Event>) {
         // send ROM filename and contents:
@@ -32,6 +42,19 @@ export default ({ch, vm}: TopLevelProps) => {
     const sendROMCommand = ch?.command?.bind(ch, "rom");
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
+
+    // a value equal to the suggestion is sent as blank, so the filename keeps following the O2 patch version:
+    const inputField = (setter: (v: string) => void, fieldName: string, defaultValue: string) => (e: Event) => {
+        const value = getTargetValueString(e);
+        setter(value);
+        sendROMCommand?.("setField", {[fieldName]: value == defaultValue ? "" : value});
+    };
+    // a field left blank goes back to showing the suggested value:
+    const blurField = (setter: (v: string) => void, defaultValue: string) => (e: Event) => {
+        if (getTargetValueString(e) == "") {
+            setter(defaultValue);
+        }
+    };
 
     // the patched ROM's filename includes the O2 patch version, so users can check they are playing the right patch:
     const filenameTitle = "Filename to store the ROM as on the FX Pak Pro when using the Boot command. If blank, the " +
@@ -70,18 +93,20 @@ patched for O2 support. O2 automatically patches your Input ROM for you."
                 title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command. If blank, 'o2' will be used."
             >Folder:</label>
             <input style="grid-column-end: span 2" class="mono" value={folder}
-                   placeholder={"o2"}
+                   ref={folderInput}
                    title="Which folder to store the ROM in on the FX Pak Pro when using the Boot command. If blank, 'o2' will be used."
-                   onInput={setField.bind(this, sendROMCommand, setFolder, "folder", getTargetValueString)}/>
+                   onInput={inputField(setFolder, "folder", defaultFolder)}
+                   onBlur={blurField(setFolder, defaultFolder)}/>
 
             <label
                 title={filenameTitle}
             >Filename:
             </label>
             <input style="grid-column-end: span 2" class="mono" value={filename}
-                   placeholder={rom?.patchedFilename}
+                   ref={filenameInput}
                    title={filenameTitle}
-                   onInput={setField.bind(this, sendROMCommand, setFilename, "filename", getTargetValueString)}/>
+                   onInput={inputField(setFilename, "filename", defaultFilename)}
+                   onBlur={blurField(setFilename, defaultFilename)}/>
 
             <label><span data-rh-at="left" data-rh="O2 can only communicate with patched ROMs running
 on SNES devices. Either click 'Boot' to send the ROM to your SNES device if supported or click 'Download' to download
