@@ -393,3 +393,15 @@ func (p *Player) FormatTimer(now time.Time) string {
 	}
 	return gameTimer
 }
+
+// describeDungeon describes the dungeon state $040C and the entrance $010E: a dungeon with its entrance number, or the
+// cave state $FF.
+func describeDungeon(dungeon, entrance uint16) string {
+	if dungeon < 0x20 {
+		return fmt.Sprintf("dungeon $%02x (%s), entrance $%02x", dungeon, dungeonNames[dungeon>>1], entrance)
+	}
+	if dungeon == 0xFF {
+		return fmt.Sprintf("cave (state $FF), entrance $%02x", entrance)
+	}
+	return fmt.Sprintf("cave (state $%02x), entrance $%02x", dungeon, entrance)
+}

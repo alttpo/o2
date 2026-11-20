@@ -247,6 +247,11 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 
 	if p.Location != lastLocation {
 		g.shouldUpdatePlayersList = true
+		if p.Location&(1<<16) != 0 {
+			log.Printf("alttp: player '%s': entered room $%03x\n", p.Name(), p.DungeonRoom)
+		} else {
+			log.Printf("alttp: player '%s': entered area $%02x\n", p.Name(), p.OverworldArea)
+		}
 		// room and area specific state received so far belongs to the previous location:
 		p.Star.valid = false
 		p.FlyingTiles.valid = false
@@ -270,12 +275,12 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	if err = binary.Read(r, binary.LittleEndian, &p.Dungeon); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
-	if p.Dungeon != lastDungeon {
-		g.shouldUpdatePlayersList = true
-	}
-
 	if err = binary.Read(r, binary.LittleEndian, &p.DungeonEntrance); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
+	}
+	if p.Dungeon != lastDungeon {
+		g.shouldUpdatePlayersList = true
+		log.Printf("alttp: player '%s': entered %s\n", p.Name(), describeDungeon(p.Dungeon, p.DungeonEntrance))
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, &p.LastOverworldX); err != nil {
