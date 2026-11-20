@@ -163,6 +163,8 @@ type Player struct {
 	Room    roomStateRemote
 	Doors   roomDoorsRemote
 	Kills   roomKillsRemote
+	// the enemies the player killed in its room or area (see syncenemieskilled.go):
+	EnemiesKilled enemiesKilledRemote
 	// the tile room overlord of the player's room (see synctiles.go):
 	FlyingTiles flyingTilesRemote
 	// overworld entrance animations and other events (see syncowevents.go):

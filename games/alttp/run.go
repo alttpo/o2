@@ -435,6 +435,8 @@ func (g *Game) enqueueWRAMReads(q []snes.Read) []snes.Read {
 	q = g.enqueueManipReads(q)
 	// the overlords while the room has a tile room overlord:
 	q = g.enqueueFlyingTilesRead(q, false)
+	// the enemies killed in the room or area:
+	q = g.enqueueEnemiesKilledReads(q)
 
 	// sprite palettes 0..7 (Link, sword and shield, sparkles, dust, shadow); color 0 of palette 0 is transparent and
 	// not read, so this fits in a single read:

@@ -75,6 +75,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x1C | overworld entrance animations and other events | yes (per sector, own packet) | yes (per sector, own packet) | used |
 | 0x1D | flying floor tiles (tile room overlord) | yes (per sector) | yes (per sector) | used |
 | 0x1E | room kill triggers fired | yes (per sector, last) | yes (per sector, last) | used |
+| 0x1F | enemies killed in the room or area | yes (per sector, own packet) | yes (per sector, own packet) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | group reset state machine | yes, own packet (`RunTiming.as`) | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -216,8 +217,8 @@ same location, panned to where they are relative to the local player.
   slot only if empty; o2 drops sounds that waited 16 frames before they were queued, and the trampoline drops the
   queue outside the modules o2's update routines run in. Remote sounds are queued after the local ones are captured,
   so they are not sent back out.
-- **Settings.** o2 "Sync Sound Effects" (sending and playing; the trampoline still captures and plays what is in its
-  rings, which stay empty); alttpo always syncs sound effects.
+- **Settings.** "Sound Effects" in both (sending and playing; o2's trampoline still captures and plays what is in its
+  rings, which stay empty).
 
 ## Small keys
 
@@ -279,13 +280,13 @@ the heart piece (and could collect it again) until they left and came back.
   current area's flags is set, the area's `$EA`/`$EB` sprites are removed (`$0DD0` = 0): o2 does this in the update
   routine that sets the bit, when the local player is in that area (checking `$1B` and `$8A` when it runs); alttpo
   checks every frame in modules `$09`/`$0B`.
-- **Settings.** o2 "Sync Overworld (Global)", alttpo "Sync overworld".
+- **Settings.** "Overworld (Global)" in both.
 
 ## Crystal switches
 
 o2 (`games/alttp/synccrystal.go`) and alttpo (`LocalGameState.as`, `crystal`) share the dungeon crystal switch state
 `$7EC172` as a last-writer-wins value in a 0x05 message (`count 1`, `offs $C172`, `timestamp u32`, `value u16`). o2
-sends and applies it when "Sync Underworld (Local)" is enabled; alttpo when "Sync tilemap" is enabled.
+sends and applies it when "Underworld (Local)" is enabled, like alttpo.
 
 - **Local changes.** `$C172` is overworld scratch space, so it is only sampled in the dungeon module `$07`. A change
   there is timestamped. Leaving the dungeon module (except for the menus in `$0E`) forgets the timestamp, since the
@@ -325,7 +326,7 @@ the previous room's overlay.
   this room visit, so it never wins. A player's star state is dropped whenever its location changes, so a state from an
   earlier visit to the room is never used. If `$04BC` differs, do what stepping on the star tile does: set `$04BA` and
   `$04BC`, clear `$B0`/`$BA`/`$BB`, play the sound effect, switch to submodule `$03` and call `ToggleStarTileGraphics`.
-- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap" (the same settings as for crystal switches).
+- **Settings.** "Underworld (Local)" in both (the same setting as for crystal switches).
 - **Timestamps** come from each client's estimate of the server clock, like small keys.
 
 ## Room state: trap doors, chests, keys, key doors and switches
@@ -411,8 +412,7 @@ still be taken by the other.
     holds the doors open here; it is cleared again once nobody does. Since a player whose `$0646` is `$80` does not
     count as holding the switch, players do not keep each other's doors open forever. A local somaria block
     recomputes `$0646` every frame and wins while it exists.
-- **Settings.** o2 uses "Sync Underworld (Local)" (and "Sync chests" for chest bits and `$20`), alttpo "Sync tilemap" (and
-  "Sync chests").
+- **Settings.** "Underworld (Local)" in both (and "Chests" for chest bits and `$20`).
 - **Kill triggers.** Room tags that wait for the enemies of a quadrant or the whole room to die: trap doors `$01`-`$0A`
   (`Dung_TagRoutine_TrapdoorsUp`; the tag stays), the kill room block `$26` (clears itself so the block can be pushed)
   and chest reveal `$29`-`$32` (`RoomTag_OperateChestReveal`, clears itself). Enemies are not synced, so players
@@ -428,7 +428,7 @@ still be taken by the other.
   `$7E2000`, attributes `$5858 + $0101 * i` in `$7F2000`/`$7F2040`, VRAM stripes from `$1000` = 0, SFX3 `$1A`,
   `$14` = 1; only while `$14` = 0) and the tag cleared. Unlike trap door changes, a trigger fired before the receiver
   entered the room counts, so a player entering a room another player in it cleared finds it cleared. Which enemies
-  are dead is not synced.
+  are dead is synced separately, see [Enemies killed](#enemies-killed).
 - **Not synced.** The pulled
   lever sprite is not drawn pulled for other players. Enemies are not synced by o2, and keys
   dropped by enemies get their index in the order they spawn, which can differ between players in rooms with two. Moving wall tags (`$1E`/`$1F`) are not synced, since they
@@ -560,7 +560,7 @@ left and came back.
 - **Already synced.** Changes the game logs in the map16 change log are synced as map16 changes: the Turtle Rock pegs
   (area `$07`), the hammer pegs (area `$62`), gravestones, rocks and bombable walls.
 - **Notifications.** o2 names the areas' overlay bits (e.g. "got Turtle Rock entrance from ...").
-- **Settings.** o2 "Sync Overworld (Local)", alttpo "Sync overworld".
+- **Settings.** "Overworld (Local)" in both.
 
 ## Underworld manipulable objects
 
@@ -627,7 +627,7 @@ objects: pots, big gray rocks, hammer pegs and push blocks. The underworld has n
 - **Not synced.** The push animation is not shown, and bombable floors are left to the room flags in
   `$0400`. The push block table itself is not sent; each player records a fall when its own copy of the block falls,
   whether it was pushed there locally or by sync.
-- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap".
+- **Settings.** "Underworld (Local)" in both.
 
 ## Flying floor tiles
 
@@ -649,8 +649,28 @@ the same room see the same floor tiles fly at the same time.
   keep taking each other's state): erase the floor tiles its overlord already lifted (at most 4 per frame, since each
   queues a VRAM upload), take its count and timer, or free the overlord when the remote one is done. The tiles already
   flying for the remote player are not spawned here.
-- **Settings.** o2 uses "Sync Underworld (Local)", alttpo "Sync tilemap". alttpo players with "Sync enemies" also copy the
+- **Settings.** "Underworld (Local)" in both. alttpo players with "Sync enemies" also copy the
   overlords of the player owning the room's enemies, which agrees with this.
+
+## Enemies killed
+
+Enemies are not synced by o2 (alttpo's "Sync enemies" shares their whole state, messages 0x12-0x14), but the game's
+memory of which enemies were killed is, so that enemies a player in the same room or area killed stay dead the next
+time the game would spawn them. Enemies alive on the local screen are left alone. See `syncenemieskilled.go` and
+alttpo's `EnemiesKilled.as`.
+
+- **Underworld.** `$7FDF80` is a `[$128]uint16` array indexed by room (`$048E`): bit k is set when the room's k-th
+  sprite (`$0BC0,X`) dies (`Sprite_ManuallySetDeathFlagUW`) and keeps `Dungeon_LoadSingleSprite` from spawning it. The
+  game clears a room's mask once it falls out of the last 4 rooms visited, and all of them when the overworld loads.
+- **Overworld.** `$7FEF80` is a bitmap of the area's sprite positions (blk; bit `$80 >> (blk & 7)` of byte `blk >> 3`,
+  bytes `$00`-`$BF`) that were loaded. Going off screen clears a sprite's or an overlord's bit (`Sprite_KillSelf`); dying
+  leaves it set until the area reloads. A killed position is a set bit no live sprite (`$0DD0,X` != 0, `$0BC0,X` as a
+  uint16 blk) nor overlord (`$0B00,X` != 0, `$0B48,X`) has; o2 also requires it in two reads in a row.
+- **Message 0x1F**, broadcastSector, in its own packet every 4 frames (alttpo: every 4 sends): `kind u8` = 0, `room
+  u16`, `mask u16`; or `kind u8` = 1, `loc u24` (like 0x17), `count u8` (at most 64), `blk u16` * count.
+- **Applying**, in submodule 0 of the dungeon module or the overworld module ($09), from remote players on the same
+  team in the same room or area: the bits they killed that are not set here are set.
+- **Settings.** "Enemies Killed (Local)" in both.
 
 ## Uncle's sword and shield
 
@@ -696,7 +716,7 @@ timers, so a torch another player lights is lit here too and goes out at the sam
   it again would only put it out a second time a few frames later. Timers of 0 and timers of torches that stay unlit
   are not written; the game would extinguish an unlit torch whose timer runs out, lowering a dark room's light level
   once more. alttpo writes the owner's timer every frame; o2 only when it differs by more than 2.
-- **Settings.** o2 uses "Sync Torches"; alttpo always syncs torches.
+- **Settings.** "Torches" in both.
 
 ## Secrets under lifted objects
 
@@ -743,8 +763,7 @@ revealed and anything else gets the game's usual random prize.
   bushes cut with the sword (`HandleItemTileAction_Overworld`, which logs the stump) count too, and pots smashed with
   the hammer like lifted ones. A small object
   the local player already removed reveals nothing.
-- **Settings.** The map16 and manipulable object settings: o2 "Sync Overworld (Local)" / "Sync Underworld (Local)", alttpo "Sync
-  tilemap".
+- **Settings.** The map16 and manipulable object settings: "Overworld (Local)" / "Underworld (Local)" in both.
 
 ## Drawing remote players
 

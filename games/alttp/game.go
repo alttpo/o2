@@ -154,6 +154,7 @@ type Game struct {
 	flyingTiles   flyingTilesLocal
 	roomState     roomStateLocal
 	bossPrize     bossPrizeLocal
+	enemiesKilled enemiesKilledLocal
 
 	map16    map16Local
 	manip    manipLocal
@@ -208,6 +209,9 @@ type Game struct {
 	// changes (lifted bushes and rocks, bombed walls, ...) and the secrets under them, and the area's events (entrance
 	// animations, the desert statues, the lumberjacks' tree):
 	SyncOverworldLocal bool `json:"syncOverworldLocal"`
+	// SyncEnemiesKilled ("Enemies Killed (Local)") shares which enemies players in the same room or area killed, so
+	// that they are not spawned again; see syncenemieskilled.go:
+	SyncEnemiesKilled bool `json:"syncEnemiesKilled"`
 	// SyncTorches shares the lit torches of the room:
 	SyncTorches bool `json:"syncTorches"`
 	// SyncSfx plays the sound effects of players in the same location:
@@ -255,6 +259,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		SyncUnderworldLocal: true,
 		SyncOverworldLocal:  true,
 		SyncTorches:         true,
+		SyncEnemiesKilled:   true,
 		SyncSfx:             true,
 		SyncChests:          true,
 		lastSyncChests:      false,
@@ -319,6 +324,7 @@ func (g *Game) FirstFrame() {
 	g.owFlagsKnown = [0xC0]bool{}
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetEnemiesKilled()
 	g.resetFlyingTiles()
 	g.resetRoomState()
 	g.resetMap16()

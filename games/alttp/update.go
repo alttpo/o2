@@ -351,6 +351,20 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 			}
 		}
 
+		if g.SyncEnemiesKilled {
+			if u, ta := g.generateEnemiesKilledUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.enemiesKilled.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
+		}
+
 		if g.SyncSmallKeys {
 			g.adoptSmallKeys()
 			for k := 0; k < smallKeyCount; k++ {

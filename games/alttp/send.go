@@ -110,6 +110,11 @@ func (g *Game) sendPackets() {
 		}
 	}
 
+	if g.SyncEnemiesKilled {
+		// the enemies killed in the room or area, in their own packet:
+		g.sendEnemiesKilled()
+	}
+
 	if g.SyncOverworldLocal {
 		// the overworld map16 change log, to all players so that it is applied while they load the area:
 		g.sendMap16()

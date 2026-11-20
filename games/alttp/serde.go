@@ -51,6 +51,7 @@ const (
 	MsgOwEvents         MessageType = 0x1C // overworld entrance animations and other events, broadcastSector; see syncowevents.go
 	MsgFlyingTiles      MessageType = 0x1D // tile room overlord state of a room, broadcastSector; see synctiles.go
 	MsgRoomKills        MessageType = 0x1E // kill triggers fired in a room, broadcastSector; see syncroomkills.go
+	MsgEnemiesKilled    MessageType = 0x1F // enemies killed in a room or area, broadcastSector; see syncenemieskilled.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -94,6 +95,7 @@ func (g *Game) initSerde() {
 		MsgOwEvents:         g.DeserializeOwEvents,
 		MsgFlyingTiles:      g.DeserializeFlyingTiles,
 		MsgRoomKills:        g.DeserializeRoomKills,
+		MsgEnemiesKilled:    g.DeserializeEnemiesKilled,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,

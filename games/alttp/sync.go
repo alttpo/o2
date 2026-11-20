@@ -64,6 +64,7 @@ func (g *Game) initSync() {
 	g.initHeartsSync()
 	g.resetCrystalSwitch()
 	g.resetStarSwitch()
+	g.resetEnemiesKilled()
 	g.resetRoomState()
 	g.resetBossPrize()
 

@@ -57,6 +57,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncUnderworldLocal, setsyncUnderworldLocal] = useState(true);
     const [syncOverworldLocal, setsyncOverworldLocal] = useState(true);
     const [syncTorches, setsyncTorches] = useState(true);
+    const [syncEnemiesKilled, setsyncEnemiesKilled] = useState(true);
     const [syncSfx, setsyncSfx] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
@@ -97,6 +98,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncUnderworldLocal(game.syncUnderworldLocal);
         setsyncOverworldLocal(game.syncOverworldLocal);
         setsyncTorches(game.syncTorches);
+        setsyncEnemiesKilled(game.syncEnemiesKilled);
         setsyncSfx(game.syncSfx);
         setsyncChests(game.syncChests);
         setsyncTunicColor(game.syncTunicColor);
@@ -392,6 +394,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            checked={syncSprites}
                            onChange={setField.bind(this, sendGameCommand, setsyncSprites, "syncSprites", getTargetChecked)}
                     />Sprites
+                </label></div>
+
+                <div><label for="syncEnemiesKilled"
+                       title="Enemies killed by players in the same room or area stay dead when the game would spawn them again here; enemies themselves are not synced">
+                    <input type="checkbox"
+                           id="syncEnemiesKilled"
+                           checked={syncEnemiesKilled}
+                           onChange={setField.bind(this, sendGameCommand, setsyncEnemiesKilled, "syncEnemiesKilled", getTargetChecked)}
+                    />Enemies Killed (Local)
                 </label></div>
             </div>
             <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">
