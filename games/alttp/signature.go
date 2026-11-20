@@ -72,6 +72,7 @@ func computePatchVersion() (v [4]byte) {
 		manipUpdateStubAddr,
 		openChestsStubAddr,
 		flyingTilesStubAddr,
+		killEnemiesStubAddr,
 		updateDataAAddr,
 		updateDataBAddr,
 		updateDataSize,

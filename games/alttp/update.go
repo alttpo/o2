@@ -352,6 +352,7 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 		}
 
 		if g.SyncEnemiesKilled {
+			mark := g.updData.mark()
 			if u, ta := g.generateEnemiesKilledUpdate(newEmitter, genIndex); u != nil {
 				// don't emit the routine if it pushes us over the code size limit:
 				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
@@ -361,6 +362,8 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 
 					a.Append(ta)
 					updated = true
+				} else {
+					g.updData.reset(mark)
 				}
 			}
 		}

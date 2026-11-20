@@ -59,14 +59,24 @@ func (m *gameBroadcastMessage) SendToClient(c games.Client) {
 // broadcastSector), both o2 and alttpo.
 type gameSectorMessage struct {
 	gameBroadcastMessage
+	// sector is the sector to send to, if not the local player's:
+	sector    uint64
+	hasSector bool
 }
 
 func (m *gameSectorMessage) SendToClient(c games.Client) {
 	m.g.sendGroupMessage(c, &protocol04.GroupMessage{
 		Kind:         protocol04.BroadcastSector,
-		TargetSector: broadcastSector(m.g.LocalPlayer().Location),
+		TargetSector: m.targetSector(),
 		Data:         m.Bytes(),
 	})
+}
+
+func (m *gameSectorMessage) targetSector() uint64 {
+	if m.hasSector {
+		return m.sector
+	}
+	return broadcastSector(m.g.LocalPlayer().Location)
 }
 
 type gameJoinMessage struct {
@@ -116,6 +126,14 @@ func (g *Game) makeSectorMessage() (m *gameSectorMessage) {
 	m = &gameSectorMessage{}
 	m.g = g
 	m.Write(b.Bytes())
+	return
+}
+
+// makeSectorMessageTo creates a packet sent to the clients in the sector of location, e.g. to the players of a room
+// the local player left.
+func (g *Game) makeSectorMessageTo(location uint32) (m *gameSectorMessage) {
+	m = g.makeSectorMessage()
+	m.sector, m.hasSector = broadcastSector(location), true
 	return
 }
 

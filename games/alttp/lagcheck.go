@@ -302,7 +302,7 @@ func estimateUpdateCycles(code []byte, callee func(addr uint32) (int, bool)) (cy
 // and the SRAM stubs (whose tables are charged by updateData).
 func (g *Game) updCallee(addr uint32) (int, bool) {
 	switch addr {
-	case map16UpdateStubAddr, manipUpdateStubAddr, openChestsStubAddr, flyingTilesStubAddr:
+	case map16UpdateStubAddr, manipUpdateStubAddr, openChestsStubAddr, flyingTilesStubAddr, killEnemiesStubAddr:
 		return 0, true
 	}
 	for fn, a := range g.romFunctions {

@@ -58,6 +58,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncOverworldLocal, setsyncOverworldLocal] = useState(true);
     const [syncTorches, setsyncTorches] = useState(true);
     const [syncEnemiesKilled, setsyncEnemiesKilled] = useState(true);
+    const [killDeadEnemies, setkillDeadEnemies] = useState(true);
     const [syncSfx, setsyncSfx] = useState(true);
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
@@ -99,6 +100,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncOverworldLocal(game.syncOverworldLocal);
         setsyncTorches(game.syncTorches);
         setsyncEnemiesKilled(game.syncEnemiesKilled);
+        setkillDeadEnemies(game.killDeadEnemies);
         setsyncSfx(game.syncSfx);
         setsyncChests(game.syncChests);
         setsyncTunicColor(game.syncTunicColor);
@@ -402,7 +404,16 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncEnemiesKilled"
                            checked={syncEnemiesKilled}
                            onChange={setField.bind(this, sendGameCommand, setsyncEnemiesKilled, "syncEnemiesKilled", getTargetChecked)}
-                    />Enemies Killed (Local)
+                    />Enemy Dead List
+                </label></div>
+
+                <div><label for="killDeadEnemies"
+                       title="Immediately kill the enemies here that players in the same room or area killed, when their dead list updates; needs Enemy Dead List">
+                    <input type="checkbox"
+                           id="killDeadEnemies"
+                           checked={killDeadEnemies}
+                           onChange={setField.bind(this, sendGameCommand, setkillDeadEnemies, "killDeadEnemies", getTargetChecked)}
+                    />Kill Dead Enemies
                 </label></div>
             </div>
             <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">

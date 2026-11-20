@@ -209,9 +209,12 @@ type Game struct {
 	// changes (lifted bushes and rocks, bombed walls, ...) and the secrets under them, and the area's events (entrance
 	// animations, the desert statues, the lumberjacks' tree):
 	SyncOverworldLocal bool `json:"syncOverworldLocal"`
-	// SyncEnemiesKilled ("Enemies Killed (Local)") shares which enemies players in the same room or area killed, so
+	// SyncEnemiesKilled ("Enemy Dead List") shares which enemies players in the same room or area killed, so
 	// that they are not spawned again; see syncenemieskilled.go:
 	SyncEnemiesKilled bool `json:"syncEnemiesKilled"`
+	// KillDeadEnemies ("Kill Dead Enemies") kills the local enemies that the dead list of the players in the same
+	// room or area says are dead, as soon as that list is updated; needs SyncEnemiesKilled:
+	KillDeadEnemies bool `json:"killDeadEnemies"`
 	// SyncTorches shares the lit torches of the room:
 	SyncTorches bool `json:"syncTorches"`
 	// SyncSfx plays the sound effects of players in the same location:
@@ -260,6 +263,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		SyncOverworldLocal:  true,
 		SyncTorches:         true,
 		SyncEnemiesKilled:   true,
+		KillDeadEnemies:     true,
 		SyncSfx:             true,
 		SyncChests:          true,
 		lastSyncChests:      false,

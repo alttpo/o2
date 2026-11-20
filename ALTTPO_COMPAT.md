@@ -668,9 +668,19 @@ alttpo's `EnemiesKilled.as`.
   uint16 blk) nor overlord (`$0B00,X` != 0, `$0B48,X`) has; o2 also requires it in two reads in a row.
 - **Message 0x1F**, broadcastSector, in its own packet every 4 frames (alttpo: every 4 sends): `kind u8` = 0, `room
   u16`, `mask u16`; or `kind u8` = 1, `loc u24` (like 0x17), `count u8` (at most 64), `blk u16` * count.
+- **Recent rooms.** The game keeps the masks of the last 4 rooms visited (`$0B80..$0B87`, most recent first, `$FFFF` for
+  none). Besides the current room's every 4 frames, both send the mask of one of the other three (not empty ones) every
+  4 frames, in a packet to *that room's* sector, so a player entering the room gets it though the sender left. A
+  receiver keeps a received underworld mask for 2 seconds and applies it in the room it is for, wherever the sender is.
 - **Applying**, in submodule 0 of the dungeon module or the overworld module ($09), from remote players on the same
   team in the same room or area: the bits they killed that are not set here are set.
-- **Settings.** "Enemies Killed (Local)" in both.
+- **Kill dead enemies.** With "Kill Dead Enemies" on (needs "Enemy Dead List"), live local sprites the list of a remote
+  player in the same room or area says are dead are killed at once, not only kept from spawning again: underworld
+  sprites whose index (`$0BC0,X`) has its bit in the remote mask, overworld sprites whose position (`$0BC0,X*2` word)
+  is in the remote list. An active or stunned sprite (`$0DD0,X` = `$09` or `$0B`) goes to the death state `$06` with `$0DF0,X` = `$1F`, so it poofs (and may drop an item) as if the player killed it, like `PrepareSpriteToDie`; one still initializing (`$08`) is freed. Dying, falling and carried sprites and overlords are left alone.
+- **o2's implementation.** The kills are a table (slot, state, type and key of each sprite) for a routine in o2's ROM patch,
+  which checks them again before killing; alttpo kills directly.
+- **Settings.** "Enemy Dead List" and "Kill Dead Enemies" in both.
 
 ## Uncle's sword and shield
 

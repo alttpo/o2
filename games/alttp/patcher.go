@@ -45,6 +45,7 @@ import (
 //	  $707C09           `JML manipUpdate`, called by generated manipulable object update routines
 //	  $707C0D           `JML openChests`, called by generated room state update routines
 //	  $707C11           `JML flyingTilesErase`, called by generated flying tiles update routines
+//	  $707C15           `JML killDeadEnemies`, called by generated enemies killed update routines
 //	$707FF0..$707FFF  patch signature, copied from ROM by the patched init code; see signature.go
 const (
 	// SRAM buffers that generated update routines are written to, alternately. callUpdate's JSR is only pointed
@@ -59,7 +60,7 @@ const (
 	// from ROM (see patchROM), at addresses that depend on the ROM; the stub's JMLs let o2's generated update routines
 	// call the ROM routines without knowing where they are:
 	sramStubAddr = uint32(0x707C00)
-	sramStubEnd  = uint32(0x707C15)
+	sramStubEnd  = uint32(0x707C19)
 	// updateStubAddr is an RTS that callUpdate's JSR points at after a reset, until the first update routine is
 	// written. o2 only rewrites the high byte of the JSR's operand (a single byte write cannot be torn), so the low
 	// byte must be the same as the update buffers':
@@ -74,6 +75,7 @@ const (
 	manipUpdateStubAddr = uint32(0x707C09)
 	openChestsStubAddr  = uint32(0x707C0D)
 	flyingTilesStubAddr = uint32(0x707C11)
+	killEnemiesStubAddr = uint32(0x707C15)
 
 	// linkOAMCopyAddr is where the trampoline copies Link's OAM entries to every frame, after the module drew them
 	// and before the next frame's ClearOAMBuffer sets all their Y coordinates to $F0. See linkOAMCopy* for the layout:
@@ -406,8 +408,8 @@ func (p *Patcher) Patch() (err error) {
 }
 
 // emitSRAMStub emits the SRAM stub at sramStubAddr; jmls are the ROM addresses of the routines that its JMLs at
-// map16UpdateStubAddr, manipUpdateStubAddr, openChestsStubAddr and flyingTilesStubAddr jump to.
-func emitSRAMStub(a *asm.Emitter, map16Update, manipUpdate, openChests, flyingTiles uint32) {
+// map16UpdateStubAddr, manipUpdateStubAddr, openChestsStubAddr, flyingTilesStubAddr and killEnemiesStubAddr jump to.
+func emitSRAMStub(a *asm.Emitter, map16Update, manipUpdate, openChests, flyingTiles, killEnemies uint32) {
 	a.AssumeSEP(0x30)
 	if a.Label("updateStub") != updateStubAddr {
 		panic(fmt.Errorf("updateStubAddr expected to be $%06x but got $%06x", a.PC(), updateStubAddr))
@@ -428,6 +430,7 @@ func emitSRAMStub(a *asm.Emitter, map16Update, manipUpdate, openChests, flyingTi
 		{"manipUpdateStub", manipUpdateStubAddr, manipUpdate},
 		{"openChestsStub", openChestsStubAddr, openChests},
 		{"flyingTilesStub", flyingTilesStubAddr, flyingTiles},
+		{"killEnemiesStub", killEnemiesStubAddr, killEnemies},
 	} {
 		if a.Label(j.name) != j.addr {
 			panic(fmt.Errorf("%s expected to be $%06x but got $%06x", j.name, a.PC(), j.addr))
@@ -517,8 +520,8 @@ type patchROM struct {
 	// the trampoline called by the frame hook; see emitPreMain:
 	preMain romBlock
 	// called by generated update routines through the SRAM stub; see emitMap16Update, emitManipUpdate, emitOpenChests
-	// and emitFlyingTilesErase:
-	map16Update, manipUpdate, openChests, flyingTiles romBlock
+	// emitFlyingTilesErase and emitKillDeadEnemies:
+	map16Update, manipUpdate, openChests, flyingTiles, killEnemies romBlock
 	// the routine preMain calls to capture the local player's sprites and draw the remote players, and the tables it
 	// reads (in the same bank); see emitRemoteFrame:
 	remoteFrame       romBlock
@@ -573,7 +576,7 @@ func (r *patchROM) routines() []patchRoutine {
 		{&r.sramStub, func(a *asm.Emitter) error {
 			s := asm.NewEmitter(make([]byte, sramStubEnd-sramStubAddr), r.text != nil)
 			s.SetBase(sramStubAddr)
-			emitSRAMStub(s, r.map16Update.addr, r.manipUpdate.addr, r.openChests.addr, r.flyingTiles.addr)
+			emitSRAMStub(s, r.map16Update.addr, r.manipUpdate.addr, r.openChests.addr, r.flyingTiles.addr, r.killEnemies.addr)
 			if err := s.Finalize(); err != nil {
 				return err
 			}
@@ -601,6 +604,10 @@ func (r *patchROM) routines() []patchRoutine {
 		}},
 		{&r.flyingTiles, func(a *asm.Emitter) error {
 			emitFlyingTilesErase(a, r.fnEraseTile)
+			return nil
+		}},
+		{&r.killEnemies, func(a *asm.Emitter) error {
+			emitKillDeadEnemies(a)
 			return nil
 		}},
 		{&r.hudCheck, func(a *asm.Emitter) error {
@@ -711,6 +718,7 @@ func (r *patchROM) measure() (err error) {
 	r.manipUpdate.name = "manipUpdate"
 	r.openChests.name = "openChests"
 	r.flyingTiles.name = "flyingTilesErase"
+	r.killEnemies.name = "killDeadEnemies"
 	r.remoteFrame.name = "remoteFrame"
 	r.hudCheck.name = "HUD check"
 	r.remoteFrameTables.name = "remoteFrame tables"
