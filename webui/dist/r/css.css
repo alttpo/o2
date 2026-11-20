@@ -496,3 +496,9 @@ button.game-action {
     font-weight: bold;
     text-decoration: underline;
 }
+
+/* an icon that shows a tooltip when hovered */
+.hint-icon {
+    cursor: help;
+    color: #8cf;
+}

@@ -167,6 +167,18 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 	return nil
 }
 
+// Disconnected updates the view once the connection to the server closed, which happens on network errors too.
+func (v *ServerViewModel) Disconnected() {
+	vm := v.root
+	if v.IsConnected == vm.client.IsConnected() {
+		return
+	}
+	log.Println("serverviewmodel: disconnected")
+	v.IsConnected = vm.client.IsConnected()
+	v.MarkDirty()
+	vm.UpdateAndNotifyView()
+}
+
 type ServerDisconnectCommand struct{ v *ServerViewModel }
 
 func (ce *ServerDisconnectCommand) CreateArgs() interfaces.CommandArgs { return nil }

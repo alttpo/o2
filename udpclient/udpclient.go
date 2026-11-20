@@ -22,6 +22,10 @@ type UDPClient struct {
 	read        chan []byte
 	write       chan []byte
 
+	// onDisconnected is called once the connection is closed, also when the read or write loop closed it after a
+	// network error:
+	onDisconnected func()
+
 	seqLock sync.Mutex
 }
 
@@ -103,6 +107,9 @@ func (c *UDPClient) SetWriteDeadline(t time.Time) error { return c.c.SetWriteDea
 
 func (c *UDPClient) IsConnected() bool { return c.isConnected }
 
+// SetOnDisconnected sets a function to call whenever the connection is closed, by Disconnect or by a network error.
+func (c *UDPClient) SetOnDisconnected(f func()) { c.onDisconnected = f }
+
 func (c *UDPClient) log(fmt string, args ...interface{}) {
 	if c.muteLog {
 		return
@@ -173,6 +180,10 @@ func (c *UDPClient) Disconnect() {
 	c.log("%s: disconnected from server '%s'\n", c.name, c.addr)
 
 	c.c = nil
+
+	if f := c.onDisconnected; f != nil {
+		f()
+	}
 }
 
 func (c *UDPClient) Close() {

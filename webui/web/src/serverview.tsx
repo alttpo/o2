@@ -1,6 +1,7 @@
 import {ServerViewModel} from "./viewmodel";
 import {CommandHandler, TopLevelProps} from "./index";
 import {useEffect, useState} from "preact/hooks";
+import {Fragment} from "preact";
 import {setField} from "./util";
 
 type ServerProps = {
@@ -36,17 +37,17 @@ function ServerView({ch, server}: ServerProps) {
         sendServerCommand('disconnect', {});
     };
 
-    const connectButton = () => {
-        if (server?.isConnected) {
-            return <button type="button"
-                           style="grid-column: 1 / span 2"
-                           onClick={cmdDisconnect.bind(this)}>Disconnect</button>;
-        } else {
-            return <button type="button"
-                           style="grid-column: 1 / span 2"
-                           onClick={cmdConnect.bind(this)}>Connect</button>;
-        }
-    };
+    // two buttons like alttpo's, the one that does not apply grayed out:
+    const connectButtons = () => <Fragment>
+        <button type="button"
+                disabled={!!server?.isConnected}
+                title="Connect to the server and join your group"
+                onClick={cmdConnect.bind(this)}>Connect</button>
+        <button type="button"
+                disabled={!server?.isConnected}
+                title="Disconnect from the server"
+                onClick={cmdDisconnect.bind(this)}>Disconnect</button>
+    </Fragment>;
 
     const getTargetValueString = (e: Event) => (e.target as HTMLInputElement).value;
     const getTargetValueInt = (e: Event) => parseInt((e.target as HTMLInputElement).value, 10);
@@ -86,7 +87,7 @@ and enter a group name you wish to join. Groups are created on the fly by whoeve
                id="team"
                onInput={setField.bind(this, sendServerCommand, setTeam, "team", getTargetValueInt)}/>
 
-        {connectButton()}
+        {connectButtons()}
     </div>;
 }
 

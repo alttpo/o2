@@ -221,6 +221,15 @@ const App = () => {
                     </div>
                 </section>
                 <ReactHint autoPosition events/>
+                {/* tooltips with a link in them, which stay open while the mouse is over them so it can be clicked: */}
+                <ReactHint autoPosition events persist
+                           attribute="data-rhl"
+                           onRenderContent={(target: HTMLElement, content: string) => (
+                               <div class="react-hint__content">
+                                   {content} <a href={target.getAttribute('data-rhl-href')}
+                                                target="_blank">{target.getAttribute('data-rhl-link')}</a>.
+                               </div>
+                           )}/>
             </div>
             {lost && (
                 <div class="connection-lost-backdrop">

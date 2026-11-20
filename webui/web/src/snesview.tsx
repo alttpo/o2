@@ -13,6 +13,19 @@ type SNESDriverState = {
     selectedDevice: string;
 };
 
+// deviceCountLabel is the label of the first option of a driver's device list, which says how many devices were found
+// so that a real device name stands out:
+function deviceCountLabel(n: number): string {
+    switch (n) {
+        case 0:
+            return "--- no devices ---";
+        case 1:
+            return "--- 1 device ---";
+        default:
+            return `--- ${n} devices ---`;
+    }
+}
+
 class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
     constructor() {
         super();
@@ -61,22 +74,26 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         };
 
         const {name} = drv;
+        const deviceCount = drv.devices?.length || 0;
 
         return <Fragment key={name}>
             <label for={`device-${name}`}
                    style="white-space: nowrap; padding-top: 0.35em"
                    title={drv.displayDescription}
-            >{drv.displayName} driver:</label>
-            <span style="color: green; font-size: 1.4em; padding-top: 0.15em; margin: 0 2px 0 auto;"
-                  title={'' + (drv.devices?.length || 0) + ' device(s) found'}
-            >({drv.devices?.length || 0})</span>
+            >{drv.displayName} driver:{name == "fxpakpro" && <Fragment>
+                &nbsp;<span class="hint-icon"
+                            data-rhl="For FX Pak Pro, use the"
+                            data-rhl-link="latest firmware"
+                            data-rhl-href="https://sd2snes.de/blog/"
+                            data-rhl-at="right">ⓘ</span>
+            </Fragment>}</label>
             <select
                 disabled={snes.isConnected}
                 id={`device-${name}`}
                 title={drv.displayDescription}
                 value={state.deviceIndex}
                 onChange={(e) => this.setState({deviceIndex: (e.currentTarget.value)})}>
-                <option value="">(Select {drv.displayName} Device)</option>
+                <option value="">{deviceCountLabel(deviceCount)}</option>
                 {(drv.devices || []).map(dev =>
                     <option value={dev.id}
                     >{dev.displayName}</option>
@@ -97,36 +114,12 @@ Devices are auto-detected every 2 seconds for each driver."
                 >Select a SNES device:&nbsp;1️⃣</span>
             <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
         </h5>
-        <div class="grid" style="grid-template-columns: 4fr 1fr 10fr 4fr;">
+        <div class="grid" style="grid-template-columns: 4fr 10fr 4fr;">
             {
                 (vm.snes?.drivers || []).map(drv => (
                     <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>
                 ))
             }
         </div>
-        {
-            ((vm.snes?.drivers?.some(drv => drv.name == "fxpakpro" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ?
-                    <div style="margin-top: 4px">
-For FX Pak Pro, use the <a href="https://sd2snes.de/blog/">latest firmware</a>.
-                    </div>
-                : <Fragment/>)
-        }
-        {
-            (vm.snes?.drivers?.some(drv => drv.name == "retroarch" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ?
-                    <div style="margin-top: 4px">
-Recommended emulator is <a href="https://github.com/Skarsnik/snes9x-emunwa/releases/latest" target="_blank">Snes9X-NWA</a>.
-                    </div>
-                : <Fragment/>
-        }
-        {
-            (vm.snes?.drivers?.some(drv => drv.name == "qusb2snes" && ((vm.snes.isConnected && drv.isConnected) || !vm.snes.isConnected)))
-                ?
-                    <div style="margin-top: 4px">
-                        <a href="https://github.com/Skarsnik/QUsb2snes/releases" target="_blank">Download QUsb2Snes here</a>
-                    </div>
-                : <Fragment/>
-        }
     </div>);
 };

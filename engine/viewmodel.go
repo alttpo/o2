@@ -64,6 +64,9 @@ func NewViewModel() *ViewModel {
 	vm.romViewModel = NewROMViewModel(vm)
 	vm.serverViewModel = NewServerViewModel(vm)
 
+	// the connection to the server also closes on network errors (e.g. a network change), not only from the UI:
+	vm.client.SetOnDisconnected(func() { go vm.serverViewModel.Disconnected() })
+
 	// assign unique names to each view for easy binding with html/js UI:
 	vm.viewModels = map[string]interface{}{
 		"status": "Not connected",
