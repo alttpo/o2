@@ -51,6 +51,8 @@ export interface ROMViewModel {
     version: string;
     // the name of the O2 patched ROM, including the O2 patch version; the Boot command uses it if filename is blank:
     patchedFilename?: string;
+    // the O2 patch version the ROM was patched with:
+    patchVersion?: string;
 
     folder: string;
     filename: string;

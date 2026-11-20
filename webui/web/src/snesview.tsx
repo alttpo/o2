@@ -63,10 +63,12 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
         const connectButton = (drv: DriverViewModel) => {
             if (drv.isConnected) {
                 return <button type="button"
+                               style="width: 7em"
                                title={drv.displayDescription}
                                onClick={cmdDisconnect.bind(this, drv)}>Disconnect</button>;
             } else {
                 return <button type="button"
+                               style="width: 7em"
                                title={drv.displayDescription}
                                disabled={(snes.isConnected && !drv.isConnected) || (state.deviceIndex == "")}
                                onClick={cmdConnect.bind(this, drv)}>Connect</button>;
@@ -80,7 +82,7 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
             <label for={`device-${name}`}
                    style="white-space: nowrap; padding-top: 0.35em"
                    title={drv.displayDescription}
-            >{drv.displayName} driver:{name == "fxpakpro" && <Fragment>
+            >{drv.displayName}:{name == "fxpakpro" && <Fragment>
                 &nbsp;<span class="hint-icon"
                             data-rhl="For FX Pak Pro, use the"
                             data-rhl-link="latest firmware"
@@ -88,7 +90,8 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
                             data-rhl-at="right">ⓘ</span>
             </Fragment>}</label>
             <select
-                disabled={snes.isConnected}
+                disabled={snes.isConnected || deviceCount == 0}
+                style="min-width: 0; width: 100%; box-sizing: border-box"
                 id={`device-${name}`}
                 title={drv.displayDescription}
                 value={state.deviceIndex}
@@ -107,14 +110,14 @@ class SNESDriverView extends Component<SNESDriverProps, SNESDriverState> {
 export default ({ch, vm}: TopLevelProps) => {
     const [collapsed, set_collapsed] = useState(false);
 
-    return (<div class={"collapsible" + (collapsed ? " collapsed" : "")} style="display: table; min-width: 50em; width: 100%; height: 100%">
+    return (<div class={"collapsible" + (collapsed ? " collapsed" : "")} style="display: table; width: 100%; height: 100%">
         <h5>
                 <span data-rh-at="left" data-rh="Select one of the below SNES drivers to connect to your SNES device.
 Devices are auto-detected every 2 seconds for each driver."
                 >Select a SNES device:&nbsp;1️⃣</span>
             <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
         </h5>
-        <div class="grid" style="grid-template-columns: 4fr 10fr 4fr;">
+        <div class="grid" style="grid-template-columns: max-content minmax(0, 1fr) max-content;">
             {
                 (vm.snes?.drivers || []).map(drv => (
                     <SNESDriverView ch={ch} snes={vm.snes} drv={drv}/>

@@ -6,7 +6,7 @@ import {useEffect, useRef, useState} from "preact/hooks";
 import ReactHintFactory from 'react-hint'
 import {ViewModel} from './viewmodel';
 import SNESView from "./snesview";
-import ROMView from "./romview";
+import ROMView, {PatchView} from "./romview";
 import ServerView from "./serverview";
 import GameView from "./gameview";
 
@@ -168,8 +168,19 @@ const App = () => {
 
     const vm = viewModel;
 
-    const romGo = (vm.game?.isCreated && vm.game?.romVerified) || false;
-    const romStatus = vm.game?.isCreated ? (vm.game?.romStatus || "") : "select a game ROM";
+    // two sections per row, which shrink instead of being widened by their controls:
+    const halfStyle = "flex: 0 0 50%; box-sizing: border-box; min-width: 0";
+    const snesGo = vm.snes?.isConnected || false;
+    const romGo = vm.game?.isCreated || false;
+    const romStatus = romGo ? "" : "select a game ROM";
+
+    // the patch version can only be checked once the SNES is a GO; until then, or while waiting for the SNES to
+    // respond, there is nothing useful to report:
+    const patchGo = (snesGo && vm.game?.isCreated && vm.game?.romVerified) || false;
+    const rawPatchStatus = vm.game?.romStatus || "";
+    const patchError = (snesGo && vm.game?.isCreated && !patchGo
+        && !rawPatchStatus.startsWith("waiting to read")
+        && !rawPatchStatus.includes("no response from the SNES")) ? rawPatchStatus : "";
 
     return (
         <Fragment>
@@ -183,28 +194,35 @@ const App = () => {
                 </header>
                 <section class="squeeze">
                     <div class="flex-wrap">
-                        <div class="content flex-1">
+                        <div class="content" style={halfStyle}>
                             <SNESView ch={ch.current} vm={vm}/>
                         </div>
 
-                        <div class="content flex-1">
+                        <div class="content" style={halfStyle}>
+                            <ServerView ch={ch.current} vm={vm}/>
+                        </div>
+
+                        <div class="content" style={halfStyle}>
                             <ROMView ch={ch.current} vm={vm}/>
                         </div>
 
-                        <div class="content flex-1">
-                            <ServerView ch={ch.current} vm={vm}/>
+                        <div class="content" style={halfStyle}>
+                            <PatchView ch={ch.current} vm={vm} patchError={patchError}/>
                         </div>
 
                         <div class="content" style="width: 100%; display: flex">
                             <div style="flex: 1 0 0%">
-                                <span>SNES:&nbsp;</span>{vm.snes?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                                <span>SNES:&nbsp;</span>{snesGo ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            </div>
+                            <div style="flex: 1 0 0%">
+                                <span>Server:&nbsp;</span>{vm.server?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
                             </div>
                             <div style="flex: 1 0 0%" title={romStatus}>
                                 <span>ROM:&nbsp;</span>{romGo ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
                                 {!romGo && romStatus && <div style="color: red; font-size: smaller">{romStatus}</div>}
                             </div>
-                            <div style="flex: 1 0 0%">
-                                <span>Server:&nbsp;</span>{vm.server?.isConnected ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
+                            <div style="flex: 1 0 0%" title={patchError}>
+                                <span>Patch:&nbsp;</span>{patchGo ? <span style="color: green">🟢 GO</span> : <span style="color: red">⭕ NO GO</span>}
                             </div>
                             <div style="flex: 0 0 15%">
                                 <a href="/log.txt" style="float: right">Download Logs</a>

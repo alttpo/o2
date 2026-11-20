@@ -210,6 +210,10 @@ func (g *Game) checkPatchSignatureTimeout(now time.Time) {
 	if now.Sub(g.romCheckStart) < romCheckTimeout {
 		return
 	}
+	if g.getQueue() == nil {
+		// no SNES to check; nothing to report:
+		return
+	}
 	g.failROMCheck(fmt.Sprintf(
 		"could not verify the O2 patch version: no response from the SNES; %s",
 		romStatusAdvice,
