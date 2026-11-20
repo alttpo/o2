@@ -1,5 +1,5 @@
 ---
-name: release
+name: release-o2
 description: Release o2. Tags the current commit with a user-supplied version (e.g. v0.5.0d), pushes the tag so GitHub Actions builds it and creates the GitHub release, then rewrites the release description as a bulleted list of player-facing changes since the previous tag. Use when the user asks to release, cut a release, or tag a version of o2.
 argument-hint: <version, e.g. v0.5.1 or v0.5.0d>
 ---
