@@ -383,7 +383,10 @@ still be taken by the other.
   - A remote door bit whose slot here is a small or big key door (`$1980` type `$1C`-`$2B` except `$28`, `$2A`) that is
     still locked (attribute `$F0 + slot` at `$7F2041 + $19A0/2`) is unlocked like the game does once the key was
     used: `$068E` = that attribute index, `$0690` = 0, SFX3 `$14`, submodule `$04`. No key is used; the small key sync
-    takes care of the key count. One door per update; the trap doors wait for the next one.
+    takes care of the key count. A remote door bit whose slot here is a bombable or dashable wall (types `$28`, `$2A`,
+    `$2E`) still closed (same attribute check) is opened the way `Bomb_CheckForDestructibles` and a dash into it do:
+    `$068E` the same way, SFX3 `$1B`, submodule `$09` (`OpenCrackedDoor`, which sets `$0690` itself), without the
+    debris. One door per update; the trap doors wait for the next one.
   - Trap doors are last writer wins among changes made after our own baseline, so only changes made while both players
     are in the room count; the winner's state is written like a room tag does (`$0468`, clear `$068E`/`$0690`, SFX3
     `$25`, submodule `$05`). Rooms with a hold switch (`$16`), push block (`$0B`-`$13`) or torch puzzle (`$33`) door tag

@@ -59,6 +59,13 @@ func (h *skScenario) placeKeyDoor(p int, k int, pos uint16) {
 	setWram16(e, 0x12000+uint32(pos>>1)+0x81, v)
 }
 
+// placeCrackedWall puts a bombable wall (door type $2E) in door slot k at pos, as Underworld_LoadSingleDoorAttribute
+// would.
+func (h *skScenario) placeCrackedWall(p int, k int, pos uint16) {
+	h.placeKeyDoor(p, k, pos)
+	setWram16(h.gs[p].e.WRAM[:], uint32(roomDoorTypes)+uint32(k<<1), 0x002E)
+}
+
 // unlockKeyDoor does what UnlockKeyDoor_Main leaves behind once the door slot k is open.
 func (h *skScenario) unlockKeyDoor(p int, k int) {
 	e := h.gs[p].e.WRAM[:]
@@ -205,6 +212,49 @@ func TestRoomDoorsScenario_KeyDoorUnlocked(t *testing.T) {
 		t.Errorf("g2: expected no more door updates; submodule $%02x", s)
 	}
 	h.expectKeys("door unlocked", 0, 0)
+}
+
+func TestRoomDoorsScenario_CrackedWallOpened(t *testing.T) {
+	h := newSSScenario(t, 2)
+	for i := range h.gs {
+		h.loadRoomState(i, rmRoom, 0, 0)
+		h.placeCrackedWall(i, rdDoorSlot, rdDoorPos)
+		h.gs[i].e.WRAM[skCurrentKeys] = 1
+	}
+	h.settleSubmodules(skSettleFrames, nil)
+
+	// g1 bombs the wall open (OpenCrackedDoor leaves the same state behind as UnlockKeyDoor_Main):
+	h.unlockKeyDoor(0, rdDoorSlot)
+	opened := false
+	for f := 0; f < skSettleFrames && !opened; f++ {
+		h.frame()
+		e := h.gs[1].e.WRAM[:]
+		if e[skSubModule] == 0x04 {
+			t.Fatalf("g2: expected a cracked wall not to be unlocked like a key door")
+		}
+		if e[skSubModule] == 0x09 {
+			opened = true
+			if v, want := wram16(e, 0x068E), (rdDoorPos>>1)+0x41; v != want {
+				t.Errorf("g2: expected $068E = $%04x; got $%04x", want, v)
+			}
+			if v := e[0x012F]; v != 0x1B {
+				t.Errorf("g2: expected SFX3 $1B; got $%02x", v)
+			}
+			// what OpenCrackedDoor does:
+			h.unlockKeyDoor(1, rdDoorSlot)
+			e[skSubModule] = 0
+		}
+	}
+	if !opened {
+		t.Fatalf("g2: expected the cracked wall to be opened in submodule $09")
+	}
+
+	h.settleSubmodules(skSettleFrames*2, nil)
+	if s := h.gs[1].e.WRAM[skSubModule]; s != 0 {
+		t.Errorf("g2: expected no more door updates; submodule $%02x", s)
+	}
+	// no key is used for a wall:
+	h.expectKeys("wall opened", 1, 1)
 }
 
 func TestRoomDoorsScenario_KeyDoorAlreadyOpen(t *testing.T) {

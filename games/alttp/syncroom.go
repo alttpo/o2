@@ -57,7 +57,8 @@ import (
 //     water rooms, whose tags use it to remember the water was let out.
 //   - Key doors: a door bit set by a remote player whose slot here is a small key or big key door that is still
 //     closed is unlocked the way the game does (submodule $04 with $068E pointing at the door's tile attributes),
-//     without using a key; the small key sync takes care of the key count.
+//     without using a key; the small key sync takes care of the key count. A bombed or dashed wall (door types $28,
+//     $2A, $2E) still closed here is opened the same way with submodule $09 (OpenCrackedDoor).
 //   - Trap doors are last writer wins among remote players in the same room with a change made after our baseline
 //     was taken (so only changes made while both players are in the room count, never stale ones from an earlier
 //     visit). They are not applied in rooms with tags that compute the shutter state every frame from what the local
@@ -305,6 +306,14 @@ func roomIsKeyDoorType(t uint8) bool {
 	return t >= 0x1C && t < 0x2C && t != 0x28 && t != 0x2A
 }
 
+// roomIsCrackedWallType reports whether a door type ($1980 & $FE) is a cracked wall that is opened by a bomb ($28,
+// $2A, $2E; Bomb_CheckForDestructibles) or by dashing into it ($28; Underworld_ProcessTorchesAndDoors). Both switch to
+// submodule $09 (OpenCrackedDoor) with $068E pointing at the wall's tile attributes.
+func roomIsCrackedWallType(t uint8) bool {
+	t &= 0xFE
+	return t == 0x28 || t == 0x2A || t == 0x2E
+}
+
 // roomDoorBit returns the $0401 bit for door slot k.
 func roomDoorBit(k int) uint8 { return 0x80 >> (k & 7) }
 
@@ -485,28 +494,32 @@ func (g *Game) roomDoorWinner(remotes []*Player) (winner *Player, door uint8, ts
 	return
 }
 
-// roomKeyDoor is a key door to unlock.
+// roomKeyDoor is a key door to unlock or a cracked wall to open.
 type roomKeyDoor struct {
-	slot int
-	pos  uint16
-	dir  uint8
+	slot    int
+	pos     uint16
+	dir     uint8
+	cracked bool // a bombable or dashable wall instead of a key door
 }
 
-// roomKeyDoorFor finds the still locked key door here for a $0401 bit set by a remote player.
+// roomKeyDoorFor finds the still locked key door or still closed cracked wall here for a $0401 bit set by a remote
+// player.
 func (g *Game) roomKeyDoorFor(bit uint8) (d roomKeyDoor, ok bool) {
 	for k := 0; k < 16; k++ {
 		if roomDoorBit(k) != bit {
 			continue
 		}
 		o := uint32(k << 1)
-		if !roomIsKeyDoorType(g.wram[uint32(roomDoorTypes)+o]) {
+		t := g.wram[uint32(roomDoorTypes)+o]
+		cracked := roomIsCrackedWallType(t)
+		if !cracked && !roomIsKeyDoorType(t) {
 			continue
 		}
 		pos := g.wramU16(uint32(roomDoorPos) + o)
 		if pos == 0 {
 			continue
 		}
-		return roomKeyDoor{slot: k, pos: pos, dir: g.wram[uint32(roomDoorDirs)+o] & 3}, true
+		return roomKeyDoor{slot: k, pos: pos, dir: g.wram[uint32(roomDoorDirs)+o] & 3, cracked: cracked}, true
 	}
 	return
 }
@@ -525,6 +538,8 @@ type roomStateUpdate struct {
 
 	keyDoorBit  uint8 // $0401 bit of the key door unlocked, if any
 	keyDoorFrom *Player
+	// keyDoorCracked is set when the door unlocked is a bombed or dashed wall:
+	keyDoorCracked bool
 
 	pull     bool // $0642 set
 	pullTs   uint32
@@ -577,7 +592,11 @@ func (u *roomStateUpdate) ConfirmAsmExecuted(index uint32, value uint8) {
 	if u.keyDoorBit != 0 {
 		rs.doorsTried |= u.keyDoorBit
 		log.Printf("alttp: room: update: unlocked door $%02x from player '%s'\n", u.keyDoorBit, u.keyDoorFrom.Name())
-		g.PushNotification(fmt.Sprintf("unlocked door from %s", u.keyDoorFrom.Name()))
+		if u.keyDoorCracked {
+			g.PushNotification(fmt.Sprintf("opened cracked wall from %s", u.keyDoorFrom.Name()))
+		} else {
+			g.PushNotification(fmt.Sprintf("unlocked door from %s", u.keyDoorFrom.Name()))
+		}
 	}
 	if u.pull {
 		rs.pulled = true
@@ -694,7 +713,7 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 					continue
 				}
 				if kd, ok := g.roomKeyDoorFor(b); ok {
-					keyDoor, u.keyDoorBit, u.keyDoorFrom = kd, b, p
+					keyDoor, u.keyDoorBit, u.keyDoorFrom, u.keyDoorCracked = kd, b, p, kd.cracked
 					break
 				}
 			}
@@ -1059,10 +1078,16 @@ func emitOpenChests(a *asm.Emitter) {
 
 // emitUnlockDoor unlocks a key door if it is still closed here, the way Underworld_ProcessTorchesAndDoors does once
 // the key was used: point $068E at the door's tile attributes ($F0 + slot, see Underworld_LoadSingleDoorAttribute),
-// clear $0690 and switch to submodule $04 (UnlockKeyDoor_Main), which sets the door's bit in $0400. 16-bit registers.
+// clear $0690 and switch to submodule $04 (UnlockKeyDoor_Main), which sets the door's bit in $0400. A cracked wall is
+// opened the way Bomb_CheckForDestructibles and a dash into it do: $068E the same way, SFX3 $1B and submodule $09
+// (OpenCrackedDoor, which sets $0690 itself and opens it in one step), without the debris. 16-bit registers.
 func emitUnlockDoor(a *asm.Emitter, d roomKeyDoor, label string) {
 	attr := uint16(d.pos>>1) + 0x41
-	a.Comment(fmt.Sprintf("unlock door slot %d at $%04x if still locked:", d.slot, d.pos))
+	if d.cracked {
+		a.Comment(fmt.Sprintf("open cracked wall slot %d at $%04x if still closed:", d.slot, d.pos))
+	} else {
+		a.Comment(fmt.Sprintf("unlock door slot %d at $%04x if still locked:", d.slot, d.pos))
+	}
 	a.LDA_abs(roomDoorPos + uint16(d.slot<<1))
 	a.CMP_imm16_w(d.pos)
 	a.BNE(label)
@@ -1072,6 +1097,16 @@ func emitUnlockDoor(a *asm.Emitter, d roomKeyDoor, label string) {
 	a.BNE(label)
 	a.LDA_imm16_w(attr)
 	a.STA_abs(0x068E)
+	if d.cracked {
+		a.SEP(0x20)
+		a.LDA_imm8_b(0x09)
+		a.STA_dp(0x11)
+		a.LDA_imm8_b(0x1B) // SFX3.1B, as Bomb_CheckForDestructibles plays
+		a.STA_abs(0x012F)
+		a.REP(0x20)
+		a.Label(label)
+		return
+	}
 	a.STZ_abs(0x0690)
 	a.SEP(0x20)
 	a.LDA_imm8_b(0x04)
