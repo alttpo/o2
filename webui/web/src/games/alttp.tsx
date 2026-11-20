@@ -247,13 +247,14 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         )}
         <div style="grid-column: 1">
+            <h5>Sync:</h5>
             <div style="display: grid; grid-template-columns: 1fr 1fr 6fr;">
                 <label for="syncTunicColor" style="grid-column: 1 / span 2">
                     <input type="checkbox"
                            id="syncTunicColor"
                            checked={syncTunicColor}
                            onChange={setField.bind(this, sendGameCommand, setsyncTunicColor, "syncTunicColor", getTargetChecked)}
-                    />Sync Tunic Color:
+                    />Tunic Color:
                 </label>
                 <div>
                     <input type="text" readonly={true} value={("0000" + playerColor.toString(16).toUpperCase()).slice(-4)} title="BGR555"/>
@@ -286,7 +287,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncItems"
                            checked={syncItems}
                            onChange={setField.bind(this, sendGameCommand, setsyncItems, "syncItems", getTargetChecked)}
-                    />Sync Items
+                    />Items
                 </label></div>
 
                 <div><label for="syncDungeonItems"
@@ -295,7 +296,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncDungeonItems"
                            checked={syncDungeonItems}
                            onChange={setField.bind(this, sendGameCommand, setsyncDungeonItems, "syncDungeonItems", getTargetChecked)}
-                    />Sync Dungeon Items
+                    />Dungeon Items
                 </label></div>
 
                 <div><label for="syncProgress">
@@ -303,7 +304,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncProgress"
                            checked={syncProgress}
                            onChange={setField.bind(this, sendGameCommand, setsyncProgress, "syncProgress", getTargetChecked)}
-                    />Sync Progress
+                    />Progress
                 </label></div>
 
                 <div><label for="syncHearts">
@@ -311,7 +312,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncHearts"
                            checked={syncHearts}
                            onChange={setField.bind(this, sendGameCommand, setsyncHearts, "syncHearts", getTargetChecked)}
-                    />Sync Hearts
+                    />Hearts
                 </label></div>
 
                 <div><label for="syncSmallKeys">
@@ -319,7 +320,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncSmallKeys"
                            checked={syncSmallKeys}
                            onChange={setField.bind(this, sendGameCommand, setsyncSmallKeys, "syncSmallKeys", getTargetChecked)}
-                    />Sync Small Keys
+                    />Small Keys
                 </label></div>
 
                 <div><label for="syncChests">
@@ -327,7 +328,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncChests"
                            checked={syncChests}
                            onChange={setField.bind(this, sendGameCommand, setsyncChests, "syncChests", getTargetChecked)}
-                    />Sync Chests
+                    />Chests
                 </label></div>
 
                 <div><label for="syncOverworld"
@@ -336,7 +337,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncOverworld"
                            checked={syncOverworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncOverworld, "syncOverworld", getTargetChecked)}
-                    />Sync Overworld (Global)
+                    />Overworld (Global)
                 </label></div>
 
                 <div><label for="syncUnderworld"
@@ -345,7 +346,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncUnderworld"
                            checked={syncUnderworld}
                            onChange={setField.bind(this, sendGameCommand, setsyncUnderworld, "syncUnderworld", getTargetChecked)}
-                    />Sync Underworld (Global)
+                    />Underworld (Global)
                 </label></div>
 
                 <div><label for="syncOverworldLocal"
@@ -354,7 +355,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncOverworldLocal"
                            checked={syncOverworldLocal}
                            onChange={setField.bind(this, sendGameCommand, setsyncOverworldLocal, "syncOverworldLocal", getTargetChecked)}
-                    />Sync Overworld (Local)
+                    />Overworld (Local)
                 </label></div>
 
                 <div><label for="syncUnderworldLocal"
@@ -363,7 +364,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncUnderworldLocal"
                            checked={syncUnderworldLocal}
                            onChange={setField.bind(this, sendGameCommand, setsyncUnderworldLocal, "syncUnderworldLocal", getTargetChecked)}
-                    />Sync Underworld (Local)
+                    />Underworld (Local)
                 </label></div>
 
                 <div><label for="syncTorches"
@@ -372,7 +373,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncTorches"
                            checked={syncTorches}
                            onChange={setField.bind(this, sendGameCommand, setsyncTorches, "syncTorches", getTargetChecked)}
-                    />Sync Torches
+                    />Torches
                 </label></div>
 
                 <div><label for="syncSfx"
@@ -381,7 +382,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncSfx"
                            checked={syncSfx}
                            onChange={setField.bind(this, sendGameCommand, setsyncSfx, "syncSfx", getTargetChecked)}
-                    />Sync Sound Effects
+                    />Sound Effects
                 </label></div>
 
                 <div><label for="syncSprites"
@@ -390,7 +391,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            id="syncSprites"
                            checked={syncSprites}
                            onChange={setField.bind(this, sendGameCommand, setsyncSprites, "syncSprites", getTargetChecked)}
-                    />Sync Sprites
+                    />Sprites
                 </label></div>
             </div>
             <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">
