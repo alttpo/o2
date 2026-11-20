@@ -59,9 +59,9 @@ import (
 //     closed is unlocked the way the game does (submodule $04 with $068E pointing at the door's tile attributes),
 //     without using a key; the small key sync takes care of the key count. A bombed or dashed wall (door types $28,
 //     $2A, $2E) still closed here is opened the same way with submodule $09 (OpenCrackedDoor).
-//   - Trap doors are last writer wins among remote players in the same room with a change made after our baseline
-//     was taken (so only changes made while both players are in the room count, never stale ones from an earlier
-//     visit). They are not applied in rooms with tags that compute the shutter state every frame from what the local
+//   - Trap doors are last writer wins among remote players in the same room with a change made in their current visit
+//     of the room, also one made before we arrived (the room load closed the shutters here, the player already
+//     inside left them open). They are not applied in rooms with tags that compute the shutter state every frame from what the local
 //     player does (hold switch doors, push block doors, torch puzzle doors); those would close again immediately.
 //   - Pull switches: a pull made by a remote player after our baseline sets $0642 here once.
 //   - Hold switches: while a remote player presses a hold switch, $0646 is set to $80 (no somaria block sets it to
@@ -481,10 +481,9 @@ func (g *Game) roomRemotes() (remotes []*Player) {
 // roomDoorWinner returns the remote player whose trap door state we should take, if any.
 func (g *Game) roomDoorWinner(remotes []*Player) (winner *Player, door uint8, ts uint32) {
 	rs := &g.roomState
+	// a remote player's doorTs is 0 until it changed the doors in its current visit of the room (it forgets the state
+	// when it leaves), so a change made before we arrived still counts: the doors are left the way it left them:
 	tsCompare := rs.doorTs
-	if tsCompare < rs.since {
-		tsCompare = rs.since
-	}
 	for _, p := range remotes {
 		if p.Room.doorTs > tsCompare {
 			winner, door, ts = p, p.Room.door, p.Room.doorTs

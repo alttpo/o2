@@ -182,20 +182,22 @@ func TestRoomStateScenario_EnterRoomAfterDoorsOpened(t *testing.T) {
 	h.operateDoors(0, 0)
 	h.settleRoom(skSettleFrames)
 
-	// g2 enters g1's room later; the doors were opened before g2 got there and g2's room load closed its own:
+	// g2 enters g1's room later; the doors were opened before g2 got there and g2's room load closed its own, so g2
+	// takes g1's open doors:
 	h.loadRoomState(1, rmRoom, rmTagToggle, 0)
 	h.settleRoom(skSettleFrames * 2)
-	h.expectDoors("g2 entered", 0, 1)
+	h.expectDoors("g2 entered", 0, 0)
 
 	// changes made while both are in the room are shared:
 	h.operateDoors(0, 1)
 	h.settleRoom(skSettleFrames)
+	h.expectDoors("g1 closed", 1, 1)
 	h.operateDoors(0, 0)
 	h.settleRoom(skSettleFrames)
 	h.expectDoors("g1 toggled again", 0, 0)
 }
 
-func TestRoomStateScenario_IntraroomTransitionForgets(t *testing.T) {
+func TestRoomStateScenario_IntraroomTransitionRetakes(t *testing.T) {
 	h := newSSScenario(t, 2)
 	h.loadRoomState(0, rmRoom, rmTagToggle, 0)
 	h.loadRoomState(1, rmRoom, rmTagToggle, 0)
@@ -205,14 +207,15 @@ func TestRoomStateScenario_IntraroomTransitionForgets(t *testing.T) {
 	h.settleRoom(skSettleFrames)
 	h.expectDoors("g1 opened", 0, 0)
 
-	// g2 moves to another quadrant; the game opens and closes the shutters behind it:
+	// g2 moves to another quadrant; the game opens and closes the shutters behind it, and g2 takes g1's open doors
+	// again since g1 is still in the room with them open:
 	e := h.gs[1].e
 	e.WRAM[skSubModule] = 0x01
 	h.settleRoom(2)
 	e.WRAM[roomDoorOffs] = 1
 	e.WRAM[skSubModule] = 0x05
 	h.settleRoom(skSettleFrames * 2)
-	h.expectDoors("g2 changed quadrant", 0, 1)
+	h.expectDoors("g2 changed quadrant", 0, 0)
 }
 
 func TestRoomStateScenario_BonkKey(t *testing.T) {
