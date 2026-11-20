@@ -342,3 +342,16 @@ func TestSecretsScenario_ManyBushesAtOnce(t *testing.T) {
 		t.Errorf("g2: expected %d secrets spawned; got %d", map16MaxPerUpdate+2, n)
 	}
 }
+
+// TestPotCoords checks potCoords against where the JP ROM puts things: Link stands at ($1290, $2370) in room $119
+// (Blind's hut), and lifting the pot at $1C2C there spawns its heart at ($12B4, $23C0) (4 pixels right of the pot).
+func TestPotCoords(t *testing.T) {
+	for _, c := range []struct{ room, pos, x, y uint16 }{
+		{0x119, 0x1C2C, 0x12B0, 0x23C0},
+		{0x017, 0x0D64, 0x0F90, 0x02D0},
+	} {
+		if x, y := potCoords(c.room, c.pos); x != c.x || y != c.y {
+			t.Errorf("room $%03x pos $%04x: expected ($%04x,$%04x); got ($%04x,$%04x)", c.room, c.pos, c.x, c.y, x, y)
+		}
+	}
+}

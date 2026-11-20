@@ -195,9 +195,11 @@ func emitOwRevealSub(a *asm.Emitter, liftables []owLiftable, fnReveal, fnRTL uin
 }
 
 // potCoords returns the coordinates of the top left of the underworld tilemap position pos in room. Rooms are
-// 512x512 pixels at (room & $0F, (room & $F0) >> 4) and the tilemap is 64x64 8x8 tiles.
+// 512x512 pixels at (room & $0F, room >> 4) and the tilemap is 64x64 8x8 tiles. Rooms $100 and up are below the
+// others: Link's Y in room $119 is $2200 + his Y in the room, so the room's bit 8 must not be dropped (the items under
+// pots lifted by remote players in those rooms used to spawn $2000 pixels above the room, out of sight).
 func potCoords(room, pos uint16) (x, y uint16) {
 	x = (room&0x0F)<<9 + (pos&0x007E)<<2
-	y = (room&0xF0)<<5 + (pos&0x1F80)>>4
+	y = (room>>4)<<9 + (pos&0x1F80)>>4
 	return
 }
