@@ -6,6 +6,7 @@ import (
 	"github.com/alttpo/snes/asm"
 	"io"
 	"log"
+	"o2/games"
 	"o2/snes"
 )
 
@@ -727,6 +728,38 @@ func (g *Game) generateRoomStateUpdate(newEmitter func() *asm.Emitter, index uin
 		}
 		if d.hold && !wantHold {
 			wantHold, u.holdFrom = true, p
+		}
+	}
+	// key doors and cracked walls opened by remote players that have since left the room: the game saves $0401 to
+	// $7EF000 when leaving, so they only show up in the remote player's SRAM, where the SRAM sync can only act on the
+	// change once, and not if the local player was busy with a submodule at the time; keep trying until it is open:
+	if u.keyDoorBit == 0 {
+		var sramDoors uint8
+		var sramFrom *Player
+		for _, p := range g.RemotePlayers() {
+			if p.Team != local.Team {
+				continue
+			}
+			sram := p.ReadableMemory(games.SRAM)
+			offs := uint32(rs.room)<<1 + 1
+			if !sram.IsFresh(offs) {
+				continue
+			}
+			if v := sram.ReadU8(offs) & 0xF0; v&^sramDoors != 0 {
+				sramDoors |= v
+				if sramFrom == nil {
+					sramFrom = p
+				}
+			}
+		}
+		for b := uint8(0x80); b >= 0x10 && sramDoors != 0; b >>= 1 {
+			if sramDoors&b == 0 || (rs.doors|rs.doorsTried)&b != 0 {
+				continue
+			}
+			if kd, ok := g.roomKeyDoorFor(b); ok {
+				keyDoor, u.keyDoorBit, u.keyDoorFrom, u.keyDoorCracked = kd, b, sramFrom, kd.cracked
+				break
+			}
 		}
 	}
 	if !wantHold {
