@@ -214,6 +214,7 @@ func (g *Game) run() {
 		case msg := <-g.client.Read():
 			if msg == nil {
 				// disconnected?
+				g.noteServerLost(g.local != nil && g.local.Index() >= 0)
 				for i := range g.players {
 					p := &g.players[i]
 					// reset Ttl for all players to make them inactive:
@@ -304,6 +305,9 @@ func (g *Game) run() {
 			g.sendEcho()
 
 			g.sendPlayerName()
+
+			// tell the others how long we were disconnected:
+			g.announceGaps(time.Now())
 
 			break
 		}

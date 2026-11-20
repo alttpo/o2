@@ -183,6 +183,12 @@ type Player struct {
 
 	// the server's stamp of the last message received from the player:
 	lastServerStamp time.Time
+
+	// the name the player had when its start was first seen, so that the run isn't given to another player that took
+	// its slot; when it was last sent its run back; the gaps it announced (see runrestore.go):
+	runName     string
+	restoreSent time.Time
+	gapsSeen    []gapKey
 }
 
 func (p *Player) Index() int {
@@ -388,7 +394,7 @@ func (p *Player) FormatTimer(now time.Time) string {
 			(dur/time.Hour)%24,
 			(dur/time.Minute)%60,
 			(dur/time.Second)%60,
-			(dur/time.Microsecond)%1000,
+			(dur/time.Millisecond)%1000,
 		)
 	}
 	return gameTimer

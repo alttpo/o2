@@ -62,6 +62,8 @@ const (
 	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
 	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
 	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
+	MsgRunRestore MessageType = 0x85 // gives a player back the run it lost, shared with alttpo; see runrestore.go
+	MsgRunGap     MessageType = 0x86 // a player's lost connection, shared with alttpo; see runrestore.go
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -101,6 +103,8 @@ func (g *Game) initSerde() {
 		MsgSmallKeys:        g.DeserializeSmallKeys,
 		MsgHearts:           g.DeserializeHearts,
 		MsgRunTiming:        g.DeserializeRunTiming,
+		MsgRunRestore:       g.DeserializeRunRestore,
+		MsgRunGap:           g.DeserializeRunGap,
 	}
 }
 

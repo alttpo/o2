@@ -94,8 +94,10 @@ type PlayerViewModel struct {
 	Underworld  string `json:"underworld"`
 	DungeonName string `json:"dungeonName"`
 
-	AbsStart  string `json:"gameStart"`
-	AbsFinish string `json:"gameFinish"`
+	// the server time of day in UTC, with a Z suffix, and the same with the date for a tooltip:
+	AbsStart     string `json:"gameStart"`
+	AbsStartFull string `json:"gameStartFull"`
+	AbsFinish    string `json:"gameFinish"`
 	RelStart  string `json:"relStart"`
 	RelFinish string `json:"relFinish"`
 
@@ -116,12 +118,22 @@ type RunWarningViewModel struct {
 	Warning string `json:"warning"`
 }
 
+// FormatTime formats the time of day in UTC, with a Z suffix and no date.
 func FormatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
 
-	return t.Format("15:04:05.000")
+	return t.UTC().Format("15:04:05.000Z")
+}
+
+// FormatTimeFull formats the date and time in UTC, for a tooltip.
+func FormatTimeFull(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	return t.UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
 
 func FormatDur(start, end time.Time) string {
@@ -137,31 +149,81 @@ func FormatDur(start, end time.Time) string {
 		dur/time.Hour,
 		(dur/time.Minute)%60,
 		(dur/time.Second)%60,
-		(dur/time.Microsecond)%1000,
+		(dur/time.Millisecond)%1000,
 	)
 }
 
 type RunTimesViewModel struct {
-	StartTime  string `json:"startTime"`
-	FinishTime string `json:"finishTime"`
+	StartTime      string `json:"startTime"`
+	StartTimeFull  string `json:"startTimeFull"`
+	FinishTime     string `json:"finishTime"`
+	FinishTimeFull string `json:"finishTimeFull"`
+}
+
+// runExtent finds the earliest start and the latest finish (plus its penalty) over the players who started, and how
+// many of them started and finished. Players that are away (their server connection dropped, or ours did) still count:
+// their start is kept until a group reset.
+func (g *Game) runExtent() (minStart, maxFinish time.Time, started, finished int) {
+	count := func(p *Player) {
+		if p.GameStartTime.IsZero() {
+			return
+		}
+		started++
+		if minStart.IsZero() || p.GameStartTime.Before(minStart) {
+			minStart = p.GameStartTime
+		}
+		if !p.GameFinishTime.IsZero() {
+			finished++
+			// the time a player saved by running fast is added to its finish:
+			finish := p.GameFinishTime.Add(g.playerRunTiming(p).Penalty)
+			if finish.After(maxFinish) {
+				maxFinish = finish
+			}
+		}
+	}
+	inPlayers := false
+	for i := range g.players {
+		p := &g.players[i]
+		if p == g.local {
+			inPlayers = true
+		}
+		count(p)
+	}
+	if g.local != nil && !inPlayers {
+		// the local player waiting for its index from the server:
+		count(g.local)
+	}
+	return
+}
+
+// updateRunExtent keeps the run's start and finish from the players' times, and reports whether they changed.
+func (g *Game) updateRunExtent() (changed bool) {
+	minStart, maxFinish, started, finished := g.runExtent()
+	changed = !minStart.Equal(g.runMinStart) || !maxFinish.Equal(g.runMaxFinish)
+	g.runMinStart, g.runMaxFinish, g.runPlayersFinished = minStart, maxFinish, finished
+	g.runPlayersStarted = started
+	return
+}
+
+// runTimerText is the run timer: from the earliest start to the latest finish once every player that started has
+// finished, else to now. It is empty and does not run while no player has a start time.
+func (g *Game) runTimerText() string {
+	g.updateRunExtent()
+	if g.runPlayersStarted == 0 || g.runMinStart.IsZero() {
+		return ""
+	}
+	endTime := g.ServerNow()
+	if g.runPlayersFinished == g.runPlayersStarted {
+		endTime = g.runMaxFinish
+	}
+	return FormatDur(g.runMinStart, endTime)
 }
 
 func (g *Game) updateRunTimer() {
 	if g.viewModels == nil {
 		return
 	}
-	if g.runMinStart.IsZero() {
-		return
-	}
-
-	endTime := g.ServerNow()
-	activePlayers := g.ActivePlayers()
-	if g.runPlayersFinished == len(activePlayers) {
-		// all players finished, use maxFinish time:
-		endTime = g.runMaxFinish
-	}
-	runTimer := FormatDur(g.runMinStart, endTime)
-	g.viewModels.NotifyView("game/run/timer", runTimer)
+	g.viewModels.NotifyView("game/run/timer", g.runTimerText())
 }
 
 func (g *Game) updatePlayersList() {
@@ -173,10 +235,8 @@ func (g *Game) updatePlayersList() {
 
 	activePlayers := g.ActivePlayers()
 
-	// run timer logic:
-	g.runPlayersFinished = 0
-	updateMinStart := false
-	updateMaxFinish := false
+	// the run's start and finish, from every player that started, including those that are away:
+	updateRunTimes := g.updateRunExtent()
 
 	common, costsDiffer := g.commonRunCost(activePlayers)
 
@@ -206,29 +266,7 @@ func (g *Game) updatePlayersList() {
 			overworldName = name
 		}
 
-		// determine minimum start time and maximum finish time among all players:
-		if !p.GameStartTime.IsZero() {
-			if g.runMinStart.IsZero() {
-				g.runMinStart = p.GameStartTime
-				updateMinStart = true
-			} else if p.GameStartTime.Before(g.runMinStart) {
-				g.runMinStart = p.GameStartTime
-				updateMinStart = true
-			}
-		}
 		rt := g.playerRunTiming(p)
-		if !p.GameFinishTime.IsZero() {
-			g.runPlayersFinished++
-			// the time a player saved by running fast is added to its finish:
-			finish := p.GameFinishTime.Add(rt.Penalty)
-			if g.runMaxFinish.IsZero() {
-				g.runMaxFinish = finish
-				updateMaxFinish = true
-			} else if finish.After(g.runMaxFinish) {
-				g.runMaxFinish = finish
-				updateMaxFinish = true
-			}
-		}
 
 		verification, unverified := "", ""
 		if rt.OK {
@@ -249,8 +287,9 @@ func (g *Game) updatePlayersList() {
 			Underworld:  underworldName,
 			DungeonName: dungeonName,
 
-			AbsStart:  FormatTime(p.GameStartTime),
-			AbsFinish: FormatTime(p.GameFinishTime),
+			AbsStart:     FormatTime(p.GameStartTime),
+			AbsStartFull: FormatTimeFull(p.GameStartTime),
+			AbsFinish:    FormatTime(p.GameFinishTime),
 
 			LagFrames:   rt.LagFrames,
 			Penalty:     formatPenalty(rt.Penalty),
@@ -275,10 +314,12 @@ func (g *Game) updatePlayersList() {
 		warning = "players run with different patched ROMs or gates, so their frames don't cost the same"
 	}
 	g.viewModels.NotifyView("game/run/warning", RunWarningViewModel{Warning: warning})
-	if updateMinStart || updateMaxFinish {
+	if updateRunTimes {
 		g.viewModels.NotifyView("game/run/abs", RunTimesViewModel{
-			StartTime:  FormatTime(g.runMinStart),
-			FinishTime: FormatTime(g.runMaxFinish),
+			StartTime:      FormatTime(g.runMinStart),
+			StartTimeFull:  FormatTimeFull(g.runMinStart),
+			FinishTime:     FormatTime(g.runMaxFinish),
+			FinishTimeFull: FormatTimeFull(g.runMaxFinish),
 		})
 	}
 }

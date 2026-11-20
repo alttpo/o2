@@ -272,6 +272,10 @@ type runTimingLocal struct {
 
 	flags   uint8
 	penalty time.Duration
+
+	// when a start in SRAM that couldn't be placed was first seen, while waiting for the others to give the run back
+	// (see awaitRunRestore):
+	restoreWaitSince time.Time
 }
 
 // u24Diff returns b - a for the u24 counters a and b, from -2^23 to 2^23-1.
@@ -413,6 +417,7 @@ func (r *runTimingLocal) resetRun() {
 	r.latchRawOK = false
 	r.clearLatches = true
 	r.restoreStart = false
+	r.restoreWaitSince = time.Time{}
 }
 
 // runTimingPak is the FX Pak Pro address of the run timing state:
@@ -481,6 +486,10 @@ func (g *Game) readRunTimingResponse(rsp snes.Response, at time.Time) {
 		}
 		startAt, ok := g.latchTime(startFrame, at)
 		if !ok {
+			if g.awaitRunRestore(at) {
+				// the others may have seen the start; if o2 lost it by being restarted, they give it back:
+				return
+			}
 			// latched before o2 saw the counter run (e.g. before o2 connected or across a jump); start over:
 			log.Printf("alttp: run timing: start latched at NMI frame $%06x before the counter was followed; clearing\n", startFrame)
 			r.clearLatches = true
@@ -732,6 +741,7 @@ func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
 
 	m := &p.RunTiming
 	shown := runTimingShown(m)
+	old := *m
 	m.OK = true
 	m.Flags = body[0]
 	o := 1
@@ -753,6 +763,12 @@ func (g *Game) DeserializeRunTiming(p *Player, r io.Reader) (err error) {
 	m.LagFrames = u24(body[o:])
 	o += 3
 	m.Penalty = time.Duration(binary.LittleEndian.Uint32(body[o:])) * time.Millisecond
+
+	// a player that was away and lost its state doesn't clear what we saw of its run; it is given it back instead:
+	g.keepRunAcrossAbsence(p, &old, m, &startAt, &finishAt)
+	if !startAt.IsZero() && m.StartAt.IsZero() {
+		p.runName = p.NameF
+	}
 
 	if !startAt.IsZero() && m.StartAt.IsZero() {
 		m.StartSeenAt = p.lastServerStamp

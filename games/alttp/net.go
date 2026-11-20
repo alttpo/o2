@@ -209,12 +209,17 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 				// clear out old Player:
 				g.local.IndexF = -1
 				g.local.Ttl = 0
+				// the run moved with the local player; don't count it twice:
+				g.local.GameStartTime, g.local.GameFinishTime = time.Time{}, time.Time{}
+				g.local.RunTiming = runTimingRemote{}
 			}
 			// repoint local into the array:
 			g.local = p
 			g.activePlayersClean = false
 			p.IndexF = index
 		}
+		// back in the group after losing the server:
+		g.noteServerBack()
 	case protocol04.BroadcastAll, protocol04.BroadcastSector:
 		p.lastServerStamp = time.Unix(0, gm.ServerTime)
 		err = g.Deserialize(bytes.NewReader(gm.Data), p)

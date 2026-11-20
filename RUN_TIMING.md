@@ -157,6 +157,45 @@ Run timing follows the group reset (0x81, see `reset.go`). When a player clears 
 timing and writes 0 to `latches`. alttpo implements the 0x81 state machine to take part. A peer ignores 0x84 messages
 whose `resetID`/`resetInitiator` differ from its own once both are past the reset.
 
+## Disconnects (both)
+
+A player that loses its SNES or its server connection for a while keeps its start (and finish) time. Nobody clears a
+run's times except a group reset.
+
+- **Observers keep what they saw.** A player that is away, or that reports less than they saw (no start where there was
+  one, no finish where there was one), doesn't change the start and finish they show. The run timer counts the players
+  that are away. A different player (another name) that took the slot of the one that left doesn't inherit its run;
+  the observers drop it.
+- **Giving the run back (0x85).** When a player's 0x84 reports no start (or no finish) that an observer saw, the observer
+  sends the player what it saw in message 0x85, at most every 2 seconds per player. The player takes it if it is for its
+  index and name, of the group reset it is in, and it has no start; it then writes the start back into SRAM like it does
+  when SRAM loses the start (see [SNES state](#snes-state-both)). A client that finds a start in SRAM it can't place
+  (the counter wasn't followed) waits 4 seconds for the others to give the run back before it clears the latches, when
+  there are others to ask.
+- **The gap (0x86).** A player that lost its SNES or server connection announces what it was cut off from and for how
+  long, on the server's clock, as soon as it is back, repeated every 500 ms for 5 seconds (receivers note each gap
+  once). Every client, the player's own included, adds a note to its notification history, for example
+  `name: SNES connection lost for 00:00:12.345 (21:03:11.100Z to 21:03:23.445Z)`, so that everyone can see the gap and
+  compare it with the player's frame pacing reports.
+
+| Field | Type | Meaning |
+|---|---|---|
+| **0x85** version | u8 | 1 |
+| size | u8 | 62 |
+| target | u16 | player index of the player to give the run back to |
+| name | [20]byte | the target's name, space padded |
+| resetID, resetInitiator | u64, u16 | the sender's last finalized group reset; ignored if it differs from the target's |
+| flags | u8 | the 0x84 flags that stay with the run: started, finished, discontinuity, fast, state load |
+| startAt, finishAt | i64, i64 | server clock, Unix ns; 0 if none |
+| startFrame, finishFrame, lagFrames | u24 each | |
+| penaltyMs | u32 | |
+| **0x86** version | u8 | 1 |
+| size | u8 | 17 |
+| kind | u8 | 1 SNES, 2 server |
+| lostAt, backAt | i64, i64 | server clock, Unix ns |
+
+Both go in their own packets, like 0x84.
+
 ## Verification (both)
 
 Each client checks every other player's messages itself, using the server's timestamp on each relayed message (which
@@ -187,5 +226,7 @@ client checks the same values from the same messages, so every player sees the s
 
 - Per player: player time, lag frames and the verification state.
 - Run: `max(finishAt + penaltyMs) - min(startAt)` over the players who started, counting up from the earliest start
-  until every started player has finished.
+  until every started player has finished. The timer is empty and doesn't run while no player has a start time.
+- o2 shows a player's start as the server time of day in UTC with a Z suffix (`hh:mm:ss.fffZ`), and its tooltip shows the
+  full date and time (`yyyy-MM-dd hh:mm:ss.fff UTC`).
 - A warning when the signatures or gates differ between players.

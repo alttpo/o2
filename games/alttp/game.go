@@ -164,6 +164,11 @@ type Game struct {
 	runMinStart        time.Time
 	runMaxFinish       time.Time
 	runPlayersFinished int
+	runPlayersStarted  int
+
+	// the local player's lost connections (see runrestore.go):
+	absenceLock sync.Mutex
+	absence     runAbsence
 
 	// group-wide reset state machine; only accessed from the game loop goroutine:
 	reset         resetState
@@ -361,6 +366,7 @@ func (g *Game) setQueue(queue snes.Queue) {
 
 func (g *Game) ProvideQueue(queue snes.Queue) {
 	g.setQueue(queue)
+	g.noteSNESQueue(queue != nil)
 	// the SNES may be running a different ROM now:
 	g.resetPatchSignature()
 

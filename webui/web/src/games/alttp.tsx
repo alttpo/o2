@@ -450,7 +450,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             <div class="players-header">team</div>
             <div class="players-header">name</div>
             <div class="players-header">location</div>
-            <div class="players-header">start</div>
+            <div class="players-header" title="Server time of day the player started, in UTC">start</div>
             <div class="players-header">finish</div>
             <div class="players-header" title="Lag frames since the start">lag</div>
             <div class="players-header" title="Run timing verification">ok</div>
@@ -465,7 +465,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                         title="Location">{
                         ((p.location & 0x10000) != 0) ? p.underworld : p.overworld
                     }</div>
-                    <div class="mono" title="Start">{p.relStart}</div>
+                    <div class="mono" title={p.gameStartFull || "Start"}>{p.gameStart}</div>
                     <div class="mono" title={p.penalty ? "Finish, and the time added for running fast" : "Finish"}>
                         {p.relFinish}{p.penalty ? <span class="timing-penalty"> {p.penalty}</span> : null}
                     </div>

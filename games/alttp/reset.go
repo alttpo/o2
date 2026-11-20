@@ -257,6 +257,7 @@ func (g *Game) resetClearState() {
 	g.runMinStart = time.Time{}
 	g.runMaxFinish = time.Time{}
 	g.runPlayersFinished = 0
+	g.runPlayersStarted = 0
 	g.shouldUpdatePlayersList = true
 
 	if g.viewModels != nil {
