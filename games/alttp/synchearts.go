@@ -311,6 +311,14 @@ func (g *Game) generateHeartsUpdate(newEmitter func() *asm.Emitter, index uint32
 	a.PLA()
 	a.AND_imm8_b(0xFC)
 	a.ASL()
+	a.PHA()
+	a.Comment("fill one heart (8) of health ($7EF36D) for each heart container added to the capacity ($7EF36C):")
+	a.SEC()
+	a.SBC_long(0x7EF36C)
+	a.CLC()
+	a.ADC_long(0x7EF36D)
+	a.STA_long(0x7EF36D)
+	a.PLA()
 	a.STA_long(0x7EF36C)
 
 	return
