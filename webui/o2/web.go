@@ -7,15 +7,18 @@ import (
 	"fmt"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"image/png"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"o2/games/alttp/underworldmap"
 	"o2/interfaces"
 	"o2/snes"
 	"o2/util"
 	"o2/webui/dist"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -32,6 +35,12 @@ type WebServer struct {
 
 	// broadcast channel to all sockets:
 	q chan ViewModelUpdate
+
+	// the last underworld map made, for the ROM contents and scale it was made from:
+	underworldLock  sync.Mutex
+	underworldROM   []byte
+	underworldScale int
+	underworldPNG   []byte
 }
 
 type Socket struct {
@@ -102,6 +111,9 @@ func NewWebServer(listenAddr string) *WebServer {
 		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
 		http.ServeContent(w, r, romName, time.Now(), bytes.NewReader(rom.Contents))
 	}))
+
+	// a map of every underworld room, drawn from the loaded ROM; ?scale=2 (or 4, 8, ...) makes it smaller:
+	s.mux.Handle("/rom/underworld.png", http.HandlerFunc(s.serveUnderworldMap))
 
 	// access log file:
 	s.mux.Handle("/log.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -400,4 +412,53 @@ func (k *Socket) writeHandler() {
 			continue
 		}
 	}
+}
+
+// serveUnderworldMap draws a map of every underworld room from the loaded ROM, before o2 patched it. Making one takes
+// several seconds, so the last one made is kept.
+func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
+	if s.commandHandler == nil {
+		http.NotFound(w, r)
+		return
+	}
+	scale := 1
+	if q := r.URL.Query().Get("scale"); q != "" {
+		var err error
+		if scale, err = strconv.Atoi(q); err != nil || scale < 1 || underworldmap.RoomPixels%scale != 0 {
+			http.Error(w, "scale must be a power of 2 from 1 to 512", http.StatusBadRequest)
+			return
+		}
+	}
+
+	cmd, err := s.commandHandler.CommandFor("rom", "unpatched")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var rom []byte
+	if err = cmd.Execute(&rom); err != nil || rom == nil {
+		http.Error(w, "no ROM is loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	s.underworldLock.Lock()
+	defer s.underworldLock.Unlock()
+	if s.underworldPNG == nil || s.underworldScale != scale || !bytes.Equal(s.underworldROM, rom) {
+		m, err := underworldmap.Generate(rom, underworldmap.Options{Scale: scale})
+		if err != nil {
+			log.Println(fmt.Errorf("underworld map: %w", err))
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		var b bytes.Buffer
+		if err = png.Encode(&b, m.Image); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.underworldROM, s.underworldScale, s.underworldPNG = rom, scale, b.Bytes()
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(s.underworldPNG)
 }

@@ -156,6 +156,8 @@ func NewROMViewModel(c *ViewModel) *ROMViewModel {
 		"setField": &ROMsetFieldCmd{v},
 		// get contents of patched rom; used internally for /rom/patched.sfc download endpoint:
 		"patched": &ROMGetDataCommand{v},
+		// get a copy of the unpatched rom's contents; used internally for the /rom/underworld.png endpoint:
+		"unpatched": &ROMGetUnpatchedCommand{v},
 	}
 
 	return v
@@ -246,6 +248,23 @@ func (ce *ROMGetDataCommand) Execute(args interfaces.CommandArgs) error {
 	}
 
 	*p = ce.v.root.rom
+	return nil
+}
+
+// ROMGetUnpatchedCommand stores a copy of the loaded ROM's contents before o2 patched it in the *[]byte args points
+// to, or nil if no ROM is loaded. This command should only be used by the web server.
+type ROMGetUnpatchedCommand struct{ v *ROMViewModel }
+
+func (ce *ROMGetUnpatchedCommand) CreateArgs() interfaces.CommandArgs { return nil }
+func (ce *ROMGetUnpatchedCommand) Execute(args interfaces.CommandArgs) error {
+	p, ok := args.(*[]byte)
+	if !ok {
+		return fmt.Errorf("invalid args type for command")
+	}
+	*p = nil
+	if ce.v.root.unpatchedRomContents != nil {
+		*p = append([]byte(nil), ce.v.root.unpatchedRomContents...)
+	}
 	return nil
 }
 
