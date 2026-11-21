@@ -373,33 +373,6 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Underworld (Local)
                 </label></div>
 
-                <div><label for="syncTorches"
-                       title="Torches lit by players in the same room">
-                    <input type="checkbox"
-                           id="syncTorches"
-                           checked={syncTorches}
-                           onChange={setField.bind(this, sendGameCommand, setsyncTorches, "syncTorches", getTargetChecked)}
-                    />Torches
-                </label></div>
-
-                <div><label for="syncSfx"
-                       title="Sound effects of players in the same room or area">
-                    <input type="checkbox"
-                           id="syncSfx"
-                           checked={syncSfx}
-                           onChange={setField.bind(this, sendGameCommand, setsyncSfx, "syncSfx", getTargetChecked)}
-                    />Sound Effects
-                </label></div>
-
-                <div><label for="syncSprites"
-                       title="Show other players in the same room or area">
-                    <input type="checkbox"
-                           id="syncSprites"
-                           checked={syncSprites}
-                           onChange={setField.bind(this, sendGameCommand, setsyncSprites, "syncSprites", getTargetChecked)}
-                    />Sprites
-                </label></div>
-
                 <div><label for="syncEnemiesKilled"
                        title="Enemies killed by players in the same room or area stay dead when the game would spawn them again here; enemies themselves are not synced">
                     <input type="checkbox"
@@ -418,7 +391,34 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     />Kill Dead Enemies
                 </label></div>
 
-                <div><label for="disableBgMusic"
+                <div><label for="syncSprites"
+                       title="Show other players in the same room or area">
+                    <input type="checkbox"
+                           id="syncSprites"
+                           checked={syncSprites}
+                           onChange={setField.bind(this, sendGameCommand, setsyncSprites, "syncSprites", getTargetChecked)}
+                    />Sprites
+                </label></div>
+
+                <div><label for="syncSfx"
+                       title="Sound effects of players in the same room or area">
+                    <input type="checkbox"
+                           id="syncSfx"
+                           checked={syncSfx}
+                           onChange={setField.bind(this, sendGameCommand, setsyncSfx, "syncSfx", getTargetChecked)}
+                    />Sound Effects
+                </label></div>
+
+                <div><label for="syncTorches"
+                       title="Torches lit by players in the same room">
+                    <input type="checkbox"
+                           id="syncTorches"
+                           checked={syncTorches}
+                           onChange={setField.bind(this, sendGameCommand, setsyncTorches, "syncTorches", getTargetChecked)}
+                    />Torches
+                </label></div>
+            </div>
+            <div style="margin-top: 0.5em"><label for="disableBgMusic"
                        title="Stop the game from playing its background music; sound effects still play. Turning this off restarts the music that would be playing">
                     <input type="checkbox"
                            id="disableBgMusic"
@@ -426,7 +426,6 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            onChange={setField.bind(this, sendGameCommand, setdisableBgMusic, "disableBgMusic", getTargetChecked)}
                     />Disable BG Music
                 </label></div>
-            </div>
             <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">
                 <div style="grid-column: 1 / span 2">
                     <label for="showASM">
