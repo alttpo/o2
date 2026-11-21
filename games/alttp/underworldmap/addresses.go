@@ -19,6 +19,27 @@ type romAddresses struct {
 	underworldSongBankExit uint32
 	// RebuildHUD_Keys: draws the HUD, which isn't needed; patched to RTL:
 	rebuildHUDKeys uint32
+	// RoomDraw_LampCones: draws dark rooms' lamp cone mask (object $2A) over their BG2 ($7E4000), which the map
+	// leaves out to show the room lit; patched to RTS:
+	roomDrawLampCones uint32
+
+	// Decompress: decompresses the data at the 24-bit pointer in $C8 to the 24-bit pointer in $00, with 8-bit A and
+	// X (JSR in bank $00); and its SEP #$10 before RTS, where Y is the size of the output. Its results are cached as
+	// it is what loading a room spends most of its time on:
+	decompress     uint32
+	decompressExit uint32
+	// InitializeTilesets and its PLB : RTL: loads the BG and sprite graphics sheets of $0AA1..$0AA4 into VRAM (JSL),
+	// which every room load does again; its effects are cached by its inputs:
+	initializeTilesets    uint32
+	initializeTilesetsPLB uint32
+	// LoadAndDrawRoom's .next_quadrant loop, which uploads the room's tilemaps to VRAM, and the PLA after it, which
+	// the loop is patched to jump to: the map draws the tilemaps from WRAM:
+	uploadRoomTilemaps     uint32
+	uploadRoomTilemapsDone uint32
+	// InitializeTilesets after its PHB : PHK : PLB, and where it starts loading the BG sheets after the sprite
+	// sheets, which the map has no use for; the first jumps to the second:
+	initializeTilesetsSprites uint32
+	initializeTilesetsBG      uint32
 
 	// the startup code's JSR LoadIntroSongBank, which the reset routine is run up to:
 	resetDone uint32
@@ -54,6 +75,15 @@ var (
 		underworldSongBankCall:        0x02_8293,
 		underworldSongBankExit:        0x02_82BC,
 		rebuildHUDKeys:                0x0D_FA88,
+		roomDrawLampCones:             0x01_9DE5,
+		decompress:                    0x00_E7DE,
+		decompressExit:                0x00_E7EA,
+		initializeTilesets:            0x00_E1DB,
+		initializeTilesetsPLB:         0x00_E30E,
+		initializeTilesetsSprites:     0x00_E1DE,
+		uploadRoomTilemaps:            0x02_C300,
+		uploadRoomTilemapsDone:        0x02_C317,
+		initializeTilesetsBG:          0x00_E259,
 		resetDone:                     0x00_8029,
 		loadDefaultTileTypes:          0x0F_FD2A,
 		introInitializeDefaultGFX:     0x0C_C208,
@@ -74,6 +104,15 @@ var (
 		underworldSongBankCall:        0x02_8389,
 		underworldSongBankExit:        0x02_83B2,
 		rebuildHUDKeys:                0x0D_FA68,
+		roomDrawLampCones:             0x01_9DE5,
+		decompress:                    0x00_E79E,
+		decompressExit:                0x00_E7AA,
+		initializeTilesets:            0x00_E19B,
+		initializeTilesetsPLB:         0x00_E2CE,
+		initializeTilesetsSprites:     0x00_E19E,
+		uploadRoomTilemaps:            0x02_C590,
+		uploadRoomTilemapsDone:        0x02_C5A7,
+		initializeTilesetsBG:          0x00_E219,
 		resetDone:                     0x00_8029,
 		loadDefaultTileTypes:          0x0E_97D9,
 		introInitializeDefaultGFX:     0x0C_C1F9,

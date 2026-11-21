@@ -14,6 +14,8 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"runtime"
+	"sync"
 )
 
 const (
@@ -44,6 +46,12 @@ type Room struct {
 	Via  Exit
 	// Exits are the ways out of the room the flood fill found.
 	Exits []Exit
+}
+
+// drawRoom is a room to draw into the map.
+type drawRoom struct {
+	room uint16
+	gfx  *roomGfx
 }
 
 // hasEdgeExitTo reports whether the room has a doorway, walkway or bombable crack on its edge into room to.
@@ -108,7 +116,25 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 	for i := 3; i < len(m.Image.Pix); i += 4 {
 		m.Image.Pix[i] = 0xFF
 	}
-	full := image.NewNRGBA(image.Rect(0, 0, RoomPixels, RoomPixels))
+	// rooms are drawn on other goroutines while the emulator loads the next ones:
+	draws := make(chan drawRoom, runtime.GOMAXPROCS(0))
+	var drawing sync.WaitGroup
+	for i := 0; i < cap(draws); i++ {
+		drawing.Add(1)
+		go func() {
+			defer drawing.Done()
+			full := image.NewNRGBA(image.Rect(0, 0, RoomPixels, RoomPixels))
+			for d := range draws {
+				d.gfx.render(full, 0, 0)
+				col, row := int(d.room%GridColumns), int(d.room/GridColumns)
+				downscale(m.Image, col*size, row*size, full, scale)
+			}
+		}()
+	}
+	defer func() {
+		close(draws)
+		drawing.Wait()
+	}()
 
 	// the flood fill goes in rounds: in each, every entrance in turn floods through the rooms it reaches without
 	// dropping through the floor, and the drops it finds start its flood in the next round. So a room is drawn by the
@@ -138,6 +164,16 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 			}
 
 			var start uint16
+			if round == 0 {
+				// skip entrances that start in a room already drawn:
+				if start, err = e.peekEntrance(uint8(id)); err != nil {
+					return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
+				}
+				if start >= RoomCount || m.Rooms[start] != nil {
+					logf("entrance $%02x: room $%03x\n", id, start)
+					continue
+				}
+			}
 			if start, err = e.loadEntrance(uint8(id)); err != nil {
 				return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
 			}
@@ -180,9 +216,7 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 				m.Rooms[v.room] = r
 				logf("  room $%03x from $%03x by %s\n", v.room, v.from, v.via.Kind)
 
-				e.readRoomGfx().render(full, 0, 0)
-				col, row := int(v.room%GridColumns), int(v.room/GridColumns)
-				downscale(m.Image, col*size, row*size, full, scale)
+				draws <- drawRoom{room: v.room, gfx: e.readRoomGfx()}
 
 				// push in reverse so the first exit found is visited first:
 				for i := len(r.Exits) - 1; i >= 0; i-- {

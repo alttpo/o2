@@ -415,7 +415,7 @@ func (k *Socket) writeHandler() {
 }
 
 // serveUnderworldMap draws a map of every underworld room from the loaded ROM, before o2 patched it. Making one takes
-// several seconds, so the last one made is kept.
+// a few seconds, so the last one made is kept.
 func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
 	if s.commandHandler == nil {
 		http.NotFound(w, r)
@@ -450,8 +450,9 @@ func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
+		// the fastest compression takes half the time of the default, for a third more bytes:
 		var b bytes.Buffer
-		if err = png.Encode(&b, m.Image); err != nil {
+		if err = (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&b, m.Image); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

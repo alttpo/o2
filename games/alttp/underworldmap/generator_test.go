@@ -2,6 +2,7 @@ package underworldmap
 
 import (
 	"bufio"
+	"bytes"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -73,5 +74,28 @@ func TestGenerate(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestCachesChangeNothing checks the map is the same with the caches of hookRoutines as without.
+func TestCachesChangeNothing(t *testing.T) {
+	rom, err := os.ReadFile(testROMs[0])
+	if err != nil {
+		t.Skip(err)
+	}
+	defer func() { cacheRoutines = true }()
+
+	cacheRoutines = false
+	uncached, err := Generate(rom, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheRoutines = true
+	cached, err := Generate(rom, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(uncached.Image.Pix, cached.Image.Pix) {
+		t.Error("the map differs with the caches")
 	}
 }

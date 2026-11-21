@@ -33,8 +33,25 @@ type emu struct {
 	pcInit         uint32
 	pcLoadEntrance uint32
 	pcLoadRoom     uint32
+	// pcPeekEntrance runs only LoadUnderworldEntrance, to find the room an entrance starts in; 0 if the ROM doesn't
+	// call it where the vanilla game does:
+	pcPeekEntrance uint32
 	// address of the entrance ID operand of loadEntrance's LDA #imm:
 	entranceIDOperand uint32
+
+	// the results of Decompress by the source pointer, the call in progress if it isn't cached, and the routine
+	// that returns from a cached call, with the operands it sets the registers from:
+	decompressed    map[uint32]*decompressed
+	decompressing   *decompressCall
+	pcDecompressRet uint32
+	decompressRetY  uint32
+	decompressRetX  uint32
+
+	// the effects of InitializeTilesets by its inputs, the call being recorded, and the end of the routine, PLB :
+	// RTL:
+	tilesets  map[string]*routineEffects
+	recording *routineRecording
+	pcPLBRTL  uint32
 
 	// the state after initialization that each entrance starts from:
 	snapWRAM [0x20000]byte
@@ -56,6 +73,11 @@ func newEmu(rom []byte, a *romAddresses) (e *emu, err error) {
 	// NMI and IRQ stay off; the routines that would enable them run outside the main loop:
 	s.MapIO(0x4200, 0x4200, nil, func(uint16, byte) {})
 
+	// WRAM that keeps track of what is written while a routine's effects are recorded:
+	if err = e.attachWRAM(); err != nil {
+		return nil, err
+	}
+
 	// the scratch RAM for our routines:
 	if err = s.Bus.Attach(memory.NewRAM(e.scratch00[:], 0x00_0000|scratchBase), "scratch", 0x00_0000|scratchBase, 0x00_0000|scratchBase+scratchSize-1); err != nil {
 		return nil, err
@@ -71,6 +93,7 @@ func newEmu(rom []byte, a *romAddresses) (e *emu, err error) {
 	if err = e.emitRoutines(); err != nil {
 		return nil, err
 	}
+	e.hookRoutines()
 
 	// run the game's startup code up to its first JSR, then our initialization. Randomizers hook the startup code
 	// and come back to it in the FastROM banks $80 and up, so the bank's mirror bit is ignored:
@@ -99,7 +122,8 @@ func (e *emu) romEmitter(addr uint32) *asm.Emitter {
 	return a
 }
 
-// patchROM patches the emulated ROM to skip what talks to the APU, which isn't emulated, and the HUD.
+// patchROM patches the emulated ROM to skip what talks to the APU, which isn't emulated, the HUD, the lamp cones of
+// dark rooms, loading sprite graphics and uploading the room's tilemaps to VRAM, as the map draws them from WRAM.
 func (e *emu) patchROM() error {
 	a := e.romEmitter(e.a.loadSongBank)
 	a.RTS()
@@ -109,12 +133,31 @@ func (e *emu) patchROM() error {
 
 	a = e.romEmitter(e.a.rebuildHUDKeys)
 	a.RTL()
+
+	a = e.romEmitter(e.a.roomDrawLampCones)
+	a.RTS()
+
+	a = e.romEmitter(e.a.initializeTilesetsSprites)
+	a.WDM(wdmTilesetsEnter)
+	a.JMP_abs_imm16_w(uint16(e.a.initializeTilesetsBG))
+
+	a = e.romEmitter(e.a.uploadRoomTilemaps)
+	a.JMP_abs_imm16_w(uint16(e.a.uploadRoomTilemapsDone))
+
+	// the hooks of hookRoutines, which take the place of the 2-byte instructions they run:
+	a = e.romEmitter(e.a.initializeTilesetsPLB) // PLB : RTL
+	a.WDM(wdmTilesetsExit)
+	a = e.romEmitter(e.a.decompress) // REP #$10
+	a.WDM(wdmDecompressEnter)
+	a = e.romEmitter(e.a.decompressExit) // SEP #$10
+	a.WDM(wdmDecompressExit)
 	return nil
 }
 
 func (e *emu) emitRoutines() (err error) {
 	r := e.a
 	pcLoadRoomBank02 := uint32(0x02_0000 | scratchBase)
+	pcPeekBank02 := uint32(0)
 
 	// bank $02: load and draw the room in $A0 as if Link had just entered the dungeon in it:
 	{
@@ -128,6 +171,14 @@ func (e *emu) emitRoutines() (err error) {
 		a.JSR_abs(uint16(r.pullBlocksTorchesPHB))
 		// Module06_UnderworldLoad's RTL returns to our JSL:
 		a.JMP_abs_imm16_w(uint16(r.module06AfterLoadEntrance))
+
+		// Module06_UnderworldLoad's JSR LoadUnderworldEntrance, alone:
+		if o := romOffset(r.module06AfterLoadEntrance - 3); e.sys.ROM[o] == 0x20 {
+			pcPeekBank02 = a.Label("peekEntrance")
+			a.SEP(0x30)
+			a.JSR_abs(uint16(e.sys.ROM[o+1]) | uint16(e.sys.ROM[o+2])<<8)
+			a.RTL()
+		}
 		if err = a.Finalize(); err != nil {
 			return
 		}
@@ -177,6 +228,20 @@ func (e *emu) emitRoutines() (err error) {
 	a.JSL(r.runModule)
 	a.BRA("updateVRAM")
 
+	// find the room the entrance in the same operand starts in:
+	if pcPeekBank02 != 0 {
+		e.pcPeekEntrance = a.Label("peekEntrance")
+		a.SEP(0x30)
+		a.LDA_imm8_b(0x06)
+		a.STA_dp(0x10)
+		a.STZ_dp(0x11)
+		a.STZ_dp(0xB0)
+		a.LDA_abs(uint16(e.entranceIDOperand))
+		a.STA_abs(0x010E)
+		a.JSL(pcPeekBank02)
+		a.STP()
+	}
+
 	// load and draw the room in $A0 with the graphics state of the entrance loaded before:
 	e.pcLoadRoom = a.Label("loadRoom")
 	a.SEP(0x30)
@@ -190,6 +255,24 @@ func (e *emu) emitRoutines() (err error) {
 	a.JSR_abs(uint16(r.prepareOAMForTransfer))
 	a.JSR_abs(uint16(r.doNMIUpdates))
 	a.STP()
+
+	// return from a cached Decompress as it does: with 8-bit X and Y, Y the low byte of the size of the output, X
+	// that of the source pointer's final address, and the $FF that ends the data compared in A:
+	e.pcDecompressRet = a.Label("decompressRet")
+	a.REP(0x10)
+	e.decompressRetY = a.Label("decompressRetY") + 1
+	a.LDY_imm16_w(0)
+	a.SEP(0x10)
+	e.decompressRetX = a.Label("decompressRetX") + 1
+	a.LDX_imm8_b(0)
+	a.LDA_imm8_b(0xFF)
+	a.CMP_imm8_b(0xFF)
+	a.RTS()
+
+	// the end of InitializeTilesets, which its patch for hookRoutines replaced:
+	e.pcPLBRTL = a.Label("plbRTL")
+	a.PLB()
+	a.RTL()
 
 	return a.Finalize()
 }
@@ -239,6 +322,21 @@ func (e *emu) loadEntrance(id uint8) (room uint16, err error) {
 	e.restore()
 	e.scratch00[e.entranceIDOperand-(0x00_0000|scratchBase)] = id
 	if err = e.call(e.pcLoadEntrance); err != nil {
+		return
+	}
+	room = e.wram16(0xA0)
+	return
+}
+
+// peekEntrance returns the room entrance id starts in, without loading it, as most entrances start in a room the
+// map has already drawn.
+func (e *emu) peekEntrance(id uint8) (room uint16, err error) {
+	if e.pcPeekEntrance == 0 {
+		return e.loadEntrance(id)
+	}
+	e.restore()
+	e.scratch00[e.entranceIDOperand-(0x00_0000|scratchBase)] = id
+	if err = e.call(e.pcPeekEntrance); err != nil {
 		return
 	}
 	room = e.wram16(0xA0)
