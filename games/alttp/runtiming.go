@@ -92,12 +92,17 @@ func nmiCountHookSite(rom *snes.ROM) (ok bool, chain uint32) {
 // and any DB and D. It increments the NMI frame counter and then runs the replaced instructions and jumps back, or
 // jumps to chain (the routine a randomizer had hooked there, which runs them itself).
 //
-// Cycles (cycles_test.go): budget 70, measured 63 when the counter carries into its high byte.
+// It also disables the BG music when asked to (see music.go).
+//
+// Cycles (cycles_test.go): budget 100, measured 85 with the music setting off when the counter carries into its high byte.
 func emitNMICount(a *asm.Emitter, chain uint32) {
 	a.AssumeREP(0x30)
 	a.Label("nmiCount")
 	a.PHA()
 	emitIncU24(a, runTimingAddr+rtmNMIFrames, "nmiCountHigh")
+	a.SEP(0x20)
+	emitMusic(a)
+	a.REP(0x20)
 	a.PLA()
 	if chain != 0 {
 		a.JML(chain)

@@ -88,7 +88,7 @@ func TestRunTiming_NMICounterChain(t *testing.T) {
 	}
 	hook := uint32(c[1]) | uint32(c[2])<<8 | uint32(c[3])<<16
 	hpak, _ := lorom.BusAddressToPak(hook)
-	a := asm.NewEmitter(make([]byte, 0x40), false)
+	a := asm.NewEmitter(make([]byte, 0x200), false)
 	a.SetBase(hook)
 	emitNMICount(a, 0x123456)
 	if err = a.Finalize(); err != nil {

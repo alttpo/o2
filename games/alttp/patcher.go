@@ -478,7 +478,6 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uin
 	a.Label("syncExit")
 
 	emitLinkColor(a)
-	emitMusic(a)
 	emitSfx(a)
 	a.Comment("apply the attributes of manipulable objects the room load applied:")
 	a.JSL(manipPending)

@@ -347,7 +347,7 @@ func TestCycleBudgets_GatesOff(t *testing.T) {
 	p.report(t, "gates off")
 	p.expectWithin(t, map[string]uint64{
 		"preMain: run timing": 120,
-		"NMI count":           70,
+		"NMI count":           100,
 		// the gate test and branch:
 		"preMain: manip pending call, gate, Link OAM copy": 30,
 	})

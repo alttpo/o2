@@ -10,9 +10,11 @@ func TestMusicScenario_DisableAndRestart(t *testing.T) {
 	const musicCmd, musicTune = 0x012C, 0x0130
 
 	var req uint8
+	// the game requests during the frame; NMI is simulated before the next one:
 	var sent []uint8
 	h.gs[0].beforeEmulate = func() {
-		// NMI sent the request and the game now plays it:
+		// NMI sends the request that is left after its first instructions, and the game now plays it:
+		runTestNMI(t, e)
 		if e.WRAM[musicCmd] != 0 {
 			sent = append(sent, e.WRAM[musicCmd])
 			e.WRAM[musicTune] = e.WRAM[musicCmd]
@@ -39,6 +41,12 @@ func TestMusicScenario_DisableAndRestart(t *testing.T) {
 	run(3)
 	if len(sent) != 0 {
 		t.Fatalf("disabled: sent % x; expected nothing", sent)
+	}
+	// a jingle that plays once is dropped and not remembered:
+	req = 0x0F
+	run(3)
+	if len(sent) != 0 {
+		t.Fatalf("disabled: sent % x for a jingle; expected nothing", sent)
 	}
 	if got := e.SRAM[musicWantedAddr&0x7FFF]; got != 0x07 {
 		t.Fatalf("remembered track $%02x; expected $07", got)

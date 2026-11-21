@@ -11,13 +11,14 @@ import (
 
 // Disable BG Music, like alttpo's disable_bg_music (pre_nmi.as)
 //
-// The game requests music by writing a track to $012C, which NMI sends to the APU. With the setting on, the trampoline
-// (see emitMusic), right after the module ran, intercepts what the game requested in $012C before NMI sees it: it
-// remembers the last requested track in musicWantedAddr and clears the request, so no track starts. A request to fade
-// out is allowed, and a track that is currently playing is faded out. Nothing is intercepted in the intro modules ($00
-// to $05), where it would break the game.
+// The game requests music by writing a track to $012C, which NMI sends to the APU. With the setting on, the code at
+// the start of NMI (see emitMusic, called by emitNMICount; the game can request tracks at any point of the frame, so
+// only there it sees all of them, like alttpo's pre_nmi) intercepts what the game requested in $012C before NMI sends
+// it: it clears the request, so no track starts. A request to fade out is allowed, and a track that is currently
+// playing is faded out. Nothing is intercepted in the intro modules ($00 to $05), where it would break the game.
 //
-// Turning the setting off restarts the track that would be playing by requesting the remembered one once.
+// musicWantedAddr remembers the last track the game requested that repeats. Turning the setting off restarts it by
+// requesting it once. Tracks that play once (short jingles) are never remembered, so they are never repeated.
 //
 // o2 writes the setting in musicOffAddr, and rewrites it periodically since a reset of the console zeroes it.
 const (
@@ -79,35 +80,46 @@ func (g *Game) writeMusicSetting(now time.Time) {
 	m.written, m.value, m.writtenAt = true, g.DisableBgMusic, now
 }
 
-// emitMusic emits the trampoline's code, run right after the module, that disables the BG music when o2 says so, and
-// restarts it when o2 says not to anymore. Called with A and X 8-bit.
+// musicOneShots are the tracks that play once and don't repeat (kMsuTracksWithRepeat in zelda3); musicTrackMax is the
+// first number past the tracks:
+var musicOneShots = []uint8{0x01, 0x0A, 0x0F, 0x13, 0x1D, 0x21, 0x22}
+
+const musicTrackMax = 0x30
+
+// emitMusic emits the code, run at the start of NMI, that disables the BG music when o2 says so, and restarts it when
+// o2 says not to anymore. Called with A 8-bit; uses long addressing for any DB and D.
 func emitMusic(a *asm.Emitter) {
-	a.AssumeSEP(0x30)
 	a.Comment("BG music: intercept the track the game requests while o2 disables it, and restart it afterwards:")
-	a.PHP()
-	a.SEP(0x30)
 	a.LDA_long(musicOffAddr)
 	a.BEQ("musicOn")
 
 	a.Comment("funny things happen when disabling music from the intro:")
-	a.LDA_dp(0x10)
+	a.LDA_long(0x7E0010)
 	a.CMP_imm8_b(0x06)
-	a.BCC("musicExit")
+	a.BCC("musicExitNear")
 	a.LDA_imm8_b(1)
 	a.STA_long(musicWasOffAddr)
 	a.LDA_long(0x7E012C)
 	a.BEQ("musicNoCmd")
 	a.Comment("special commands that control the volume are allowed:")
 	a.CMP_imm8_b(0xF2)
-	a.BCS("musicExit")
-	a.STA_long(musicWantedAddr)
+	a.BCS("musicExitNear")
 	a.Comment("allow fading out, nothing music and the mirror warp:")
 	a.CMP_imm8_b(0xF1)
-	a.BEQ("musicExit")
+	a.BEQ("musicExitNear")
 	a.CMP_imm8_b(0x20)
-	a.BEQ("musicExit")
+	a.BEQ("musicExitNear")
 	a.CMP_imm8_b(0x08)
-	a.BEQ("musicExit")
+	a.BEQ("musicExitNear")
+	a.Comment("remember tracks that repeat, not the ones that play once:")
+	a.CMP_imm8_b(musicTrackMax)
+	a.BCS("musicDrop")
+	for _, t := range musicOneShots {
+		a.CMP_imm8_b(t)
+		a.BEQ("musicDrop")
+	}
+	a.STA_long(musicWantedAddr)
+	a.Label("musicDrop")
 	a.Comment("changing from the mirror to some other track: fade out so that it can play again:")
 	a.LDA_long(0x7E0130)
 	a.CMP_imm8_b(0x08)
@@ -115,7 +127,9 @@ func emitMusic(a *asm.Emitter) {
 	a.Comment("drop the request:")
 	a.LDA_imm8_b(0)
 	a.STA_long(0x7E012C)
-	a.BRA("musicExit")
+
+	a.Label("musicExitNear")
+	a.JMP_abs("musicExit")
 
 	a.Label("musicNoCmd")
 	a.Comment("no request: fade out any track that is playing:")
@@ -145,5 +159,4 @@ func emitMusic(a *asm.Emitter) {
 	a.STA_long(0x7E0130)
 
 	a.Label("musicExit")
-	a.PLP()
 }
