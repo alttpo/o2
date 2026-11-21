@@ -612,3 +612,64 @@ button.game-action {
     border-color: #ffef00;
     background: rgba(90, 75, 0, 0.45);
 }
+
+/* everything on the debug page is dark: */
+.dbg-section button, .dbg-section select {
+    background-color: #2a2a33;
+    color: lightgray;
+}
+
+.dbg-section button:disabled, .dbg-section select:disabled {
+    background-color: #1c1c22;
+    color: #666;
+}
+
+.dbg-btn {
+    background-color: #15151d !important;
+}
+
+.dbg-btn:hover:not(:disabled) {
+    background-color: #25252f !important;
+}
+
+.dbg-btn.on {
+    background-color: #2b2410 !important;
+}
+
+.dbg-btn.selected {
+    box-shadow: 0 0 0 2px #5a8;
+}
+
+.dbg-icon {
+    background: transparent;
+}
+
+.dbg-ygrid {
+    display: grid;
+    grid-template-columns: repeat(5, max-content);
+    gap: 6px;
+}
+
+.dbg-top {
+    align-items: flex-start;
+}
+
+.dbg-panel {
+    position: relative;
+    background: #0a0a14;
+    border: 2px solid #2a2a33;
+    border-radius: 6px;
+}
+
+.dbg-btn.dbg-bare {
+    position: absolute;
+    min-width: 0;
+    padding: 1px;
+    border-width: 2px;
+}
+
+.dbg-count {
+    min-width: 2.5em;
+    text-align: center;
+    font-size: 14pt;
+}

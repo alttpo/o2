@@ -6,6 +6,7 @@ import (
 	"io"
 	"o2/snes"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -226,6 +227,9 @@ func TestDebug_NotifiesState(t *testing.T) {
 		t.Fatalf("expected a second update after a change; got %d", len(updates))
 	}
 	s := updates[1].(*debugState)
+	if b, err := json.Marshal(s); err != nil || !strings.Contains(string(b), `"sram":[`) {
+		t.Errorf("expected the SRAM bytes as a JSON array: %v %.60s", err, b)
+	}
 	if s.SRAM[0xF345-debugSRAMFirst] != 1 || s.Dungeon != 0x04 {
 		t.Errorf("unexpected state: fire rod %d, dungeon $%02x", s.SRAM[0xF345-debugSRAMFirst], s.Dungeon)
 	}

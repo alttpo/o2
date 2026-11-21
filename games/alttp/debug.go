@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"o2/interfaces"
+	"slices"
 	"sync"
 	"time"
 
@@ -77,8 +78,8 @@ type debugQueued struct {
 
 // debugState is what the page shows of the game.
 type debugState struct {
-	// SRAM is the SRAM copy in WRAM, $7EF340..$7EF3FF:
-	SRAM []uint8 `json:"sram"`
+	// SRAM is the SRAM copy in WRAM, $7EF340..$7EF3FF. It is []int because json encodes a []uint8 as base64:
+	SRAM []int `json:"sram"`
 	// Dungeon is $040C, the dungeon Link is in ($FF in the overworld):
 	Dungeon uint8 `json:"dungeon"`
 	// InGame is whether Link is in a module the debug operations run in:
@@ -97,11 +98,13 @@ type debugLocal struct {
 
 func (g *Game) debugSnapshot() debugState {
 	s := debugState{
-		SRAM:    make([]uint8, debugSRAMSize),
+		SRAM:    make([]int, debugSRAMSize),
 		Dungeon: g.wram[0x040C],
 		InGame:  g.local != nil && g.local.IsInGame(),
 	}
-	copy(s.SRAM, g.wram[debugSRAMFirst:debugSRAMLast+1])
+	for i := range s.SRAM {
+		s.SRAM[i] = int(g.wram[debugSRAMFirst+i])
+	}
 	return s
 }
 
@@ -117,7 +120,7 @@ func (g *Game) notifyDebugState() {
 
 	d := &g.debug
 	d.lock.Lock()
-	same := d.sentOK && d.sent.Dungeon == s.Dungeon && d.sent.InGame == s.InGame && string(d.sent.SRAM) == string(s.SRAM)
+	same := d.sentOK && d.sent.Dungeon == s.Dungeon && d.sent.InGame == s.InGame && slices.Equal(d.sent.SRAM, s.SRAM)
 	if !same {
 		d.sent, d.sentOK = s, true
 	}

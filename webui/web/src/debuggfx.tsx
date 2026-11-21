@@ -81,7 +81,7 @@ export function useGfx(enabled: boolean): { gfx: Gfx | null, error: string } {
 }
 
 // drawWords draws a tile map of 8x8 tiles, `w` words per row, the way BG3 does: color 0 of each palette is clear.
-function drawWords(ctx: CanvasRenderingContext2D, gfx: Gfx, words: number[], w: number) {
+function drawWords(ctx: CanvasRenderingContext2D, gfx: Gfx, words: number[], w: number, hide: number[]) {
     const rows = Math.ceil(words.length / w);
     const img = ctx.createImageData(w * 8, rows * 8);
     const stride = w * 8 * 4;
@@ -101,7 +101,7 @@ function drawWords(ctx: CanvasRenderingContext2D, gfx: Gfx, words: number[], w: 
             for (let x = 0; x < 8; x++) {
                 const bit = hflip ? x : 7 - x;
                 const c = ((p0 >> bit) & 1) | (((p1 >> bit) & 1) << 1);
-                if (c === 0) continue;
+                if (c === 0 || hide.includes(pal * 4 + c)) continue;
                 const rgb = gfx.palette[pal * 4 + c];
                 const o = (oy + y) * stride + (ox + x) * 4;
                 img.data[o] = rgb[0];
@@ -123,10 +123,12 @@ interface IconProps {
     scale?: number;
     // drawn faded, for something the player does not have:
     dim?: boolean;
+    // CGRAM colors not to draw:
+    hide?: number[];
 }
 
 // Icon draws tile map words from the game's graphics.
-export function Icon({gfx, words, w = 2, scale = 3, dim = false}: IconProps) {
+export function Icon({gfx, words, w = 2, scale = 3, dim = false, hide = []}: IconProps) {
     const canvas = useRef<HTMLCanvasElement>(null);
     const rows = Math.ceil(words.length / w);
     const key = words.join(",");
@@ -135,8 +137,8 @@ export function Icon({gfx, words, w = 2, scale = 3, dim = false}: IconProps) {
         const ctx = canvas.current?.getContext("2d");
         if (!ctx || !gfx) return;
         ctx.clearRect(0, 0, w * 8, rows * 8);
-        drawWords(ctx, gfx, words, w);
-    }, [gfx, key, w]);
+        drawWords(ctx, gfx, words, w, hide);
+    }, [gfx, key, w, hide.join(",")]);
 
     return <canvas ref={canvas}
                    class={"dbg-icon" + (dim ? " dim" : "")}
