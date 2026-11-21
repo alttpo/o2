@@ -111,11 +111,13 @@ func MakeTestROM(title string, b []byte) (rom *snes.ROM, err error) {
 
 	// NMI_DoUpdates code that the patcher looks for: the LinkGraphics bank and the NMI hook location:
 	for addr, code := range map[uint32][]byte{
-		linkGfxBankAddr:            {0xA9, 0x10},
-		nmiHookPatchAddr:           nmiHookPatchExpected,
-		nmiEarlyPatchAddr:          nmiEarlyPatchExpected,
-		nmiFollowerPatchAddr:       nmiFollowerPatchExpected,
-		nmiFollowerBottomPatchAddr: nmiFollowerBottomPatchExpected,
+		linkGfxBankAddr: {0xA9, 0x10},
+		// the NMI's LDA of the music request, whose operand is where the music is intercepted:
+		musicRequestOperandAddr - 1: {0xAD, 0x2C, 0x01},
+		nmiHookPatchAddr:            nmiHookPatchExpected,
+		nmiEarlyPatchAddr:           nmiEarlyPatchExpected,
+		nmiFollowerPatchAddr:        nmiFollowerPatchExpected,
+		nmiFollowerBottomPatchAddr:  nmiFollowerBottomPatchExpected,
 	} {
 		pakAddr, err = lorom.BusAddressToPak(addr)
 		if err != nil {

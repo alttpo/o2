@@ -21,11 +21,17 @@ import (
 //     and mosaic transitions fade ($F1) when the area's track differs, and request the area's track once $0130 is
 //     $F1. Several places also copy $0130 to $0133 to make NMI ignore a request equal to it.
 //
+// The z3randomizer (VT randomizer, DR) moves the request: the code after the module (CheckMusicLoadRequest) copies
+// $012C to $012B and clears it, and NMI reads $012B instead (the operands of its LDA and STZ at $0080DD and $008101).
+// So the request is the address NMI reads, found in the ROM (see musicRequestAddr). $0130 and $0133 mean the same.
+//
 // So that the game never picks a song, with the setting on the code at the start of NMI (see emitMusic, called by
-// emitNMICount) swallows every request: it sets $0130 and $0133 to the track requested as if it was sent, and clears
-// $012C. The game then believes the right track is playing, doesn't fade or request anything, and the APU hears
-// nothing. When the setting turns on, a track that is playing is faded out once. Nothing is intercepted in the intro
-// modules ($00 to $05), where it would break the game.
+// emitNMICount) swallows the requests of tracks that repeat: it sets $0130 and $0133 to the track requested as if it
+// was sent, and clears the request. The game then believes the right track is playing, doesn't fade or request
+// anything, and the APU hears nothing. When the setting turns on, a track that is playing is faded out once. Requests
+// of tracks that play once (jingles, which the game can wait for, like the fanfares of the pendants and crystals in the
+// randomizer), the mirror warp, nothing music and commands other than the volume commands are sent. Nothing is
+// intercepted in the intro modules ($00 to $05), where it would break the game.
 //
 // musicWantedAddr remembers the last track the game requested that repeats. Turning the setting off requests it once
 // (and clears $0133, so that NMI doesn't skip it as the last track sent). Tracks that play once (short jingles) are
@@ -44,6 +50,24 @@ const (
 	// o2 rewrites the setting this often:
 	musicRewriteInterval = 2 * time.Second
 )
+
+// the operand of the LDA of the request in NMI, which is the request:
+const musicRequestOperandAddr = uint32(0x0080DD)
+
+// musicRequestAddr returns the address of the music request that NMI reads, or 0 if the ROM's NMI is not one that
+// o2 knows how to intercept the music of.
+func musicRequestAddr(rom *snes.ROM) uint32 {
+	pak, err := lorom.BusAddressToPak(musicRequestOperandAddr - 1)
+	if err != nil || int(pak)+3 > len(rom.Contents) {
+		return 0
+	}
+	c := rom.Contents[pak : pak+3]
+	// LDA.w $xxxx:
+	if c[0] != 0xAD || c[2] != 0x01 || (c[1] != 0x2C && c[1] != 0x2B) {
+		return 0
+	}
+	return 0x7E0100 | uint32(c[1])
+}
 
 const _ = musicWasOffAddr - (sfxRemoteAddr + sfxRemoteSize)
 const _ = captureMaskAddr - musicWasOffAddr - 1
@@ -98,9 +122,10 @@ var musicOneShots = []uint8{0x01, 0x0A, 0x0F, 0x13, 0x1D, 0x21, 0x22}
 const musicTrackMax = 0x30
 
 // emitMusic emits the code, run at the start of NMI, that disables the BG music when o2 says so, and restarts it when
-// o2 says not to anymore. Called with A 8-bit; uses long addressing for any DB and D.
-func emitMusic(a *asm.Emitter) {
-	a.Comment("BG music: swallow the requests of the game while o2 disables it, and restart it afterwards:")
+// o2 says not to anymore. req is the address NMI reads the request from. Called with A 8-bit; uses long addressing for
+// any DB and D.
+func emitMusic(a *asm.Emitter, req uint32) {
+	a.Comment("BG music: swallow the requests of tracks that repeat while o2 disables it, and restart one afterwards:")
 	a.LDA_long(musicOffAddr)
 	a.BNE("musicOff")
 
@@ -114,10 +139,10 @@ func emitMusic(a *asm.Emitter) {
 	a.STA_long(musicWasOffAddr)
 	a.Comment("request the track that repeats the game last requested, once; NMI skips a request equal to $0133:")
 	a.STA_long(0x7E0133)
-	a.LDA_long(0x7E012C)
+	a.LDA_long(req)
 	a.BNE("musicRestartDone")
 	a.LDA_long(musicWantedAddr)
-	a.STA_long(0x7E012C)
+	a.STA_long(req)
 	a.Label("musicRestartDone")
 	a.LDA_imm8_b(0)
 	a.STA_long(musicWantedAddr)
@@ -129,52 +154,79 @@ func emitMusic(a *asm.Emitter) {
 	a.CMP_imm8_b(0x06)
 	a.BCC("musicExitNear")
 
-	a.Comment("remember the track if it repeats, not if it plays once:")
-	a.LDA_long(0x7E012C)
-	a.BEQ("musicNoRequest")
+	a.BRA("musicStart")
+	a.Label("musicClear")
+	a.LDA_imm8_b(0)
+	a.STA_long(req)
+	a.BRA("musicExitNear")
+
+	a.Label("musicFadeReq")
+	a.LDA_long(musicWasOffAddr)
+	a.BEQ("musicFadeSend")
+	a.JMP_abs("musicSwallow")
+	a.Label("musicFadeSend")
+	a.Comment("the game's own fade out is sent the first time:")
+	a.LDA_imm8_b(1)
+	a.STA_long(musicWasOffAddr)
+	a.BRA("musicExitNear")
+
+	a.Label("musicStart")
+	a.LDA_long(req)
+	a.BEQ("musicIdle")
+	a.Comment("the volume commands are swallowed; fade out is sent the first time, other commands are sent:")
+	a.CMP_imm8_b(0xF1)
+	a.BEQ("musicFadeReq")
+	a.CMP_imm8_b(0xF2)
+	a.BEQ("musicClear")
+	a.CMP_imm8_b(0xF3)
+	a.BEQ("musicClear")
 	a.CMP_imm8_b(musicTrackMax)
-	a.BCS("musicNoRecord")
+	a.BCS("musicExitNear")
+	a.Comment("the mirror warp, nothing music and tracks that play once are sent:")
 	a.CMP_imm8_b(0x08)
-	a.BEQ("musicNoRecord")
+	a.BEQ("musicExitNear")
 	a.CMP_imm8_b(0x20)
-	a.BEQ("musicNoRecord")
+	a.BEQ("musicExitNear")
 	for _, t := range musicOneShots {
 		a.CMP_imm8_b(t)
-		a.BEQ("musicNoRecord")
+		a.BEQ("musicExitNear")
 	}
+	a.Comment("a track that repeats: remember it, and fade out the track that is playing if this is the first one:")
 	a.STA_long(musicWantedAddr)
-	a.Label("musicNoRecord")
-	a.Label("musicNoRequest")
-
-	a.Comment("the first frame: fade out the track that is playing, the only thing the APU is told:")
 	a.LDA_long(musicWasOffAddr)
 	a.BNE("musicSwallow")
+	a.BRA("musicFirst")
+
+	a.Label("musicIdle")
+	a.LDA_long(musicWasOffAddr)
+	a.BNE("musicExit")
+	a.Label("musicFirst")
 	a.LDA_imm8_b(1)
 	a.STA_long(musicWasOffAddr)
 	a.LDA_long(0x7E0130)
-	a.BEQ("musicSwallow")
+	a.BEQ("musicAfterFade")
 	a.CMP_imm8_b(0x08)
-	a.BEQ("musicSwallow")
+	a.BEQ("musicAfterFade")
 	a.CMP_imm8_b(0xF1)
-	a.BCS("musicSwallow")
+	a.BCS("musicAfterFade")
 	a.LDA_imm8_b(0xF1)
-	a.STA_long(0x7E012C)
+	a.STA_long(req)
 	a.STA_long(0x7E0130)
 	a.LDA_imm8_b(0)
 	a.STA_long(0x7E0133)
 	a.BRA("musicExit")
+	a.Label("musicAfterFade")
+	a.LDA_long(req)
+	a.BEQ("musicExit")
 
 	a.Label("musicSwallow")
-	a.Comment("act as if NMI sent the request: the game believes the track is playing:")
-	a.LDA_long(0x7E012C)
-	a.BEQ("musicExit")
-	a.CMP_imm8_b(0xF2)
-	a.BCS("musicClear")
+	a.Comment("act as if NMI sent the track: the game believes it is playing:")
+	a.LDA_long(req)
 	a.STA_long(0x7E0130)
 	a.STA_long(0x7E0133)
-	a.Label("musicClear")
 	a.LDA_imm8_b(0)
-	a.STA_long(0x7E012C)
+	a.STA_long(req)
+	a.BRA("musicExit")
 
 	a.Label("musicExit")
 }

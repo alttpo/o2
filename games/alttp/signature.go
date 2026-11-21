@@ -128,6 +128,7 @@ func computePatchVersion() (v [4]byte) {
 		code802F:       []byte{0xA9, 0x81, 0x8D, 0x00, 0x42},
 		gameModes:      []byte{0, 0, 0},
 		linkGfxBankIns: []byte{0xA9, 0x10},
+		musicReq:       0x7E012C,
 	}
 	for _, rt := range r.routines() {
 		a := asm.NewEmitter(make([]byte, maxBlockSize), false)

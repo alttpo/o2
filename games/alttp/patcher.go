@@ -239,6 +239,7 @@ func (p *Patcher) Patch() (err error) {
 	}
 	nmiCountOK, nmiCountChain := nmiCountHookSite(p.rom)
 	r.nmiCountChain = nmiCountChain
+	r.musicReq = musicRequestAddr(p.rom)
 	stageAddr := fns[fnOverworldHandleOverlays]
 	stageOK, stageChain := map16StageHookSite(p.rom, stageAddr)
 	r.stageChain = stageChain
@@ -551,6 +552,8 @@ type patchROM struct {
 	// same instructions (0: it runs them itself); see emitNMICount:
 	nmiCount      romBlock
 	nmiCountChain uint32
+	// the address NMI reads the music request from, or 0 if the music can't be disabled; see music.go:
+	musicReq uint32
 }
 
 // patchRoutine emits a block's code at its address:
@@ -659,7 +662,7 @@ func (r *patchROM) routines() []patchRoutine {
 			return nil
 		}},
 		{&r.nmiCount, func(a *asm.Emitter) error {
-			emitNMICount(a, r.nmiCountChain)
+			emitNMICount(a, r.nmiCountChain, r.musicReq)
 			return nil
 		}},
 	}
