@@ -98,8 +98,8 @@ type PlayerViewModel struct {
 	AbsStart     string `json:"gameStart"`
 	AbsStartFull string `json:"gameStartFull"`
 	AbsFinish    string `json:"gameFinish"`
-	RelStart  string `json:"relStart"`
-	RelFinish string `json:"relFinish"`
+	RelStart     string `json:"relStart"`
+	RelFinish    string `json:"relFinish"`
 
 	// run timing (see RUN_TIMING.md): lag frames since the start, the time added for running fast, and the flags:
 	LagFrames   uint32 `json:"lagFrames"`
@@ -386,6 +386,7 @@ type setFieldArgs struct {
 	SyncOverworldLocal  *bool `json:"syncOverworldLocal"`
 	SyncTorches         *bool `json:"syncTorches"`
 	SyncEnemiesKilled   *bool `json:"syncEnemiesKilled"`
+	KillDeadEnemies     *bool `json:"killDeadEnemies"`
 	SyncSfx             *bool `json:"syncSfx"`
 	DisableBgMusic      *bool `json:"disableBgMusic"`
 	SyncTunicColor      *bool `json:"syncTunicColor"`
@@ -448,6 +449,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncEnemiesKilled != nil {
 		g.SyncEnemiesKilled = *f.SyncEnemiesKilled
+		g.clean = false
+	}
+	if f.KillDeadEnemies != nil {
+		g.KillDeadEnemies = *f.KillDeadEnemies
 		g.clean = false
 	}
 	if f.SyncSfx != nil {
