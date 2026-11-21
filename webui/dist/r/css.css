@@ -742,3 +742,13 @@ button.game-action {
 .dbg-btn.off {
     opacity: 0.55;
 }
+
+/* the icons of the cards are as tall as the tallest one (the magic container), so that the cards are the same height: */
+.dbg-section .dbg-main {
+    box-sizing: border-box;
+    height: 80px;
+    min-width: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

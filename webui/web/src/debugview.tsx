@@ -170,7 +170,7 @@ function Equipment({gfx, get, send, ready}: Common) {
                     const n = e.levels.length;
                     return (
                         <button type="button" key={e.name} class="dbg-btn on" disabled={!ready}
-                                title={e.name + ": " + e.levels[cur].name + " (click for " + e.levels[(cur + 1) % n].name + ")"}
+                                title={e.name + " $" + v.toString(16).toUpperCase().padStart(2, "0") + ": " + e.levels[cur].name + " (click for " + e.levels[(cur + 1) % n].name + ")"}
                                 onClick={ev => to((cur + (ev.shiftKey ? n - 1 : 1)) % n)}>
                             <Icon gfx={gfx} words={e.levels[cur].words}/>
                         </button>
@@ -305,10 +305,11 @@ function Hearts({gfx, get, send, ready}: Common) {
     const step = (c: number, p: number) => send({t: "hearts", c, p});
     const full = containers >= 20;
     return (
-        <Section title="Heart Containers and Pieces" note="Click a heart to fill up the hearts.">
+        <Section title="Heart Containers and Pieces" note="Click the heart to have 20 full hearts.">
             <div class="dbg-row">
                 <Counter gfx={gfx} ready={ready} words={HEART_FULL}
-                         onMain={() => send({t: "fill", w: "hearts"})} mainTitle="Fill up the hearts"
+                         onMain={() => send({t: "set", a: 0xF36C, v: 0xA0}, {t: "set", a: 0xF36D, v: 0xA0})}
+                         mainTitle="Give heart containers up to 20 hearts and fill them up"
                          text={containers} textTitle="Heart containers"
                          dec={{title: "Remove a heart container", disabled: containers <= 1, onClick: () => step(-1, 0)}}
                          inc={{title: "Give a heart container", disabled: full, onClick: () => step(1, 0)}}/>
@@ -341,7 +342,7 @@ function Fill({gfx, get, send, ready}: Common) {
     const p = {gfx, ready};
 
     return (
-        <Section title="Fill Up" note="Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees.">
+        <Section title="Fill Up" note="Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees, 10 arrows or bombs, or 32 magic.">
             <div class="dbg-grid">
                 <Counter {...p} words={HEART_FULL} onMain={fill("hearts")} mainTitle="Fill up the hearts"
                          text={+(hearts / 8).toFixed(2)} textTitle="Hearts"
@@ -351,8 +352,10 @@ function Fill({gfx, get, send, ready}: Common) {
                              onClick: () => send({t: "set", a: 0xF36D, v: clamp(hearts + 8, 8, heartCap)})}}/>
                 <Counter {...p} words={MAGIC_METER_WORDS} w={3} scale={3} onMain={fill("magic")} mainTitle="Fill up the magic"
                          text={magic} textTitle="Magic, of 128"
-                         dec={{title: "Use up 8 magic", disabled: magic <= 0, onClick: () => send({t: "set", a: 0xF36E, v: clamp(magic - 8, 0, 128)})}}
-                         inc={{title: "Give 8 magic", disabled: magic >= 128, onClick: () => send({t: "set", a: 0xF36E, v: clamp(magic + 8, 0, 128)})}}/>
+                         dec={{title: "Use up 8 magic (shift: 32)", disabled: magic <= 0,
+                             onClick: big => send({t: "set", a: 0xF36E, v: clamp(magic - (big ? 32 : 8), 0, 128)})}}
+                         inc={{title: "Give 8 magic (shift: 32)", disabled: magic >= 128,
+                             onClick: big => send({t: "set", a: 0xF36E, v: clamp(magic + (big ? 32 : 8), 0, 128)})}}/>
                 <Counter {...p} words={RUPEE_WORDS} onMain={fill("rupees")} mainTitle="Fill up the rupees (999)"
                          text={rupees} textTitle="Rupees"
                          dec={{title: "Take away a rupee (shift: 20)", disabled: rupees <= 0,
@@ -361,12 +364,16 @@ function Fill({gfx, get, send, ready}: Common) {
                              onClick: big => setRupees(clamp(rupees + (big ? 20 : 1), 0, RUPEE_MAX))}}/>
                 <Counter {...p} words={ARROW_WORDS} w={2} scale={3} onMain={fill("arrows")} mainTitle="Fill up the arrows"
                          text={arrows} textTitle={"Arrows, of " + arrowCap}
-                         dec={{title: "Take away an arrow", disabled: arrows <= 0, onClick: () => send({t: "set", a: 0xF377, v: arrows - 1})}}
-                         inc={{title: "Give an arrow", disabled: arrows >= arrowCap, onClick: () => send({t: "set", a: 0xF377, v: arrows + 1})}}/>
+                         dec={{title: "Take away an arrow (shift: 10)", disabled: arrows <= 0,
+                             onClick: big => send({t: "set", a: 0xF377, v: clamp(arrows - (big ? 10 : 1), 0, arrowCap)})}}
+                         inc={{title: "Give an arrow (shift: 10)", disabled: arrows >= arrowCap,
+                             onClick: big => send({t: "set", a: 0xF377, v: clamp(arrows + (big ? 10 : 1), 0, arrowCap)})}}/>
                 <Counter {...p} words={BOMB_WORDS} w={2} scale={3} onMain={fill("bombs")} mainTitle="Fill up the bombs"
                          text={bombs} textTitle={"Bombs, of " + bombCap}
-                         dec={{title: "Take away a bomb", disabled: bombs <= 0, onClick: () => send({t: "set", a: 0xF343, v: bombs - 1})}}
-                         inc={{title: "Give a bomb", disabled: bombs >= bombCap, onClick: () => send({t: "set", a: 0xF343, v: bombs + 1})}}/>
+                         dec={{title: "Take away a bomb (shift: 10)", disabled: bombs <= 0,
+                             onClick: big => send({t: "set", a: 0xF343, v: clamp(bombs - (big ? 10 : 1), 0, bombCap)})}}
+                         inc={{title: "Give a bomb (shift: 10)", disabled: bombs >= bombCap,
+                             onClick: big => send({t: "set", a: 0xF343, v: clamp(bombs + (big ? 10 : 1), 0, bombCap)})}}/>
             </div>
         </Section>
     );
