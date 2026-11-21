@@ -22,6 +22,15 @@ const (
 	ExitBlockHole                     // the hole under a large block Link lifts, dropping to the room below
 )
 
+// isDrop reports whether the exit drops Link through the floor to the room below.
+func (k ExitKind) isDrop() bool {
+	switch k {
+	case ExitPit, ExitBombableFloor, ExitTagHoles, ExitBlockHole:
+		return true
+	}
+	return false
+}
+
 func (k ExitKind) String() string {
 	switch k {
 	case ExitEntrance:

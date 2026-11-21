@@ -13,6 +13,8 @@ import (
 var testROMs = []string{
 	"../alttp-jp-vanilla.sfc",
 	"../../../../alttp-us.sfc",
+	// a VT randomizer, based on JP 1.0:
+	"../alttpr - NoGlitches-standard-ganon_ry08z8Q5y5.sfc",
 }
 
 // TestGenerate generates the map from each vanilla ROM present. Set UWMAP_OUT to a directory to write each map

@@ -72,10 +72,11 @@ func newEmu(rom []byte, a *romAddresses) (e *emu, err error) {
 		return nil, err
 	}
 
-	// run the game's startup code up to its first JSR, then our initialization:
+	// run the game's startup code up to its first JSR, then our initialization. Randomizers hook the startup code
+	// and come back to it in the FastROM banks $80 and up, so the bank's mirror bit is ignored:
 	s.Reset()
-	if !s.RunUntil(a.resetDone, 1_000_000) {
-		return nil, fmt.Errorf("underworldmap: startup code did not reach $%06x; stopped at $%06x", a.resetDone, s.GetPC())
+	if err = e.runUntil(a.resetDone, 1_000_000); err != nil {
+		return nil, fmt.Errorf("underworldmap: startup code: %w", err)
 	}
 	if err = e.call(e.pcInit); err != nil {
 		return nil, fmt.Errorf("underworldmap: initialization: %w", err)
@@ -151,6 +152,16 @@ func (e *emu) emitRoutines() (err error) {
 	a.STA_long(0x7EF3C5)
 	a.LDA_imm8_b(0x10)
 	a.STA_long(0x7EF3C6)
+	// what the skipped Startup_InitializeMemory sets for the NMI updates: the WRAM source of the animated BG tiles
+	// (water, lit torches, ...), which DoNMIUpdates uploads to VRAM, and two of Link's graphics sources:
+	a.REP(0x20)
+	a.LDA_imm16_w(0xA680)
+	a.STA_abs(0x0ADC)
+	a.LDA_imm16_w(0xB280)
+	a.STA_abs(0x0AE0)
+	a.LDA_imm16_w(0xB280 + 0x60)
+	a.STA_abs(0x0AE2)
+	a.SEP(0x20)
 	a.STP()
 
 	// enter the dungeon through the entrance in the operand at entranceIDOperand: module $06, submodule $00:
@@ -169,12 +180,13 @@ func (e *emu) emitRoutines() (err error) {
 	// load and draw the room in $A0 with the graphics state of the entrance loaded before:
 	e.pcLoadRoom = a.Label("loadRoom")
 	a.SEP(0x30)
-	a.INC_abs(0x0710)
 	a.JSL(r.introInitializeDefaultGFXTail)
 	a.STZ_dp(0x11)
 	a.JSL(pcLoadRoomBank02)
 
 	a.Label("updateVRAM")
+	// have DoNMIUpdates upload the animated tiles:
+	a.STZ_abs(0x0710)
 	a.JSR_abs(uint16(r.prepareOAMForTransfer))
 	a.JSR_abs(uint16(r.doNMIUpdates))
 	a.STP()
@@ -198,6 +210,21 @@ func (e *emu) call(pc uint32) error {
 		cycles += uint64(n)
 	}
 	return fmt.Errorf("routine at $%06x ran too long; stopped at $%06x", pc, e.sys.GetPC())
+}
+
+// runUntil runs the CPU until it reaches pc in either of its mirrors, $00..$3F or $80..$BF.
+func (e *emu) runUntil(pc uint32, maxCycles uint64) error {
+	for cycles := uint64(0); cycles < maxCycles; {
+		if e.sys.GetPC()&^0x80_0000 == pc&^0x80_0000 {
+			return nil
+		}
+		n, stopped := e.sys.Step()
+		if stopped {
+			break
+		}
+		cycles += uint64(n)
+	}
+	return fmt.Errorf("did not reach $%06x; stopped at $%06x", pc, e.sys.GetPC())
 }
 
 // restore puts the system back in its state after initialization.

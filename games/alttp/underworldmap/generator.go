@@ -5,8 +5,8 @@
 // Link came in by, as the entrance sets the dungeon's main tileset for every room reached from it, and the ROM has no
 // table of which entrance each room belongs to. So the map is made by a flood fill from each entrance in turn: the
 // entrance's room is drawn, then each room it leads to through a doorway or open walkway on its edges, a bombable
-// crack, a staircase, a transport door, a warp tile or a pit, recursively, with the entrance's graphics. A room is
-// drawn once, by the first entrance to reach it.
+// crack, a staircase, a transport door, a warp tile or a drop through the floor, recursively, with the entrance's
+// graphics. A room is drawn once, by the entrance that reaches it with the fewest drops (then the first entrance).
 package underworldmap
 
 import (
@@ -110,67 +110,107 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 	}
 	full := image.NewNRGBA(image.Rect(0, 0, RoomPixels, RoomPixels))
 
-	for id := 0; id < EntranceCount; id++ {
-		var start uint16
-		if start, err = e.loadEntrance(uint8(id)); err != nil {
-			return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
-		}
-		logf("entrance $%02x: room $%03x\n", id, start)
-		if start >= RoomCount || m.Rooms[start] != nil {
-			continue
-		}
-
-		// a depth-first flood fill through the rooms the entrance leads to:
-		type visit struct {
-			room uint16
-			from uint16
-			via  Exit
-		}
-		stack := []visit{{room: start, from: start, via: Exit{Kind: ExitEntrance, To: start}}}
-		for len(stack) > 0 {
-			v := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if v.room >= RoomCount || m.Rooms[v.room] != nil {
+	// the flood fill goes in rounds: in each, every entrance in turn floods through the rooms it reaches without
+	// dropping through the floor, and the drops it finds start its flood in the next round. So a room is drawn by the
+	// entrance that reaches it with the fewest drops, as some rooms have pits Link can't get to, and a drop through
+	// one would take the room below from the entrance it belongs to.
+	type visit struct {
+		room uint16
+		from uint16
+		via  Exit
+	}
+	roots := make([][]visit, EntranceCount)
+	for round := 0; ; round++ {
+		next := make([][]visit, EntranceCount)
+		more := false
+		for id := 0; id < EntranceCount; id++ {
+			stack := roots[id]
+			if round == 0 {
+				stack = []visit{{via: Exit{Kind: ExitEntrance}}}
+			}
+			// skip loading the entrance if none of its drops lead anywhere new:
+			pending := false
+			for _, v := range stack {
+				pending = pending || v.via.Kind == ExitEntrance || m.Rooms[v.room] == nil
+			}
+			if !pending {
 				continue
 			}
 
-			// the entrance's own room is already loaded:
-			if v.via.Kind != ExitEntrance {
-				if err = e.loadRoom(v.room); err != nil {
-					return nil, fmt.Errorf("underworldmap: entrance $%02x: room $%03x: %w", id, v.room, err)
+			var start uint16
+			if start, err = e.loadEntrance(uint8(id)); err != nil {
+				return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
+			}
+			if round == 0 {
+				logf("entrance $%02x: room $%03x\n", id, start)
+				stack[0].room, stack[0].from, stack[0].via.To = start, start, start
+			} else {
+				logf("entrance $%02x: round %d\n", id, round)
+			}
+
+			// a depth-first flood fill through the rooms the entrance leads to:
+			for len(stack) > 0 {
+				v := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				if v.room >= RoomCount || m.Rooms[v.room] != nil {
+					continue
 				}
-			}
 
-			data := e.readRoomData(v.room)
-			r := &Room{
-				Room:     v.room,
-				Entrance: uint8(id),
-				From:     v.from,
-				Via:      v.via,
-				Exits:    data.exits(pitsHurt[v.room]),
-			}
-			// floor running off the edge of a room is only a way through if the next room has a way back, as
-			// some rooms' floor runs under their outer walls:
-			if v.via.Kind == ExitWalkway && !r.hasEdgeExitTo(v.from) {
-				logf("  room $%03x from $%03x by walkway: no way back\n", v.room, v.from)
-				continue
-			}
-			m.Rooms[v.room] = r
-			logf("  room $%03x from $%03x by %s\n", v.room, v.from, v.via.Kind)
+				// the entrance's own room is already loaded:
+				if v.via.Kind != ExitEntrance {
+					if err = e.loadRoom(v.room); err != nil {
+						return nil, fmt.Errorf("underworldmap: entrance $%02x: room $%03x: %w", id, v.room, err)
+					}
+				}
 
-			e.readRoomGfx().render(full, 0, 0)
-			col, row := int(v.room%GridColumns), int(v.room/GridColumns)
-			downscale(m.Image, col*size, row*size, full, scale)
+				data := e.readRoomData(v.room)
+				r := &Room{
+					Room:     v.room,
+					Entrance: uint8(id),
+					From:     v.from,
+					Via:      v.via,
+					Exits:    data.exits(pitsHurt[v.room]),
+				}
+				// floor running off the edge of a room is only a way through if the next room has a way back, as
+				// some rooms' floor runs under their outer walls:
+				if v.via.Kind == ExitWalkway && !r.hasEdgeExitTo(v.from) {
+					logf("  room $%03x from $%03x by walkway: no way back\n", v.room, v.from)
+					continue
+				}
+				m.Rooms[v.room] = r
+				logf("  room $%03x from $%03x by %s\n", v.room, v.from, v.via.Kind)
 
-			// push in reverse so the first exit found is visited first:
-			for i := len(r.Exits) - 1; i >= 0; i-- {
-				x := r.Exits[i]
-				logf("    %s\n", x)
-				if x.To < RoomCount && m.Rooms[x.To] == nil {
-					stack = append(stack, visit{room: x.To, from: v.room, via: x})
+				e.readRoomGfx().render(full, 0, 0)
+				col, row := int(v.room%GridColumns), int(v.room/GridColumns)
+				downscale(m.Image, col*size, row*size, full, scale)
+
+				// push in reverse so the first exit found is visited first:
+				for i := len(r.Exits) - 1; i >= 0; i-- {
+					x := r.Exits[i]
+					logf("    %s\n", x)
+					if x.To >= RoomCount || m.Rooms[x.To] != nil {
+						continue
+					}
+					w := visit{room: x.To, from: v.room, via: x}
+					if x.Kind.isDrop() {
+						next[id] = append(next[id], w)
+						more = true
+						continue
+					}
+					stack = append(stack, w)
 				}
 			}
 		}
+		if !more {
+			break
+		}
+		// the drops found first are followed first:
+		for id := range next {
+			for i, j := 0, len(next[id])-1; i < j; i, j = i+1, j-1 {
+				next[id][i], next[id][j] = next[id][j], next[id][i]
+			}
+		}
+		roots = next
 	}
 
 	return m, nil
