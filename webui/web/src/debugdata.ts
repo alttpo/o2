@@ -244,18 +244,17 @@ export interface Placed {
     // the tile position in the panel:
     x: number;
     y: number;
-    // what shows when the player doesn't have it:
-    missing: number[];
+    // what shows when the player doesn't have it; the item itself, faded, when not given:
+    missing?: number[];
 }
 
-const PENDANT_MISSING = [0x313b, 0x313c, 0x313d, 0x313e];
 export const PANEL_W = 10;
 export const PANEL_H = 9;
 
 export const pendants: Placed[] = [
-    {c: bit("Red Pendant", 0xF374, 0x01, [0x252b, 0x252c, 0x252d, 0x252e]), x: 4, y: 3, missing: PENDANT_MISSING},
-    {c: bit("Blue Pendant", 0xF374, 0x02, [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e]), x: 2, y: 6, missing: PENDANT_MISSING},
-    {c: bit("Green Pendant", 0xF374, 0x04, [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e]), x: 6, y: 6, missing: PENDANT_MISSING},
+    {c: bit("Red Pendant", 0xF374, 0x01, [0x252b, 0x252c, 0x252d, 0x252e]), x: 4, y: 3},
+    {c: bit("Blue Pendant", 0xF374, 0x02, [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e]), x: 2, y: 6},
+    {c: bit("Green Pendant", 0xF374, 0x04, [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e]), x: 6, y: 6},
 ];
 
 // the crystals in the order of the bits of $7EF37A, with the dungeon that has each:

@@ -9,7 +9,7 @@ import {useEffect, useRef, useState} from "preact/hooks";
 
 // a debug operation the backend runs in the game; see debug.go:
 export interface DebugOp {
-    t: "set" | "or" | "and" | "gfx" | "keys" | "hearts" | "fill" | "kill";
+    t: "set" | "progress" | "or" | "and" | "gfx" | "keys" | "hearts" | "fill" | "kill";
     // address, value and mask for set, or and and:
     a?: number;
     v?: number;

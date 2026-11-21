@@ -46,6 +46,8 @@ const (
 	// debugOpOr sets the bits of mask M at address A; debugOpAnd keeps only the bits of mask M.
 	debugOpOr  = "or"
 	debugOpAnd = "and"
+	// debugOpProgress sets the story progress ($7EF3C5) to V (0..3) and reloads the sprite graphics the progress selects.
+	debugOpProgress = "progress"
 	// debugOpGfx refreshes the graphics and palette of Link's sword, shield or armor and gloves (W).
 	debugOpGfx = "gfx"
 	// debugOpKeys adds D (+1 or -1) to the small keys of the dungeon Link is in.
@@ -171,6 +173,10 @@ func (op *debugOp) validate() error {
 		if op.A < debugSRAMFirst || op.A > debugSRAMLast {
 			return fmt.Errorf("%s: address $%04x is not in the SRAM copy $%04x..$%04x", op.T, op.A, debugSRAMFirst, debugSRAMLast)
 		}
+	case debugOpProgress:
+		if op.V > 3 {
+			return fmt.Errorf("progress: bad level %d", op.V)
+		}
 	case debugOpGfx:
 		if op.W != "sword" && op.W != "shield" && op.W != "armor" {
 			return fmt.Errorf("gfx: unknown equipment '%s'", op.W)
@@ -277,6 +283,33 @@ func (g *Game) emitDebugOp(a *asm.Emitter, op *debugOp, no int) {
 		a.LDA_long(addr)
 		a.AND_imm8_b(op.M)
 		a.STA_long(addr)
+
+	case debugOpProgress:
+		// The progress picks the sprites of the overworld and their graphics: levels 0-1, 2 and 3 differ. Sprite
+		// graphics loaded for another progress leave enemies garbled, so reload them like the progress sync does:
+		group := func(v uint8) int {
+			switch {
+			case v < 2:
+				return 0
+			case v == 2:
+				return 1
+			}
+			return 2
+		}
+		changed := group(g.wram[0xF3C5]) != group(op.V)
+		a.LDA_imm8_b(op.V)
+		a.STA_long(0x7EF3C5)
+		if changed {
+			a.JSL(g.romFunctions[fnLoadSpriteGfx])
+			if g.local.Module == 0x09 && g.local.SubModule == 0 {
+				a.LDA_imm8_b(0x00)
+				a.STA_dp(0x1D)
+				a.STA_dp(0x8C)
+				a.JSL(g.romFunctions[fnOverworldFinishMirrorWarp])
+				a.LDA_imm8_b(0x05)
+				a.STA_abs(0x012D)
+			}
+		}
 
 	case debugOpGfx:
 		switch op.W {

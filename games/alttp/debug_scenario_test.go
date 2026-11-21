@@ -297,3 +297,18 @@ func TestDebug_Gfx(t *testing.T) {
 		t.Skip("no ROMs found")
 	}
 }
+
+func TestDebug_Progress(t *testing.T) {
+	gs := newDebugScenario(t, 0xFF)
+	e := gs.e
+	e.WRAM[0xF3C5] = 1
+	debugRun(t, &gs, debugOp{T: debugOpProgress, V: 3})
+	if v := e.WRAM[0xF3C5]; v != 3 {
+		t.Errorf("expected progress 3; got %d", v)
+	}
+	cmd := &debugCmd{gs.g}
+	_ = cmd.Execute(&debugArgs{Ops: []debugOp{{T: debugOpProgress, V: 9}}})
+	if n := len(gs.g.debug.queue); n != 0 {
+		t.Errorf("expected a bad level to be rejected; %d queued", n)
+	}
+}

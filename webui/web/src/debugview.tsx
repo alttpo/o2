@@ -196,7 +196,8 @@ function Panel({items, gfx, get, send, ready}: Common & { items: Placed[] }) {
                             title={(has ? "Remove " : "Give ") + it.c.name}
                             style={`left: ${it.x * TILE - 3}px; top: ${it.y * TILE - 3}px`}
                             onClick={() => send(...(has ? it.c.take : it.c.give))}>
-                        <Icon gfx={gfx} words={has ? it.c.words : it.missing} w={it.c.w} scale={PANEL_SCALE}/>
+                        <Icon gfx={gfx} words={has || !it.missing ? it.c.words : it.missing} w={it.c.w} scale={PANEL_SCALE}
+                              dim={!has && !it.missing}/>
                     </button>
                 );
             })}
@@ -319,7 +320,7 @@ function Progress({get, send, ready}: Common) {
                 <span class="dbg-row-label">Story</span>
                 {progressLevels.map((n, i) => (
                     <button type="button" key={i} class={"dbg-chip" + (level === i ? " on" : "")} disabled={!ready}
-                            title={"Set the progress to " + n} onClick={() => send({t: "set", a: 0xF3C5, v: i})}>
+                            title={"Set the progress to " + n} onClick={() => send({t: "progress", v: i})}>
                         {n}
                     </button>
                 ))}
