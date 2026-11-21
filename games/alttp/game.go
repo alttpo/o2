@@ -128,6 +128,8 @@ type Game struct {
 	linkSprites linkSpriteSync
 	// local and queued remote sound effects (see sfx.go):
 	sfx sfxLocal
+	// the Disable BG Music setting written to the game (see music.go):
+	music musicState
 	// remote map16 changes staged for area loads (see map16stage.go):
 	map16Stage map16Stage
 	// remote manipulable objects staged for room loads (see manipstage.go):
@@ -223,7 +225,9 @@ type Game struct {
 	// SyncTorches shares the lit torches of the room:
 	SyncTorches bool `json:"syncTorches"`
 	// SyncSfx plays the sound effects of players in the same location:
-	SyncSfx        bool `json:"syncSfx"`
+	SyncSfx bool `json:"syncSfx"`
+	// DisableBgMusic stops the game from playing its background music; see music.go:
+	DisableBgMusic bool `json:"disableBgMusic"`
 	SyncChests     bool `json:"syncChests"`
 	lastSyncChests bool
 	SyncTunicColor bool `json:"syncTunicColor"`

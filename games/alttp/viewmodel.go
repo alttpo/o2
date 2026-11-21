@@ -383,6 +383,7 @@ type setFieldArgs struct {
 	SyncTorches         *bool `json:"syncTorches"`
 	SyncEnemiesKilled   *bool `json:"syncEnemiesKilled"`
 	SyncSfx             *bool `json:"syncSfx"`
+	DisableBgMusic      *bool `json:"disableBgMusic"`
 	SyncTunicColor      *bool `json:"syncTunicColor"`
 	SyncSprites         *bool `json:"syncSprites"`
 }
@@ -447,6 +448,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncSfx != nil {
 		g.SyncSfx = *f.SyncSfx
+		g.clean = false
+	}
+	if f.DisableBgMusic != nil {
+		g.DisableBgMusic = *f.DisableBgMusic
 		g.clean = false
 	}
 	if f.SyncTunicColor != nil {

@@ -60,6 +60,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
     const [syncEnemiesKilled, setsyncEnemiesKilled] = useState(true);
     const [killDeadEnemies, setkillDeadEnemies] = useState(true);
     const [syncSfx, setsyncSfx] = useState(true);
+    const [disableBgMusic, setdisableBgMusic] = useState(false);
     const [syncChests, setsyncChests] = useState(true);
     const [syncTunicColor, setsyncTunicColor] = useState(true);
     const [syncSprites, setsyncSprites] = useState(true);
@@ -102,6 +103,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
         setsyncEnemiesKilled(game.syncEnemiesKilled);
         setkillDeadEnemies(game.killDeadEnemies);
         setsyncSfx(game.syncSfx);
+        setdisableBgMusic(game.disableBgMusic ?? false);
         setsyncChests(game.syncChests);
         setsyncTunicColor(game.syncTunicColor);
         setsyncSprites(game.syncSprites);
@@ -414,6 +416,15 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                            checked={killDeadEnemies}
                            onChange={setField.bind(this, sendGameCommand, setkillDeadEnemies, "killDeadEnemies", getTargetChecked)}
                     />Kill Dead Enemies
+                </label></div>
+
+                <div><label for="disableBgMusic"
+                       title="Stop the game from playing its background music; sound effects still play. Turning this off restarts the music that would be playing">
+                    <input type="checkbox"
+                           id="disableBgMusic"
+                           checked={disableBgMusic}
+                           onChange={setField.bind(this, sendGameCommand, setdisableBgMusic, "disableBgMusic", getTargetChecked)}
+                    />Disable BG Music
                 </label></div>
             </div>
             <div style="display: grid; grid-template-columns: 3fr 1fr; margin-top: 0.5em">

@@ -92,6 +92,7 @@ func computePatchVersion() (v [4]byte) {
 		sramZeroEnd,
 		linkOAMExtrasMax,
 		captureMaskAddr,
+		musicWasOffAddr,
 		linkColorAddr,
 		linkColorSize,
 		linkOAMCopySfx,

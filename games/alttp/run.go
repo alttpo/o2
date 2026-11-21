@@ -870,6 +870,8 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 	g.writeRemoteSprites(now)
 	// queue remote players' sound effects for the game to play:
 	g.writeRemoteSfx(now)
+	// tell the game whether to disable the BG music:
+	g.writeMusicSetting(now)
 	// stage remote map16 changes for the game to apply when it loads their areas:
 	g.writeMap16Stage(now)
 	// stage remote manipulable objects for the game to apply when it loads their rooms:
