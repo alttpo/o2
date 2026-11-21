@@ -51,6 +51,8 @@ function item(name: string, addr: number, value: number, words: number[], takeVa
 export interface Level {
     name: string;
     words: number[];
+    // for a level that has both items of a slot: the second item, drawn with the first one on the other side of a diagonal:
+    words2?: number[];
     // the operations that make the player have this level:
     ops: DebugOp[];
 }
@@ -78,6 +80,48 @@ function cell(name: string, addr: number, levels: [string, number, number[]][], 
     };
 }
 
+// ---- items that share a slot of the item menu (the Y button swaps them). Each has a byte for the one equipped, and the
+// randomizer keeps what the player has in a bitfield ($7EF38C, bit 7 blue boomerang, 6 red boomerang, 5 mushroom, 4
+// magic powder, 3 mushroom from the past, 2 shovel, 1 inactive flute, 0 active flute); without the bits (the original
+// game) the byte is all there is.
+
+export const TRACKING = 0xF38C;
+
+interface Side {
+    name: string;
+    // the value of the equipped byte:
+    value: number;
+    words: number[];
+    // the bits to set when the player has it, and the bits that tell that they do:
+    set: number;
+    seen: number;
+}
+
+// pair makes a cell of two items that can be had alone or both: none, the first, the second, both.
+function pair(name: string, addr: number, a: Side, b: Side, byteB = (v: number) => v === b.value): Cell {
+    const all = a.set | b.set | a.seen | b.seen;
+    const ops = (value: number, bits: number): DebugOp[] => [set(addr, value), and(TRACKING, ~all & 0xFF), or(TRACKING, bits)];
+    return {
+        name,
+        levels: [
+            {name: "No " + name, words: EMPTY_ICON, ops: ops(0, 0)},
+            {name: a.name, words: a.words, ops: ops(a.value, a.set)},
+            {name: b.name, words: b.words, ops: ops(b.value, b.set)},
+            {name: a.name + " and " + b.name, words: a.words, words2: b.words, ops: ops(a.value, a.set | b.set)},
+        ],
+        current: get => {
+            const bits = get(TRACKING);
+            const hasA = (bits & a.seen) !== 0;
+            const hasB = (bits & b.seen) !== 0;
+            if (hasA && hasB) return 3;
+            if (hasA) return 1;
+            if (hasB) return 2;
+            const v = get(addr);
+            return v === a.value ? 1 : byteB(v) ? 2 : 0;
+        },
+    };
+}
+
 const simple = (name: string, addr: number, words: number[]) => cell(name, addr, [[name, 1, words]], v => v !== 0 ? 1 : 0);
 
 export const BOTTLE_CELL = "Bottles";
@@ -87,17 +131,15 @@ export const yGrid: Cell[] = [
         ["Bow", 2, [0x28ba, 0x284a, 0x2849, 0x28cb]],
         ["Silver Bow", 4, [0x28ba, 0x28bb, 0x24ca, 0x28cb]],
     ], v => v === 0 ? 0 : v <= 2 ? 1 : 2),
-    cell("Boomerang", 0xF341, [
-        ["Blue Boomerang", 1, [0x2cb8, 0x2cb9, 0x2cf5, 0x2cc9]],
-        ["Red Boomerang", 2, [0x24b8, 0x24b9, 0x24f5, 0x24c9]],
-    ], v => Math.min(v, 2)),
+    pair("Boomerangs", 0xF341,
+        {name: "Blue Boomerang", value: 1, words: [0x2cb8, 0x2cb9, 0x2cf5, 0x2cc9], set: 0x80, seen: 0x80},
+        {name: "Red Boomerang", value: 2, words: [0x24b8, 0x24b9, 0x24f5, 0x24c9], set: 0x40, seen: 0x40}),
     simple("Hookshot", 0xF342, [0x24f5, 0x24f6, 0x24c0, 0x24f5]),
     // $7EF343 is the number of bombs:
     cell("Bombs", 0xF343, [["Bombs (10)", 10, [0x2cb2, 0x2cb3, 0x2cc2, 0x6cc2]]], v => v > 0 ? 1 : 0),
-    cell("Mushroom and Magic Powder", 0xF344, [
-        ["Mushroom", 1, [0x2444, 0x2445, 0x2446, 0x2447]],
-        ["Magic Powder", 2, [0x203b, 0x203c, 0x203d, 0x203e]],
-    ], v => Math.min(v, 2)),
+    pair("Mushroom and Magic Powder", 0xF344,
+        {name: "Mushroom", value: 1, words: [0x2444, 0x2445, 0x2446, 0x2447], set: 0x28, seen: 0x20},
+        {name: "Magic Powder", value: 2, words: [0x203b, 0x203c, 0x203d, 0x203e], set: 0x10, seen: 0x10}),
 
     simple("Fire Rod", 0xF345, [0x24b0, 0x24b1, 0x24c0, 0x24c1]),
     simple("Ice Rod", 0xF346, [0x2cb0, 0x2cbe, 0x2cc0, 0x2cc1]),
@@ -107,10 +149,10 @@ export const yGrid: Cell[] = [
 
     simple("Lamp", 0xF34A, [0x24bc, 0x24bd, 0x24cc, 0x24cd]),
     simple("Magic Hammer", 0xF34B, [0x20b6, 0x20b7, 0x20c6, 0x20c7]),
-    cell("Shovel and Flute", 0xF34C, [
-        ["Shovel", 1, [0x20d0, 0x20d1, 0x20e0, 0x20e1]],
-        ["Flute", 3, [0x2cd4, 0x2cd5, 0x2ce4, 0x2ce5]],
-    ], v => v === 0 ? 0 : v === 1 ? 1 : 2),
+    // the flute is $02 until it is activated, then $03:
+    pair("Shovel and Flute", 0xF34C,
+        {name: "Shovel", value: 1, words: [0x20d0, 0x20d1, 0x20e0, 0x20e1], set: 0x04, seen: 0x04},
+        {name: "Flute", value: 3, words: [0x2cd4, 0x2cd5, 0x2ce4, 0x2ce5], set: 0x01, seen: 0x03}, v => v >= 2),
     simple("Bug-Catching Net", 0xF34D, [0x3c40, 0x3c41, 0x2842, 0x3c43]),
     simple("Book of Mudora", 0xF34E, [0x3ca5, 0x3ca6, 0x3cd8, 0x3cd9]),
 
@@ -228,7 +270,7 @@ export const halfMagic: Choice = {
     take: [set(0xF37B, 0)],
 };
 
-// ---- pendants ($7EF374) and crystals ($7EF37A), at the tile positions of the item menu's progress panel (10x9 tiles):
+// ---- pendants ($7EF374) and crystals ($7EF37A), in one panel:
 
 function bit(name: string, addr: number, mask: number, words: number[], w = 2): Choice {
     return {
@@ -248,28 +290,32 @@ export interface Placed {
     missing?: number[];
 }
 
+// The pendants in a row on top, and the crystals staggered below them from left to right:
 export const PANEL_W = 10;
-export const PANEL_H = 9;
+export const PANEL_H = 8;
 
-export const pendants: Placed[] = [
-    {c: bit("Red Pendant", 0xF374, 0x01, [0x252b, 0x252c, 0x252d, 0x252e]), x: 4, y: 3},
-    {c: bit("Blue Pendant", 0xF374, 0x02, [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e]), x: 2, y: 6},
-    {c: bit("Green Pendant", 0xF374, 0x04, [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e]), x: 6, y: 6},
-];
-
-// the crystals in the order of the bits of $7EF37A, with the dungeon that has each:
+const pendant = (name: string, mask: number, words: number[], x: number): Placed =>
+    ({c: bit(name, 0xF374, mask, words), x, y: 1});
 const CRYSTAL = [0x2d44, 0x2d45];
 const CRYSTAL_MISSING = [0x3146, 0x3147];
-const crystal = (name: string, mask: number, x: number, y: number): Placed =>
-    ({c: bit(name, 0xF37A, mask, CRYSTAL), x, y, missing: CRYSTAL_MISSING});
-export const crystals: Placed[] = [
-    crystal("Crystal 6 (Misery Mire)", 0x01, 3, 3),
-    crystal("Crystal 1 (Palace of Darkness)", 0x02, 5, 3),
-    crystal("Crystal 5 (Ice Palace)", 0x04, 2, 5),
-    crystal("Crystal 7 (Turtle Rock)", 0x08, 4, 5),
-    crystal("Crystal 2 (Swamp Palace)", 0x10, 6, 5),
-    crystal("Crystal 4 (Thieves' Town)", 0x20, 3, 7),
-    crystal("Crystal 3 (Skull Woods)", 0x40, 5, 7),
+// the crystals in the order of the bits of $7EF37A, with the dungeon that has each; they are laid out from the first
+// dungeon to the last:
+const CRYSTALS: [string, number][] = [
+    ["Crystal 1 (Palace of Darkness)", 0x02],
+    ["Crystal 2 (Swamp Palace)", 0x10],
+    ["Crystal 3 (Skull Woods)", 0x40],
+    ["Crystal 4 (Thieves' Town)", 0x20],
+    ["Crystal 5 (Ice Palace)", 0x04],
+    ["Crystal 6 (Misery Mire)", 0x01],
+    ["Crystal 7 (Turtle Rock)", 0x08],
+];
+
+export const progressPanel: Placed[] = [
+    pendant("Red Pendant", 0x01, [0x252b, 0x252c, 0x252d, 0x252e], 0.5),
+    pendant("Blue Pendant", 0x02, [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e], 4),
+    pendant("Green Pendant", 0x04, [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e], 7.7),
+    ...CRYSTALS.map(([name, mask], i): Placed =>
+        ({c: bit(name, 0xF37A, mask, CRYSTAL), x: 0.5 + i * 1.2, y: i % 2 === 0 ? 4 : 6, missing: CRYSTAL_MISSING})),
 ];
 
 // ---- dungeons and their items ($7EF364 compass, $7EF366 big key, $7EF368 map: 16 bits, dungeon 0 is bit 15):

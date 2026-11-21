@@ -7,8 +7,8 @@ import {ConnectionLost, useConnection} from "./connection";
 import {DebugOp, Gfx, Icon, useGfx} from "./debuggfx";
 import {
     abilities, ARROW_WORDS, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
-    bottleCycle, Choice, crystals, dungeonItems, dungeons, equipment, Getter, halfMagic, HEART_FULL,
-    HEART_HALF, MAGIC_METER_WORDS, mapMarkers, PANEL_H, PANEL_W, pendants, Placed, progressFlags, progressLevels,
+    bottleCycle, Choice, dungeonItems, dungeons, equipment, Getter, halfMagic, HEART_FULL,
+    HEART_HALF, MAGIC_METER_WORDS, mapMarkers, PANEL_H, PANEL_W, Placed, progressPanel, progressFlags, progressLevels,
     RUPEE_WORDS, SMALL_KEY_LIVE, SMALL_KEY_WORDS, SRAM_FIRST, yGrid
 } from "./debugdata";
 
@@ -71,10 +71,13 @@ function useBottles(get: Getter, send: Send) {
         if (ops.length) send(...ops);
     };
 
+    // the first n slots are the available ones, keeping what they hold and giving empty bottles to new ones:
+    const setCount = (n: number) => apply(slots.map((v, i) => i >= n ? 0 : v === 0 ? 2 : v));
+
     return {
         slots, count, selectedIndex,
-        // the first n slots are the available ones, keeping what they hold and giving empty bottles to new ones:
-        setCount: (n: number) => apply(slots.map((v, i) => i >= n ? 0 : v === 0 ? 2 : v)),
+        // steps the number of bottles, wrapping around from 4 to none:
+        stepCount: (dir: number) => setCount((count + dir + BOTTLE_COUNT + 1) % (BOTTLE_COUNT + 1)),
         // cycles what a slot holds through the contents:
         cycle: (i: number, dir: number) => {
             if (slots[i] === 0) return;
@@ -87,65 +90,69 @@ function useBottles(get: Getter, send: Send) {
 
 type Bottles = ReturnType<typeof useBottles>;
 
-function YGrid({gfx, get, send, ready, bottles}: Common & { bottles: Bottles }) {
+// Both draws two icons on either side of a diagonal line, for a slot that has both of its items.
+function Both({gfx, words, words2}: { gfx: Gfx | null, words: number[], words2: number[] }) {
     return (
-        <Section title="Y Items" note="Click an item to go to its next level; shift-click to go back.">
-            <div class="dbg-ygrid">
-                {yGrid.map(c => {
-                    if (c.name === BOTTLE_CELL) {
-                        const slot = bottles.selectedIndex;
-                        const v = slot >= 0 ? bottles.slots[slot] : 0;
-                        const words = (bottleContents[v] ?? bottleContents[2]).words;
+        <div class="dbg-both">
+            <div class="dbg-half dbg-half-1"><Icon gfx={gfx} words={words}/></div>
+            <div class="dbg-half dbg-half-2"><Icon gfx={gfx} words={words2}/></div>
+            <div class="dbg-diagonal"/>
+        </div>
+    );
+}
+
+function YGrid({gfx, get, send, ready, bottles}: Common & { bottles: Bottles }) {
+    const {slots, count, selectedIndex} = bottles;
+    return (
+        <Section title="Y Items" note="Click an item to go to its next level; shift-click to go back. The bottle steps through 0 to 4 bottles.">
+            <div class="dbg-yitems">
+                <div class="dbg-ygrid">
+                    {yGrid.map(c => {
+                        if (c.name === BOTTLE_CELL) {
+                            const v = selectedIndex >= 0 ? slots[selectedIndex] : 0;
+                            const words = (bottleContents[v] ?? bottleContents[2]).words;
+                            const around = BOTTLE_COUNT + 1;
+                            return (
+                                <button type="button" key={c.name} class={"dbg-btn" + (count > 0 ? " on" : "")} disabled={!ready}
+                                        title={count + " of " + BOTTLE_COUNT + " bottles: click for " + (count + 1) % around +
+                                            ", shift-click for " + (count + BOTTLE_COUNT) % around}
+                                        onClick={e => bottles.stepCount(e.shiftKey ? -1 : 1)}>
+                                    <Icon gfx={gfx} words={v !== 0 ? words : bottleContents[2].words} dim={count === 0}/>
+                                </button>
+                            );
+                        }
+                        const cur = c.current(get);
+                        const next = (dir: number) => c.levels[(cur + dir + c.levels.length) % c.levels.length];
+                        const shown = c.levels[cur === 0 ? 1 : cur];
                         return (
-                            <button type="button" key={c.name} class={"dbg-btn" + (v !== 0 ? " on" : "")} disabled={!ready}
-                                    title={v === 0 ? "No bottle: click to give an empty bottle"
-                                        : bottleContents[v]?.name + " (selected bottle " + (slot + 1) + "): click for the next contents"}
-                                    onClick={e => bottles.count === 0 ? bottles.setCount(1) : bottles.cycle(slot, e.shiftKey ? -1 : 1)}>
-                                <Icon gfx={gfx} words={v !== 0 ? words : bottleContents[2].words} dim={v === 0}/>
+                            <button type="button" key={c.name} class={"dbg-btn" + (cur !== 0 ? " on" : "")} disabled={!ready}
+                                    title={c.name + ": " + c.levels[cur].name + " (click for " + next(1).name + ")"}
+                                    onClick={e => send(...next(e.shiftKey ? -1 : 1).ops)}>
+                                {shown.words2
+                                    ? <Both gfx={gfx} words={shown.words} words2={shown.words2}/>
+                                    : <Icon gfx={gfx} words={shown.words} dim={cur === 0}/>}
                             </button>
                         );
-                    }
-                    const cur = c.current(get);
-                    const step = (dir: number) => send(...c.levels[(cur + dir + c.levels.length) % c.levels.length].ops);
-                    const shown = c.levels[cur === 0 ? 1 : cur];
-                    return (
-                        <button type="button" key={c.name} class={"dbg-btn" + (cur !== 0 ? " on" : "")} disabled={!ready}
-                                title={c.name + ": " + c.levels[cur].name + " (click for " + c.levels[(cur + 1) % c.levels.length].name + ")"}
-                                onClick={e => step(e.shiftKey ? -1 : 1)}>
-                            <Icon gfx={gfx} words={shown.words} dim={cur === 0}/>
+                    })}
+                </div>
+                <div class="dbg-bottles">
+                    {slots.map((v, i) => (
+                        <button type="button" key={i} class={"dbg-btn" + (v !== 0 ? " on" : "") + (i === selectedIndex ? " selected" : "")}
+                                disabled={!ready || v === 0}
+                                title={v === 0 ? "Bottle " + (i + 1) + ": not available" : "Bottle " + (i + 1) + ": " + bottleContents[v]?.name +
+                                    (i === selectedIndex ? " (selected)" : "") + ". Click for the next contents, shift-click for the previous"}
+                                onClick={e => bottles.cycle(i, e.shiftKey ? -1 : 1)}>
+                            <Icon gfx={gfx} words={(v !== 0 ? bottleContents[v] ?? bottleContents[2] : bottleContents[2]).words} dim={v === 0}/>
                         </button>
-                    );
-                })}
+                    ))}
+                </div>
             </div>
         </Section>
     );
 }
 
-function Bottles({gfx, ready, bottles}: Common & { bottles: Bottles }) {
-    const {slots, count, selectedIndex} = bottles;
-    return (
-        <Section title="Bottles" note="How many bottles the player has, and what each holds. Click a bottle to change its contents.">
-            <div class="dbg-row">
-                <button type="button" disabled={!ready || count <= 0} title="Take away a bottle"
-                        onClick={() => bottles.setCount(count - 1)}>−</button>
-                <span class="dbg-count" title="Bottles">{count}</span>
-                <button type="button" disabled={!ready || count >= BOTTLE_COUNT} title="Give a bottle"
-                        onClick={() => bottles.setCount(count + 1)}>+</button>
-            </div>
-            <div class="dbg-grid dbg-sub">
-                {slots.map((v, i) => (
-                    <button type="button" key={i} class={"dbg-btn" + (v !== 0 ? " on" : "") + (i === selectedIndex ? " selected" : "")}
-                            disabled={!ready || v === 0}
-                            title={v === 0 ? "Bottle " + (i + 1) + ": not available" : "Bottle " + (i + 1) + ": " + bottleContents[v]?.name +
-                                (i === selectedIndex ? " (selected)" : "") + ". Click for the next contents, shift-click for the previous"}
-                            onClick={e => bottles.cycle(i, e.shiftKey ? -1 : 1)}>
-                        <Icon gfx={gfx} words={(v !== 0 ? bottleContents[v] ?? bottleContents[2] : bottleContents[2]).words} dim={v === 0}/>
-                    </button>
-                ))}
-            </div>
-        </Section>
-    );
-}
+// the value of no sword that the game uses, 0 or $FF, as last seen:
+let swordNone = 0;
 
 // Equipment is laid out as the item menu does: sword, shield and armor in a row.
 function Equipment({gfx, get, send, ready}: Common) {
@@ -154,9 +161,12 @@ function Equipment({gfx, get, send, ready}: Common) {
             <div class="dbg-grid">
                 {equipment.map(e => {
                     const v = get(e.addr);
-                    // the smithy sets the sword to $FF while it is being tempered:
+                    // the randomizer's no sword is $FF, as the smithy's while the sword is tempered, where the original
+                    // game's is 0; $FF is not a level:
                     const cur = v < e.levels.length ? v : 0;
-                    const to = (level: number) => send({t: "set", a: e.addr, v: level}, {t: "gfx", w: e.gfx});
+                    if (e.gfx === "sword" && (v === 0 || v === 0xFF)) swordNone = v;
+                    const to = (level: number) => send({t: "set", a: e.addr, v: e.gfx === "sword" && level === 0 ? swordNone : level},
+                        {t: "gfx", w: e.gfx});
                     const n = e.levels.length;
                     return (
                         <button type="button" key={e.name} class="dbg-btn on" disabled={!ready}
@@ -208,10 +218,7 @@ function Panel({items, gfx, get, send, ready}: Common & { items: Placed[] }) {
 function PendantsAndCrystals(p: Common) {
     return (
         <Section title="Pendants and Crystals">
-            <div class="dbg-grid dbg-top">
-                <Panel items={pendants} {...p}/>
-                <Panel items={crystals} {...p}/>
-            </div>
+            <Panel items={progressPanel} {...p}/>
         </Section>
     );
 }
@@ -418,7 +425,6 @@ export default function DebugApp() {
 
                         <div class="dbg-columns">
                             <YGrid {...p} bottles={bottles}/>
-                            <Bottles {...p} bottles={bottles}/>
                             <Equipment {...p}/>
                             <Abilities {...p}/>
                             <PendantsAndCrystals {...p}/>

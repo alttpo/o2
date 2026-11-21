@@ -504,12 +504,16 @@ button.game-action {
 }
 
 /* the debug page: */
+/* the sections flow down the columns, each starting where the one before it ends, so there are no gaps to fill: */
 .dbg-columns {
     width: 100%;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-    gap: 0 4px;
-    align-items: start;
+    column-width: 460px;
+    column-gap: 4px;
+}
+
+.dbg-columns > .dbg-section {
+    break-inside: avoid;
+    margin-bottom: 4px;
 }
 
 .dbg-section h3 {
@@ -650,8 +654,42 @@ button.game-action {
     gap: 6px;
 }
 
-.dbg-top {
+.dbg-yitems {
+    display: flex;
     align-items: flex-start;
+    gap: 14px;
+}
+
+.dbg-bottles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* a slot with both of its items: the first in the upper left, the second in the lower right, split by a diagonal */
+.dbg-both {
+    position: relative;
+    width: 48px;
+    height: 48px;
+}
+
+.dbg-half {
+    position: absolute;
+    inset: 0;
+}
+
+.dbg-half-1 {
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.dbg-half-2 {
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.dbg-diagonal {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom right, transparent calc(50% - 1px), #ffef00 calc(50% - 1px), #ffef00 calc(50% + 1px), transparent calc(50% + 1px));
 }
 
 .dbg-panel {
