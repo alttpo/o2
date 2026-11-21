@@ -146,7 +146,10 @@ func (g *Game) generateSRAMRoutine(a *asm.Emitter, targetSNES uint32) (updated b
 
 	// custom asm overrides update asm generation:
 	if !g.generateCustomAsm(a) {
-		if !g.generateUpdateAsm(a) {
+		// the debug page's operations first; the sync updates fill what is left:
+		tmp := [updateBufSize * 2]byte{}
+		debugEmitted := g.generateDebugAsm(a, func() *asm.Emitter { return a.Clone(tmp[:]) })
+		if !g.generateUpdateAsm(a) && !debugEmitted {
 			// nothing to emit:
 			updated = false
 			return

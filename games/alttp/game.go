@@ -94,6 +94,9 @@ type Game struct {
 	customAsmLock sync.Mutex
 	customAsm     []byte
 
+	// the debug page's tools (see debug.go):
+	debug debugLocal
+
 	locHashTTL int
 	locHash    uint64
 

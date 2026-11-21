@@ -291,6 +291,9 @@ func (g *Game) run() {
 
 			// update run timer:
 			g.updateRunTimer()
+
+			// update the debug page's view of the game:
+			g.notifyDebugState()
 			break
 
 		case <-slowbeat.C:

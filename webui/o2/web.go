@@ -111,6 +111,35 @@ func NewWebServer(listenAddr string) *WebServer {
 		http.ServeFile(w, r, logPath)
 	}))
 
+	// the debug page is the same web app as the root page; it picks the page to show from the path:
+	s.mux.Handle("/debug", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFileFS(w, r, dist.Content, "debug.html")
+	}))
+
+	// the graphics the debug page draws the game's icons with, built from the ROM when requested:
+	s.mux.Handle("/debug/gfx.json", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.commandHandler == nil {
+			http.NotFound(w, r)
+			return
+		}
+		cmd, err := s.commandHandler.CommandFor("game", "debugGfx")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		var gfx []byte
+		if err = cmd.Execute(&gfx); err != nil {
+			log.Println(fmt.Errorf("debug graphics: %w", err))
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(gfx)
+	}))
+
 	// serve static content from go-bindata:
 	s.mux.Handle("/", MaxAge(http.FileServer(http.FS(dist.Content))))
 

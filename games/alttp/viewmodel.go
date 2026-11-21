@@ -334,6 +334,10 @@ func (g *Game) CommandFor(command string) (interfaces.Command, error) {
 		return &sendCustomAsmCmd{g}, nil
 	case "fixSmallKeys":
 		return &fixSmallKeysCmd{g}, nil
+	case "debug":
+		return &debugCmd{g}, nil
+	case "debugGfx":
+		return &debugGfxCmd{g}, nil
 	default:
 		return nil, fmt.Errorf("no handler for command=%s", command)
 	}
