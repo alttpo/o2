@@ -711,3 +711,34 @@ button.game-action {
     text-align: center;
     font-size: 14pt;
 }
+
+/* the global button:active style swaps the widths of the borders, which moved everything below a clicked card by a pixel: */
+.dbg-section .dbg-btn:active, .dbg-section .dbg-chip:active {
+    border-width: 2px;
+}
+
+.dbg-section .dbg-step button:active {
+    border-width: 1px 2px 2px 1px;
+}
+
+/* the icon of a card that does something when clicked: */
+.dbg-section .dbg-main, .dbg-section .dbg-main:active {
+    background: transparent;
+    border: 0;
+    padding: 2px;
+    border-radius: 4px;
+}
+
+.dbg-section .dbg-main:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.dbg-section .dbg-main:disabled {
+    background: transparent;
+    cursor: default;
+}
+
+/* a card that is out of use: */
+.dbg-btn.off {
+    opacity: 0.55;
+}

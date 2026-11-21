@@ -6,7 +6,7 @@ import {useState} from "preact/hooks";
 import {ConnectionLost, useConnection} from "./connection";
 import {DebugOp, Gfx, Icon, useGfx} from "./debuggfx";
 import {
-    abilities, ARROW_WORDS, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
+    abilities, ARROW_MAX, ARROW_WORDS, BOMB_MAX, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
     bottleCycle, Choice, dungeonItems, dungeons, equipment, Getter, halfMagic, HEART_FULL,
     HEART_HALF, MAGIC_METER_WORDS, mapMarkers, PANEL_H, PANEL_W, Placed, progressPanel, progressFlags, progressLevels,
     RUPEE_WORDS, SMALL_KEY_LIVE, SMALL_KEY_WORDS, SRAM_FIRST, yGrid
@@ -223,6 +223,50 @@ function PendantsAndCrystals(p: Common) {
     );
 }
 
+interface Step {
+    title: string;
+    disabled?: boolean;
+    // `big` when shift is held:
+    onClick: (big: boolean) => void;
+}
+
+interface CounterProps {
+    gfx: Gfx | null;
+    words: number[];
+    w?: number;
+    scale?: number;
+    // what clicking the icon does, if anything:
+    onMain?: () => void;
+    mainTitle?: string;
+    text: any;
+    textTitle: string;
+    dec: Step;
+    inc: Step;
+    // the whole card is out of use:
+    off?: boolean;
+    ready: boolean;
+}
+
+// Counter is a card with an icon, a count and buttons to take one away and give one. Clicking the icon does the main
+// thing, which for the consumables is to fill up.
+function Counter({gfx, words, w = 1, scale = 5, onMain, mainTitle, text, textTitle, dec, inc, off = false, ready}: CounterProps) {
+    const idle = !ready || off;
+    return (
+        <div class={"dbg-btn dbg-static" + (off ? " off" : "")}>
+            <button type="button" class="dbg-main" disabled={idle || !onMain} title={mainTitle} onClick={onMain}>
+                <Icon gfx={gfx} words={words} w={w} scale={scale} dim={off}/>
+            </button>
+            <span class="dbg-count" title={textTitle}>{text}</span>
+            <span class="dbg-step">
+                <button type="button" disabled={idle || dec.disabled} title={dec.title}
+                        onClick={e => dec.onClick(e.shiftKey)}>−</button>
+                <button type="button" disabled={idle || inc.disabled} title={inc.title}
+                        onClick={e => inc.onClick(e.shiftKey)}>+</button>
+            </span>
+        </div>
+    );
+}
+
 function DungeonItems({gfx, get, send, ready, state}: Common & { state?: DebugState }) {
     // the dungeon chosen, or -1 for the one Link is in:
     const [chosen, setChosen] = useState(-1);
@@ -243,21 +287,13 @@ function DungeonItems({gfx, get, send, ready, state}: Common & { state?: DebugSt
                 </select>
             </div>
             <div class="dbg-grid dbg-sub">
+                <Counter gfx={gfx} ready={ready} words={SMALL_KEY_WORDS} scale={6}
+                         text={keys >= 0 && keys !== 0xFF ? keys : "-"} textTitle="Small keys of the dungeon Link is in"
+                         dec={{title: "Take a small key", disabled: !inDungeon, onClick: () => send({t: "keys", d: -1})}}
+                         inc={{title: "Give a small key", disabled: !inDungeon, onClick: () => send({t: "keys", d: 1})}}/>
                 {d >= 0 && dungeonItems(d).map(c => (
                     <ChoiceButton key={c.name} c={c} gfx={gfx} get={get} send={send} ready={ready}/>
                 ))}
-                <div class="dbg-btn dbg-static" title="Small keys of the dungeon Link is in">
-                    <Icon gfx={gfx} words={SMALL_KEY_WORDS} w={1} scale={6}/>
-                    <span class="dbg-count" title="Small keys of the dungeon Link is in">
-                        {keys >= 0 && keys !== 0xFF ? keys : "-"}
-                    </span>
-                    <span class="dbg-step">
-                        <button type="button" disabled={!ready || !inDungeon} title="Take a small key"
-                                onClick={() => send({t: "keys", d: -1})}>−</button>
-                        <button type="button" disabled={!ready || !inDungeon} title="Give a small key"
-                                onClick={() => send({t: "keys", d: 1})}>+</button>
-                    </span>
-                </div>
             </div>
         </Section>
     );
@@ -267,51 +303,70 @@ function Hearts({gfx, get, send, ready}: Common) {
     const containers = get(0xF36C) >> 3;
     const pieces = get(0xF36B) & 3;
     const step = (c: number, p: number) => send({t: "hearts", c, p});
+    const full = containers >= 20;
     return (
-        <Section title="Heart Containers and Pieces">
+        <Section title="Heart Containers and Pieces" note="Click a heart to fill up the hearts.">
             <div class="dbg-row">
-                <div class="dbg-btn dbg-static">
-                    <Icon gfx={gfx} words={HEART_FULL} w={1} scale={5}/>
-                    <span class="dbg-count" title="Heart containers">{containers}</span>
-                    <span class="dbg-step">
-                        <button type="button" disabled={!ready || containers <= 1} title="Remove a heart container"
-                                onClick={() => step(-1, 0)}>−</button>
-                        <button type="button" disabled={!ready || containers >= 20} title="Give a heart container"
-                                onClick={() => step(1, 0)}>+</button>
-                    </span>
-                </div>
-                <div class="dbg-btn dbg-static">
-                    <Icon gfx={gfx} words={HEART_HALF} w={1} scale={5}/>
-                    <span class="dbg-count" title="Heart pieces, 4 make a container">{pieces}/4</span>
-                    <span class="dbg-step">
-                        <button type="button" disabled={!ready || (containers <= 1 && pieces === 0)}
-                                title="Remove a heart piece" onClick={() => step(0, -1)}>−</button>
-                        <button type="button" disabled={!ready || (containers >= 20 && pieces === 3)}
-                                title="Give a heart piece" onClick={() => step(0, 1)}>+</button>
-                    </span>
-                </div>
+                <Counter gfx={gfx} ready={ready} words={HEART_FULL}
+                         onMain={() => send({t: "fill", w: "hearts"})} mainTitle="Fill up the hearts"
+                         text={containers} textTitle="Heart containers"
+                         dec={{title: "Remove a heart container", disabled: containers <= 1, onClick: () => step(-1, 0)}}
+                         inc={{title: "Give a heart container", disabled: full, onClick: () => step(1, 0)}}/>
+                <Counter gfx={gfx} ready={ready} words={HEART_HALF} off={full}
+                         text={pieces + "/4"} textTitle="Heart pieces, 4 make a container"
+                         dec={{title: "Remove a heart piece", disabled: containers <= 1 && pieces === 0, onClick: () => step(0, -1)}}
+                         inc={{title: "Give a heart piece", onClick: () => step(0, 1)}}/>
             </div>
         </Section>
     );
 }
 
-function Fill({gfx, send, ready}: Common) {
-    const fills: { w: string, name: string, words: number[], cols: number, scale: number }[] = [
-        {w: "hearts", name: "Hearts", words: HEART_FULL, cols: 1, scale: 5},
-        {w: "magic", name: "Magic", words: MAGIC_METER_WORDS, cols: 3, scale: 2},
-        {w: "rupees", name: "Rupees (999)", words: RUPEE_WORDS, cols: 1, scale: 5},
-        {w: "arrows", name: "Arrows", words: ARROW_WORDS, cols: 2, scale: 3},
-        {w: "bombs", name: "Bombs", words: BOMB_WORDS, cols: 2, scale: 3},
-    ];
+// the most rupees the wallet holds:
+const RUPEE_MAX = 999;
+
+function Fill({gfx, get, send, ready}: Common) {
+    const hearts = get(0xF36D);
+    const heartCap = get(0xF36C);
+    const magic = get(0xF36E);
+    // $7EF360 is the number the rupees count up or down to:
+    const rupees = get(0xF360) | (get(0xF361) << 8);
+    const arrows = get(0xF377);
+    const arrowCap = ARROW_MAX[Math.min(get(0xF371), 7)];
+    const bombs = get(0xF343);
+    const bombCap = BOMB_MAX[Math.min(get(0xF370), 7)];
+
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const setRupees = (v: number) => send({t: "set", a: 0xF360, v: v & 0xFF}, {t: "set", a: 0xF361, v: v >> 8});
+    const fill = (w: string) => () => send({t: "fill", w});
+    const p = {gfx, ready};
+
     return (
-        <Section title="Fill Up">
+        <Section title="Fill Up" note="Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees.">
             <div class="dbg-grid">
-                {fills.map(f => (
-                    <button type="button" key={f.w} class="dbg-btn" disabled={!ready} title={"Fill up the " + f.name.toLowerCase()}
-                            onClick={() => send({t: "fill", w: f.w})}>
-                        <Icon gfx={gfx} words={f.words} w={f.cols} scale={f.scale}/>
-                    </button>
-                ))}
+                <Counter {...p} words={HEART_FULL} onMain={fill("hearts")} mainTitle="Fill up the hearts"
+                         text={+(hearts / 8).toFixed(2)} textTitle="Hearts"
+                         dec={{title: "Take away a heart", disabled: hearts <= 8,
+                             onClick: () => send({t: "set", a: 0xF36D, v: clamp(hearts - 8, 8, heartCap)})}}
+                         inc={{title: "Give a heart", disabled: hearts >= heartCap,
+                             onClick: () => send({t: "set", a: 0xF36D, v: clamp(hearts + 8, 8, heartCap)})}}/>
+                <Counter {...p} words={MAGIC_METER_WORDS} w={3} scale={3} onMain={fill("magic")} mainTitle="Fill up the magic"
+                         text={magic} textTitle="Magic, of 128"
+                         dec={{title: "Use up 8 magic", disabled: magic <= 0, onClick: () => send({t: "set", a: 0xF36E, v: clamp(magic - 8, 0, 128)})}}
+                         inc={{title: "Give 8 magic", disabled: magic >= 128, onClick: () => send({t: "set", a: 0xF36E, v: clamp(magic + 8, 0, 128)})}}/>
+                <Counter {...p} words={RUPEE_WORDS} onMain={fill("rupees")} mainTitle="Fill up the rupees (999)"
+                         text={rupees} textTitle="Rupees"
+                         dec={{title: "Take away a rupee (shift: 20)", disabled: rupees <= 0,
+                             onClick: big => setRupees(clamp(rupees - (big ? 20 : 1), 0, RUPEE_MAX))}}
+                         inc={{title: "Give a rupee (shift: 20)", disabled: rupees >= RUPEE_MAX,
+                             onClick: big => setRupees(clamp(rupees + (big ? 20 : 1), 0, RUPEE_MAX))}}/>
+                <Counter {...p} words={ARROW_WORDS} w={2} scale={3} onMain={fill("arrows")} mainTitle="Fill up the arrows"
+                         text={arrows} textTitle={"Arrows, of " + arrowCap}
+                         dec={{title: "Take away an arrow", disabled: arrows <= 0, onClick: () => send({t: "set", a: 0xF377, v: arrows - 1})}}
+                         inc={{title: "Give an arrow", disabled: arrows >= arrowCap, onClick: () => send({t: "set", a: 0xF377, v: arrows + 1})}}/>
+                <Counter {...p} words={BOMB_WORDS} w={2} scale={3} onMain={fill("bombs")} mainTitle="Fill up the bombs"
+                         text={bombs} textTitle={"Bombs, of " + bombCap}
+                         dec={{title: "Take away a bomb", disabled: bombs <= 0, onClick: () => send({t: "set", a: 0xF343, v: bombs - 1})}}
+                         inc={{title: "Give a bomb", disabled: bombs >= bombCap, onClick: () => send({t: "set", a: 0xF343, v: bombs + 1})}}/>
             </div>
         </Section>
     );
@@ -424,13 +479,13 @@ export default function DebugApp() {
                         <hr/>
 
                         <div class="dbg-columns">
+                            <Fill {...p}/>
                             <YGrid {...p} bottles={bottles}/>
                             <Equipment {...p}/>
                             <Abilities {...p}/>
-                            <PendantsAndCrystals {...p}/>
                             <DungeonItems {...p} state={state}/>
+                            <PendantsAndCrystals {...p}/>
                             <Hearts {...p}/>
-                            <Fill {...p}/>
                             <Progress {...p}/>
                             <Enemies {...p}/>
                         </div>

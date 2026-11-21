@@ -290,7 +290,7 @@ export interface Placed {
     missing?: number[];
 }
 
-// The pendants in a row on top, and the crystals staggered below them from left to right:
+// The pendants in a row on top, and the crystals staggered below them from left to right, starting on the bottom row:
 export const PANEL_W = 10;
 export const PANEL_H = 8;
 
@@ -315,7 +315,7 @@ export const progressPanel: Placed[] = [
     pendant("Blue Pendant", 0x02, [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e], 4),
     pendant("Green Pendant", 0x04, [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e], 7.7),
     ...CRYSTALS.map(([name, mask], i): Placed =>
-        ({c: bit(name, 0xF37A, mask, CRYSTAL), x: 0.5 + i * 1.2, y: i % 2 === 0 ? 4 : 6, missing: CRYSTAL_MISSING})),
+        ({c: bit(name, 0xF37A, mask, CRYSTAL), x: 0.5 + i * 1.2, y: i % 2 === 0 ? 6 : 4, missing: CRYSTAL_MISSING})),
 ];
 
 // ---- dungeons and their items ($7EF364 compass, $7EF366 big key, $7EF368 map: 16 bits, dungeon 0 is bit 15):
@@ -354,16 +354,17 @@ export const HEART_EMPTY = [0x24a2];
 export const RUPEE_WORDS = [0x3ca8];
 export const BOMB_WORDS = [0x2c88, 0x2c89];
 export const ARROW_WORDS = [0x20a7, 0x20a9];
-// the full magic meter of the HUD, 3 tiles wide. The game's tiles of the meter's right side also hold a bit of the item
-// box next to it, so the right side is the left side flipped:
+// a full magic container: the HUD's magic meter cut down to its top, one full row and its bottom, 3 tiles wide. The game's
+// tiles of the meter's right side also hold a bit of the item box next to it, so the right side is the left side flipped:
 export const MAGIC_METER_WORDS = [
     0x2850, 0xa856, 0x6850,
     0x2854, 0x3c4e, 0x6854,
-    0x2854, 0x3c5e, 0x6854,
-    0x2854, 0x3c5e, 0x6854,
-    0x2854, 0x3c5e, 0x6854,
     0xa850, 0x2856, 0xe850,
 ];
+
+// the most arrows and bombs the player can carry, by the capacity upgrades ($7EF371 and $7EF370):
+export const ARROW_MAX = [30, 35, 40, 45, 50, 55, 60, 70];
+export const BOMB_MAX = [10, 15, 20, 25, 30, 35, 40, 50];
 
 // ---- progression flags ($7EF3C5, $7EF3C6, $7EF3C9 and the map markers $7EF3C7):
 
