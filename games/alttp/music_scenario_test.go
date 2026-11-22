@@ -76,6 +76,20 @@ func TestMusicScenario_DisableAndRestart(t *testing.T) {
 	if len(sent) != 1 || sent[0] != 0x07 {
 		t.Fatalf("restart: sent % x; expected 07 once", sent)
 	}
+
+	// toggled again with no request from the game in between: the track playing fades out, then restarts each time
+	for i := 0; i < 3; i++ {
+		e.SRAM[musicOffAddr&0x7FFF] = 1
+		run(3)
+		if len(sent) != 1 || sent[0] != 0xF1 {
+			t.Fatalf("toggle %d: disabled: sent % x; expected a fade out (f1)", i, sent)
+		}
+		e.SRAM[musicOffAddr&0x7FFF] = 0
+		run(4)
+		if len(sent) != 1 || sent[0] != 0x07 {
+			t.Fatalf("toggle %d: restart: sent % x; expected 07 once", i, sent)
+		}
+	}
 }
 
 func TestMusicRequestAddr(t *testing.T) {

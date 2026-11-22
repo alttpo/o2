@@ -33,7 +33,8 @@ import (
 // randomizer), the mirror warp, nothing music and commands other than the volume commands are sent. Nothing is
 // intercepted in the intro modules ($00 to $05), where it would break the game.
 //
-// musicWantedAddr remembers the last track the game requested that repeats. Turning the setting off requests it once
+// musicWantedAddr remembers the last track the game requested that repeats, or the track that repeats that was playing
+// when the setting turned on (so that it restarts after any number of toggles). Turning the setting off requests it once
 // (and clears $0133, so that NMI doesn't skip it as the last track sent). Tracks that play once (short jingles) are
 // never remembered, so they are never repeated.
 //
@@ -200,6 +201,20 @@ func emitMusic(a *asm.Emitter, req uint32) {
 	a.Label("musicIdle")
 	a.LDA_long(musicWasOffAddr)
 	a.BNE("musicExit")
+	a.Comment("remember the track that repeats that is playing, so that turning the setting off restarts it:")
+	a.LDA_long(0x7E0130)
+	a.BEQ("musicFirst")
+	a.CMP_imm8_b(musicTrackMax)
+	a.BCS("musicFirst")
+	a.CMP_imm8_b(0x08)
+	a.BEQ("musicFirst")
+	a.CMP_imm8_b(0x20)
+	a.BEQ("musicFirst")
+	for _, t := range musicOneShots {
+		a.CMP_imm8_b(t)
+		a.BEQ("musicFirst")
+	}
+	a.STA_long(musicWantedAddr)
 	a.Label("musicFirst")
 	a.LDA_imm8_b(1)
 	a.STA_long(musicWasOffAddr)
