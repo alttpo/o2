@@ -315,6 +315,9 @@ func (g *Game) run() {
 
 			break
 		}
+
+		// move the players' dots on the web UI's map:
+		g.notifyPositions(time.Now())
 	}
 }
 

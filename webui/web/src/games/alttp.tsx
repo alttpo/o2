@@ -2,6 +2,7 @@ import {GameALTTPViewModel, GameViewProps, TimestampedNotification} from "../vie
 import {useEffect, useLayoutEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {setField} from "../util";
+import {WorldMap} from "./alttpmap";
 
 // localStorage key of the height the user resized the notification history to:
 const historyHeightKey = "o2.alttp.notificationHistoryHeight";
@@ -497,6 +498,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <span><span style="font-family: monospace; font-size: 0.8rem">{h.t}</span>&nbsp;&ndash;&nbsp;{h.m}</span>
                 </Fragment>))}
             </div>
+        </div>
+        <div style="grid-column: 1 / -1; margin-top: 0.5em">
+            <WorldMap vm={vm}/>
         </div>
     </div>;
 }

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"o2/games/alttp/underworldmap"
+	"o2/games/alttp/worldmap"
 	"o2/interfaces"
 	"o2/snes"
 	"o2/util"
@@ -114,6 +115,13 @@ func NewWebServer(listenAddr string) *WebServer {
 
 	// a map of every underworld room, drawn from the loaded ROM; ?scale=2 (or 4, 8, ...) makes it smaller:
 	s.mux.Handle("/rom/underworld.png", http.HandlerFunc(s.serveUnderworldMap))
+	// the light world and dark world maps, drawn from the loaded ROM:
+	s.mux.Handle("/rom/lightworld.png", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.serveWorldMap(w, r, false)
+	}))
+	s.mux.Handle("/rom/darkworld.png", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.serveWorldMap(w, r, true)
+	}))
 
 	// access log file:
 	s.mux.Handle("/log.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -430,14 +438,8 @@ func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cmd, err := s.commandHandler.CommandFor("rom", "unpatched")
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	var rom []byte
-	if err = cmd.Execute(&rom); err != nil || rom == nil {
-		http.Error(w, "no ROM is loaded", http.StatusServiceUnavailable)
+	rom, ok := s.unpatchedROM(w, r)
+	if !ok {
 		return
 	}
 
@@ -462,4 +464,47 @@ func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(s.underworldPNG)
+}
+
+// unpatchedROM gets the contents of the loaded ROM before o2 patched it, or writes an error response if there is none.
+func (s *WebServer) unpatchedROM(w http.ResponseWriter, r *http.Request) (rom []byte, ok bool) {
+	if s.commandHandler == nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	cmd, err := s.commandHandler.CommandFor("rom", "unpatched")
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	if err = cmd.Execute(&rom); err != nil || rom == nil {
+		http.Error(w, "no ROM is loaded", http.StatusServiceUnavailable)
+		return nil, false
+	}
+	return rom, true
+}
+
+// serveWorldMap draws the light world map, or the dark world map if dark is set, from the loaded ROM, before o2
+// patched it. It takes a few milliseconds, so it is drawn for every request.
+func (s *WebServer) serveWorldMap(w http.ResponseWriter, r *http.Request, dark bool) {
+	rom, ok := s.unpatchedROM(w, r)
+	if !ok {
+		return
+	}
+
+	m, err := worldmap.Generate(rom, dark)
+	if err != nil {
+		log.Println(fmt.Errorf("world map: %w", err))
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	var b bytes.Buffer
+	if err = png.Encode(&b, m); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(b.Bytes())
 }

@@ -448,6 +448,101 @@ h5, h6 {
     resize: vertical;
 }
 
+/* the world map below the notification history; the axes' labels go in the padding around the map: */
+.world-map-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+    margin-bottom: 0.25em;
+}
+
+.world-map-location {
+    min-width: 3.5em;
+    text-align: center;
+}
+
+.world-map-empty {
+    color: rgb(140, 140, 140);
+    padding: 1em;
+}
+
+.world-map-axes {
+    padding: 18px 44px;
+    display: flex;
+    justify-content: center;
+}
+
+.world-map-frame {
+    position: relative;
+    background: black;
+}
+
+.world-map-frame > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.world-map-frame > img.pixelated {
+    image-rendering: pixelated;
+}
+
+.world-map-frame > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.world-map-axis {
+    position: absolute;
+    width: 44px;
+    height: 18px;
+    line-height: 18px;
+    font-size: 0.8rem;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.world-map-axis-top {
+    top: -18px;
+    transform: translateX(-50%);
+}
+
+.world-map-axis-bottom {
+    top: 100%;
+    transform: translateX(-50%);
+}
+
+.world-map-axis-left {
+    right: 100%;
+    transform: translateY(-50%);
+}
+
+.world-map-axis-right {
+    left: 100%;
+    transform: translateY(-50%);
+}
+
+/* a player's dot, filled with their tunic color and outlined with a darker one; it glides between updates: */
+.world-map-dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    border: 1px solid;
+    transition: left 50ms linear, top 50ms linear;
+}
+
+.world-map-dot-local {
+    z-index: 1;
+}
+
 .players {
     overflow: auto;
     display: grid;

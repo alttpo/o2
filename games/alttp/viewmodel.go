@@ -5,6 +5,7 @@ import (
 	"log"
 	"o2/interfaces"
 	"o2/util"
+	"slices"
 	"strings"
 	"time"
 )
@@ -510,4 +511,73 @@ func (c *sendCustomAsmCmd) Execute(args interfaces.CommandArgs) error {
 	c.g.customAsmLock.Unlock()
 
 	return nil
+}
+
+// PlayerPositionViewModel is where a player is, for the web UI's map, which places the player the way alttpo's
+// WorldMapWindow does.
+type PlayerPositionViewModel struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+	Color uint16 `json:"color"`
+	// Local is set for the player of this o2 client, whose location picks the map shown:
+	Local bool `json:"local"`
+
+	Module   uint8  `json:"module"`
+	Location uint32 `json:"location"`
+	X        uint16 `json:"x"`
+	Y        uint16 `json:"y"`
+	// where the player last was on the overworld, to place them on the overworld maps while in a cave or house:
+	LastOverworldX uint16 `json:"lastOverworldX"`
+	LastOverworldY uint16 `json:"lastOverworldY"`
+}
+
+// positionsInterval is the least time between updates of the players' positions on the web UI's map:
+const positionsInterval = 50 * time.Millisecond
+
+// notifyPositions sends the players' positions to the web UI's map when they changed, at most every
+// positionsInterval.
+func (g *Game) notifyPositions(now time.Time) {
+	if g.viewModels == nil || g.local == nil {
+		return
+	}
+	if now.Sub(g.positionsSentTime) < positionsInterval {
+		return
+	}
+
+	players := g.ActivePlayers()
+	positions := make([]PlayerPositionViewModel, 0, len(players)+1)
+	add := func(p *Player) {
+		name := p.Name()
+		if name == "" {
+			name = fmt.Sprintf("player #%02x", p.Index())
+		}
+		positions = append(positions, PlayerPositionViewModel{
+			Index:          p.Index(),
+			Name:           name,
+			Color:          p.PlayerColor,
+			Local:          p == g.local,
+			Module:         uint8(p.Module),
+			Location:       p.Location,
+			X:              p.X,
+			Y:              p.Y,
+			LastOverworldX: p.LastOverworldX,
+			LastOverworldY: p.LastOverworldY,
+		})
+	}
+	hasLocal := false
+	for _, p := range players {
+		hasLocal = hasLocal || p == g.local
+		add(p)
+	}
+	// without a server connection the local player is not one of the active players:
+	if !hasLocal {
+		add(g.local)
+	}
+
+	if slices.Equal(positions, g.positionsSent) {
+		return
+	}
+	g.positionsSent = positions
+	g.positionsSentTime = now
+	g.viewModels.NotifyView("game/positions", positions)
 }

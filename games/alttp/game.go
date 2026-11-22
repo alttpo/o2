@@ -32,6 +32,9 @@ type Game struct {
 	configurationSystem interfaces.ConfigurationSystem
 	// viewModels can be nil at any time
 	viewModels interfaces.ViewModelContainer
+	// the players' positions last sent to the web UI's map, and when (see notifyPositions):
+	positionsSent     []PlayerPositionViewModel
+	positionsSentTime time.Time
 
 	priorityReadsMu sync.Mutex
 	priorityReads   [3][]snes.Read
