@@ -32,6 +32,7 @@ import (
 //	$706BC0..$706C4D  remote sprites state (written by the game code; zeroed by the init code)
 //	$706C50..$706D1B  remoteFrame's recording of the last frame drawn, for a late frame to replay, and its counters of
 //	                  late frames; see remoteReplayAddr
+//	$706D20..$706D63  the rupees of rupee floors deleted in the room (emptied by the init code); see syncrupees.go
 //	$707000..$70700F  run timing and gates; see runtiming.go
 //	$7070F0..$7070F7  scratch of the ROM routines that generated update routines call; see updatedata.go
 //	$707100..$70727F  update data buffer A: tables for the ROM routines called by the routine in buffer A
@@ -405,6 +406,20 @@ func (p *Patcher) Patch() (err error) {
 		a.WriteTextTo(textBuf)
 	}
 
+	// the hook that logs the rupees of rupee floors deleted, for the players in the same room; see syncrupees.go:
+	if rupeeAddr, ok := rupeeHookSite(p.rom, fns); !ok {
+		log.Printf("alttp: patch: unexpected code at DeleteRupeeTile+$%02x; rupee floors are not synced\n", rupeeHookOffset)
+	} else {
+		pcAddr, _ = lorom.BusAddressToPak(rupeeAddr)
+		a = asm.NewEmitter(p.rom.Slice(pcAddr, 4), true)
+		a.SetBase(rupeeAddr)
+		a.JSL(r.rupeeHook.addr)
+		if err := a.Finalize(); err != nil {
+			return err
+		}
+		a.WriteTextTo(textBuf)
+	}
+
 	return nil
 }
 
@@ -540,6 +555,8 @@ type patchROM struct {
 	stageChain     uint32
 	// the hook in Dungeon_LoadRoom that applies staged manipulable objects; see emitManipStageHook:
 	manipStageHook romBlock
+	// the hook at the end of DeleteRupeeTile that logs the rupees deleted; see emitRupeeHook:
+	rupeeHook romBlock
 	// called by preMain; see emitManipPending:
 	manipPending romBlock
 	// called by the manip stage hook and manipPending:
@@ -641,6 +658,10 @@ func (r *patchROM) routines() []patchRoutine {
 			emitManipStageHook(a, r.manipStageObject.addr, r.manipStageBlock.addr)
 			return nil
 		}},
+		{&r.rupeeHook, func(a *asm.Emitter) error {
+			emitRupeeHook(a)
+			return nil
+		}},
 		{&r.manipPending, func(a *asm.Emitter) error {
 			emitManipPending(a, r.fnRoomDraw, r.fnBank01RTL, r.manipPendingBlock.addr)
 			return nil
@@ -693,6 +714,7 @@ func (r *patchROM) emitInit(a *asm.Emitter) {
 	emitRemoteInit(a)
 	emitMap16StageInit(a)
 	emitManipStageInit(a)
+	emitRupeeInit(a)
 	a.PLB()
 	a.PLP()
 	a.Comment("the code patched over at $00:802F:")
@@ -729,6 +751,7 @@ func (r *patchROM) measure() (err error) {
 	r.nmiHooks.name = "NMI hooks"
 	r.map16StageHook.name = "map16 stage hook"
 	r.manipStageHook.name = "manip stage hook"
+	r.rupeeHook.name = "rupee hook"
 	r.manipPending.name = "manip pending"
 	r.manipStageObject.name = "manip stage object"
 	r.manipStageBlock.name = "manip stage block"

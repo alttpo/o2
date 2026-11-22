@@ -169,6 +169,7 @@ type Player struct {
 	EnemiesKilled enemiesKilledRemote
 	// the tile room overlord of the player's room (see synctiles.go):
 	FlyingTiles flyingTilesRemote
+	Rupees      rupeesRemote
 	// overworld entrance animations and other events (see syncowevents.go):
 	OwEvents owEventsRemote
 

@@ -45,7 +45,7 @@ type sendState struct {
 	location, crystal, manip, smallKeys, hearts changeSender
 	sprites, enemiesKilled                      changeSender
 	// the room's messages to the sector:
-	torches, star, roomManip, roomState, roomDoors, flyingTiles, roomKills changeSender
+	torches, star, roomManip, roomState, roomDoors, flyingTiles, roomKills, rupees changeSender
 	// whether the crystal switch was last sent as known:
 	crystalSentValid bool
 	// the compact messages (see compact.go):
@@ -260,6 +260,7 @@ func (g *Game) addRoom(m *gameBroadcastMessage) {
 	g.addOnChange(m, &st.roomDoors, roomRefresh, g.SerializeRoomDoors)
 	g.addOnChange(m, &st.flyingTiles, roomRefresh, g.SerializeFlyingTiles)
 	g.addOnChange(m, &st.roomKills, roomRefresh, g.SerializeRoomKills)
+	g.addOnChange(m, &st.rupees, roomRefresh, g.SerializeRupees)
 }
 
 // sramSender is what was last sent of an SRAM range that is sent only where it changed.

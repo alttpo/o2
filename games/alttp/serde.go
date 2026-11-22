@@ -52,6 +52,7 @@ const (
 	MsgFlyingTiles      MessageType = 0x1D // tile room overlord state of a room, broadcastSector; see synctiles.go
 	MsgRoomKills        MessageType = 0x1E // kill triggers fired in a room, broadcastSector; see syncroomkills.go
 	MsgEnemiesKilled    MessageType = 0x1F // enemies killed in a room or area, broadcastSector; see syncenemieskilled.go
+	MsgRupees           MessageType = 0x20 // rupees of rupee floors deleted in a room, broadcastSector; see syncrupees.go
 )
 
 // o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
@@ -102,6 +103,7 @@ func (g *Game) initSerde() {
 		MsgFlyingTiles:      g.DeserializeFlyingTiles,
 		MsgRoomKills:        g.DeserializeRoomKills,
 		MsgEnemiesKilled:    g.DeserializeEnemiesKilled,
+		MsgRupees:           g.DeserializeRupees,
 		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
@@ -278,6 +280,7 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		// room and area specific state received so far belongs to the previous location:
 		p.Star.valid = false
 		p.FlyingTiles.valid = false
+		p.Rupees.valid = false
 		p.Room.valid = false
 		p.Doors.valid = false
 		p.Kills.valid = false

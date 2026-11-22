@@ -338,6 +338,17 @@ func (g *Game) generateUpdateAsm(a *asm.Emitter) bool {
 					g.updData.reset(mark)
 				}
 			}
+			if u, ta := g.generateRupeesUpdate(newEmitter, genIndex); u != nil {
+				// don't emit the routine if it pushes us over the code size limit:
+				if ta.Len()+a.Len()+epilogSize <= updateBufSize {
+					genIndex++
+					asmConfirmers = append(asmConfirmers, u)
+					g.rupees.inflight = u
+
+					a.Append(ta)
+					updated = true
+				}
+			}
 		}
 
 		if g.SyncTorches {

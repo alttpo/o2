@@ -116,6 +116,10 @@ func TestPatcher_WritesOnlyFreeROM(t *testing.T) {
 			stage := fns[fnOverworldHandleOverlays]
 			allowed = append(allowed, romSpan{stage, stage + uint32(len(map16StageHookExpected))},
 				romSpan{manipStageHookAddr, manipStageHookAddr + uint32(len(manipStageHookExpected))})
+			if rupee, ok := fns[fnDeleteRupeeTile]; ok {
+				// the JSL that replaces `LDA #$01 : STA $14`:
+				allowed = append(allowed, romSpan{rupee + rupeeHookOffset, rupee + rupeeHookOffset + 4})
+			}
 			isAllowed := func(addr uint32) bool {
 				for _, s := range allowed {
 					if s.contains(addr) {

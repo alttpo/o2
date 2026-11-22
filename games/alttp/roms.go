@@ -64,6 +64,10 @@ const (
 	// $0E; 8-bit A/X/Y. Randomizers hook the spawn itself but keep this entry point. Ends with RTS, so it is called
 	// through fnBank01RTL:
 	fnRoomTagSpawnPrize
+	// DeleteRupeeTile: $00/$02 = Y/X of a rupee of a rupee floor, 8-bit A; replaces its two tiles and their attributes,
+	// queues a VRAM stripe and sets $0403 bit $10, without giving the rupees. JSL, RTL, returns with 8-bit registers.
+	// The patch hooks its end (see syncrupees.go):
+	fnDeleteRupeeTile
 )
 
 func (g *Game) isVTRandomizer() bool {
@@ -134,6 +138,7 @@ func fillRomUS10(fns map[romFunction]uint32) {
 	fns[fnOverworldHandleOverlays] = 0x02EF29
 	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A9
 	fns[fnRoomTagSpawnPrize] = 0x01C731
+	fns[fnDeleteRupeeTile] = 0x01E8BD
 }
 
 func fillRomJP10(fns map[romFunction]uint32) {
@@ -162,4 +167,5 @@ func fillRomJP10(fns map[romFunction]uint32) {
 	fns[fnOverworldHandleOverlays] = 0x02EC8D
 	fns[fnUpdateTilemapWithCommonObject] = 0x01E7A7
 	fns[fnRoomTagSpawnPrize] = 0x01C731
+	fns[fnDeleteRupeeTile] = 0x01E8BB
 }

@@ -76,6 +76,7 @@ Values match alttpo's `GameState::deserialize`.
 | 0x1D | flying floor tiles (tile room overlord) | yes (per sector) | yes (per sector) | used |
 | 0x1E | room kill triggers fired | yes (per sector, last) | yes (per sector, last) | used |
 | 0x1F | enemies killed in the room or area | yes (per sector, own packet) | yes (per sector, own packet) | used |
+| 0x20 | rupees of rupee floors deleted in the room | yes (per sector, last) | yes (per sector, last) | used |
 | 0x80 | o2: run times | n/a | yes, **own packet** | used |
 | 0x81 | group reset state machine | yes, own packet (`RunTiming.as`) | yes, **own packet** | used |
 | 0x82 | small keys (delta based) | yes (main packet) | yes, own packet | used |
@@ -654,6 +655,30 @@ the same room see the same floor tiles fly at the same time.
   flying for the remote player are not spawned here.
 - **Settings.** "Underworld (Local)" in both. alttpo players with "Sync enemies" also copy the
   overlords of the player owning the room's enemies, which agrees with this.
+
+## Rupee floors
+
+o2 (`games/alttp/syncrupees.go`) and alttpo (`Rupees.as`) share the rupees of the current room's rupee floors that
+were picked up, so they disappear for every player in the room, e.g. in the north east quadrant of the Palace of
+Darkness room `$099`.
+
+- **The rupees.** A rupee floor (room object `$12` of subtype 3) draws 3x3 rupees of 8x16 pixels into the lower layer
+  (`$7E2000`), with tile attribute `$60` in `$7F2000`. Walking over one gives 5 rupees and calls `DeleteRupeeTile`
+  (`$01E8BD` US, `$01E8BB` JP and randomizers) with `$00`/`$02` = Y/X, which replaces its two tiles with `$190F` and
+  their attributes, queues a VRAM stripe (`$1000`) and sets `$0403` bit `$10`. A room whose bit `$10` is set when it
+  loads has no rupees at all; the bit is shared with the room's flags, but other players in the room kept seeing the
+  rupees until they reloaded it.
+- **Sampling.** o2's patch hooks the end of `DeleteRupeeTile` (`LDA #$01 : STA $14` at +$87) to log the tilemap offset
+  of each rupee deleted (the routine's `$06`, `(y/8 * 64 + x/8) * 2`) in SRAM with the room (`$A0`); alttpo logs the
+  same with a PC interceptor at the start of the routine. A rupee deleted in another room empties the log.
+- **Message 0x20**, broadcastSector: `room u16`, `count u8` (at most 32), `count` times `pos u16`. Both send it in the
+  dungeon module while the log is for the current room, last in the room state packet. A receiver drops a player's
+  rupees whenever that player's location changes.
+- **Applying.** In submodule 0 of the dungeon module, the rupees remote players in the same room (and team) deleted
+  whose attribute is still `$60` here are deleted with `DeleteRupeeTile` (without giving the rupees), at most 4 per
+  frame and while the VRAM stripe buffer offset is below `$68`. They are logged too, so they are passed on to players
+  who enter later.
+- **Settings.** "Underworld (Local)" in both.
 
 ## Enemies killed
 

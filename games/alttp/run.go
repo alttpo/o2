@@ -411,6 +411,8 @@ func (g *Game) enqueueSRAMRead(q []snes.Read) []snes.Read {
 	q = g.enqueueLinkColorRead(q)
 	// the overlords, to find a tile room overlord in the underworld:
 	q = g.enqueueFlyingTilesRead(q, true)
+	// the rupees deleted in the room:
+	q = g.enqueueRupeesRead(q)
 	return q
 }
 
@@ -629,6 +631,7 @@ func (g *Game) readMainComplete(rsps []snes.Response) {
 				g.readSpriteResponse(rsp)
 				g.readLinkColorResponse(rsp)
 				g.readRunTimingResponse(rsp, readAt)
+				g.readRupeesResponse(rsp)
 			}
 		}
 

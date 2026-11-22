@@ -63,7 +63,7 @@ func msgTypeName(t MessageType) string {
 		MsgPvP: "pvp", MsgPlayerName: "name", MsgUniqTiles: "uniq tiles", MsgNakUniqTiles: "uniq tiles nak",
 		MsgMap16: "map16", MsgManip: "manip", MsgStarSwitch: "star switch", MsgRoomState: "room state",
 		MsgRoomDoors: "room doors", MsgOwEvents: "ow events", MsgFlyingTiles: "flying tiles",
-		MsgRoomKills: "room kills", MsgEnemiesKilled: "enemies killed", MsgO2RunTimes: "run times",
+		MsgRoomKills: "room kills", MsgEnemiesKilled: "enemies killed", MsgRupees: "rupees", MsgO2RunTimes: "run times",
 		MsgReset: "reset", MsgSmallKeys: "small keys", MsgHearts: "hearts", MsgRunTiming: "run timing",
 		MsgRunRestore: "run restore", MsgRunGap: "run gap",
 	}

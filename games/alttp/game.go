@@ -162,6 +162,7 @@ type Game struct {
 	crystalSwitch crystalSwitchLocal
 	starSwitch    starSwitchLocal
 	flyingTiles   flyingTilesLocal
+	rupees        rupeesLocal
 	roomState     roomStateLocal
 	bossPrize     bossPrizeLocal
 	enemiesKilled enemiesKilledLocal
@@ -347,6 +348,7 @@ func (g *Game) FirstFrame() {
 	g.resetStarSwitch()
 	g.resetEnemiesKilled()
 	g.resetFlyingTiles()
+	g.resetRupees()
 	g.resetRoomState()
 	g.resetMap16()
 	g.resetManip()

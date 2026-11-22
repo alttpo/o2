@@ -100,8 +100,8 @@ func CreateTestGame(rom *snes.ROM, system *emulator.System) *Game {
 	// make all JSL destinations contain a single RTL instruction:
 	g.fillRomFunctions()
 	for fn, addr := range g.romFunctions {
-		if fn == fnOverworldHandleOverlays {
-			// not called with JSL; the patch hooks the code there:
+		if fn == fnOverworldHandleOverlays || fn == fnDeleteRupeeTile {
+			// not called with JSL, or the test ROM has a version of it (writeTestDeleteRupeeTile) that the patch hooks:
 			continue
 		}
 		// 0x6B RTL
