@@ -3,6 +3,7 @@ package alttp
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"o2/client"
 	"o2/client/protocol04"
@@ -24,8 +25,9 @@ func broadcastSector(location uint32) uint64 {
 	return uint64(location)
 }
 
-// sendGroupMessage fills in the common GroupMessage fields and sends it as a protocol 04 packet.
-func (g *Game) sendGroupMessage(c games.Client, gm *protocol04.GroupMessage) {
+// sendGroupMessage fills in the common GroupMessage fields and sends it as a protocol 04 packet. segs are where the
+// game messages in gm.Data start, for the bandwidth counters (see bandwidth.go).
+func (g *Game) sendGroupMessage(c games.Client, gm *protocol04.GroupMessage, kind string, segs []int) {
 	gm.Group = string(c.Group())
 	gm.PlayerTime = time.Now().UnixNano()
 	gm.ServerTime = 0
@@ -38,6 +40,7 @@ func (g *Game) sendGroupMessage(c games.Client, gm *protocol04.GroupMessage) {
 		return
 	}
 
+	g.recordSent(kind, gm.Kind == protocol04.BroadcastSector, gm.Data, segs, len(b)+udpIPv4Overhead)
 	c.Write() <- b
 }
 
@@ -46,13 +49,44 @@ type gameBroadcastMessage struct {
 	bytes.Buffer
 
 	g *Game
+	// segs are where the messages added with add or addBytes start:
+	segs []int
 }
+
+// gameHeaderSize is the size of the game packet header: serialization version, team and frame:
+const gameHeaderSize = 3
 
 func (m *gameBroadcastMessage) SendToClient(c games.Client) {
 	m.g.sendGroupMessage(c, &protocol04.GroupMessage{
 		Kind: protocol04.BroadcastAll,
 		Data: m.Bytes(),
-	})
+	}, "all", m.segs)
+}
+
+// add writes a game message with f, recording where it starts for the bandwidth counters.
+func (m *gameBroadcastMessage) add(f func(w io.Writer) error) error {
+	start := m.Len()
+	if err := f(m); err != nil {
+		return err
+	}
+	if m.Len() > start {
+		m.segs = append(m.segs, start)
+	}
+	return nil
+}
+
+// addBytes writes a serialized game message, recording where it starts for the bandwidth counters.
+func (m *gameBroadcastMessage) addBytes(b []byte) {
+	if len(b) == 0 {
+		return
+	}
+	m.segs = append(m.segs, m.Len())
+	m.Write(b)
+}
+
+// empty reports whether no game message was written after the header.
+func (m *gameBroadcastMessage) empty() bool {
+	return m.Len() <= gameHeaderSize
 }
 
 // gameSectorMessage carries game state broadcast only to the clients in the same sector as the local player (see
@@ -69,7 +103,7 @@ func (m *gameSectorMessage) SendToClient(c games.Client) {
 		Kind:         protocol04.BroadcastSector,
 		TargetSector: m.targetSector(),
 		Data:         m.Bytes(),
-	})
+	}, "sector", m.segs)
 }
 
 func (m *gameSectorMessage) targetSector() uint64 {
@@ -86,7 +120,7 @@ type gameJoinMessage struct {
 func (m *gameJoinMessage) SendToClient(c games.Client) {
 	m.g.sendGroupMessage(c, &protocol04.GroupMessage{
 		Kind: protocol04.JoinGroup,
-	})
+	}, "join", nil)
 }
 
 type gameEchoMessage struct {
@@ -96,7 +130,7 @@ type gameEchoMessage struct {
 func (m *gameEchoMessage) SendToClient(c games.Client) {
 	m.g.sendGroupMessage(c, &protocol04.GroupMessage{
 		Kind: protocol04.Echo,
-	})
+	}, "echo", nil)
 }
 
 func (g *Game) makeBroadcastMessage() (m *gameBroadcastMessage) {

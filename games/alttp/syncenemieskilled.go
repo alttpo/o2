@@ -50,8 +50,8 @@ const (
 	// the game remembers the masks of the last 4 rooms visited ($0B80..$0B87, most recent first, $FFFF for none):
 	enemiesKilledRecentRooms = 4
 	enemiesKilledRecentAddr  = 0x0B80
-	// a received room's mask is used for this long after it was last received; rooms other than the player's current
-	// room are sent every 12 frames:
+	// a received room's mask is used for this long after it was last received; the player's current room is sent every
+	// 16 frames and the others every 48:
 	enemiesKilledRoomTTL  = 2 * time.Second
 	enemiesKilledMaxBytes = 16
 )
@@ -686,30 +686,25 @@ func (g *Game) generateEnemiesKilledUpdate(newEmitter func() *asm.Emitter, index
 	return
 }
 
-// sendEnemiesKilled sends message 0x1F to the room's or the area's sector every 4 frames, once sampled there.
-func (g *Game) sendEnemiesKilled() {
+// sendEnemiesKilledRecent sends the masks of the other rooms the game remembers, one every enemiesKilledRefresh frames,
+// each to its room's sector so that a player entering that room gets them. The room or area the player is in goes in
+// the sector packet (see sendPackets).
+func (g *Game) sendEnemiesKilledRecent() {
 	ek := &g.enemiesKilled
-	if !ek.valid || g.monotonicFrameTime&3 != 0 {
+	if !ek.valid || ek.kind != enemiesKilledUW || g.local.Module != 0x07 {
 		return
 	}
-	m := g.makeSectorMessage()
-	if err := g.SerializeEnemiesKilled(m); err != nil {
-		panic(err)
-	}
-	g.send(m)
-
-	// the masks of the other rooms the game remembers, one every 4 frames, each to its room's sector so that a player
-	// entering that room gets them:
-	if ek.kind != enemiesKilledUW || g.local.Module != 0x07 {
+	if g.monotonicFrameTime%enemiesKilledRefresh != enemiesKilledRefresh/2 {
 		return
 	}
-	i := 1 + int(g.monotonicFrameTime>>2)%(enemiesKilledRecentRooms-1)
-	if rc := ek.recent[i]; rc.valid && rc.mask != 0 && uint32(rc.room) != ek.id {
+	st := &g.sendState
+	st.enemiesKilledRecent = st.enemiesKilledRecent%(enemiesKilledRecentRooms-1) + 1
+	if rc := ek.recent[st.enemiesKilledRecent]; rc.valid && rc.mask != 0 && uint32(rc.room) != ek.id {
 		m := g.makeSectorMessageTo(0x010000 | uint32(rc.room))
 		b := []byte{uint8(MsgEnemiesKilled), enemiesKilledUW}
 		b = binary.LittleEndian.AppendUint16(b, rc.room)
 		b = binary.LittleEndian.AppendUint16(b, rc.mask)
-		_, _ = m.Write(b)
+		m.addBytes(b)
 		g.send(m)
 	}
 }

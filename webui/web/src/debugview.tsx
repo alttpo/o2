@@ -20,6 +20,22 @@ interface DebugState {
     inGame: boolean;
 }
 
+// the "game/bandwidth" view model: what o2 sent in the last second, per game message type (see bandwidth.go):
+interface BandwidthRow {
+    name: string;
+    // messages per second, their bytes per second, and with their share of the packets' fixed cost:
+    msgs: number;
+    bytes: number;
+    wire: number;
+}
+
+interface BandwidthState {
+    packets: number;
+    sectorPackets: number;
+    wire: number;
+    rows: BandwidthRow[] | null;
+}
+
 type Send = (...ops: DebugOp[]) => void;
 
 interface Common {
@@ -430,11 +446,50 @@ function Enemies({send, ready}: Common) {
     );
 }
 
+// Bandwidth shows what o2 sends, per message type. Wire bytes include each message's share of its packet's envelope
+// and IPv4/UDP headers.
+function Bandwidth({bw}: { bw?: BandwidthState }) {
+    const kib = (b: number) => (b / 1024).toFixed(2);
+    return (
+        <Section title="Bandwidth sent"
+                 note="Last second, per message type. Wire includes each message's share of its packet's headers.">
+            {!bw ? <div class="dbg-note">Nothing sent yet.</div> : (
+                <Fragment>
+                    <div>
+                        {bw.packets.toFixed(1)} packets/s ({bw.sectorPackets.toFixed(1)} to the sector), {kib(bw.wire)} KiB/s
+                    </div>
+                    <table class="dbg-bandwidth">
+                        <thead>
+                        <tr>
+                            <th style="text-align: left">message</th>
+                            <th>msgs/s</th>
+                            <th>B/s</th>
+                            <th>wire KiB/s</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {(bw.rows ?? []).map(r => (
+                            <tr key={r.name}>
+                                <td style="text-align: left">{r.name}</td>
+                                <td style="text-align: right">{r.msgs.toFixed(1)}</td>
+                                <td style="text-align: right">{r.bytes.toFixed(0)}</td>
+                                <td style="text-align: right">{kib(r.wire)}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </Fragment>
+            )}
+        </Section>
+    );
+}
+
 export default function DebugApp() {
     const {ch, lost, mainWrapper, vm} = useConnection();
 
     const created = vm.game?.isCreated || false;
     const state = vm["game/debug"] as DebugState | undefined;
+    const bw = vm["game/bandwidth"] as BandwidthState | undefined;
     const {gfx, error} = useGfx(created);
 
     const sram = state?.sram;
@@ -495,6 +550,7 @@ export default function DebugApp() {
                             <Hearts {...p}/>
                             <Progress {...p}/>
                             <Enemies {...p}/>
+                            <Bandwidth bw={bw}/>
                         </div>
                     </div>
                 </section>

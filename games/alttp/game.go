@@ -96,9 +96,10 @@ type Game struct {
 
 	// the debug page's tools (see debug.go):
 	debug debugLocal
-
-	locHashTTL int
-	locHash    uint64
+	// what was sent, for the debug page (see bandwidth.go):
+	bandwidth bandwidthStats
+	// the state messages sent when they change (see send.go):
+	sendState sendState
 
 	// game-valid memory:
 	wram          [0x20000]byte
@@ -136,10 +137,8 @@ type Game struct {
 	// remote map16 changes staged for area loads (see map16stage.go):
 	map16Stage map16Stage
 	// remote manipulable objects staged for room loads (see manipstage.go):
-	manipStage stagedTable
-	// hash of the manipulable objects last sent to all players:
-	manipSentHash uint64
-	swordShield   swordShieldGfx
+	manipStage  stagedTable
+	swordShield swordShieldGfx
 
 	// remote players drawn by the game; see remotesprites.go:
 	remoteSprites remoteSpritesLocal

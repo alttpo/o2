@@ -101,14 +101,14 @@ func (h *spriteTestRig) frames(n int) (parsed alttpoParsed) {
 				h.t.Fatal(err)
 			}
 			payload := gm.Data
-			if gm.Kind != protocol04.BroadcastAll || (len(payload) > 3 && payload[3] >= 0x80) {
+			if (gm.Kind != protocol04.BroadcastAll && gm.Kind != protocol04.BroadcastSector) || (len(payload) > 3 && payload[3] >= 0x80) {
 				continue
 			}
-			_, p, err := alttpoParseFull(payload)
+			types, p, err := alttpoParseFull(payload)
 			if err != nil {
 				h.t.Fatalf("alttpo would fail to parse o2 packet: %v", err)
 			}
-			if len(payload) > 3 && payload[3] == byte(MsgSprites1) {
+			if bytes.IndexByte(types, byte(MsgSprites1)) >= 0 {
 				// latest sprites:
 				parsed.sprites = p.sprites
 			}

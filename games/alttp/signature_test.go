@@ -89,7 +89,7 @@ func TestPatchSignature_Mismatch(t *testing.T) {
 			}
 			for f := 0; f < 4; f++ {
 				// the location packet would be sent again:
-				gs.g.locHashTTL = 0
+				gs.g.sendState.location.ok = false
 				gs.runFrame(t)
 				if gs.g.updateStage != 0 {
 					t.Fatalf("update routine written to an unverified ROM")

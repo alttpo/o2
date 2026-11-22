@@ -342,11 +342,12 @@ func (g *Game) readLinkSprites() {
 	s.fresh = true
 }
 
-// sendLinkSprites broadcasts any new unique tiles and the sprites sampled this frame.
-func (g *Game) sendLinkSprites() {
+// sendUniqTiles broadcasts the unique tiles not sent yet, to all players: each is sent once, so that a player who
+// enters the sector later has them (and asks for any it lacks with a NAK). The sprites go to the sector (see
+// addLinkSprites), since players only draw the players in their own location.
+func (g *Game) sendUniqTiles() {
 	s := &g.linkSprites
 
-	// send unique tiles first so receivers have them by the time they draw the sprites:
 	for len(s.pending) > 0 {
 		n := len(s.pending)
 		if n > uniqTilesPerPacket {
@@ -361,25 +362,6 @@ func (g *Game) sendLinkSprites() {
 		g.send(m)
 		s.pending = s.pending[n:]
 	}
-
-	if !s.fresh {
-		return
-	}
-	s.fresh = false
-
-	// debounce frames where Link has no sprites, e.g. when the copy was read while being written
-	if len(s.sprites) == 0 {
-		s.linkMissingFrames++
-		if s.linkMissingFrames < 2 {
-			return
-		}
-	} else {
-		s.linkMissingFrames = 0
-	}
-
-	m := g.makeBroadcastMessage()
-	g.SerializeLinkSprites(m, s.sprites)
-	g.send(m)
 }
 
 // SerializeUniqTiles writes message 0x15 with the tile data for the given unique tile indices.
@@ -405,9 +387,10 @@ func (g *Game) SerializeUniqTiles(w io.Writer, absidx []uint16) (err error) {
 	return
 }
 
-// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each sprite palette is
-// sent along with the first sprite that uses it: alttpo draws remote sprites only with the palettes they sent.
-func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
+// SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each palette in
+// sendPalette is sent along with the first sprite that uses it. alttpo draws remote sprites with the palettes it last
+// received from the player.
+func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite, sendPalette [8]bool) {
 	s := &g.linkSprites
 	_ = binary.Write(w, binary.LittleEndian, uint8(MsgSprites1))
 	_ = binary.Write(w, binary.LittleEndian, uint8(len(sprites)))
@@ -415,8 +398,8 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 	var paletteSent [8]bool
 	for _, sp := range sprites {
 		b4 := sp.b[4]
-		sendPalette := !paletteSent[sp.pal]
-		if sendPalette {
+		withPalette := sendPalette[sp.pal] && !paletteSent[sp.pal]
+		if withPalette {
 			b4 |= 0x80
 			paletteSent[sp.pal] = true
 		}
@@ -428,7 +411,7 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite) {
 		for _, idx := range sp.absidx[:n] {
 			_ = binary.Write(w, binary.LittleEndian, idx)
 		}
-		if sendPalette {
+		if withPalette {
 			_, _ = w.Write(s.palettes[sp.pal][:])
 		}
 	}

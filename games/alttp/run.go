@@ -294,6 +294,7 @@ func (g *Game) run() {
 
 			// update the debug page's view of the game:
 			g.notifyDebugState()
+			g.notifyBandwidth()
 			break
 
 		case <-slowbeat.C:
