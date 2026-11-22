@@ -3,7 +3,10 @@ package alttp
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"testing"
+
+	"o2/snes"
 
 	"github.com/alttpo/snes/mapping/lorom"
 )
@@ -641,4 +644,55 @@ func TestMap16Scenario_StagedOnlyFromPlayersThere(t *testing.T) {
 	h.gs[0].e.WRAM[skSubModule] = 0x03
 	h.runAreaLoad(0)
 	h.expectNoChange("g2 left", 0, m16Pos)
+}
+
+// TestReadMap16BombDoor reads the bombed opening's tiles from the real ROMs that are available: JP ROMs and the
+// randomizers based on them number them $0DAE/$0DAF instead of $0DB4/$0DB5.
+func TestReadMap16BombDoor(t *testing.T) {
+	cases := []struct {
+		file        string
+		left, right uint16
+	}{
+		{"alttp-jp-vanilla.sfc", 0x0DAE, 0x0DAF},
+		{"alttp-us.sfc", 0x0DB4, 0x0DB5},
+		{"alttpr - NoGlitches-standard-ganon_ry08z8Q5y5.sfc", 0x0DAE, 0x0DAF},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			contents, err := os.ReadFile(c.file)
+			if err != nil {
+				t.Skipf("ROM not available: %v", err)
+			}
+			rom, err := snes.NewROM(c.file, contents)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l, r := readMap16BombDoor(rom); l != c.left || r != c.right {
+				t.Errorf("expected $%04x/$%04x; got $%04x/$%04x", c.left, c.right, l, r)
+			}
+		})
+	}
+	// no ROM, or code that is not Overworld_BombTile's: the US tiles
+	if l, r := readMap16BombDoor(nil); l != map16BombDoorLeft || r != map16BombDoorRight {
+		t.Errorf("expected the US tiles without a ROM; got $%04x/$%04x", l, r)
+	}
+}
+
+// TestMap16Scenario_BombedOpeningJP is TestMap16Scenario_BombedOpening with the JP tiles.
+func TestMap16Scenario_BombedOpeningJP(t *testing.T) {
+	h := newM16Scenario(t, 2)
+	for _, gs := range h.gs {
+		gs.g.bombDoorLeft, gs.g.bombDoorRight, gs.g.bombDoorRead = 0x0DAE, 0x0DAF, true
+	}
+	h.inArea(0, m16Area)
+	h.inArea(1, m16Area)
+	h.frames(skSettleFrames)
+
+	h.changeMap16(0, m16Pos, 0x0DAE)
+	h.changeMap16(0, m16Pos, 0x0DAF)
+	h.setWRAMU16(0, 0x2000+uint32(m16Pos), 0x0DAE)
+	h.setWRAMU16(0, 0x2000+uint32(m16Pos+2), 0x0DAF)
+	h.frames(skSettleFrames)
+	h.expectTile("g1 bombed an opening: left half", 1, m16Pos, 0x0DAE, true)
+	h.expectTile("g1 bombed an opening: right half", 1, m16Pos+2, 0x0DAF, true)
 }

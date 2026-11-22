@@ -462,7 +462,10 @@ in the current overworld area. They replace alttpo's old tilemap sync (message 0
   left half one tile left of where it belongs and the opening could not be entered (and an o2 player passing it on
   made it come back that way to the player who bombed it, showing two right halves). Both now take such an entry as
   (`pos + 2`, `$0DB5`) when reading the local log, so it is sent fixed, and when receiving a remote log, for senders
-  that do not fix it yet.
+  that do not fix it yet. These are the US tiles; JP ROMs and the randomizers based on them use `$0DAE` and `$0DAF`,
+  so both read them from the ROM: the operands of `Overworld_BombTile`'s `CMP.w #left` at `$1BC1DD` and
+  `LDA.w #right` at `$1BC1F3` (the same addresses in both), falling back to the US tiles if the opcodes there are
+  not `$C9` and `$A9`.
 - **Same world.** The log is only read, and changes are only applied, while `$0FFF` agrees with the area's world (the
   dark world areas are `$40`-`$7F`), which it does not while a warp switches worlds. o2 reads `$0FFF` in the
   overworld instead of the underworld door table (`$1980..$19E9`), which is only used in the underworld, so the read

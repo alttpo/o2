@@ -56,11 +56,11 @@ import (
 // entry replaces a bush, rock or sign that is still there locally, the update routine also reveals the secret under
 // it (see syncsecrets.go).
 //
-// Bombing open a cave or house wall (Overworld_BombTile) logs the opening's right half ($0DB5) at the left half's
-// position instead of 2 bytes to the right of it: the log has ($pos, $0DB4) followed by ($pos, $0DB5). Applied as
-// logged, the right half would replace the left half one tile left of where it belongs, and the opening could not be
-// entered. Such an entry is taken as ($pos + 2, $0DB5) both when the local log is read and when a remote log is
-// received (see fixMap16Entry).
+// Bombing open a cave or house wall (Overworld_BombTile) logs the opening's right half ($0DB5 in US ROMs, $0DAF in JP
+// ROMs) at the left half's position instead of 2 bytes to the right of it: the log has ($pos, $0DB4) followed by
+// ($pos, $0DB5). Applied as logged, the right half would replace the left half one tile left of where it belongs, and
+// the opening could not be entered. Such an entry is taken as ($pos + 2, $0DB5) both when the local log is read and
+// when a remote log is received (see fixMap16Entry). The tiles are read from the ROM (see readMap16BombDoor).
 
 const (
 	map16LogIndex     = uint16(0x04AC)
@@ -87,16 +87,52 @@ type map16Entry struct {
 	Tile uint16
 }
 
-// the bombed wall opening Overworld_BombTile draws (left and right half), which it logs at the same position:
+// the bombed wall opening Overworld_BombTile draws (left and right half), which it logs at the same position, in US
+// ROMs. JP ROMs (and the randomizers based on them) number these map16 tiles differently ($0DAE and $0DAF), so they
+// are read from the ROM's code: the operands of Overworld_BombTile's `CMP.w #left` and `LDA.w #right`.
 const (
 	map16BombDoorLeft  = uint16(0x0DB4)
 	map16BombDoorRight = uint16(0x0DB5)
+
+	map16BombDoorLeftCMP  = uint32(0x1BC1DD)
+	map16BombDoorRightLDA = uint32(0x1BC1F3)
 )
+
+// readMap16BombDoor reads the map16 tiles of the bombed opening's halves from Overworld_BombTile in the ROM, or
+// returns the US ones if the code there is not as expected.
+func readMap16BombDoor(rom *snes.ROM) (left, right uint16) {
+	left, right = map16BombDoorLeft, map16BombDoorRight
+	if rom == nil {
+		return
+	}
+	operand := func(addr uint32, opcode uint8) (uint16, bool) {
+		if op, ok := romBusReadU8(rom, addr); !ok || op != opcode {
+			return 0, false
+		}
+		return romBusReadU16(rom, addr+1)
+	}
+	l, ok1 := operand(map16BombDoorLeftCMP, 0xC9)
+	r, ok2 := operand(map16BombDoorRightLDA, 0xA9)
+	if !ok1 || !ok2 || l == r {
+		return
+	}
+	return l, r
+}
+
+// map16BombDoor returns the map16 tiles of the bombed opening's halves of the ROM, reading them once.
+func (g *Game) map16BombDoor() (left, right uint16) {
+	if !g.bombDoorRead {
+		g.bombDoorRead = true
+		g.bombDoorLeft, g.bombDoorRight = readMap16BombDoor(g.rom)
+	}
+	return g.bombDoorLeft, g.bombDoorRight
+}
 
 // fixMap16Entry returns the entry e as the change it made, given the entry before it in the same log:
 // Overworld_BombTile logs the right half of a bombed opening at the left half's position.
-func fixMap16Entry(prev, e map16Entry) map16Entry {
-	if e.Tile == map16BombDoorRight && prev.Tile == map16BombDoorLeft && prev.Pos == e.Pos {
+func (g *Game) fixMap16Entry(prev, e map16Entry) map16Entry {
+	left, right := g.map16BombDoor()
+	if e.Tile == right && prev.Tile == left && prev.Pos == e.Pos {
 		e.Pos += 2
 	}
 	return e
@@ -320,7 +356,7 @@ func (g *Game) readMap16() {
 		e := map16Entry{Pos: g.wramU16(po), Tile: g.wramU16(to)}
 		if i > 0 {
 			// send where a bombed opening's right half really went:
-			e = fixMap16Entry(m.entries[i-1], e)
+			e = g.fixMap16Entry(m.entries[i-1], e)
 		}
 		m.entries[i] = e
 		m.known[e.Pos] = e.Tile
@@ -416,7 +452,7 @@ func (g *Game) DeserializeMap16(p *Player, r io.Reader) (err error) {
 		// senders that do not fix the entries of bombed openings yet (the entry before is in this message or an
 		// earlier one; logs are sent in order):
 		if i > 0 && rm.have[i-1] {
-			e = fixMap16Entry(rm.entries[i-1], e)
+			e = g.fixMap16Entry(rm.entries[i-1], e)
 		}
 		if rm.have[i] && rm.entries[i] != e && i < rm.applied {
 			// the sender's log was replaced without us noticing; apply again from here:
