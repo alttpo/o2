@@ -58,6 +58,10 @@ const (
 	debugOpFill = "fill"
 	// debugOpKill kills the enemies (not the items) of the room or area.
 	debugOpKill = "kill"
+	// debugOpWarp sends Link through the iris to the underworld entrance E (W = "entrance") or out of the
+	// underworld exit V to the overworld (W = "exit"). V is the index in the ROM's underworld exit table of the
+	// place's exit, which also tells which world it is in (see emitDebugWarp).
+	debugOpWarp = "warp"
 )
 
 // debugOp is an operation the web UI asks for.
@@ -70,6 +74,7 @@ type debugOp struct {
 	D int    `json:"d,omitempty"`
 	C int    `json:"c,omitempty"`
 	P int    `json:"p,omitempty"`
+	E uint8  `json:"e,omitempty"`
 }
 
 // debugQueued is a debugOp waiting for the next update routine.
@@ -196,6 +201,16 @@ func (op *debugOp) validate() error {
 			return fmt.Errorf("fill: unknown thing '%s'", op.W)
 		}
 	case debugOpKill:
+	case debugOpWarp:
+		if op.W != "entrance" && op.W != "exit" {
+			return fmt.Errorf("warp: unknown kind '%s'", op.W)
+		}
+		if op.V >= exitTableCount {
+			return fmt.Errorf("warp: bad exit $%02x", op.V)
+		}
+		if op.W == "entrance" && (op.E == 0 || op.E > maxEntrance) {
+			return fmt.Errorf("warp: bad entrance $%02x", op.E)
+		}
 	default:
 		return fmt.Errorf("unknown operation '%s'", op.T)
 	}
@@ -226,6 +241,10 @@ func (g *Game) generateDebugAsm(a *asm.Emitter, newEmitter func() *asm.Emitter) 
 			log.Printf("alttp: debug: %s expired\n", q.op.T)
 			n++
 			continue
+		}
+		if q.op.T == debugOpWarp && !g.debugCanWarp() {
+			// wait for Link to be on his feet in the overworld or the underworld (the menus also run updates):
+			break
 		}
 
 		ta := newEmitter()
@@ -375,6 +394,9 @@ func (g *Game) emitDebugOp(a *asm.Emitter, op *debugOp, no int) {
 			a.LDA_imm8_b(debugMaxBombs[i])
 			a.STA_long(0x7EF343)
 		}
+
+	case debugOpWarp:
+		g.emitDebugWarp(a, op, lbl)
 
 	case debugOpKill:
 		// like PrepareSpriteToDie: the death state with the poof timer. The sprites that are not enemies (the items

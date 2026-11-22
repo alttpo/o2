@@ -393,3 +393,93 @@ export const mapMarkers = [
     "Castle", "Kakariko", "Sahasrahla", "Pendants", "Master Sword", "Agahnim's Tower", "Darkness", "Crystals",
     "Ganon's Tower",
 ];
+
+// A place the page warps Link to: through its door into the underworld (entrance, $010E), or out of it onto the
+// overworld (exit, the index of its exit in the ROM's underworld exit table). The names are of the vanilla game; the
+// warps follow a randomizer's shuffled entrances. Only the places whose exit is in the exit table are listed: the
+// houses' exits are where Link entered them from.
+export interface Place {
+    name: string;
+    entrance: number;
+    exit: number;
+}
+
+const place = (name: string, entrance: number, exit: number): Place => ({name, entrance, exit});
+
+export const placeGroups: { name: string, places: Place[] }[] = [
+    {
+        name: "Light World dungeons", places: [
+            place("Hyrule Castle (South)", 0x04, 0x03),
+            place("Hyrule Castle (West)", 0x03, 0x02),
+            place("Hyrule Castle (East)", 0x05, 0x04),
+            place("Hyrule Castle Secret Entrance", 0x32, 0x33),
+            place("Sanctuary", 0x02, 0x01),
+            place("Eastern Palace", 0x08, 0x09),
+            place("Desert Palace (South)", 0x09, 0x0A),
+            place("Desert Palace (West)", 0x0B, 0x0C),
+            place("Desert Palace (East)", 0x0A, 0x0B),
+            place("Desert Palace (North)", 0x0C, 0x0D),
+            place("Tower of Hera", 0x33, 0x2D),
+            place("Agahnim's Tower", 0x24, 0x25),
+        ],
+    },
+    {
+        name: "Dark World dungeons", places: [
+            place("Palace of Darkness", 0x26, 0x27),
+            place("Swamp Palace", 0x25, 0x26),
+            place("Skull Woods (First Section)", 0x2A, 0x2B),
+            place("Skull Woods (Second Section, East)", 0x29, 0x2A),
+            place("Skull Woods (Second Section, West)", 0x28, 0x29),
+            place("Skull Woods (Final Section)", 0x2B, 0x2C),
+            place("Thieves' Town", 0x34, 0x35),
+            place("Ice Palace", 0x2D, 0x2E),
+            place("Misery Mire", 0x27, 0x28),
+            place("Turtle Rock (Front)", 0x35, 0x34),
+            place("Turtle Rock (Ledge, West)", 0x15, 0x16),
+            place("Turtle Rock (Ledge, East)", 0x19, 0x1A),
+            place("Turtle Rock (Isolated Ledge)", 0x18, 0x19),
+            place("Ganon's Tower", 0x37, 0x38),
+        ],
+    },
+    {
+        name: "Light World caves", places: [
+            place("Link's House", 0x01, 0x00),
+            place("Kakariko Well", 0x39, 0x3A),
+            place("Elder House (East)", 0x0E, 0x0F),
+            place("Elder House (West)", 0x0D, 0x0E),
+            place("Two Brothers House (East)", 0x10, 0x11),
+            place("Two Brothers House (West)", 0x0F, 0x10),
+            place("Bat Cave", 0x11, 0x12),
+            place("North Fairy Cave", 0x38, 0x39),
+            place("Lost Woods Hideout", 0x2C, 0x36),
+            place("Lumberjack Tree", 0x12, 0x13),
+            place("Old Man Cave (West)", 0x06, 0x07),
+            place("Old Man Cave (East)", 0x07, 0x08),
+            place("Old Man House (Bottom)", 0x30, 0x31),
+            place("Old Man House (Top)", 0x31, 0x32),
+            place("Death Mountain Return Cave (West)", 0x2E, 0x2F),
+            place("Death Mountain Return Cave (East)", 0x2F, 0x30),
+            place("Spectacle Rock Cave", 0x21, 0x22),
+            place("Spectacle Rock Cave (Top)", 0x22, 0x23),
+            place("Spectacle Rock Cave (Peak)", 0x23, 0x24),
+            place("Paradox Cave (Bottom)", 0x1E, 0x1F),
+            place("Paradox Cave (Middle)", 0x1F, 0x20),
+            place("Paradox Cave (Top)", 0x20, 0x21),
+            place("Fairy Ascension Cave (Bottom)", 0x1A, 0x1B),
+            place("Fairy Ascension Cave (Top)", 0x1B, 0x1C),
+            place("Spiral Cave (Bottom)", 0x1C, 0x1D),
+            place("Spiral Cave (Top)", 0x1D, 0x1E),
+        ],
+    },
+    {
+        name: "Dark World caves", places: [
+            place("Pyramid", 0x36, 0x37),
+            place("Bumper Cave (Bottom)", 0x16, 0x17),
+            place("Bumper Cave (Top)", 0x17, 0x18),
+            place("Superbunny Cave (Bottom)", 0x13, 0x14),
+            place("Superbunny Cave (Top)", 0x14, 0x15),
+            place("Hookshot Cave (South)", 0x3A, 0x3B),
+            place("Hookshot Cave (North)", 0x3B, 0x3C),
+        ],
+    },
+];

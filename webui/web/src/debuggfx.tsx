@@ -9,17 +9,19 @@ import {useEffect, useRef, useState} from "preact/hooks";
 
 // a debug operation the backend runs in the game; see debug.go:
 export interface DebugOp {
-    t: "set" | "progress" | "or" | "and" | "gfx" | "keys" | "hearts" | "fill" | "kill";
+    t: "set" | "progress" | "or" | "and" | "gfx" | "keys" | "hearts" | "fill" | "kill" | "warp";
     // address, value and mask for set, or and and:
     a?: number;
     v?: number;
     m?: number;
-    // the equipment for gfx, or what to fill for fill:
+    // the equipment for gfx, what to fill for fill, or "entrance" or "exit" for warp:
     w?: string;
     // the change for keys, and for hearts the containers and the pieces:
     d?: number;
     c?: number;
     p?: number;
+    // the entrance for warp; v is the place's exit:
+    e?: number;
 }
 
 export interface Gfx {

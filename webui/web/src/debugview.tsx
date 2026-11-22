@@ -8,7 +8,7 @@ import {DebugOp, Gfx, Icon, useGfx} from "./debuggfx";
 import {
     abilities, ARROW_MAX, ARROW_WORDS, BOMB_MAX, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
     bottleCycle, Choice, dungeonItems, dungeons, equipment, Getter, halfMagic, HEART_FULL,
-    HEART_HALF, MAGIC_METER_WORDS, mapMarkers, PANEL_H, PANEL_W, Placed, progressPanel, progressFlags, progressLevels,
+    HEART_HALF, MAGIC_METER_WORDS, mapMarkers, PANEL_H, placeGroups, PANEL_W, Placed, progressPanel, progressFlags, progressLevels,
     RUPEE_WORDS, SMALL_KEY_LIVE, SMALL_KEY_WORDS, SRAM_FIRST, yGrid
 } from "./debugdata";
 
@@ -446,6 +446,40 @@ function Enemies({send, ready}: Common) {
     );
 }
 
+// Warp sends Link through a place's door, into the underworld at its entrance or out onto the overworld at its exit.
+function Warp({send, ready}: Common) {
+    // the group and the index of the place chosen:
+    const [chosen, setChosen] = useState("0:0");
+    const [g, i] = chosen.split(":").map(n => parseInt(n, 10));
+    const pl = placeGroups[g]?.places[i];
+    return (
+        <Section title="Warp"
+                 note="Link goes through the iris like through a door. Warps wait for Link to stand in the overworld or the underworld.">
+            <div class="dbg-row">
+                <select value={chosen} onChange={e => setChosen((e.target as HTMLSelectElement).value)}>
+                    {placeGroups.map((grp, gi) => (
+                        <optgroup key={grp.name} label={grp.name}>
+                            {grp.places.map((p, pi) => <option key={p.name} value={gi + ":" + pi}>{p.name}</option>)}
+                        </optgroup>
+                    ))}
+                </select>
+            </div>
+            <div class="dbg-row">
+                <button type="button" disabled={!ready || !pl}
+                        title={pl && "Enter " + pl.name + " in the underworld"}
+                        onClick={() => pl && send({t: "warp", w: "entrance", e: pl.entrance, v: pl.exit})}>
+                    Underworld entrance
+                </button>
+                <button type="button" disabled={!ready || !pl}
+                        title={pl && "Leave " + pl.name + " onto the overworld"}
+                        onClick={() => pl && send({t: "warp", w: "exit", v: pl.exit})}>
+                    Overworld exit
+                </button>
+            </div>
+        </Section>
+    );
+}
+
 // Bandwidth shows what o2 sends, per message type. Wire bytes include each message's share of its packet's envelope
 // and IPv4/UDP headers.
 function Bandwidth({bw}: { bw?: BandwidthState }) {
@@ -550,6 +584,7 @@ export default function DebugApp() {
                             <Hearts {...p}/>
                             <Progress {...p}/>
                             <Enemies {...p}/>
+                            <Warp {...p}/>
                             <Bandwidth bw={bw}/>
                         </div>
                     </div>
