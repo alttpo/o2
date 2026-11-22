@@ -41,9 +41,11 @@ const owTop = 4 * 8;
 const owSprLeft = 2048;
 const owSprTop = 2132;
 
-// the underworld map is drawn in the game's own coordinates: 16 columns and 18 rows of rooms of 512x512 pixels:
+// the underworld map is drawn in the game's own coordinates: 16 columns and 19 rows of rooms of 512x512 pixels, the
+// last row holding only rooms $120..$127:
 const uwCols = 16;
-const uwRows = 18;
+const uwRows = 19;
+const uwRoomCount = 0x128;
 const uwRoom = 512;
 const uwWidth = uwCols * uwRoom;
 const uwHeight = uwRows * uwRoom;
@@ -112,6 +114,11 @@ function hex(value: number, digits: number): string {
     return value.toString(16).toUpperCase().padStart(digits, "0");
 }
 
+// uwHasRoom tells if there is an underworld room at row r, column c of the map; the last row is half empty:
+function uwHasRoom(r: number, c: number): boolean {
+    return r >= 0 && c >= 0 && c < uwCols && r * uwCols + c < uwRoomCount;
+}
+
 // gridPath is an SVG path of the lines between the rooms or areas; areas within a large area have none:
 function gridPath(screen: Screen, g: Geometry): string {
     const d: string[] = [];
@@ -123,7 +130,9 @@ function gridPath(screen: Screen, g: Geometry): string {
         for (let r = 0; r <= rows; r++) {
             let draw = false;
             if (r < rows) {
-                draw = screen === Screen.Underworld || c === 0 || c === cols || owBlock(r, c - 1) !== owBlock(r, c);
+                draw = screen === Screen.Underworld
+                    ? uwHasRoom(r, c - 1) || uwHasRoom(r, c)
+                    : c === 0 || c === cols || owBlock(r, c - 1) !== owBlock(r, c);
             }
             if (draw && segStart < 0) segStart = r;
             if (!draw && segStart >= 0) {
@@ -139,7 +148,9 @@ function gridPath(screen: Screen, g: Geometry): string {
         for (let c = 0; c <= cols; c++) {
             let draw = false;
             if (c < cols) {
-                draw = screen === Screen.Underworld || r === 0 || r === rows || owBlock(r - 1, c) !== owBlock(r, c);
+                draw = screen === Screen.Underworld
+                    ? uwHasRoom(r - 1, c) || uwHasRoom(r, c)
+                    : r === 0 || r === rows || owBlock(r - 1, c) !== owBlock(r, c);
             }
             if (draw && segStart < 0) segStart = c;
             if (!draw && segStart >= 0) {
@@ -153,9 +164,9 @@ function gridPath(screen: Screen, g: Geometry): string {
 }
 
 // inUnderworldMap tells if the player is in a room that is on the underworld map; the rooms of dungeons, caves and
-// houses are all below $120, including the rooms from $100 up (e.g. Link's house is room $104):
+// houses are all below $128, including the rooms from $100 up (e.g. Link's house is room $104):
 function inUnderworldMap(p: PlayerPosition): boolean {
-    return (p.location & 0x010000) !== 0 && (p.location & 0xFFFF) < uwCols * uwRows;
+    return (p.location & 0x010000) !== 0 && (p.location & 0xFFFF) < uwRoomCount;
 }
 
 // inGame tells if the player is in a module of the game itself, and not at the title screen, file select, intro or

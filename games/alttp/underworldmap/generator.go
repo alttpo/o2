@@ -1,5 +1,5 @@
 // Package underworldmap draws a map of every underworld room of A Link to the Past, laid out in a grid of 16 rooms
-// per row and 18 rows (rooms $000..$11F), straight from the game's ROM.
+// per row and 19 rows (rooms $000..$127, the last row half empty), straight from the game's ROM.
 //
 // The rooms are drawn by the game's own routines, run on an emulated SNES. A room's graphics depend on the entrance
 // Link came in by, as the entrance sets the dungeon's main tileset for every room reached from it, and the ROM has no
@@ -21,9 +21,9 @@ import (
 const (
 	// GridColumns and GridRows are the size of the map in rooms:
 	GridColumns = 0x10
-	GridRows    = 0x12
-	// RoomCount is the number of rooms in the map, $000..$11F:
-	RoomCount = GridColumns * GridRows
+	GridRows    = 0x13
+	// RoomCount is the number of rooms in the map, $000..$127; the rest of the last row is left black:
+	RoomCount = 0x128
 	// EntranceCount is the number of underworld entrances:
 	EntranceCount = 0x85
 )
