@@ -698,6 +698,70 @@ func TestRemoteSpritesScenario_SendsSparklesAndDust(t *testing.T) {
 	}
 }
 
+// A dungeon's crystal spawns the same sparkle ancilla ($3C) as Link's sword charge; its sparkles are not sent while the
+// prize exists, even with something else captured at the same time.
+func TestRemoteSpritesScenario_PrizeSparklesNotSent(t *testing.T) {
+	h := newRSScenario(t)
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	setOAM(0x10, 0x48, 0x70, 0xB7, 0x04, 0x00)
+	setOAM(0x11, 0x50, 0x72, 0xCF, 0x04, 0x00)
+	received := func() (chrs []uint8) {
+		for _, sp := range h.gs[0].g.players[1].Sprites.list {
+			if sp.b[2] >= 0x80 {
+				chrs = append(chrs, sp.b[2])
+			}
+		}
+		return
+	}
+
+	// Link's sword charge sparkle, alone and with dash dust:
+	e.WRAM[0x0C4A+3] = 0x3C
+	h.frames(4)
+	if chrs := received(); len(chrs) != 1 || chrs[0] != 0xB7 {
+		t.Fatalf("expected the sparkle; got %#02x", chrs)
+	}
+	e.WRAM[0x0C4A+4] = 0x1E
+	h.frames(4)
+	if chrs := received(); len(chrs) != 2 {
+		t.Fatalf("expected the sparkle and dust; got %#02x", chrs)
+	}
+
+	for _, prize := range capturePrizeAncillae {
+		e.WRAM[0x0C4A+5] = prize
+		// the sparkle alone, or with dash dust:
+		for _, other := range []uint8{0x00, 0x1E} {
+			e.WRAM[0x0C4A+4] = other
+			h.frames(4)
+			chrs := received()
+			if other == 0 && len(chrs) != 0 || other != 0 && (len(chrs) != 1 || chrs[0] != 0xCF) {
+				t.Errorf("prize %#02x, ancilla %#02x: sent %#02x", prize, other, chrs)
+			}
+		}
+	}
+}
+
+// alttpo sends the ripples and grass under a follower's feet, in the two OAM entries before the follower; o2 draws
+// only Link's.
+func TestRemoteExtraSprites_NoFollowerRipples(t *testing.T) {
+	sp := func(index, chr, attr uint8) remoteSprite {
+		return remoteSprite{index: index, b: [5]uint8{0x40, 0x60, chr, attr, 0}}
+	}
+	list := []remoteSprite{
+		// the follower, drawn by Follower_Draw:
+		sp(0x5C, 0xD8, 0x24), sp(0x5D, 0xD8, 0x64), sp(0x5E, 0x20, 0x28), sp(0x5F, 0x22, 0x28),
+		// Link's ripples, and his head and body:
+		sp(0x66, 0xC8, 0x22), sp(0x67, 0xC8, 0x62), sp(0x68, 0x00, 0x28), sp(0x69, 0x02, 0x28),
+	}
+	extras := remoteExtraSprites(list, remoteExtraMax)
+	if len(extras) != 2 || extras[0].index != 0x66 || extras[1].index != 0x67 {
+		t.Errorf("expected Link's grass only; got %+v", extras)
+	}
+}
+
 // While recoiling or jumping off a ledge, Link's shadow is drawn with chr $28; o2 sends it and draws it for remote
 // players, along with their dash dust.
 func TestRemoteSpritesScenario_ElevatedShadowAndDust(t *testing.T) {

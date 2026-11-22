@@ -817,7 +817,8 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 
 // remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow or the water ripples or grass under
 // his feet, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) from a remote player's sprites,
-// ordered by OAM index.
+// ordered by OAM index. The ripples and grass under a follower's feet, which alttpo sends, are left out (see
+// isFollowerFootSprite).
 func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
 	for _, sp := range sortedByIndex(list) {
 		if len(extras) >= max {
@@ -826,9 +827,25 @@ func remoteExtraSprites(list []remoteSprite, max int) (extras []remoteSprite) {
 		if sp.b[1] == 0xF0 || sp.b[3]&1 != 0 || !(isCaptureChr(sp.b[2]) || isLinkFootChr(uint16(sp.b[2]))) {
 			continue
 		}
+		if isLinkFootChr(uint16(sp.b[2])) && isFollowerFootSprite(list, &sp) {
+			continue
+		}
 		extras = append(extras, sp)
 	}
 	return
+}
+
+// isFollowerFootSprite reports whether sp, a water ripple or tall grass chr (isLinkFootChr), is one of the two that
+// Follower_Draw draws under a follower's feet, in the OAM entries just before the follower's chr $20 or $22 (the
+// follower's own tiles in name table 0). Link's are among his own entries, which never hold the follower.
+func isFollowerFootSprite(list []remoteSprite, sp *remoteSprite) bool {
+	for i := range list {
+		n := &list[i]
+		if d := int(n.index) - int(sp.index); (d == 1 || d == 2) && n.b[3]&1 == 0 && (n.b[2] == 0x20 || n.b[2] == 0x22) {
+			return true
+		}
+	}
+	return false
 }
 
 // isBadTimeToDraw reports whether a player is in a module where alttpo doesn't draw or show them; same as alttpo's
@@ -1229,6 +1246,19 @@ var captureChrs = []uint16{
 	// their debris:
 	0x48, 0x58, 0x59,
 }
+
+// captureSparkleChrs are the chrs of the sparkle ancilla $3C (Ancilla3C_SpinAttackChargeSparkle), also drawn by other
+// sword and ice rod sparkles. A dungeon's crystal spawns the same ancilla around itself while it falls, sits on the
+// floor, is held up and rises (AncillaAdd_OccasionalSparkle), and every player in the room sees the crystal and its
+// sparkles already, so they are not captured while one of capturePrizeAncillae exists (see captureTables):
+var captureSparkleChrs = []uint16{0x80, 0x83, 0xB7}
+
+// ancillaSparkle is that sparkle ancilla:
+const ancillaSparkle = uint8(0x3C)
+
+// capturePrizeAncillae are the ancillae of a dungeon's prize: falling and sitting ($29), held up ($22) and rising
+// ($3E). Link holds up the items he receives with $22, and can't charge his sword then.
+var capturePrizeAncillae = []uint8{ancillaFallingPrize, ancillaItemReceipt, ancillaRisingPrize}
 
 // enemyDeathChrs are the chrs of an enemy's death poof (SpriteDeath_DrawPoof), explosion (SpriteModule_Explode) and
 // poof (SpriteModule_Poof); those also in captureChrs are not captured near such an enemy:

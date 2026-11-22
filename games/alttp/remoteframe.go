@@ -98,18 +98,36 @@ func remoteAllocTable() (slots [0x80 * remotePartMax]byte, free [0x80]byte) {
 // scanChrSlot is the bit of captureChrTable set for the chrs $00..$3F, which show the VRAM slots (remoteSlots):
 const scanChrSlot = 0x80
 
+// bits of the capture tables besides 1 (captureChrs) and 2 (captureShadowChrs): captureSparkle for
+// captureSparkleChrs, which are captured while a captured ancilla exists unless a capturePrize one does too (the
+// remoteFrame scan clears both from rcMask then; no chr has capturePrize):
+const (
+	captureSparkle = 0x04
+	capturePrize   = 0x40
+)
+
 // captureTables returns the capture tables: per ancilla type $00..$3F the bits of captureChrTable to capture while one
-// exists (1, or 3 for captureShadowCasters), and per chr $00..$FF its bits (1 for captureChrs, 2 for
-// captureShadowChrs, or'ed with captureChrEnemyFX for enemyDeathChrs and with scanChrSlot for $00..$3F).
+// exists (1 | captureSparkle, 3 | captureSparkle for captureShadowCasters, captureSparkle for ancillaSparkle, and
+// capturePrize for capturePrizeAncillae),
+// and per chr $00..$FF its bits (1 for captureChrs, captureSparkle for captureSparkleChrs, 2 for captureShadowChrs,
+// or'ed with captureChrEnemyFX for enemyDeathChrs and with scanChrSlot for $00..$3F).
 func captureTables() (types [0x40]byte, chrs [0x100]byte) {
 	for _, t := range captureAncillae {
-		types[t] = 1
+		types[t] = 1 | captureSparkle
 	}
 	for _, t := range captureShadowCasters {
-		types[t] = 3
+		types[t] = 3 | captureSparkle
+	}
+	// the sparkle ancilla draws nothing else:
+	types[ancillaSparkle] = captureSparkle
+	for _, t := range capturePrizeAncillae {
+		types[t] = capturePrize
 	}
 	for _, c := range captureChrs {
 		chrs[c] = 1
+	}
+	for _, c := range captureSparkleChrs {
+		chrs[c] = captureSparkle
 	}
 	for _, c := range captureShadowChrs {
 		chrs[c] = 2
@@ -754,6 +772,14 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 	a.Label("rf_ancilla_next")
 	a.DEX()
 	a.BPL("rf_ancilla")
+	a.Comment("a dungeon prize (its sparkles are the same ancilla as Link's) leaves out the sparkles; no chr has")
+	a.Comment("capturePrize, which is cleared too:")
+	a.LDA_dp(rcMask)
+	a.AND_imm8_b(capturePrize)
+	a.BEQ("rf_prize_done")
+	a.LDA_imm8_b(capturePrize | captureSparkle)
+	a.TRB_dp(rcMask)
+	a.Label("rf_prize_done")
 	a.Comment("a carried sprite or thrown scenery (both, with shadows):")
 	a.LDX_imm8_b(0x0F)
 	a.Label("rf_csprite")
