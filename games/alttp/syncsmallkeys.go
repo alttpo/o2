@@ -573,6 +573,14 @@ func (g *Game) DeserializeSmallKeys(p *Player, r io.Reader) (err error) {
 		}
 	}
 
+	// the base of the small key changes that follow (see compact.go):
+	p.Compact.noteSmallKeys(p, session, net, value, ts)
+	g.applySmallKeys(p, session, net, value, ts)
+	return
+}
+
+// applySmallKeys takes a remote player's small key state, from message 0x82 or 0x88.
+func (g *Game) applySmallKeys(p *Player, session uint32, net [smallKeyCount]int16, value [smallKeyCount]uint8, ts [smallKeyCount]uint32) {
 	rk := &p.SmallKeys
 	if p == g.local {
 		return
@@ -601,5 +609,4 @@ func (g *Game) DeserializeSmallKeys(p *Player, r io.Reader) (err error) {
 	rk.net = net
 	rk.value = value
 	rk.ts = ts
-	return
 }

@@ -64,6 +64,10 @@ const (
 	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
 	MsgRunRestore MessageType = 0x85 // gives a player back the run it lost, shared with alttpo; see runrestore.go
 	MsgRunGap     MessageType = 0x86 // a player's lost connection, shared with alttpo; see runrestore.go
+	// the compact messages, shared with alttpo; see compact.go:
+	MsgFeatures         MessageType = 0x87
+	MsgSmallKeysChanges MessageType = 0x88
+	MsgLocationChanges  MessageType = 0x89
 )
 
 type DeserializeFunc func(p *Player, r io.Reader) error
@@ -105,6 +109,9 @@ func (g *Game) initSerde() {
 		MsgRunTiming:        g.DeserializeRunTiming,
 		MsgRunRestore:       g.DeserializeRunRestore,
 		MsgRunGap:           g.DeserializeRunGap,
+		MsgFeatures:         g.DeserializeFeatures,
+		MsgSmallKeysChanges: g.DeserializeSmallKeysChanges,
+		MsgLocationChanges:  g.DeserializeLocationChanges,
 	}
 }
 
@@ -226,6 +233,13 @@ func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 }
 
 func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
+	defer func() {
+		if err == nil {
+			// the base of the location changes that follow (see compact.go):
+			p.Compact.noteLocation(p)
+		}
+	}()
+	lastModule := p.Module
 	if err = binary.Read(r, binary.LittleEndian, &p.Module); err != nil {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
@@ -236,6 +250,11 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 		panic(fmt.Errorf("error deserializing location: %w", err))
 	}
 	p.RunVerify.observeLocation(p)
+	if p.Module == 0x07 && lastModule != 0x07 && lastModule != 0x0E {
+		// entering a dungeon resets its crystal switches; the state last received is of an earlier visit, and players
+		// only send it while in the dungeon:
+		delete(p.WRAM, crystalSwitchOffs)
+	}
 
 	lastLocation := p.Location
 	if p.Location, err = readU24(r); err != nil {

@@ -153,6 +153,19 @@ func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
 			skip(int(u8()) * 7)
 		case 0x83: // hearts
 			skip(4 + 2 + 1)
+		case 0x87: // features
+			skip(1)
+		case 0x88: // small key changes
+			u8() // base
+			skip(int(u8()) * 8)
+		case 0x89: // location changes
+			u8() // base
+			m := u8()
+			for i := 0; i < 4; i++ {
+				if m&(1<<i) != 0 {
+					skip(2)
+				}
+			}
 		case 0x15: // uniqtiles
 			n := int(u8())
 			for i := 0; i < n; i++ {

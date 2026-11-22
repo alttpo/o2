@@ -341,6 +341,8 @@ func (g *Game) sendPlayerName() {
 		name[n] = ' '
 	}
 	m.Write(name[:])
+	// and that we read the compact messages (see compact.go), after the name since older clients stop at it:
+	m.addBytes([]byte{byte(MsgFeatures), featureCompact})
 	g.send(m)
 
 	// broadcast run timer to o2 clients only (older o2 versions read only this):

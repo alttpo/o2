@@ -153,6 +153,8 @@ type Player struct {
 
 	SmallKeys smallKeysRemote
 	Hearts    heartsRemote
+	// the features the player's client has and the full messages its changes are relative to (see compact.go):
+	Compact compactRemote
 
 	// overworld map16 change log and underworld manipulable objects, sent to players in the same area or room:
 	Map16 map16Remote

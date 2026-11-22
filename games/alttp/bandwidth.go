@@ -106,8 +106,9 @@ func (g *Game) recordSent(kind string, sector bool, data []byte, segs []int, wir
 		add(kind, 0, float64(wire))
 		return
 	}
-	if len(segs) == 0 {
-		segs = []int{header}
+	if len(segs) == 0 || segs[0] > header {
+		// messages written without add or addBytes come first:
+		segs = append([]int{header}, segs...)
 	}
 	total := len(data) - header
 	for i, start := range segs {

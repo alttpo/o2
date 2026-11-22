@@ -157,7 +157,7 @@ func TestSend_AllCoalescedOnChange(t *testing.T) {
 		if state > 1 {
 			t.Errorf("frame %d: expected the location and small keys in one packet; got %d", f, state)
 		}
-		keys += countType(pkts, protocol04.BroadcastAll, MsgSmallKeys)
+		keys += countType(pkts, protocol04.BroadcastAll, MsgSmallKeys) + countType(pkts, protocol04.BroadcastAll, MsgSmallKeysChanges)
 	}
 	if keys < 2 || keys > 3 {
 		t.Errorf("expected unchanged small keys sent 2 or 3 times in %d frames; got %d", 2*smallKeysRefresh, keys)
@@ -230,5 +230,85 @@ func TestSend_BandwidthCounters(t *testing.T) {
 		if c := s.kinds[name]; c == nil || c.msgs == 0 || c.payload == 0 {
 			t.Errorf("expected %q counted; got %+v", name, c)
 		}
+	}
+}
+
+// sendPackets runs on every read of the SNES, which can be more than once a game frame; it sends once per frame.
+func TestSend_OncePerGameFrame(t *testing.T) {
+	h := newSpriteTestRig(t)
+	h.sentPackets(4)
+	h.gs.g.sendPackets()
+	if n := len(h.gs.c.Wr); n != 0 {
+		t.Errorf("expected nothing sent again in the same game frame; got %d packets", n)
+	}
+}
+
+// Between clients that read them, the location and small keys go as changes to the last full message.
+func TestSend_CompactBetweenO2Players(t *testing.T) {
+	setupTestLogger(t)
+	var f []gameSyncTestFrame
+	dungeon := func(t testing.TB, gs [2]gameSync) {
+		for _, g := range gs {
+			g.e.WRAM[0x10] = 0x07
+			g.e.WRAM[0x1B] = 1
+		}
+	}
+	for i := 0; i < 80; i++ {
+		f = append(f, gameSyncTestFrame{preFrame: dungeon})
+	}
+	f[70].preFrame = func(t testing.TB, gs [2]gameSync) {
+		dungeon(t, gs)
+		if gs[0].g.legacyPeers() || gs[1].g.legacyPeers() {
+			t.Errorf("expected both to read the compact messages")
+		}
+		gs[0].e.WRAM[0x22] += 0x10
+		gs[0].g.smallKeys.net[3] = 1
+	}
+	f[79].postFrame = func(t testing.TB, gs [2]gameSync) {
+		s := &gs[0].g.bandwidth
+		s.mu.Lock()
+		for _, mt := range []MessageType{MsgLocationChanges, MsgSmallKeysChanges} {
+			if s.kinds[msgTypeName(mt)] == nil {
+				t.Errorf("expected %s sent", msgTypeName(mt))
+			}
+		}
+		s.mu.Unlock()
+
+		remote := gs[1].g.RemotePlayers()
+		if len(remote) != 1 {
+			t.Fatalf("expected one remote player; got %d", len(remote))
+		}
+		if p := remote[0]; p.X != gs[0].g.local.X {
+			t.Errorf("expected the X change received: %#04x != %#04x", p.X, gs[0].g.local.X)
+		}
+		if p := remote[0]; p.SmallKeys.applied[3] != 1 {
+			t.Errorf("expected the small key change received; got %d", p.SmallKeys.applied[3])
+		}
+	}
+	tc := newGameSyncTestCase("VT test", f)
+	tc.runGameSyncTest(t)
+}
+
+// With a player whose client doesn't read the compact messages, the full ones are sent as before.
+func TestSend_LegacyPeerGetsFullMessages(t *testing.T) {
+	h := newSpriteTestRig(t)
+	g := h.gs.g
+	old := &g.players[5]
+	old.IndexF = 5
+	g.SetTTL(old, 255)
+	g.activePlayersClean = false
+
+	var full, changes int
+	for _, pkts := range h.sentPackets(40) {
+		g.SetTTL(old, 255)
+		for _, mt := range []MessageType{MsgSmallKeys, MsgLocation} {
+			full += countType(pkts, protocol04.BroadcastAll, mt)
+		}
+		for _, mt := range []MessageType{MsgSmallKeysChanges, MsgLocationChanges} {
+			changes += countType(pkts, protocol04.BroadcastAll, mt)
+		}
+	}
+	if full == 0 || changes != 0 {
+		t.Errorf("expected only full messages; got %d full, %d changes", full, changes)
 	}
 }
