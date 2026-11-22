@@ -69,10 +69,16 @@ type sfxLocal struct {
 }
 
 // isSfxFiltered reports whether a sound effect is not sent, like alttpo's fetch_sfx: the low life warning beep
-// (SFX2 $2B), and menu and map sounds (SFX3 $0C, $10, $11, $12, $20, $24).
+// (SFX2 $2B), the thunder of the rain (SFX2 $36, which runs into the rain's rumble; the game repeats it in every rainy
+// area, so each player hears their own), and menu and map sounds (SFX3 $0C, $10, $11, $12, $20, $24). The sounds
+// that loop (rain, wind, the rain's rumble) are ambient ($012D), which is never synced.
 func isSfxFiltered(slot int, sfx uint8) bool {
 	if slot == 0 {
-		return sfx&0x3F == 0x2B
+		switch sfx & 0x3F {
+		case 0x2B, 0x36:
+			return true
+		}
+		return false
 	}
 	switch sfx & 0x3F {
 	case 0x0C, 0x10, 0x11, 0x12, 0x20, 0x24:

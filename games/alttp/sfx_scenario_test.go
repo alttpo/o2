@@ -133,3 +133,26 @@ func TestSfxScenario_FilteredAndOtherRoom(t *testing.T) {
 		t.Errorf("g1 played % x from another room; expected nothing", played)
 	}
 }
+
+func TestIsSfxFiltered(t *testing.T) {
+	for _, c := range []struct {
+		slot int
+		sfx  uint8
+		want bool
+	}{
+		{0, 0x2B, true},
+		{0, 0x36, true}, // thunder, with any pan
+		{0, 0x76, true},
+		{0, 0xB6, true},
+		{0, 0x35, false},
+		{0, 0x01, false},
+		{1, 0x36, false},
+		{1, 0x10, true},
+		{1, 0x50, true},
+		{1, 0x2B, false},
+	} {
+		if got := isSfxFiltered(c.slot, c.sfx); got != c.want {
+			t.Errorf("isSfxFiltered(%d, $%02x) = %v; expected %v", c.slot, c.sfx, got, c.want)
+		}
+	}
+}
