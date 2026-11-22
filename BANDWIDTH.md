@@ -34,11 +34,16 @@ The Link sprites size is a guess (~5 sprites, 2 palettes).
 
 ## Step 0: measure
 
-- [ ] o2: count bytes and packets per game message type in `send()` (split a packet's bytes by message), and show
+- [x] o2: count bytes and packets per game message type in `send()` (split a packet's bytes by message), and show
       them on the debug page. o2-server's `bandwidth.go` only counts by p4 kind, so it can't tell features apart.
-- [ ] alttpo: same counters, if cheap, to compare.
+      Done in `bandwidth.go`; the /debug page's "Bandwidth sent" table shows the last second's rates.
+- [ ] alttpo: same counters, if cheap, to compare. Not done; `enableNetReporting` still only logs the total.
 
 ## Changes
+
+Status: 1-6 are done in o2 (`send.go`) and alttpo (`SendState.as`, `LocalGameState.as` `send`). 7 is not started.
+Not done: alttpo still sends its location and name every frame (in its one main packet), and both still send the
+items SRAM whole every 16 frames.
 
 1. **Link sprites (0x03/0x04) to broadcastSector.** alttpo already sends them with
    `make_packet_broadcast_to_sector(broadcast_sector())` (LocalGameState.as `send_sprites`). o2 sends them
@@ -66,6 +71,13 @@ The Link sprites size is a guess (~5 sprites, 2 palettes).
    FlyingTiles.as).
 6. **Underworld SRAM ($000-$24F, 592 B every 32 frames): send only dirty rooms** (plus a slow full refresh for
    joiners). Same idea could apply to overworld SRAM and items. alttpo's `serialize_sram_ranges` to match.
+Refresh intervals as done: location 60 frames, crystal switch 32 (128 outside the dungeon), manipulables and small
+keys and hearts 32, room state and enemies killed 16 (the other recent rooms one every 16, so each every 48, under
+the receivers' 2 s TTL), sprites 8 (under the 250 ms stale time of o2 and alttpo receivers), palettes 32 or at once
+when a player arrives in the location. The underworld and overworld SRAM are checked every 32 frames and sent whole
+every 16 checks (~8.5 s) or when a player joins the group. Sprites are hashed with the scroll offsets, since
+receivers place them with the offsets of the last location received.
+
 7. **Protocol 05 envelope (o2, alttpo, o2-server).** The p4 envelope is 53 B per packet: a 20-byte group on every
    packet (the server keys clients on address), two int64 times, a u32 player index and a u64 sector. Send the group
    only on join, shrink the times and sector. Roughly halves the per-packet cost.
