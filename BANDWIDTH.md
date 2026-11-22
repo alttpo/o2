@@ -42,8 +42,16 @@ The Link sprites size is a guess (~5 sprites, 2 palettes).
 ## Changes
 
 Status: 1-6 are done in o2 (`send.go`) and alttpo (`SendState.as`, `LocalGameState.as` `send`). 7 is not started.
-Not done: alttpo still sends its location and name every frame (in its one main packet), and both still send the
-items SRAM whole every 16 frames.
+
+Found with the debug page counters: o2's `sendPackets` ran on every SNES read, not once per game frame (the frame
+check in `readMainComplete` only returns from a closure), so state went out every frame regardless and the items SRAM
+several times per 16 frames. It now sends once per game frame.
+
+Since then (compact messages, see `compact.go` and alttpo's `SendState.as`): new message 0x87 says a client reads 0x88
+(small key changes) and 0x89 (location changes). These are changes relative to the last full 0x82 or 0x01, sent only
+while every player in the group sent 0x87; otherwise the full messages go out as before. Torches only go out in rooms
+with lightable torches, the crystal switch only in dungeons (receivers forget it when a player enters one), each room
+message on its own change, the items SRAM only where it changed, and alttpo's name every 30 sends.
 
 1. **Link sprites (0x03/0x04) to broadcastSector.** alttpo already sends them with
    `make_packet_broadcast_to_sector(broadcast_sector())` (LocalGameState.as `send_sprites`). o2 sends them
