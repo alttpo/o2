@@ -9,8 +9,8 @@ import (
 )
 
 // TestLinkFact_MatchesGame builds the Link graphics fact (fact 0x00) and compares each part with what the game's own
-// routines build in WRAM, run in the CPU emulator against a real ROM: LoadItemGFXIntoWRAM4BPPBuffer (the item buffer and,
-// through LoadItemGFX_Auxiliary, the bird) and DecompressSwordGraphics and DecompressShieldGraphics for every level.
+// routines build in WRAM, run in the CPU emulator against a real ROM: LoadItemGFXIntoWRAM4BPPBuffer (the item buffer) and
+// DecompressSwordGraphics and DecompressShieldGraphics for every level.
 //
 // The ROMs are not part of the repository; see TestSwordShieldGfx_MatchesGame.
 func TestLinkFact_MatchesGame(t *testing.T) {
@@ -83,7 +83,6 @@ func TestLinkFact_MatchesGame(t *testing.T) {
 
 			callRoutine(tc.items)
 			compare("items", lfItemsWRAM, lfItems, lfItemsSize)
-			compare("bird", lfBirdWRAM, lfBird, lfBirdSize)
 
 			for level := 1; level <= 4; level++ {
 				sys.WRAM[0xF359] = uint8(level)
@@ -120,7 +119,7 @@ func TestLinkFactTile(t *testing.T) {
 		{0x9020, true, 0, 0, noFactTile},
 		{0x9340, true, 0, 3, (lfShields + 2*lfShieldSize + 0x40) >> 5},
 		{0x94C0, true, 0, 0, (lfItems + 0x40) >> 5},
-		{0xB580, true, 0, 0, (lfBird + 0x40) >> 5},
+		{0xB580, true, 0, 0, noFactTile}, // the flute's bird
 		{0xA480, true, 1, 1, noFactTile},
 	} {
 		if got := linkFactTile(tc.src, tc.wram, tc.sword, tc.shield); got != tc.want {

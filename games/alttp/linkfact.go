@@ -9,7 +9,7 @@ import (
 // Every frame the NMI routine DMAs Link's graphics into fixed VRAM chrs from source addresses the pose picks: his head,
 // body and aux from LinkGraphics in ROM (bank $10), his sword, shield and the item in use from 4bpp buffers in WRAM
 // that the game builds from ROM sprite sheets when it loads (DecompressSwordGraphics, DecompressShieldGraphics,
-// LoadItemGFXIntoWRAM4BPPBuffer, LoadItemGFX_Auxiliary). The fact holds all of it, every sword and shield level
+// LoadItemGFXIntoWRAM4BPPBuffer). The fact holds all of it, every sword and shield level
 // included, built from the ROM the same way, so that other players can draw this player with its own graphics (custom
 // Link sprites included) from the pose alone (MsgSpriteChrs binds VRAM chrs to tiles of the fact).
 //
@@ -18,7 +18,8 @@ import (
 //	$7000   $0C00  swords 1-4, $300 each, laid out as WRAM $7E9000 for that level
 //	$7C00   $0480  shields 1-3, $180 each, laid out as WRAM $7E9300 for that level
 //	$8080   $0D00  the item buffer, as WRAM $7E9480-$7EA17F
-//	$8D80   $0400  the flute's bird, as WRAM $7EB540-$7EB93F
+//
+// The flute's bird (chrs $0E-$0F, $1E-$1F, from WRAM $7EB540) isn't in it: the bird isn't synced.
 const (
 	factLinkGraphics = 0x00
 
@@ -30,20 +31,16 @@ const (
 	lfShieldSize = 0x180
 	lfItems      = 0x8080
 	lfItemsSize  = 0xD00
-	lfBird       = 0x8D80
-	lfBirdSize   = 0x400
-	linkFactSize = lfBird + lfBirdSize
+	linkFactSize = lfItems + lfItemsSize
 
 	// WRAM addresses of the buffers:
 	lfSwordWRAM  = 0x9000
 	lfShieldWRAM = 0x9300
 	lfItemsWRAM  = 0x9480
-	lfBirdWRAM   = 0xB540
 
-	// sprite sheets the item buffer and the bird are built from:
+	// sprite sheets the item buffer is built from:
 	sheetItemsA = 0x5F // 95
 	sheetItemsB = 0x60 // 96
-	sheetBird   = 0x58
 
 	noFactTile = 0xFFFF
 )
@@ -87,23 +84,6 @@ func expand3To4High(src []byte, off int, dst []byte, x *int, num int) {
 		if off&0x78 == 0 {
 			off += 0x180
 		}
-	}
-}
-
-// do3To4Low is the game's Do3To4Low16Bit: num 3bpp tiles from src[off:] to 4bpp tiles at dst[x:], with the 4th bitplane
-// clear (palette colors 0-7).
-func do3To4Low(src []byte, off int, dst []byte, x int, num int) {
-	for ; num > 0; num-- {
-		p2 := off + 0x10
-		for row := 0; row < 8; row++ {
-			dst[x], dst[x+1] = src[off], src[off+1]
-			dst[x+0x10], dst[x+0x11] = src[p2], 0
-			off += 2
-			p2++
-			x += 2
-		}
-		x += 0x10
-		off = p2
 	}
 }
 
@@ -207,13 +187,6 @@ func (g *Game) buildLinkFact() ([]byte, error) {
 		return nil, fmt.Errorf("item buffer is %#x bytes; expected %#x", x-lfItems, lfItemsSize)
 	}
 
-	// the bird, as LoadItemGFX_Auxiliary:
-	bird, err := g.spriteSheet(sheetBird)
-	if err != nil {
-		return nil, err
-	}
-	do3To4Low(bird, 0, fact, lfBird, lfBirdSize>>5)
-
 	return fact, nil
 }
 
@@ -240,8 +213,6 @@ func linkFactTile(src uint16, wram bool, swordLevel, shieldLevel uint8) uint16 {
 		return uint16(lfShields+int(shieldLevel-1)*lfShieldSize+a-lfShieldWRAM) >> 5
 	case a >= lfItemsWRAM && a < lfItemsWRAM+lfItemsSize:
 		return uint16(lfItems+a-lfItemsWRAM) >> 5
-	case a >= lfBirdWRAM && a < lfBirdWRAM+lfBirdSize:
-		return uint16(lfBird+a-lfBirdWRAM) >> 5
 	}
 	return noFactTile
 }
