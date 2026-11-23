@@ -55,20 +55,68 @@ type bandwidthState struct {
 	Rows          []bandwidthRow `json:"rows"`
 }
 
+// msgTypeNames names every game message type for the debug page, in the order of their numbers (see serde.go). The
+// debug page lists them all, those not sent showing zeros, so that its table keeps its layout.
+var msgTypeNames = []struct {
+	t    MessageType
+	name string
+}{
+	{MsgLocation, "location"},
+	{MsgLocationChanges, "location changes"},
+	{MsgSfx, "sfx"},
+	{MsgSprites, "sprites"},
+	{MsgSpriteChrs, "sprite chrs"},
+	{MsgSpritePalettes, "sprite palettes"},
+	{MsgWRAM, "wram (crystal switch)"},
+	{MsgSRAM, "sram"},
+	{MsgAncillae, "ancillae"},
+	{MsgTorches, "torches"},
+	{MsgPvP, "pvp"},
+	{MsgMap16, "map16"},
+	{MsgManip, "manip"},
+	{MsgStarSwitch, "star switch"},
+	{MsgRoomState, "room state"},
+	{MsgRoomDoors, "room doors"},
+	{MsgOwEvents, "ow events"},
+	{MsgFlyingTiles, "flying tiles"},
+	{MsgRoomKills, "room kills"},
+	{MsgEnemiesKilled, "enemies killed"},
+	{MsgRupees, "rupees"},
+	{MsgEnemyData, "enemy data (alttpo)"},
+	{MsgEnemySegmentData, "enemy segment data (alttpo)"},
+	{MsgOverlordData, "overlord data (alttpo)"},
+	{MsgSmallKeys, "small keys"},
+	{MsgSmallKeysChanges, "small keys changes"},
+	{MsgHearts, "hearts"},
+	{MsgReset, "reset"},
+	{MsgRunTiming, "run timing"},
+	{MsgRunRestore, "run restore"},
+	{MsgRunGap, "run gap"},
+	{MsgSMLocation, "sm location (alttpo)"},
+	{MsgSMEvents, "sm events (alttpo)"},
+	{MsgSMSRAM, "sm sram (alttpo)"},
+	{MsgSMEnemies, "sm enemies (alttpo)"},
+}
+
+// packetKinds are the protocol 05 packets o2 sends without game messages (see sendRaw), listed after the game
+// messages; "all" and "sector" are broadcasts that carried no game message.
+var packetKinds = []string{"join", "sector", "echo", "who-is", "fact", "all"}
+
+// bandwidthOrder is the debug page's row order: every game message type, then the packet kinds.
+var bandwidthOrder = func() []string {
+	var order []string
+	for _, n := range msgTypeNames {
+		order = append(order, msgTypeName(n.t))
+	}
+	return append(order, packetKinds...)
+}()
+
 // msgTypeName names a game message type for the debug page.
 func msgTypeName(t MessageType) string {
-	names := map[MessageType]string{
-		MsgLocation: "location", MsgLocationChanges: "location changes", MsgSfx: "sfx", MsgSprites: "sprites",
-		MsgSpriteChrs: "sprite chrs", MsgSpritePalettes: "sprite palettes",
-		MsgWRAM: "wram (crystal switch)", MsgSRAM: "sram", MsgAncillae: "ancillae", MsgTorches: "torches",
-		MsgPvP: "pvp", MsgMap16: "map16", MsgManip: "manip", MsgStarSwitch: "star switch", MsgRoomState: "room state",
-		MsgRoomDoors: "room doors", MsgOwEvents: "ow events", MsgFlyingTiles: "flying tiles",
-		MsgRoomKills: "room kills", MsgEnemiesKilled: "enemies killed", MsgRupees: "rupees",
-		MsgReset: "reset", MsgSmallKeys: "small keys", MsgSmallKeysChanges: "small keys changes", MsgHearts: "hearts", MsgRunTiming: "run timing",
-		MsgRunRestore: "run restore", MsgRunGap: "run gap",
-	}
-	if n, ok := names[t]; ok {
-		return fmt.Sprintf("%02x %s", uint8(t), n)
+	for _, n := range msgTypeNames {
+		if n.t == t {
+			return fmt.Sprintf("%02x %s", uint8(t), n.name)
+		}
 	}
 	return fmt.Sprintf("%02x", uint8(t))
 }
@@ -128,6 +176,7 @@ func (g *Game) notifyBandwidth() {
 	s.mu.Lock()
 	elapsed := time.Since(s.start)
 	if s.kinds == nil || elapsed < time.Second {
+		// nothing sent yet, or less than a second since the last call:
 		s.mu.Unlock()
 		return
 	}
@@ -137,19 +186,35 @@ func (g *Game) notifyBandwidth() {
 		SectorPackets: float64(s.sector) / secs,
 		Wire:          float64(s.wire) / secs,
 	}
-	for name, c := range s.kinds {
-		st.Rows = append(st.Rows, bandwidthRow{
-			Name:  name,
-			Msgs:  float64(c.msgs) / secs,
-			Bytes: float64(c.payload) / secs,
-			Wire:  c.wire / secs,
-		})
+	row := func(name string, c *bandwidthCounter) bandwidthRow {
+		r := bandwidthRow{Name: name}
+		if c != nil {
+			r.Msgs, r.Bytes, r.Wire = float64(c.msgs)/secs, float64(c.payload)/secs, c.wire/secs
+		}
+		return r
 	}
-	s.kinds = nil
+	// every row in a fixed order, so the table keeps its layout; kinds not in the order (unknown message types) last:
+	listed := make(map[string]bool, len(bandwidthOrder))
+	for _, name := range bandwidthOrder {
+		listed[name] = true
+		st.Rows = append(st.Rows, row(name, s.kinds[name]))
+	}
+	var extra []string
+	for name := range s.kinds {
+		if !listed[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		st.Rows = append(st.Rows, row(name, s.kinds[name]))
+	}
+	// keep publishing every second, zeros included, once anything was sent:
+	s.kinds = make(map[string]*bandwidthCounter)
+	s.start = time.Now()
 	s.packets, s.sector, s.wire = 0, 0, 0
 	s.mu.Unlock()
 
-	sort.Slice(st.Rows, func(i, j int) bool { return st.Rows[i].Wire > st.Rows[j].Wire })
 	if g.viewModels != nil {
 		g.viewModels.NotifyView("game/bandwidth", &st)
 	}
