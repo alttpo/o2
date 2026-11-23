@@ -1443,7 +1443,6 @@ func TestRemoteSpritesScenario_SwordAndShield(t *testing.T) {
 	h.expectOAMUnused("no shield", 0, 0x7A)
 }
 
-
 // setModuleDrawsAt makes g1's module draw 8x8 sprites with chr at the OAM entries index.
 func (h *skScenario) setModuleDrawsAt(chr uint8, index ...int) {
 	var code []byte
