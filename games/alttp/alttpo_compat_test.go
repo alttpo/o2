@@ -501,6 +501,19 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		if g.players[5].X == 0x1238 {
 			t.Errorf("expected the incompatible player's messages to be dropped")
 		}
+
+		// listed as incompatible, after the active players:
+		vms := g.appendIncompatiblePlayers(nil, g.ActivePlayers())
+		if len(vms) != 1 || vms[0].Index != 5 || vms[0].Name != "old" || !vms[0].Incompatible {
+			t.Errorf("expected player 5 listed as incompatible; got %+v", vms)
+		}
+		// and no longer once it left:
+		if err := g.handleNetMessage(protocol05.MakePlayerLeft(5, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if vms := g.appendIncompatiblePlayers(nil, g.ActivePlayers()); len(vms) != 0 {
+			t.Errorf("expected no incompatible players after player-left; got %+v", vms)
+		}
 	}
 }
 

@@ -63,6 +63,8 @@ type netState struct {
 	whoIsSent  [MaxPlayers]time.Time
 	// what each player's player-info said; kept here rather than in Player since a group reset clears the players:
 	info [MaxPlayers]netPlayerInfo
+	// the group info is for:
+	infoGroup string
 }
 
 // netPlayerInfo is what a player's player-info said.
@@ -121,6 +123,16 @@ func (g *Game) tickNet(now time.Time) {
 		ns.joinAcked = false
 		ns.joinSent = time.Time{}
 		ns.sentGroup, ns.sentName, ns.sentInfo = group, local.NameF, info
+	}
+	if group != ns.infoGroup {
+		// the players listed as incompatible were in the other group:
+		ns.infoGroup = group
+		for i := range ns.info {
+			if pi := &ns.info[i]; pi.known && !pi.compatible {
+				*pi = netPlayerInfo{}
+				g.shouldUpdatePlayersList = true
+			}
+		}
 	}
 	if !ns.joinAcked && now.Sub(ns.joinSent) >= netResend {
 		ns.joinSent = now
@@ -549,6 +561,10 @@ func (g *Game) playerInfo(e protocol05.PlayerInfoEntry, now time.Time) {
 		log.Printf("alttp: player[%02x]: %s runs an incompatible version\n", uint8(index), e.Name)
 		g.PushNotification(fmt.Sprintf("%s runs an incompatible version", e.Name))
 	}
+	if !compatible && (!pi.known || pi.compatible || pi.name != e.Name) {
+		// listed as incompatible:
+		g.shouldUpdatePlayersList = true
+	}
 	pi.known, pi.compatible, pi.name = true, compatible, e.Name
 	if len(e.Info) >= 2 {
 		pi.team = e.Info[1]
@@ -593,6 +609,10 @@ func (g *Game) playerLeft(index int, now time.Time) {
 		return
 	}
 	g.net.graceUntil[index] = now.Add(playerGrace)
+	if pi := &g.net.info[index]; pi.known && !pi.compatible {
+		// listed as incompatible:
+		g.shouldUpdatePlayersList = true
+	}
 	g.net.info[index] = netPlayerInfo{}
 	g.factsPlayerLeft(index)
 	p := &g.players[index]

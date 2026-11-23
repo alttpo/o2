@@ -67,8 +67,8 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - [x] One packet per destination per frame (`frameBatch` in net.go): everything `sendPackets` sends, sfx included,
       merges into one packet to all and one to the own sector, split at `maxGamePacket`. Messages sent outside the
       frame (slowbeat run timing, run gaps, reset messages) and to another sector still go alone.
-- [ ] Players list: show "incompatible version" for players whose info has another version (only logged and
-      notified now).
+- [x] Players list: players whose info has another version are listed after the others as "incompatible version"
+      (`appendIncompatiblePlayers`), until they leave or the group changes.
 - [x] Fact store keyed by hash (`facts.go`); uploading fact 0x00 after every new join (first chunk alone until the
       server answers); downloading a remote player's fact on demand (`factData`), checked against its hash.
 - [x] Fact 0x00 (Link graphics, `linkfact.go`): bank $10, sword levels 1-4, shield levels 1-3, item buffer, flute

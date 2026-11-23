@@ -112,6 +112,10 @@ type PlayerViewModel struct {
 	Verification string `json:"verification"`
 	// why the player is unverified:
 	Unverified string `json:"unverified"`
+
+	// the player's info carries another game protocol version: its messages are dropped and only its index, team
+	// and name are known:
+	Incompatible bool `json:"incompatible"`
 }
 
 // RunWarningViewModel warns when players don't pay the same per frame (RUN_TIMING.md, Equal cost).
@@ -308,6 +312,9 @@ func (g *Game) updatePlayersList() {
 		playerViewModels[i].RelFinish = FormatDur(g.runMinStart, p.GameFinishTime)
 	}
 
+	// players that run an incompatible version, after the others:
+	playerViewModels = g.appendIncompatiblePlayers(playerViewModels, activePlayers)
+
 	// send the players list:
 	g.viewModels.NotifyView("game/players", playerViewModels)
 	warning := ""
@@ -323,6 +330,32 @@ func (g *Game) updatePlayersList() {
 			FinishTimeFull: FormatTimeFull(g.runMaxFinish),
 		})
 	}
+}
+
+// appendIncompatiblePlayers lists the players whose player-info carries another game protocol version, unless they
+// are still active from before.
+func (g *Game) appendIncompatiblePlayers(vms []*PlayerViewModel, activePlayers []*Player) []*PlayerViewModel {
+	active := make(map[int]bool, len(activePlayers))
+	for _, p := range activePlayers {
+		active[p.Index()] = true
+	}
+	for i := range g.net.info {
+		pi := &g.net.info[i]
+		if !pi.known || pi.compatible || active[i] {
+			continue
+		}
+		name := pi.name
+		if name == "" {
+			name = fmt.Sprintf("player #%02x", i)
+		}
+		vms = append(vms, &PlayerViewModel{
+			Index:        i,
+			Team:         int(pi.team),
+			Name:         name,
+			Incompatible: true,
+		})
+	}
+	return vms
 }
 
 func (g *Game) CommandFor(command string) (interfaces.Command, error) {

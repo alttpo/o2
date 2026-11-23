@@ -577,6 +577,12 @@ button.game-action {
     color: orange;
 }
 
+/* a player whose client speaks another game protocol version: */
+.players > .player-incompatible {
+    grid-column: 4 / -1;
+    color: orange;
+}
+
 .players > .timing-verified {
     color: limegreen;
     text-align: center;

@@ -471,6 +471,11 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <div class="mono" title="Team number">{p.team}</div>
                     <div style={"color: " + hexrgb24(bgr16torgb24(p.color))}
                          title="Player name">{p.name}</div>
+                    {p.incompatible
+                        ? <div class="player-incompatible"
+                               title="This player's client speaks another game protocol version; its updates are ignored. Both players need the same o2 or alttpo release.">
+                            &#x26A0; incompatible version</div>
+                        : <Fragment>
                     <div
                         style={"color: " + (((p.location & 0x10000) != 0) ? "green" : "cyan")}
                         title="Location">{
@@ -486,6 +491,7 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                         p.verification === "verified" ? (p.timingNotes ? "\u2713*" : "\u2713")
                             : p.verification === "unverified" ? "\u26A0" : ""
                     }</div>
+                        </Fragment>}
                 </Fragment>))
             }
         </div>
