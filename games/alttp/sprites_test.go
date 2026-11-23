@@ -101,6 +101,15 @@ func (h *spriteTestRig) frames(n int) (parsed alttpoParsed) {
 				// latest sprites:
 				parsed.sprites = p.sprites
 			}
+			if p.chrs != nil {
+				parsed.chrs = p.chrs
+			}
+			for k, pal := range p.palettes {
+				if parsed.palettes == nil {
+					parsed.palettes = map[int][]byte{}
+				}
+				parsed.palettes[k] = pal
+			}
 		}
 	}
 	return
@@ -124,23 +133,34 @@ func TestLinkSprites_SentToAlttpo(t *testing.T) {
 	}
 
 	head, body, shadow := parsed.sprites[0], parsed.sprites[1], parsed.sprites[2]
-	if !bytes.Equal(head.b[:], []byte{0x64, 0x70, 0x60, 0x00, 0x0E, 0x82}) {
+	if !bytes.Equal(head.b[:], []byte{0x70, 0x60, 0x00, 0x0E, 0x02}) {
 		t.Errorf("unexpected head OAM bytes % x", head.b)
 	}
-	if !bytes.Equal(head.palette, h.gs.e.WRAM[0xC6E0:0xC700]) {
-		t.Errorf("expected Link's palette with the first sprite; got % x", head.palette)
+	if body.b[2] != 0x02 || shadow.b[2] != 0x6C {
+		t.Errorf("expected head, body and shadow in OAM order; got %+v", parsed.sprites)
 	}
-	if expected := []uint16{0x20, 0x21, 0x30, 0x31}; !equalU16(head.absidx, expected) {
-		t.Errorf("head: expected uniqtiles %x; got %x", expected, head.absidx)
+	if !bytes.Equal(parsed.palettes[7], h.gs.e.WRAM[0xC6E0:0xC700]) {
+		t.Errorf("expected Link's palette; got % x", parsed.palettes[7])
 	}
-	if body.b[5]&0x80 != 0 {
-		t.Errorf("palette should only be sent once per packet")
+	// head from $8400/$8600, body from $9000/$9200, as tiles of the Link graphics fact:
+	for chr, tile := range map[uint8]uint32{0x00: 0x20, 0x01: 0x21, 0x10: 0x30, 0x11: 0x31, 0x02: 0x80, 0x03: 0x81, 0x12: 0x90, 0x13: 0x91} {
+		if got, ok := parsed.chrs[chr]; !ok || got != tile {
+			t.Errorf("chr $%02x: expected fact 0 tile %#x; got %#x (%v)", chr, tile, got, ok)
+		}
 	}
-	if expected := []uint16{0x80, 0x81, 0x90, 0x91}; !equalU16(body.absidx, expected) {
-		t.Errorf("body: expected uniqtiles %x; got %x", expected, body.absidx)
+	// the aux and the shadow aren't bound (the aux is off screen; the shadow is drawn from the receiver's VRAM):
+	for _, chr := range []uint8{0x04, 0x6C} {
+		if _, ok := parsed.chrs[chr]; ok {
+			t.Errorf("chr $%02x bound", chr)
+		}
 	}
-	if shadow.b[3] != 0x6C || !equalU16(shadow.absidx, []uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}) {
-		t.Errorf("shadow: expected chr $6C without uniqtiles; got % x %x", shadow.b, shadow.absidx)
+
+	// a new pose binds the new tiles:
+	e := h.gs.e
+	e.WRAM[0x0AD0], e.WRAM[0x0AD1] = 0x00, 0xA0 // body top row now $A000
+	parsed = h.frames(2)
+	if parsed.chrs[0x02] != 0x100 || parsed.chrs[0x03] != 0x101 {
+		t.Errorf("expected the body's top row bound to tiles $100,$101; got %#x,%#x", parsed.chrs[0x02], parsed.chrs[0x03])
 	}
 }
 
@@ -168,7 +188,7 @@ func TestLinkSprites_ReadAfterOAMCleared(t *testing.T) {
 		}
 		clearOAM()
 	}
-	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x64 {
+	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x70 || parsed.sprites[0].b[2] != 0x00 {
 		t.Fatalf("expected Link's 3 sprites from OAM index $64; got %+v", parsed.sprites)
 	}
 }
@@ -187,7 +207,7 @@ func TestLinkSprites_OAMMoves(t *testing.T) {
 	e.WRAM[0x0352], e.WRAM[0x0353] = 0xE0, 0x00
 
 	parsed := h.frames(3)
-	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x38 {
+	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x70 || parsed.sprites[0].b[2] != 0x00 {
 		t.Fatalf("expected Link's 3 sprites from OAM index $38; got %+v", parsed.sprites)
 	}
 }
@@ -284,6 +304,8 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 	}
 
 	// sword (8x8, palette 5) from $9020 and shield (16x16, palette 5) from $9340/$9380:
+	// fighter's sword and shield:
+	e.WRAM[0xF359], e.WRAM[0xF35A] = 1, 1
 	e.WRAM[0x0AC0], e.WRAM[0x0AC1] = 0x20, 0x90
 	e.WRAM[0x0AC4], e.WRAM[0x0AC5] = 0x40, 0x93
 	e.WRAM[0x0AC6], e.WRAM[0x0AC7] = 0x80, 0x93
@@ -296,7 +318,7 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 	parsed := h.frames(4)
 	var sword, shield *alttpoSprite
 	for i := range parsed.sprites {
-		switch parsed.sprites[i].b[3] {
+		switch parsed.sprites[i].b[2] {
 		case 0x05:
 			sword = &parsed.sprites[i]
 		case 0x07:
@@ -306,15 +328,18 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 	if sword == nil || shield == nil {
 		t.Fatalf("expected sword and shield sprites; got %+v", parsed.sprites)
 	}
-	if !equalU16(sword.absidx, []uint16{0x381}) {
-		t.Errorf("sword: expected uniqtile $381; got %x", sword.absidx)
+	// the sword level 1's tile at $9020 and the shield level 1's at $9340 and $9380 in the Link graphics fact:
+	for chr, tile := range map[uint8]uint32{
+		0x05: (lfSwords + 0x20) >> 5,
+		0x07: (lfShields + 0x40) >> 5, 0x08: (lfShields+0x40)>>5 + 1,
+		0x17: (lfShields + 0x80) >> 5, 0x18: (lfShields+0x80)>>5 + 1,
+	} {
+		if got := parsed.chrs[chr]; got != tile {
+			t.Errorf("chr $%02x: expected tile %#x; got %#x", chr, tile, got)
+		}
 	}
-	if !equalU16(shield.absidx, []uint16{0x39A, 0x39B, 0x39C, 0x39D}) {
-		t.Errorf("shield: expected uniqtiles $39A,$39B,$39C,$39D; got %x", shield.absidx)
-	}
-	// palette 5 goes with the first sprite using it (the sword comes first in OAM):
-	if !bytes.Equal(sword.palette, e.WRAM[0xC6A0:0xC6C0]) || shield.palette != nil {
-		t.Errorf("expected palette 5 with the sword only")
+	if !bytes.Equal(parsed.palettes[5], e.WRAM[0xC6A0:0xC6C0]) {
+		t.Errorf("expected palette 5 sent")
 	}
 }
 
@@ -333,15 +358,9 @@ func TestLinkSprites_PalettesSentForEffects(t *testing.T) {
 	h.gs.beforeEmulate = func() { e.SRAM[(remoteTableAddr+rtCaptureTTL)&0x7FFF] = 2 }
 	parsed := h.frames(4)
 
-	pal := map[uint8][]byte{}
-	for _, sp := range parsed.sprites {
-		if sp.palette != nil {
-			pal[(sp.b[4]>>1)&7] = sp.palette
-		}
-	}
-	for _, p := range []uint8{2, 4, 7} {
-		if expected := e.WRAM[0xC600+int(p)*32 : 0xC620+int(p)*32]; !bytes.Equal(pal[p], expected) {
-			t.Errorf("palette %d: sent % x; expected % x", p, pal[p], expected)
+	for _, p := range []int{2, 4, 7} {
+		if expected := e.WRAM[0xC600+p*32 : 0xC620+p*32]; !bytes.Equal(parsed.palettes[p], expected) {
+			t.Errorf("palette %d: sent % x; expected % x", p, parsed.palettes[p], expected)
 		}
 	}
 }

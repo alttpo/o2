@@ -1,7 +1,6 @@
 package alttp
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -532,18 +531,17 @@ func linkGfxBankInstruction(rom *snes.ROM) []byte {
 	return []byte{0xA9, 0x10}
 }
 
-// remoteSprite is a sprite received from a remote player in message 0x03/0x04.
+// remoteSprite is a sprite received from a remote player in MsgSprites.
 type remoteSprite struct {
-	// OAM index:
+	// the sprite's place in the player's list, which is in OAM order (front to back):
 	index uint8
 	// OAM table bytes: x, y, chr, attributes; b4 = (size << 1) | x bit 8:
-	b      [5]uint8
-	size   uint8
+	b    [5]uint8
+	size uint8
+	// the tiles its 1 or 4 chrs show: LinkGraphics tiles ($000..$37F), or the local player's sword and shield tiles
+	// ($380..$3A3, offsets into WRAM $7E9000) when the remote player's sword or shield is the same level; see
+	// remoteChrTile:
 	absidx [4]uint16
-	// the 4bpp tiles of the sprite's 1 or 4 chrs if they were sent along (alttpo sends them for chrs that have no
-	// unique tile index, e.g. the sword and shield, once per packet and chr):
-	gfx    [4][32]byte
-	hasGfx bool
 }
 
 type remoteSprites struct {
@@ -553,74 +551,110 @@ type remoteSprites struct {
 	// sprites in the same frame, so these are the offsets the sprites were drawn with; the player's latest offsets
 	// can be a frame ahead or behind, which shifts the sprites by however far the screen scrolled meanwhile:
 	xoffs, yoffs int16
+	// the tiles of the player's facts its chrs $00..$1F show (MsgSpriteChrs):
+	chrs [0x20]remoteChr
 }
 
-// deserializeRemoteSprites reads message 0x03 (start = 0) or 0x04 into p.Sprites, like alttpo's
-// GameState::deserialize_sprites.
-func (g *Game) deserializeRemoteSprites(p *Player, r io.Reader, start int) (err error) {
+// remoteChr is a remote player's chr bound to a tile of one of its facts.
+type remoteChr struct {
+	ok   bool
+	fact uint8
+	tile uint16
+}
+
+// DeserializeSpriteChrs reads MsgSpriteChrs, which replaces the player's bindings.
+func (g *Game) DeserializeSpriteChrs(p *Player, r io.Reader) (err error) {
+	var n uint8
+	if n, err = readU8(r); err != nil {
+		return
+	}
+	s := &p.Sprites
+	s.chrs = [0x20]remoteChr{}
+	for i := 0; i < int(n); i++ {
+		var e [5]byte
+		if _, err = io.ReadFull(r, e[:]); err != nil {
+			return fmt.Errorf("error deserializing sprite chrs: %w", err)
+		}
+		tile := uint16(e[3]) | uint16(e[4])<<8
+		for k := 0; k < int(e[1]); k++ {
+			if c := int(e[0]) + k; c < len(s.chrs) {
+				s.chrs[c] = remoteChr{ok: true, fact: e[2], tile: tile + uint16(k)}
+			}
+		}
+	}
+	return
+}
+
+// DeserializeSpritePalettes reads MsgSpritePalettes; o2 draws remote players with its own palettes.
+func (g *Game) DeserializeSpritePalettes(p *Player, r io.Reader) (err error) {
+	var mask uint8
+	if mask, err = readU8(r); err != nil {
+		return
+	}
+	return discard(r, bits.OnesCount8(mask)*32)
+}
+
+// remoteChrTile returns the tile o2 draws a remote player's chr with: a LinkGraphics tile, or one of the local
+// player's sword and shield tiles if the remote player's sword or shield is the same level; noUniqTile if none.
+func (g *Game) remoteChrTile(s *remoteSprites, chr uint16) uint16 {
+	if chr >= 0x20 || !s.chrs[chr].ok || s.chrs[chr].fact != factLinkGraphics {
+		return noUniqTile
+	}
+	t := int(s.chrs[chr].tile)
+	ss := &g.swordShield
+	switch {
+	case t < lfBodySize>>5:
+		return uint16(t)
+	case t >= lfSwords>>5 && t < lfShields>>5:
+		o := t - lfSwords>>5
+		if level := uint8(o/swordTileCount + 1); ss.swordOK && level == ss.swordLevel {
+			return uint16(swordShieldTileFirst + o%swordTileCount)
+		}
+	case t >= lfShields>>5 && t < lfItems>>5:
+		o := t - lfShields>>5
+		if level := uint8(o/shieldTileCount + 1); ss.shieldOK && level == ss.shieldLevel {
+			return uint16(swordShieldTileFirst + swordTileCount + o%shieldTileCount)
+		}
+	}
+	return noUniqTile
+}
+
+// DeserializeSprites reads MsgSprites into p.Sprites.
+func (g *Game) DeserializeSprites(p *Player, r io.Reader) (err error) {
 	var length uint8
-	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
+	if length, err = readU8(r); err != nil {
 		return fmt.Errorf("error deserializing sprites: %w", err)
 	}
 
 	s := &p.Sprites
-	if n := start + int(length); n <= cap(s.list) {
-		s.list = s.list[:n]
-	} else {
-		s.list = append(s.list[:cap(s.list)], make([]remoteSprite, n-cap(s.list))...)
-	}
+	s.list = s.list[:0]
 	s.received = time.Now()
-	if start == 0 {
-		s.xoffs, s.yoffs = p.XOffs, p.YOffs
-	}
+	s.xoffs, s.yoffs = p.XOffs, p.YOffs
 
 	for i := 0; i < int(length); i++ {
-		// OAM index (bit 7 = chr data follows) and 5 OAM table bytes (b4 bit 7 = palette data follows):
-		var spr [6]byte
-		if _, err = io.ReadFull(r, spr[:]); err != nil {
+		var e [5]byte
+		if _, err = io.ReadFull(r, e[:]); err != nil {
 			return fmt.Errorf("error deserializing sprite %d: %w", i, err)
 		}
-
-		sp := remoteSprite{index: spr[0] & 0x7F}
-		copy(sp.b[:], spr[1:6])
-		sp.b[4] &= 0x7F
-		// matches alttpo's Sprite::decodeOAMTableBytes; size is not decoded for disabled sprites:
+		sp := remoteSprite{index: uint8(i)}
+		copy(sp.b[:], e[:])
+		sp.b[4] &= 3
 		sp.size = (sp.b[4] >> 1) & 1
 		if sp.b[1] == 0xF0 {
 			sp.size = 0
 		}
-
-		// uniq tile absolute indices:
-		n := 1
-		if sp.size != 0 {
-			n = 4
-		}
 		sp.absidx = [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
-		for k := 0; k < n; k++ {
-			if sp.absidx[k], err = readU16(r); err != nil {
-				return fmt.Errorf("error deserializing sprite %d uniqtile indices: %w", i, err)
+		if sp.b[3]&1 == 0 {
+			chr := uint16(sp.b[2])
+			sp.absidx[0] = g.remoteChrTile(s, chr)
+			if sp.size != 0 {
+				sp.absidx[1] = g.remoteChrTile(s, chr+0x01)
+				sp.absidx[2] = g.remoteChrTile(s, chr+0x10)
+				sp.absidx[3] = g.remoteChrTile(s, chr+0x11)
 			}
 		}
-
-		if spr[0]&0x80 != 0 {
-			// sprite graphics data 4bpp; 1 or 4 chrs of 32 bytes each:
-			for k := 0; k < n; k++ {
-				if _, err = io.ReadFull(r, sp.gfx[k][:]); err != nil {
-					return fmt.Errorf("error deserializing sprite %d gfx: %w", i, err)
-				}
-			}
-			sp.hasGfx = true
-		}
-		if spr[5]&0x80 != 0 {
-			// palette data:
-			if err = discard(r, 32); err != nil {
-				return fmt.Errorf("error deserializing sprite %d palette: %w", i, err)
-			}
-		}
-
-		s.list[start+i] = sp
+		s.list = append(s.list, sp)
 	}
-
 	return
 }
 
@@ -708,10 +742,8 @@ var remoteEquipBlocks = []struct {
 const remoteEquipMax = 4
 
 // remoteEquipment returns the parts and slotted sprites (with part indices starting at 0) of a remote player's sword
-// and shield, in the pose the player sent, drawn with the local player's sword and shield tiles in WRAM. o2 sends the
-// pose as unique tile indices $380..$3A3 (offsets into WRAM $7E9000); alttpo sends the tiles (once per chr and
-// packet), which are looked up in o2's copy of the local player's tiles. A sword or shield the local player doesn't
-// have is not drawn, nor is one whose tiles from alttpo are not the local player's.
+// and shield, in the pose the player sent, drawn with the local player's sword and shield tiles in WRAM (see
+// remoteChrTile). A sword or shield the local player doesn't have at the same level is not drawn.
 func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites []slottedSprite) {
 	s := &g.swordShield
 	sorted := sortedByIndex(list)
@@ -732,21 +764,6 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 			return []uint8{o}, true
 		}
 		return nil, false
-	}
-
-	// tiles sent along, by chr:
-	gfx := map[uint8][]byte{}
-	for i := range sorted {
-		sp := &sorted[i]
-		if !sp.hasGfx || sp.b[3]&1 != 0 {
-			continue
-		}
-		gfx[sp.b[2]] = sp.gfx[0][:]
-		if sp.size != 0 {
-			for k, o := range []uint8{0x01, 0x10, 0x11} {
-				gfx[sp.b[2]+o] = sp.gfx[k+1][:]
-			}
-		}
 	}
 
 	for bi, b := range remoteEquipBlocks {
@@ -775,12 +792,6 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 				var m uint64
 				if idx := int(sp.absidx[k]) - swordShieldTileFirst; idx >= b.first+col && idx < b.end {
 					m = 1 << (idx - col)
-				} else if d, ok := gfx[b.chr+o]; ok {
-					for i := b.first + col; i < b.end; i++ {
-						if bytes.Equal(s.tiles[i<<5:i<<5+32], d) {
-							m |= 1 << (i - col)
-						}
-					}
 				}
 				if used[row] {
 					rows[row] &= m

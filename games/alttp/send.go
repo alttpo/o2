@@ -339,13 +339,13 @@ func (g *Game) addLinkSprites(m *gameBroadcastMessage) {
 	var used [8]bool
 	for _, sp := range s.sprites {
 		_, _ = h.Write([]byte{sp.index, sp.b[0], sp.b[1], sp.b[2], sp.b[3], sp.b[4]})
-		for _, idx := range sp.absidx {
-			_, _ = h.Write([]byte{uint8(idx), uint8(idx >> 8)})
-		}
 		used[sp.pal] = true
 	}
 	// receivers place the sprites with the offsets of the last location they received:
 	_, _ = h.Write([]byte{uint8(g.local.XOffs), uint8(g.local.XOffs >> 8), uint8(g.local.YOffs), uint8(g.local.YOffs >> 8)})
+	for _, t := range s.chrTiles {
+		_, _ = h.Write([]byte{uint8(t), uint8(t >> 8)})
+	}
 	for k := range used {
 		if used[k] {
 			_, _ = h.Write(s.palettes[k][:])
@@ -367,10 +367,10 @@ func (g *Game) addLinkSprites(m *gameBroadcastMessage) {
 		}
 	}
 
-	_ = m.add(func(w io.Writer) error {
-		g.SerializeLinkSprites(w, s.sprites, sendPalette)
-		return nil
-	})
+	// the bindings and palettes first, so that receivers have them for the sprites:
+	_ = m.add(func(w io.Writer) error { return SerializeSpriteChrs(w, s.sprites, &s.chrTiles) })
+	_ = m.add(func(w io.Writer) error { return g.SerializeSpritePalettes(w, sendPalette) })
+	_ = m.add(func(w io.Writer) error { return SerializeSprites(w, s.sprites) })
 }
 
 func hash64(b []byte) uint64 {

@@ -671,13 +671,13 @@ func TestRemoteSpritesScenario_SendsSparklesAndDust(t *testing.T) {
 	if len(extras) != 2 {
 		t.Fatalf("expected 2 dust sprites; got %+v", extras)
 	}
-	// the OAM is scanned from the end:
+	// in OAM order ($10, then $11):
 	for i, x := range []remoteSprite{
-		{index: 0x11, b: [5]uint8{0xFC, 0x72, 0xA9, 0x04, 0x01}},
-		{index: 0x10, b: [5]uint8{0x48, 0x70, 0xCF, 0x04, 0x00}},
+		{b: [5]uint8{0x48, 0x70, 0xCF, 0x04, 0x00}},
+		{b: [5]uint8{0xFC, 0x72, 0xA9, 0x04, 0x01}},
 	} {
 		sp := extras[i]
-		if sp.index != x.index || sp.b != x.b || sp.size != 0 || sp.absidx[0] != noUniqTile {
+		if sp.b != x.b || sp.size != 0 || sp.absidx[0] != noUniqTile {
 			t.Errorf("dust sprite %d: %+v; expected %+v", i, sp, x)
 		}
 	}
@@ -826,7 +826,7 @@ func TestRemoteSpritesScenario_ObjectsAndProjectiles(t *testing.T) {
 					got = append(got, sp)
 				}
 			}
-			if len(got) != 1 || got[0].index != 0x20 || got[0].size != tc.ext>>1 {
+			if len(got) != 1 || got[0].b[0] != 0x60 || got[0].b[1] != 0x40 || got[0].size != tc.ext>>1 {
 				t.Fatalf("expected chr $%02x at OAM index $20 to be sent; got %+v", tc.chr, got)
 			}
 			// drawn in front of Link like on g2 (lower OAM index), relative to g1's scroll:
@@ -1066,16 +1066,29 @@ func TestRemoteSpritesScenario_BodyDuringLocalDialog(t *testing.T) {
 // Enemies and NPCs use the same shadows as bombs and thrown objects: shadows are only sent while one of those exists,
 // and only the ones just under it.
 func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
+	// the OAM index each entry was set at, by sender and OAM bytes; the sprites received don't carry it:
+	oam := map[*emulator.System]map[[4]uint8]uint8{}
 	setOAM := func(e *emulator.System, i int, x, y, chr, attr, ext uint8) {
 		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
 		e.WRAM[0x0A20+i] = ext
+		if oam[e] == nil {
+			oam[e] = map[[4]uint8]uint8{}
+		}
+		oam[e][[4]uint8{x, y, chr, attr}] = uint8(i)
+	}
+	// indexOf returns the OAM index a received sprite was set at; Link's own entries (not set here) are at $64:
+	indexOf := func(h *skScenario, sp remoteSprite) uint8 {
+		if i, ok := oam[h.gs[1].e][[4]uint8{sp.b[0], sp.b[1], sp.b[2], sp.b[3]}]; ok {
+			return i
+		}
+		return 0x64
 	}
 	sent := func(h *skScenario) (chrs []uint8) {
 		list := append([]remoteSprite(nil), h.gs[0].g.players[1].Sprites.list...)
-		sort.Slice(list, func(i, j int) bool { return list[i].index < list[j].index })
+		sort.SliceStable(list, func(i, j int) bool { return indexOf(h, list[i]) < indexOf(h, list[j]) })
 		for _, sp := range list {
 			// Link's own entries are at $64..$67:
-			if sp.index < 0x64 || sp.index > 0x6F {
+			if i := indexOf(h, sp); i < 0x64 || i > 0x6F {
 				chrs = append(chrs, sp.b[2])
 			}
 		}
@@ -1140,8 +1153,8 @@ func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
 		list := h.gs[0].g.players[1].Sprites.list
 		var shadows []uint8
 		for _, sp := range list {
-			if sp.b[2] == 0x6C && (sp.index < 0x64 || sp.index > 0x6F) {
-				shadows = append(shadows, sp.index)
+			if i := indexOf(h, sp); sp.b[2] == 0x6C && (i < 0x64 || i > 0x6F) {
+				shadows = append(shadows, i)
 			}
 		}
 		if len(shadows) != 1 || shadows[0] != 0x21 {
@@ -1170,8 +1183,8 @@ func TestRemoteSpritesScenario_OnlyOwnShadowsSent(t *testing.T) {
 		h.frames(8)
 		var shadows []uint8
 		for _, sp := range h.gs[0].g.players[1].Sprites.list {
-			if isCaptureShadowChr(sp.b[2]) && (sp.index < 0x64 || sp.index > 0x6F) {
-				shadows = append(shadows, sp.index)
+			if i := indexOf(h, sp); isCaptureShadowChr(sp.b[2]) && (i < 0x64 || i > 0x6F) {
+				shadows = append(shadows, i)
 			}
 		}
 		sort.Slice(shadows, func(i, j int) bool { return shadows[i] < shadows[j] })
@@ -1332,7 +1345,12 @@ func TestRemoteSpritesScenario_EnemyDeathNotSent(t *testing.T) {
 		var got []uint8
 		for _, sp := range h.gs[0].g.players[1].Sprites.list {
 			if sp.b[2] == 0x9B {
-				got = append(got, sp.index)
+				// OAM $20 is at x $62, $21 at x $C0:
+				i := uint8(0x20)
+				if sp.b[0] == 0xC0 {
+					i = 0x21
+				}
+				got = append(got, i)
 			}
 		}
 		if len(got) != 1 || got[0] != 0x21 {
@@ -1425,58 +1443,6 @@ func TestRemoteSpritesScenario_SwordAndShield(t *testing.T) {
 	h.expectOAMUnused("no shield", 0, 0x7A)
 }
 
-// alttpo sends the sword and shield tiles themselves (once per chr and packet) instead of unique tile indices; o2 finds
-// the pose by looking the tiles up in its copy of the local player's tiles.
-func TestRemoteSpritesScenario_AlttpoSwordPose(t *testing.T) {
-	h := newRSScenario(t)
-	tiles := h.setTestSwordShield()
-	g := h.gs[0].g
-	tile := func(i int) (d [32]byte) { copy(d[:], tiles[i<<5:]); return }
-	none := [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
-	sword := func(index, chr uint8, gfx *[32]byte) remoteSprite {
-		sp := remoteSprite{index: index, b: [5]uint8{0x48, 0x50, chr, 0x26, 0}, absidx: none}
-		if gfx != nil {
-			sp.gfx[0], sp.hasGfx = *gfx, true
-		}
-		return sp
-	}
-	t3, t4, t15, t9 := tile(3), tile(4), tile(15), tile(9)
-
-	// chrs $05 and $06 show tiles 3 and 4, chr $15 tile 15; a second sprite of chr $05 comes without tiles:
-	parts, sprites := g.remoteEquipment([]remoteSprite{
-		sword(0x10, 0x05, &t3), sword(0x11, 0x06, &t4), sword(0x12, 0x15, &t15), sword(0x13, 0x05, nil),
-	})
-	if len(parts) != 1 || parts[0] != (remotePart{src: [2]uint16{0x9060, 0x91E0}, flags: partWRAM | partTopRow | partBottomRow}) {
-		t.Errorf("parts %+v; expected the sword from $9060 and $91E0", parts)
-	}
-	if len(sprites) != 4 || sprites[0].off != 0x00 || sprites[1].off != 0x01 || sprites[2].off != 0x10 || sprites[3].off != 0x00 {
-		t.Errorf("sprites %+v", sprites)
-	}
-
-	// chrs $05 and $06 that aren't next to each other in the local tiles: not the local player's sword:
-	if parts, _ := g.remoteEquipment([]remoteSprite{sword(0x10, 0x05, &t3), sword(0x11, 0x06, &t9)}); len(parts) != 0 {
-		t.Errorf("parts %+v; expected none", parts)
-	}
-	// tiles that aren't the local player's at all:
-	var other [32]byte
-	for i := range other {
-		other[i] = 0xA5
-	}
-	if parts, _ := g.remoteEquipment([]remoteSprite{sword(0x10, 0x05, &other)}); len(parts) != 0 {
-		t.Errorf("parts %+v; expected none", parts)
-	}
-
-	// the tiles are kept when the sprites are received:
-	msg := []byte{1, 0x85, 0x48, 0x50, 0x05, 0x26, 0x00, 0xFF, 0xFF}
-	msg = append(msg, t3[:]...)
-	p := &g.players[1]
-	if err := g.deserializeRemoteSprites(p, bytes.NewReader(msg), 0); err != nil {
-		t.Fatal(err)
-	}
-	if sp := p.Sprites.list[0]; !sp.hasGfx || sp.gfx[0] != t3 || sp.index != 0x05 || sp.absidx[0] != noUniqTile {
-		t.Errorf("received %+v", sp)
-	}
-}
 
 // setModuleDrawsAt makes g1's module draw 8x8 sprites with chr at the OAM entries index.
 func (h *skScenario) setModuleDrawsAt(chr uint8, index ...int) {

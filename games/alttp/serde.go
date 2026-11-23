@@ -29,8 +29,8 @@ const (
 	MsgLocationChanges  MessageType = 0x02 // changes since the last MsgLocation; see compact.go
 	MsgSfx              MessageType = 0x03
 	MsgSprites          MessageType = 0x04
-	MsgSpriteChrs       MessageType = 0x05 // reserved for the sprite redesign (facts); not sent yet
-	MsgSpritePalettes   MessageType = 0x06 // reserved for the sprite redesign (facts); not sent yet
+	MsgSpriteChrs       MessageType = 0x05 // binds Link's chrs to tiles of the Link graphics fact; see sprites.go
+	MsgSpritePalettes   MessageType = 0x06 // the sprite palettes the sprites use; see sprites.go
 	MsgWRAM             MessageType = 0x07
 	MsgSRAM             MessageType = 0x08
 	MsgAncillae         MessageType = 0x09
@@ -103,6 +103,8 @@ func (g *Game) initSerde() {
 		MsgLocation:         g.DeserializeLocation,
 		MsgSfx:              g.DeserializeSfx,
 		MsgSprites:          g.DeserializeSprites,
+		MsgSpriteChrs:       g.DeserializeSpriteChrs,
+		MsgSpritePalettes:   g.DeserializeSpritePalettes,
 		MsgWRAM:             g.DeserializeWRAM,
 		MsgSRAM:             g.DeserializeSRAM,
 		MsgAncillae:         g.DeserializeAncillae,
@@ -343,10 +345,6 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	//log.Printf("[%02x]: %04x, %04x\n", uint8(p.Index), p.X, p.Y)
 
 	return
-}
-
-func (g *Game) DeserializeSprites(p *Player, r io.Reader) (err error) {
-	return g.deserializeRemoteSprites(p, r, 0)
 }
 
 func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {

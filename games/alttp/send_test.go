@@ -105,11 +105,7 @@ func TestSend_SpritePalettesOnChange(t *testing.T) {
 					continue
 				}
 				_, parsed, _ := alttpoParseFull(p.data)
-				for _, sp := range parsed.sprites {
-					if sp.palette != nil {
-						withPalette++
-					}
-				}
+				withPalette += len(parsed.palettes)
 			}
 		}
 	}
@@ -124,10 +120,8 @@ func TestSend_SpritePalettesOnChange(t *testing.T) {
 		for _, p := range pkts {
 			if p.kind == protocol05.BroadcastSector {
 				_, parsed, _ := alttpoParseFull(p.data)
-				for _, sp := range parsed.sprites {
-					if sp.palette != nil {
-						got = sp.palette
-					}
+				if pal, ok := parsed.palettes[7]; ok {
+					got = pal
 				}
 			}
 		}

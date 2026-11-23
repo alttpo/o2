@@ -37,6 +37,8 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
   starts a message) and sends the sender's player-info first.
 - `client.Client.Disconnect` sends leave-group twice before closing.
 - Fact 0x00's item buffer is $D00 bytes ($7E9480-$7EA17F), not the $1200 first planned; PROTOCOL05.md is updated.
+- Sprite entries carry no OAM index: their order is OAM order (front to back), and a receiver's `remoteSprite.index`
+  is the position. Tests that need the sender's OAM index find it by the OAM bytes they set.
 - o2 can't bind the flute bird's chrs ($0E-$0F, $1E-$1F): its patch copies only $0AC0-$0AD7 of the DMA sources to SRAM,
   and the bird's are at $0AF4-$0AF8. The fact has the bird's tiles anyway, for alttpo.
 
@@ -67,7 +69,17 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       server answers); downloading a remote player's fact on demand (`factData`), checked against its hash.
 - [x] Fact 0x00 (Link graphics, `linkfact.go`): bank $10, sword levels 1-4, shield levels 1-3, item buffer, flute
       bird; `TestLinkFact_MatchesGame` compares it with the game's own routines on the US and JP ROMs.
-- [ ] Sprites 0x04 / SpriteChrs 0x05 / SpritePalettes 0x06; remotesprites draws from the remote player's fact.
+- [x] Sprites 0x04 / SpriteChrs 0x05 / SpritePalettes 0x06 sent (`sprites.go`, `send.go` `addLinkSprites`) and
+      received (`remotesprites.go`): sprites in OAM order, 5 bytes each; Link's rows ($00-$0A, $10-$1A) bound to
+      fact 0x00 tiles, only the rows the sprites show; palettes when they change. Sprites showing a Link chr without a
+      tile aren't sent. The receiver maps bindings onto the tiles it already draws with (`remoteChrTile`): LinkGraphics
+      tiles from its own ROM, and its own sword/shield tiles only when the levels match.
+- [ ] Draw remote players with their own graphics from their fact 0x00 (custom Link sprites, other sword/shield
+      levels, items). Needs the fact's tiles in SNES memory: an SRAM tile buffer that o2 fills from `factData` and the
+      NMI upload (`emitNMIUpload`, part flags) reading from it instead of LinkGraphics/WRAM $7E; patch format bump and
+      cycle budgets (`cycles_test.go`).
+- [ ] Bind the flute bird (chrs $0E-$0F, $1E-$1F): the patch would have to copy $0AF4-$0AF9 to SRAM as well
+      (`linkOAMCopy*` in patcher.go; mind `linkOAMCopyReadSize` < 255).
 - [x] Stop padding the group (`client.SetGroup`).
 
 ### alttpo
@@ -84,3 +96,5 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - o2-server `89fda17`: p5 server and facts, with tests.
 - o2 `6b333e4`: `client/protocol05` and the test hub.
 - o2 `7daac7d`: p5 networking and game protocol v2 (framing, renumbering, dropped messages).
+- o2 `7e77624`: one packet per destination per frame.
+- o2 `cc9dfe0`: facts and the Link graphics fact.

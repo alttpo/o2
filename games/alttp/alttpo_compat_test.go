@@ -20,13 +20,15 @@ func alttpoParse(r []byte) (types []uint8, err error) {
 }
 
 type alttpoSprite struct {
-	b       [6]uint8 // index, b0..b4 as received (flag bits included)
-	absidx  []uint16
-	palette []byte
+	b [5]uint8 // x, y, chr, attributes, ext
 }
 
 type alttpoParsed struct {
 	sprites []alttpoSprite
+	// chr bindings: chr -> fact << 16 | tile:
+	chrs map[uint8]uint32
+	// palettes sent, by palette:
+	palettes map[int][]byte
 }
 
 func alttpoParseFull(pkt []byte) (types []uint8, parsed alttpoParsed, err error) {
@@ -79,29 +81,34 @@ func alttpoParseBody(t uint8, r []byte, parsed *alttpoParsed) (c int, known bool
 		n := int(u8())
 		for i := 0; i < n; i++ {
 			var spr alttpoSprite
-			need(6)
-			copy(spr.b[:], r[c:c+6])
-			fl, b1, b4 := u8(), (func() uint8 { skip(1); return u8() })(), (func() uint8 { skip(2); return u8() })()
-			size := (b4 >> 1) & 1
-			if b1 == 0xF0 {
-				size = 0
-			}
-			spr.absidx = append(spr.absidx, u16())
-			if size != 0 {
-				spr.absidx = append(spr.absidx, u16(), u16(), u16())
-			}
-			if fl&0x80 != 0 {
-				skip(32)
-				if size != 0 {
-					skip(96)
-				}
-			}
-			if b4&0x80 != 0 {
-				need(32)
-				spr.palette = r[c : c+32]
-				skip(32)
-			}
+			need(5)
+			copy(spr.b[:], r[c:c+5])
+			skip(5)
 			parsed.sprites = append(parsed.sprites, spr)
+		}
+	case MsgSpriteChrs:
+		if parsed.chrs == nil {
+			parsed.chrs = map[uint8]uint32{}
+		}
+		n := int(u8())
+		for i := 0; i < n; i++ {
+			chr, cnt, fact := u8(), u8(), u8()
+			tile := u16()
+			for k := uint8(0); k < cnt; k++ {
+				parsed.chrs[chr+k] = uint32(fact)<<16 | uint32(tile+uint16(k))
+			}
+		}
+	case MsgSpritePalettes:
+		if parsed.palettes == nil {
+			parsed.palettes = map[int][]byte{}
+		}
+		mask := u8()
+		for k := 0; k < 8; k++ {
+			if mask&(1<<k) != 0 {
+				need(32)
+				parsed.palettes[k] = r[c : c+32]
+				skip(32)
+			}
 		}
 	case MsgWRAM:
 		n := int(u8())
@@ -404,21 +411,25 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		t.Errorf("expected remote small keys session 01020304 with Eastern Palace = 3; got %+v", rk)
 	}
 
-	// sprites packet with chr data, palettes and uniqtile indices:
+	// sprites packet: Link's head and body bound to the Link graphics fact, a palette and three sprites:
 	{
 		p := newAlttpoPacket(remote, 10)
+		p.m(MsgSpriteChrs).u8(2)
+		p.u8(0x00, 2, 0).u16(0x0020)
+		p.u8(0x10, 2, 0).u16(0x0030)
+		p.m(MsgSpritePalettes).u8(0x80).zeros(32)
 		p.m(MsgSprites).u8(3)
-		// small sprite with chr + palette:
-		p.u8(0x80, 0x10, 0x20, 0x30, 0x40, 0x80).u16(0xFFFF).zeros(32).zeros(32)
-		// large sprite with chr data (4 chrs) and uniqtile indices:
-		p.u8(0x81, 0x10, 0x20, 0x30, 0x40, 0x02).u16(1).u16(2).u16(3).u16(4).zeros(32 * 4)
-		// disabled large-flagged sprite (b1 = $F0 means size is not decoded):
-		p.u8(0x02, 0x00, 0xF0, 0x00, 0x00, 0x02).u16(5)
+		p.u8(0x10, 0x20, 0x00, 0x0E, 0x02) // head, 16x16
+		p.u8(0x10, 0x28, 0x6C, 0x08, 0x02) // shadow, 16x16
+		p.u8(0x00, 0xF0, 0x00, 0x00, 0x02) // disabled
 		p.location(0x07, 0x04, 0x010012, 0x1235, 0x5678)
 		p.send(t, g)
 	}
 	if rp.X != 0x1235 {
 		t.Errorf("expected parsing to continue past sprite messages; x = %04x", rp.X)
+	}
+	if l := rp.Sprites.list; len(l) != 3 || l[0].absidx != [4]uint16{0x20, 0x21, 0x30, 0x31} || l[1].absidx[0] != noUniqTile {
+		t.Errorf("unexpected remote sprites %+v", l)
 	}
 
 	// enemy sync packet:
