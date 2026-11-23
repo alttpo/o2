@@ -97,10 +97,13 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - [x] Sprites 0x04 / 0x05 / 0x06 (`send_sprites`, `link_chr_tiles` in LocalGameState.as; `deserialize_sprite_chrs`,
       `resolve_sprite_chrs`, `deserialize_sprites` in GameState.as). Received chrs bound to a fact that hasn't
       downloaded yet aren't drawn (`chr_tile`); unbound chrs come from the local VRAM.
-- [ ] SM facts 0x10 and 0x11 (Samus' graphics, banks $9C-$9F) and Samus' sprites by pose: alttpo sends no sprites in
-      SM until then.
-- [ ] Cleanup: the unique tile capture (`capture_sprites_vram`, `capture_uniqtiles`, `lttp_uniqtile_*`, the
-      receiver's `uniqtile_get`/`missing_uniq_absidx`) is no longer used for sending or drawing ALTTP sprites.
+- [x] SM facts 0x10 and 0x11 (`SMFact.as`, built for SM and SMZ3 ROMs; the same bytes as the ROM file's on vanilla
+      SM, and the same on SMZ3) and Samus' sprites by pose (`sm_chr_rows`); `send_sprites` takes its rows from
+      `link_chr_rows` or `sm_chr_rows`. Checked only by compiling and by running the row builder over every pose.
+- [x] Cleanup: the unique tile capture and drawing are gone.
+- [ ] SMZ3: no Link graphics fact is built ("sprite sheet routines not found in ROM"): `LinkFactBuilder.find` only
+      knows the US and JP addresses of `Decompress_sprite_arbitrary` etc., and SMZ3 moves ALTTP's code. Link's
+      sprites aren't sent in SMZ3 until it finds them there.
 
 ### Open follow-ups (both clients)
 
@@ -122,3 +125,5 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - alttpo `b697255`: p5, game protocol v2, facts store; sprite sync off.
 - alttpo `1f21357`: the Link graphics fact.
 - alttpo `c3796ab`: sprites by pose.
+- o2 `9a584bc`: incompatible players in the players list.
+- alttpo `443af9c`: SM facts and Samus' sprites by pose; unique tiles removed.
