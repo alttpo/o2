@@ -497,9 +497,6 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             }
         </div>
         <div style="grid-column: 1 / -1; margin-top: 0.5em">
-            <DebugSections ch={ch} vm={vm}/>
-        </div>
-        <div style="grid-column: 1 / -1; margin-top: 0.5em">
             <div>updates:</div>
             <div ref={historyTextarea}
                  class="notification-history"
@@ -508,6 +505,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                     <span><span style="font-family: monospace; font-size: 0.8rem">{h.t}</span>&nbsp;&ndash;&nbsp;{h.m}</span>
                 </Fragment>))}
             </div>
+        </div>
+        <div style="grid-column: 1 / -1; margin-top: 0.5em">
+            <DebugSections ch={ch} vm={vm}/>
         </div>
         <div style="grid-column: 1 / -1; margin-top: 0.5em">
             <WorldMap vm={vm}/>
