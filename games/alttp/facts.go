@@ -38,7 +38,10 @@ type factsState struct {
 }
 
 type localFact struct {
-	data     []byte
+	data []byte
+	// its hash, as the server computes it, once computed (see localFactHash):
+	hash     protocol05.Hash
+	hashOK   bool
 	received uint64
 	status   bool // a fact-status arrived since the last join
 	complete bool
@@ -81,12 +84,27 @@ func (g *Game) buildLocalFacts() {
 	}
 }
 
+// localFactHash returns the hash of a local fact, as the server computes it.
+func (g *Game) localFactHash(factNum uint8) (protocol05.Hash, bool) {
+	f := &g.facts
+	f.init()
+	lf := f.local[factNum]
+	if lf == nil {
+		return protocol05.Hash{}, false
+	}
+	if !lf.hashOK {
+		sum := sha256.Sum256(lf.data)
+		lf.hash, lf.hashOK = protocol05.Hash(sum[:protocol05.HashSize]), true
+	}
+	return lf.hash, true
+}
+
 // factsJoined starts the uploads again after a new join: the server may have lost our facts.
 func (g *Game) factsJoined() {
 	f := &g.facts
 	f.init()
 	for _, lf := range f.local {
-		*lf = localFact{data: lf.data}
+		*lf = localFact{data: lf.data, hash: lf.hash, hashOK: lf.hashOK}
 	}
 }
 

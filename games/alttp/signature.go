@@ -122,6 +122,9 @@ func computePatchVersion() (v [4]byte) {
 		runTimingSize,
 		gatesAddr,
 		nmiCountHookAddr,
+		remoteTilesAddr,
+		remoteTileRowMax,
+		remoteTileRowSize,
 	})
 	// the ROM the routines are placed in, and the size of the patched ROM:
 	_ = binary.Write(h, binary.LittleEndian, [3]uint32{patchRegion.start, patchRegion.end, patchedROMSize})

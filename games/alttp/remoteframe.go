@@ -1111,7 +1111,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 		a.LDA_dp(rcDrawn)
 		a.AND_imm16_w(1 << p)
 		a.BEQ(skip)
-		a.Comment(fmt.Sprintf("part %d: its slot's VRAM address, and bit 15 set if its tiles are in WRAM:", p))
+		a.Comment(fmt.Sprintf("part %d: its slot's VRAM address, with bit 15 set if its tiles are in WRAM, bit 13 if in SRAM:", p))
 		a.LDA_abs(st(rsPartSlot + p))
 		a.AND_imm16_w(0x00FF)
 		a.ASL()
@@ -1132,7 +1132,7 @@ func emitRemoteFrame(a *asm.Emitter, t remoteFrameTables, dyingList uint32) (ent
 		a.STA_dp(rcUpBit)
 		a.LDA_abs(tb(rtPartFlags + p))
 		a.STA_dp(rcUpFlags)
-		a.AND_imm16_w(partWRAM)
+		a.AND_imm16_w(partWRAM | partSRAM)
 		a.XBA()
 		a.STA_dp(rcUpWRAM)
 		for row := uint32(0); row < 2; row++ {

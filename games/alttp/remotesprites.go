@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math/bits"
+	"o2/client/protocol05"
 	"o2/snes"
 	"sort"
 	"time"
@@ -25,16 +26,21 @@ import (
 //     so the tiles can be copied from the local ROM: the remote player's pose is shown with the local player's Link
 //     graphics.
 //   - The same player's sword and shield are drawn in their pose with the local player's sword and shield tiles, which
-//     the game keeps in WRAM $7E9000..$7E947F (see swordshield.go). o2 sends the pose as unique tile indices
-//     $380..$3A3, offsets into that buffer; alttpo sends the tiles themselves, which o2 finds in its own copy of the
-//     buffer. A sword or shield the local player doesn't have (or a different one, for alttpo players) is not drawn.
+//     the game keeps in WRAM $7E9000..$7E947F (see swordshield.go), when the player's sword or shield is the same
+//     level. A sword or shield the local player doesn't have is not drawn.
+//   - With the player's own graphics: players bind their chrs to tiles of their Link graphics fact (fact 0x00, see
+//     sprites.go and linkfact.go). Once o2 has a player's fact and it differs from the local player's (a custom Link
+//     sprite), or the player's sword or shield is another level, o2 copies the rows of tiles the parts show from the
+//     fact into an SRAM buffer (remoteTilesAddr) and the NMI hooks upload them from there. Until the fact is here, the
+//     player is drawn with the local graphics as above.
 //   - The shadow (chr $6C on the ground, $28 or $38 while recoiling or jumping off a ledge), sword sparkles and dash
 //     dust (captureChrs) that the same player sends are drawn too, from the local static and common sprite sheets.
 //   - Every other remote player in the same location is drawn as a single 16x16 sprite at their coordinates, chr $64
 //     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet, with a 16x16 shadow
 //     (chr $6C) under it like the game draws under enemies.
 //
-// VRAM: the head, body, sword and shield are each a "part" of 2x2 chrs that a NMI hook uploads into a VRAM slot. The
+// VRAM: the head, body, sword and shield are each a "part" of 2x2 chrs that a NMI hook uploads into a VRAM slot, from
+// LinkGraphics, WRAM or the SRAM buffer of rows from remote players' facts. The
 // slots (remoteSlots) are chrs that the game itself uploads in every NMI with core updates enabled: Link's sword,
 // shield and item chrs and the chrs that followers (Zelda, the old man, the bomb...) and a few NPC sprites with large
 // animations (Kiki, the crystal maidens, the old mountain man, the returning smithy, Blind's maiden form) use. Each
@@ -121,7 +127,24 @@ const (
 	partBottomRow = 0x02
 	// the part's tiles are in WRAM bank $7E (the sword and shield), else in LinkGraphics:
 	partWRAM = 0x80
+	// the part's tiles are in the SRAM buffer of rows from remote players' facts (remoteTilesAddr), else as partWRAM
+	// says. With partWRAM, the bits of the VRAM word address of rsNMIList's rows that say where the source is:
+	partSRAM = 0x20
 )
+
+// the SRAM buffer of rows of tiles from remote players' facts, which o2 writes and the NMI hooks upload (see
+// remoteTileRows): remoteTileRowMax rows of 2 tiles. A part's row is a DMA source address in it, with partSRAM:
+const (
+	remoteTilesAddr   = uint32(0x706D80)
+	remoteTileRowSize = 0x40
+	remoteTileRowMax  = 10
+	remoteTilesEnd    = remoteTilesAddr + remoteTileRowMax*remoteTileRowSize
+)
+
+// the buffer is between the rupee log and the run timing, in the bank of the remote sprites table and state:
+const _ = remoteTilesAddr - rupeeLogEnd
+const _ = runTimingAddr - remoteTilesEnd
+const _ = uint8(remoteTilesAddr>>16) - uint8(remoteStateAddr>>16)
 
 // the extended attributes of an entry:
 const (
@@ -164,8 +187,9 @@ const (
 	// once nothing was drawn, or the recording can't be replayed. Cleared with rsNMILen before turning the sprites gate
 	// on (u8; the high byte is unused):
 	rsReplay = rsNMILen + 2
-	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, else in LinkGraphics) and
-	// DMA source address:
+	// the rows to upload: VRAM word address (bit 15 set if the source is in WRAM bank $7E, bit 13 if it is in the SRAM
+	// buffer of rows from remote players' facts, else in LinkGraphics) and DMA source address. The VRAM addresses of
+	// the slots are $4000..$45FF, so bit 13 is free:
 	rsNMIList = rsNMILen + 4
 	// the byte length of rsCache (u16), and the last rows the NMI hooks uploaded, in the same format as rsNMIList; rows
 	// still in VRAM while the game doesn't upload its own (core updates disabled) are not uploaded again:
@@ -421,7 +445,7 @@ func emitNMIHooks(a *asm.Emitter, upload uint32) (late, early, follower, followe
 // VRAM from the last upload (rsCache, rsKept). linkGfxBankIns is the 2 byte instruction at linkGfxBankAddr that loads the
 // bank of Link's graphics.
 //
-// Cycles (cycles_test.go): budget 600, measured 546 with 3 remote players.
+// Cycles (cycles_test.go): budget 600, measured 562 with 3 remote players.
 func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	st := func(o uint32) uint32 { return remoteStateAddr + o }
 	a.AssumeSEP(0x20)
@@ -456,7 +480,7 @@ func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.JMP_abs("nmi_up_next")
 	a.Label("nmi_up_row")
 	a.LDA_long_x(st(rsNMIList + 0))
-	a.AND_imm16_w(0x7FFF)
+	a.AND_imm16_w(^uint16((partWRAM | partSRAM) << 8))
 	a.STA_abs(0x2116)
 	a.LDA_long_x(st(rsNMIList + 2))
 	a.STA_abs(0x4302)
@@ -465,8 +489,14 @@ func emitNMIUpload(a *asm.Emitter, linkGfxBankIns []byte) {
 	a.SEP(0x20)
 	a.LDA_long_x(st(rsNMIList + 1))
 	a.BMI("nmi_up_wram")
+	a.AND_imm8_b(partSRAM)
+	a.BNE("nmi_up_sram")
 	a.Comment("the bank of Link's graphics:")
 	a.LDA_sr(0x03)
+	a.BRA("nmi_up_bank")
+	a.Label("nmi_up_sram")
+	a.Comment("the SRAM buffer of rows from remote players' facts:")
+	a.LDA_imm8_b(uint8(remoteTilesAddr >> 16))
 	a.BRA("nmi_up_bank")
 	a.Label("nmi_up_wram")
 	a.LDA_imm8_b(0x7E)
@@ -542,6 +572,8 @@ type remoteSprite struct {
 	// ($380..$3A3, offsets into WRAM $7E9000) when the remote player's sword or shield is the same level; see
 	// remoteChrTile:
 	absidx [4]uint16
+	// the tiles of the player's Link graphics fact its 1 or 4 chrs are bound to, noFactTile if none:
+	tiles [4]uint16
 }
 
 type remoteSprites struct {
@@ -644,13 +676,17 @@ func (g *Game) DeserializeSprites(p *Player, r io.Reader) (err error) {
 			sp.size = 0
 		}
 		sp.absidx = [4]uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}
+		sp.tiles = [4]uint16{noFactTile, noFactTile, noFactTile, noFactTile}
 		if sp.b[3]&1 == 0 {
 			chr := uint16(sp.b[2])
-			sp.absidx[0] = g.remoteChrTile(s, chr)
-			if sp.size != 0 {
-				sp.absidx[1] = g.remoteChrTile(s, chr+0x01)
-				sp.absidx[2] = g.remoteChrTile(s, chr+0x10)
-				sp.absidx[3] = g.remoteChrTile(s, chr+0x11)
+			for k, c := range [4]uint16{chr, chr + 0x01, chr + 0x10, chr + 0x11} {
+				if k > 0 && sp.size == 0 {
+					break
+				}
+				sp.absidx[k] = g.remoteChrTile(s, c)
+				if c < 0x20 && s.chrs[c].ok && s.chrs[c].fact == factLinkGraphics {
+					sp.tiles[k] = s.chrs[c].tile
+				}
 			}
 		}
 		s.list = append(s.list, sp)
@@ -742,9 +778,11 @@ var remoteEquipBlocks = []struct {
 const remoteEquipMax = 4
 
 // remoteEquipment returns the parts and slotted sprites (with part indices starting at 0) of a remote player's sword
-// and shield, in the pose the player sent, drawn with the local player's sword and shield tiles in WRAM (see
-// remoteChrTile). A sword or shield the local player doesn't have at the same level is not drawn.
-func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites []slottedSprite) {
+// and shield, in the pose the player sent. They are drawn with the local player's sword and shield tiles in WRAM when
+// the remote player's are the same level and graphics, else with the tiles of its fact copied to the SRAM buffer of
+// rows (fact.data; see remoteTileRows). Without the fact, a sword or shield the local player doesn't have at the same
+// level is not drawn.
+func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact) (parts []remotePart, sprites []slottedSprite) {
 	s := &g.swordShield
 	sorted := sortedByIndex(list)
 
@@ -767,15 +805,18 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 	}
 
 	for bi, b := range remoteEquipBlocks {
-		level, ok := s.swordLevel, s.swordOK
+		localLevel, localOK := s.swordLevel, s.swordOK
+		// the block's levels in the fact, one after the other:
+		factFirst, levelTiles := lfSwords>>5, swordTileCount
 		if bi == 1 {
-			level, ok = s.shieldLevel, s.shieldOK
+			localLevel, localOK = s.shieldLevel, s.shieldOK
+			factFirst, levelTiles = lfShields>>5, shieldTileCount
 		}
-		if !s.ok || !ok || level == 0 || level > b.maxLevel {
-			continue
-		}
+		localOK = s.ok && localOK && localLevel != 0 && localLevel <= b.maxLevel
 
-		// the possible first tiles of each row, as bits of tile indices:
+		// the level the sprites show (that of the first tile in the block), and the possible first tiles of each row,
+		// as bits of the level's tiles laid out as WRAM $7E9000:
+		level := 0
 		var rows [2]uint64
 		var used [2]bool
 		var block []slottedSprite
@@ -790,8 +831,14 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 			for k, o := range offs {
 				row, col := int(o>>4), int(o&1)
 				var m uint64
-				if idx := int(sp.absidx[k]) - swordShieldTileFirst; idx >= b.first+col && idx < b.end {
-					m = 1 << (idx - col)
+				if t := int(sp.tiles[k]); sp.tiles[k] != noFactTile && t >= factFirst && t < factFirst+int(b.maxLevel)*levelTiles {
+					l := (t-factFirst)/levelTiles + 1
+					if level == 0 {
+						level = l
+					}
+					if idx := b.first + (t-factFirst)%levelTiles; l == level && idx >= b.first+col && idx < b.end {
+						m = 1 << (idx - col)
+					}
 				}
 				if used[row] {
 					rows[row] &= m
@@ -801,11 +848,27 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 			}
 			block = append(block, slottedSprite{sp: sp, part: len(parts), off: offs[0]})
 		}
-		if len(block) == 0 {
+		if len(block) == 0 || level == 0 {
 			continue
 		}
 
-		part := remotePart{flags: partWRAM}
+		// where the row of tiles starting at the tile first (laid out as WRAM $7E9000) is:
+		var src func(first int) (uint16, bool)
+		var flags uint8
+		switch {
+		case localOK && uint8(level) == localLevel && (fact.data == nil || fact.same):
+			flags = partWRAM
+			src = func(first int) (uint16, bool) { return uint16(swordShieldWRAMStart + first<<5), true }
+		case fact.data != nil:
+			flags = partSRAM
+			src = func(first int) (uint16, bool) {
+				return g.remoteSprites.tileRow(fact, uint16(factFirst+(level-1)*levelTiles+first-b.first))
+			}
+		default:
+			continue
+		}
+
+		part := remotePart{flags: flags}
 		for row := range rows {
 			if !used[row] {
 				continue
@@ -814,7 +877,12 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 				part.flags = 0
 				break
 			}
-			part.src[row] = uint16(swordShieldWRAMStart + bits.TrailingZeros64(rows[row])<<5)
+			a, ok := src(bits.TrailingZeros64(rows[row]))
+			if !ok {
+				part.flags = 0
+				break
+			}
+			part.src[row] = a
 			part.flags |= partTopRow << row
 		}
 		if part.flags&(partTopRow|partBottomRow) == 0 {
@@ -824,6 +892,88 @@ func (g *Game) remoteEquipment(list []remoteSprite) (parts []remotePart, sprites
 		sprites = append(sprites, block...)
 	}
 	return
+}
+
+// remoteFact is a remote player's Link graphics fact: its contents if o2 has them (data, else nil), its hash, and
+// whether it is the same as the local player's (data is then the local player's).
+type remoteFact struct {
+	data []byte
+	hash protocol05.Hash
+	same bool
+}
+
+// remoteLinkFact returns a remote player's Link graphics fact, and starts downloading it if o2 doesn't have it yet.
+func (g *Game) remoteLinkFact(p *Player, now time.Time) (fact remoteFact) {
+	f := &g.facts
+	f.init()
+	e, listed := f.lists[p.Index()][factLinkGraphics]
+	if !listed {
+		// asks for the fact-list:
+		g.factData(p.Index(), factLinkGraphics, now)
+		return
+	}
+	fact.hash = e.Hash
+	if h, ok := g.localFactHash(factLinkGraphics); ok && h == e.Hash {
+		fact.same = true
+		fact.data = f.local[factLinkGraphics].data
+		return
+	}
+	fact.data, _ = g.factData(p.Index(), factLinkGraphics, now)
+	return
+}
+
+// remoteTileRow is a row of 2 tiles of a fact (by its hash), from tile:
+type remoteTileRow struct {
+	ok   bool
+	hash protocol05.Hash
+	tile uint16
+}
+
+// remoteTileRows: o2 copies the rows of tiles that parts show from remote players' facts into the SRAM buffer at
+// remoteTilesAddr, before the table that uses them. A row stays where it is while tables use it, so a table that
+// doesn't change doesn't change the buffer; a new row goes where no table uses one, else where the last table written
+// uses one and the new one doesn't (which may show it for a frame before the new table arrives). Whenever o2 writes
+// rows it clears rsKept, so that the NMI hooks don't keep a row in VRAM whose source it overwrote.
+
+// beginRows starts the rows of the table being built from the rows in the buffer.
+func (s *remoteSpritesLocal) beginRows() {
+	s.next, s.nextUsed, s.nextData = s.rows, 0, [remoteTileRowMax][]byte{}
+}
+
+// tileRow returns the DMA source address of the row of 2 tiles of a fact from tile in the SRAM buffer, which the table
+// being built uses, putting it there if it isn't. ok is false if the fact is too short or the buffer has no room.
+func (s *remoteSpritesLocal) tileRow(fact remoteFact, tile uint16) (src uint16, ok bool) {
+	o := int(tile) << 5
+	if o+remoteTileRowSize > len(fact.data) {
+		return 0, false
+	}
+	key := remoteTileRow{ok: true, hash: fact.hash, tile: tile}
+	pick := -1
+	for i := range s.next {
+		if s.next[i] == key {
+			pick = i
+			break
+		}
+	}
+	if pick < 0 {
+		for pass := 0; pass < 2 && pick < 0; pass++ {
+			for i := range s.next {
+				bit := uint16(1) << i
+				if s.nextUsed&bit != 0 || (pass == 0 && s.rowsLive&bit != 0) {
+					continue
+				}
+				pick = i
+				break
+			}
+		}
+		if pick < 0 {
+			return 0, false
+		}
+		s.next[pick] = key
+		s.nextData[pick] = fact.data[o : o+remoteTileRowSize]
+	}
+	s.nextUsed |= 1 << pick
+	return uint16(remoteTilesAddr + uint32(pick)*remoteTileRowSize), true
 }
 
 // remoteExtraSprites returns up to max sprites with captured chrs (Link's shadow or the water ripples or grass under
@@ -886,6 +1036,15 @@ type remoteSpritesLocal struct {
 	writtenOK   bool
 	writtenTime time.Time
 
+	// the rows of tiles in the SRAM buffer at remoteTilesAddr as o2 last wrote them, and the bits of those the last
+	// table written uses (see remoteTileRows):
+	rows     [remoteTileRowMax]remoteTileRow
+	rowsLive uint16
+	// the same for the table being built, and the rows to write before it:
+	next     [remoteTileRowMax]remoteTileRow
+	nextUsed uint16
+	nextData [remoteTileRowMax][]byte
+
 	// player and slotted sprite counts last logged, and counts that differ from them and since when; a count is logged
 	// once it holds for remoteLogSettle, so flickering players don't spam the log:
 	logged, pending [2]int
@@ -938,6 +1097,7 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	// every table, even one with nothing to draw, says when drawing it is late: the patch's first time check reads it
 	// to decide whether to capture and scan at all:
 	defer func() { t[rtDrawLate] = drawLateLineOf(&t) }()
+	g.remoteSprites.beginRows()
 	local := g.local
 	// the game itself stops drawing while the overworld map is shown (see emitRemoteDraw), so the mode 7 map does not
 	// count as a bad time for the local player; it keeps drawing remote players while the map opens and closes:
@@ -1003,16 +1163,26 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	var parts []remotePart
 	var slotted []slottedSprite
 	if body != nil {
+		// the player's own graphics once o2 has its fact, if they aren't the local player's:
+		fact := g.remoteLinkFact(players[0], now)
 		for j := len(body) - 1; j >= 0; j-- {
 			sp := body[j]
-			parts = append(parts, remotePart{
+			part := remotePart{
 				src:   [2]uint16{0x8000 + sp.absidx[0]<<5, 0x8000 + sp.absidx[2]<<5},
 				flags: partTopRow | partBottomRow,
-			})
+			}
+			if fact.data != nil && !fact.same {
+				top, okTop := g.remoteSprites.tileRow(fact, sp.tiles[0])
+				bottom, okBottom := g.remoteSprites.tileRow(fact, sp.tiles[2])
+				if okTop && okBottom {
+					part.src, part.flags = [2]uint16{top, bottom}, part.flags|partSRAM
+				}
+			}
+			parts = append(parts, part)
 			slotted = append(slotted, slottedSprite{sp: sp, part: len(parts) - 1})
 		}
 		t[rtRequired] = uint8(len(parts))
-		eqParts, eqSprites := g.remoteEquipment(players[0].Sprites.list)
+		eqParts, eqSprites := g.remoteEquipment(players[0].Sprites.list, fact)
 		for _, es := range eqSprites {
 			es.part += len(parts)
 			slotted = append(slotted, es)
@@ -1124,6 +1294,9 @@ var remoteTablePak = func() uint32 {
 	return pak
 }()
 
+// remoteTilesPak is the FX Pak Pro address of the SRAM buffer of rows:
+var remoteTilesPak = remoteTablePak + (remoteTilesAddr - remoteTableAddr)
+
 // writeRemoteSprites writes the remote sprites table to SRAM when it changed or its TTLs need refreshing.
 func (g *Game) writeRemoteSprites(now time.Time) {
 	if !g.ROMVerified || g.IsResetting() {
@@ -1141,7 +1314,18 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 		// only for comparing with the last write; the game counts it down:
 		t[rtCaptureTTL] = 1
 	}
-	if s.writtenOK && t == s.written {
+	// the rows of tiles the table needs that aren't in the SRAM buffer yet, written before it:
+	var writes []snes.Write
+	for i, d := range s.nextData {
+		if d != nil {
+			writes = append(writes, snes.Write{Address: remoteTilesPak + uint32(i)*remoteTileRowSize, Size: remoteTileRowSize, Data: d})
+		}
+	}
+	if len(writes) > 0 {
+		// the NMI hooks must upload the rows again, wherever they are:
+		writes = append(writes, snes.Write{Address: remoteStatePak + rsKept, Size: 2, Data: []byte{0, 0}})
+	}
+	if s.writtenOK && t == s.written && len(writes) == 0 {
 		if !(draw || capture) || now.Sub(s.writtenTime) < remoteTableRefresh {
 			return
 		}
@@ -1154,16 +1338,15 @@ func (g *Game) writeRemoteSprites(now time.Time) {
 	if capture {
 		data[rtCaptureTTL] = remoteTTLFrames
 	}
+	writes = append(writes, snes.Write{Address: remoteTablePak, Size: remoteTableSize, Data: data[:]})
 	if err := g.enqueueUnlocked(func() error {
-		return q.MakeWriteCommands(
-			[]snes.Write{{Address: remoteTablePak, Size: remoteTableSize, Data: data[:]}},
-			nil,
-		).EnqueueTo(q)
+		return q.MakeWriteCommands(writes, nil).EnqueueTo(q)
 	}); err != nil {
 		log.Printf("alttp: remote sprites: error enqueuing snes write: %v\n", err)
 		return
 	}
 	s.written, s.writtenOK, s.writtenTime = t, true, now
+	s.rows, s.rowsLive = s.next, s.nextUsed
 }
 
 // Captured sprites: sword sparkles, dash dust, projectiles, carried and thrown objects

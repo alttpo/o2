@@ -74,13 +74,13 @@ func (h *skScenario) remoteState(i int, o uint32) []byte {
 }
 
 // nmiRows returns the rows of chrs remoteDraw listed for g's NMI hooks to upload: VRAM address, source address and
-// partWRAM if the source is in WRAM.
+// partWRAM or partSRAM if the source is in WRAM or in the SRAM buffer of rows.
 func (h *skScenario) nmiRows(i int) (rows [][3]uint16) {
 	n := int(binary.LittleEndian.Uint16(h.remoteState(i, rsNMILen)))
 	l := h.remoteState(i, rsNMIList)
 	for o := 0; o < n; o += nmiRowSize {
 		v := binary.LittleEndian.Uint16(l[o:])
-		rows = append(rows, [3]uint16{v & 0x7FFF, binary.LittleEndian.Uint16(l[o+2:]), (v >> 15) * partWRAM})
+		rows = append(rows, [3]uint16{v &^ ((partWRAM | partSRAM) << 8), binary.LittleEndian.Uint16(l[o+2:]), v >> 8 & (partWRAM | partSRAM)})
 	}
 	return
 }
@@ -1610,5 +1610,143 @@ func TestRemoteSpritesScenario_FollowerUploadsInPlace(t *testing.T) {
 	}
 	if kept := h.remoteState(0, rsKept)[0]; kept != 0 {
 		t.Errorf("nothing kept: rsKept $%02x; expected 0", kept)
+	}
+}
+
+// setTestLinkFacts gives each player a Link graphics fact (the test ROM has none): facts[i] for player i.
+func (h *skScenario) setTestLinkFacts(facts ...[]byte) {
+	for i, gs := range h.gs {
+		f := &gs.g.facts
+		f.init()
+		f.built = true
+		f.local[factLinkGraphics] = &localFact{data: facts[i]}
+	}
+}
+
+func testLinkFact(seed int) []byte {
+	b := make([]byte, linkFactSize)
+	for i := range b {
+		b[i] = uint8(i*seed + i>>7 + seed)
+	}
+	return b
+}
+
+// expectSRAMRows expects g1's rows of the parts to be uploaded from the SRAM buffer of rows, holding the tiles of
+// fact from the tiles given (in the order of the rows), and the NMI hook to upload them from there.
+func (h *skScenario) expectSRAMRows(when string, fact []byte, tiles []uint16) {
+	h.t.Helper()
+	g1 := h.gs[0]
+	rows := h.nmiRows(0)
+	var sram [][3]uint16
+	for _, r := range rows {
+		if r[2] == partSRAM {
+			sram = append(sram, r)
+		}
+	}
+	if len(sram) != len(tiles) {
+		h.t.Fatalf("%s: NMI rows %04x; expected %d rows from SRAM", when, rows, len(tiles))
+	}
+	vram := runNMIHook(h.t, g1.e, g1.g)
+	for k, r := range sram {
+		if uint32(r[1]) < remoteTilesAddr&0xFFFF || uint32(r[1])+remoteTileRowSize > remoteTilesEnd&0xFFFF {
+			h.t.Errorf("%s: row %04x not in the SRAM buffer", when, r)
+			continue
+		}
+		expected := fact[int(tiles[k])<<5 : int(tiles[k])<<5+remoteTileRowSize]
+		if actual := g1.e.SRAM[r[1]&0x7FFF : r[1]&0x7FFF+remoteTileRowSize]; !bytes.Equal(actual, expected) {
+			h.t.Errorf("%s: SRAM $70%04x = % x; expected fact tile $%03x = % x", when, r[1], actual, tiles[k], expected)
+		}
+		if actual := vram.bytes(r[0], remoteTileRowSize); !bytes.Equal(actual, expected) {
+			h.t.Errorf("%s: VRAM $%04x = % x; expected fact tile $%03x = % x", when, r[0], actual, tiles[k], expected)
+		}
+	}
+	if vram.dmaBank(0) != 0x7E {
+		h.t.Errorf("%s: DMA source bank not restored to $7E: $%02x", when, vram.dmaBank(0))
+	}
+}
+
+// A remote player with a custom Link sprite (its Link graphics fact differs from the local player's) is drawn with its
+// own graphics once its fact is downloaded: the rows of its head, body, sword and shield are copied from the fact into
+// the SRAM buffer of rows and uploaded from there.
+func TestRemoteSpritesScenario_OwnGraphics(t *testing.T) {
+	h := newRSScenario(t)
+	h.setTestSwordShield()
+	local, custom := testLinkFact(3), testLinkFact(5)
+	h.setTestLinkFacts(local, custom)
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	setOAM(0x68, 0x48, 0x50, 0x05, 0x26, 0x00)
+	setOAM(0x69, 0x48, 0x58, 0x15, 0x26, 0x00)
+	setOAM(0x6A, 0x58, 0x58, 0x07, 0x26, 0x02)
+	for k, v := range []uint16{0x9060, 0x91E0, 0x9340, 0x9400} {
+		binary.LittleEndian.PutUint16(e.WRAM[0x0AC0+k*2:], v)
+	}
+
+	// before the fact is here, with the local graphics:
+	h.frames(8)
+	if len(h.gs[0].g.facts.store) > 1 {
+		t.Fatalf("g2's fact already here")
+	}
+	if rows := h.nmiRows(0); len(rows) != 8 || rows[0] != [3]uint16{0x4200, 0x9000, 0} || rows[4][2] != partWRAM {
+		t.Fatalf("NMI rows %04x; expected the local graphics before the fact is here", rows)
+	}
+
+	h.frames(40)
+	if _, ok := h.gs[0].g.facts.store[h.gs[0].g.facts.lists[h.gs[1].g.local.Index()][factLinkGraphics].Hash]; !ok {
+		t.Fatalf("g2's fact not downloaded")
+	}
+	// the body's rows (LinkGraphics $9000, $9200), the head's ($8400, $8600), the sword's (WRAM $9060, $91E0) and the
+	// shield's ($9340, $9400), as tiles of the fact:
+	sw, sh := uint16(lfSwords>>5), uint16(lfShields>>5)
+	h.expectSRAMRows("custom", custom, []uint16{0x080, 0x090, 0x020, 0x030, sw + 0x03, sw + 0x0F, sh + 0x02, sh + 0x08})
+	h.expectOAM("body", 0, 0x7A, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x79, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+
+	// a new pose for the head: only its rows change; the others stay where they are in the buffer:
+	before := h.nmiRows(0)
+	binary.LittleEndian.PutUint16(e.WRAM[0x0ACC:], 0x8800)
+	binary.LittleEndian.PutUint16(e.WRAM[0x0ACE:], 0x8A00)
+	h.frames(4)
+	h.expectSRAMRows("new head pose", custom, []uint16{0x080, 0x090, 0x040, 0x050, sw + 0x03, sw + 0x0F, sh + 0x02, sh + 0x08})
+	after := h.nmiRows(0)
+	for _, k := range []int{0, 1, 4, 5, 6, 7} {
+		if before[k] != after[k] {
+			t.Errorf("row %d moved: %04x -> %04x", k, before[k], after[k])
+		}
+	}
+	if after[2][1] == before[2][1] || after[3][1] == before[3][1] {
+		t.Errorf("the head's new rows overwrote the rows of the table before: %04x -> %04x", before, after)
+	}
+}
+
+// A remote player with the same Link graphics as the local player is drawn from the local ROM and WRAM as before,
+// but a sword or shield of another level than the local player's comes from the local fact through the SRAM buffer.
+func TestRemoteSpritesScenario_SameGraphicsOtherSword(t *testing.T) {
+	h := newRSScenario(t)
+	h.setTestSwordShield()
+	fact := testLinkFact(3)
+	h.setTestLinkFacts(fact, fact)
+	e := h.gs[1].e
+	// g2's sword is level 2:
+	e.WRAM[0xF359] = 2
+	h.gs[1].g.swordShield.swordLevel = 2
+	copy(e.WRAM[0x0800+0x68*4:], []byte{0x48, 0x50, 0x05, 0x26})
+	copy(e.WRAM[0x0800+0x69*4:], []byte{0x48, 0x58, 0x15, 0x26})
+	for k, v := range []uint16{0x9060, 0x91E0} {
+		binary.LittleEndian.PutUint16(e.WRAM[0x0AC0+k*2:], v)
+	}
+	h.frames(40)
+
+	rows := h.nmiRows(0)
+	if len(rows) != 6 || rows[0] != [3]uint16{0x4200, 0x9000, 0} || rows[2] != [3]uint16{0x4220, 0x8400, 0} {
+		t.Fatalf("NMI rows %04x; expected the head and body from LinkGraphics", rows)
+	}
+	sw := uint16(lfSwords>>5 + swordTileCount)
+	h.expectSRAMRows("level 2 sword", fact, []uint16{sw + 0x03, sw + 0x0F})
+	if len(h.gs[0].g.facts.downloads) != 0 {
+		t.Errorf("g1 downloads a fact it has")
 	}
 }
