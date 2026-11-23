@@ -36,6 +36,10 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
   grace or quotas. `alttpoPacket` in `alttpo_compat_test.go` builds framed v2 packets the way alttpo will (`m(type)`
   starts a message) and sends the sender's player-info first.
 - `client.Client.Disconnect` sends leave-group twice before closing.
+- alttpo is compile-checked headlessly (see the o2 memory "alttpo AngelScript compile check"); it has no tests, so
+  o2's `alttpo_compat_test.go` model (`alttpoParseBody`) is the reference for the message bodies both must agree on.
+- alttpo's compact small keys reads its own serialized message at fixed offsets; with the length byte they moved by one
+  (`add_small_keys_compact`).
 - Fact 0x00's item buffer is $D00 bytes ($7E9480-$7EA17F), not the $1200 first planned; PROTOCOL05.md is updated.
 - Sprite entries carry no OAM index: their order is OAM order (front to back), and a receiver's `remoteSprite.index`
   is the position. Tests that need the sender's OAM index find it by the OAM bytes they set.
@@ -84,10 +88,14 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 
 ### alttpo
 
-- [ ] Envelope (`receive.as`, `make_server_envelope`), join/sector/who-is/grace, leave on unload.
-- [ ] Game protocol v2 framing and renumbering in `GameState::deserialize` and every serializer.
-- [ ] Fact store; fact 0x00 built from ROM (port o2's sheet decompressor and 3bpp → 4bpp expansion).
-- [ ] Sprites 0x04 / 0x05 / 0x06 replacing unique tiles; SM facts 0x10, 0x11.
+- [x] Envelope (`receive.as`, `Protocol.as`), join/sector/who-is/grace (`P5State`), leave on disconnect and unload.
+- [x] Game protocol v2 framing (`msg_begin`/`msg_end`/`write_msg` in Protocol.as) and renumbering in
+      `GameState::deserialize` and every serializer; each message is read from a copy of the packet that ends with it.
+- [x] Fact store, uploads, downloads (`Facts.as`); the server's hashes are trusted (no hashing in AngelScript).
+- [ ] Fact 0x00 built from ROM (`LinkFact.as` is a stub): port o2's sheet decompressor, `expand3To4High`,
+      `do3To4Low` and the item list from `linkfact.go`.
+- [ ] Sprites 0x04 / 0x05 / 0x06 replacing unique tiles (sprite sync is off since b697255: `send_sprites` only sends
+      the sector state, and the receiver skips the sprite messages); SM facts 0x10, 0x11.
 
 ## Log
 
@@ -98,3 +106,5 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - o2 `7daac7d`: p5 networking and game protocol v2 (framing, renumbering, dropped messages).
 - o2 `7e77624`: one packet per destination per frame.
 - o2 `cc9dfe0`: facts and the Link graphics fact.
+- o2 `4ae8c98`: sprites by pose (MsgSprites, MsgSpriteChrs, MsgSpritePalettes).
+- alttpo `b697255`: p5, game protocol v2, facts store; sprite sync off.
