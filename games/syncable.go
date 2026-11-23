@@ -101,6 +101,11 @@ type SyncableBitU8 struct {
 
 	PlayerPredicate PlayerPredicate
 
+	// ResolveUpdated, if set, adjusts the local value merged with every remote player's bits before it's compared
+	// with the local value; bits that are mutually exclusive (e.g. a VT randomizer's inactive and active flute) can
+	// then settle on one, so a bit that would never be written doesn't send an update and a notification every frame:
+	ResolveUpdated func(initial, updated uint8) uint8
+
 	GenerateAsm SyncableBitU8GenerateAsm
 	OnUpdated   SyncableBitU8OnUpdated
 
@@ -174,6 +179,10 @@ func (s *SyncableBitU8) GenerateUpdate(newEmitter func() *asm.Emitter, index uin
 		}
 
 		updated |= v
+	}
+
+	if s.ResolveUpdated != nil {
+		updated = s.ResolveUpdated(initial, updated)
 	}
 
 	if updated == initial {

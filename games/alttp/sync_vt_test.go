@@ -151,8 +151,7 @@ func TestAsm_VT_Items(t *testing.T) {
 					expectedValue: 3, // flute (active)
 				},
 			},
-			wantUpdated:      true,
-			wantNotification: "got Flute (inactive) from remote",
+			wantUpdated: false,
 		},
 		{
 			name: "VT shovel from nothing",

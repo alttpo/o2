@@ -228,6 +228,14 @@ func (g *Game) initSync() {
 				a.STA_long(0x7EF341)
 			}
 		})
+		invSwap1.ResolveUpdated = func(initial, updated uint8) uint8 {
+			// the active flute replaces the inactive one; a remote player's inactive flute is never written over a
+			// local active flute (nor alongside another remote player's active flute), so it's no update:
+			if updated&IS1FluteActive != 0 {
+				updated &^= IS1FluteInactive
+			}
+			return updated
+		}
 		invSwap1.GenerateAsm = func(s *games.SyncableBitU8, a *asm.Emitter, initial, updated, newBits uint8) {
 			const longAddr = 0x7EF38C
 
