@@ -92,10 +92,22 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - [x] Game protocol v2 framing (`msg_begin`/`msg_end`/`write_msg` in Protocol.as) and renumbering in
       `GameState::deserialize` and every serializer; each message is read from a copy of the packet that ends with it.
 - [x] Fact store, uploads, downloads (`Facts.as`); the server's hashes are trusted (no hashing in AngelScript).
-- [ ] Fact 0x00 built from ROM (`LinkFact.as` is a stub): port o2's sheet decompressor, `expand3To4High`,
-      `do3To4Low` and the item list from `linkfact.go`.
-- [ ] Sprites 0x04 / 0x05 / 0x06 replacing unique tiles (sprite sync is off since b697255: `send_sprites` only sends
-      the sector state, and the receiver skips the sprite messages); SM facts 0x10, 0x11.
+- [x] Fact 0x00 built from ROM (`LinkFact.as`), byte for byte the same as o2's on the US ROM (checked by running
+      both and comparing an FNV-1a hash: 37,248 bytes, $5F919A6A).
+- [x] Sprites 0x04 / 0x05 / 0x06 (`send_sprites`, `link_chr_tiles` in LocalGameState.as; `deserialize_sprite_chrs`,
+      `resolve_sprite_chrs`, `deserialize_sprites` in GameState.as). Received chrs bound to a fact that hasn't
+      downloaded yet aren't drawn (`chr_tile`); unbound chrs come from the local VRAM.
+- [ ] SM facts 0x10 and 0x11 (Samus' graphics, banks $9C-$9F) and Samus' sprites by pose: alttpo sends no sprites in
+      SM until then.
+- [ ] Cleanup: the unique tile capture (`capture_sprites_vram`, `capture_uniqtiles`, `lttp_uniqtile_*`, the
+      receiver's `uniqtile_get`/`missing_uniq_absidx`) is no longer used for sending or drawing ALTTP sprites.
+
+### Open follow-ups (both clients)
+
+- [ ] Followers' graphics as a fact (chrs $20-$23, $30-$33): alttpo used to send them inline; receivers now draw a
+      remote follower with their own VRAM's tiles.
+- [ ] End-to-end check with o2-server, o2 and alttpo running together (not done in this session: only unit tests for
+      o2-server and o2, and compile checks for alttpo).
 
 ## Log
 
@@ -108,3 +120,5 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - o2 `cc9dfe0`: facts and the Link graphics fact.
 - o2 `4ae8c98`: sprites by pose (MsgSprites, MsgSpriteChrs, MsgSpritePalettes).
 - alttpo `b697255`: p5, game protocol v2, facts store; sprite sync off.
+- alttpo `1f21357`: the Link graphics fact.
+- alttpo `c3796ab`: sprites by pose.
