@@ -78,12 +78,19 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       fact 0x00 tiles, only the rows the sprites show; palettes when they change. Sprites showing a Link chr without a
       tile aren't sent. The receiver maps bindings onto the tiles it already draws with (`remoteChrTile`): LinkGraphics
       tiles from its own ROM, and its own sword/shield tiles only when the levels match.
-- [ ] Draw remote players with their own graphics from their fact 0x00 (custom Link sprites, other sword/shield
-      levels, items). Needs the fact's tiles in SNES memory: an SRAM tile buffer that o2 fills from `factData` and the
-      NMI upload (`emitNMIUpload`, part flags) reading from it instead of LinkGraphics/WRAM $7E; patch format bump and
-      cycle budgets (`cycles_test.go`).
-- [ ] Bind the flute bird (chrs $0E-$0F, $1E-$1F): the patch would have to copy $0AF4-$0AF9 to SRAM as well
-      (`linkOAMCopy*` in patcher.go; mind `linkOAMCopyReadSize` < 255).
+- [x] Draw remote players with their own graphics from their fact 0x00 (custom Link sprites, other sword/shield
+      levels): an SRAM buffer of 10 rows of 2 tiles at $706D80-$706FFF (`remoteTilesAddr`, `remoteTileRows`) that
+      o2 fills from the fact before the table that uses it; part flag `partSRAM` (bit 13 of the NMI list's VRAM
+      address) makes the NMI upload read bank $70. Writing rows clears `rsKept`. NMI upload measured 562 cycles
+      (budget 600). Tests: `TestRemoteSpritesScenario_OwnGraphics`, `_SameGraphicsOtherSword`.
+- [ ] Remote players' palettes: o2 still draws them with the local palettes (`DeserializeSpritePalettes` discards
+      them), so a custom sprite with its own palette shows with the local one.
+- [ ] Remote players' items in use (chrs $09-$0A, $19-$1A) aren't drawn by o2 (they weren't before either); the fact
+      has them now, so they could be a fifth part.
+- [ ] The flute bird: o2 doesn't send it at all. It is an ancilla (`Ancilla27_Duck`) drawn in ancilla OAM slots
+      with chr $0E (and Link's chrs $00/$02 while it carries him), not in Link's OAM entries, and `captureChrs`
+      doesn't capture it. Binding its chrs needs that first, plus $0AF4-$0AF9 in the Link OAM copy (one more DMA
+      after the graphics DMA sources; `linkOAMCopyReadSize` would be 247 of 255).
 - [x] Stop padding the group (`client.SetGroup`).
 
 ### alttpo
@@ -126,4 +133,6 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - alttpo `1f21357`: the Link graphics fact.
 - alttpo `c3796ab`: sprites by pose.
 - o2 `9a584bc`: incompatible players in the players list.
+- o2 `cfc8070`: remote players drawn with their own graphics from fact 0x00.
+- alttpo `791a4b2`: the bird's flag read as a byte.
 - alttpo `443af9c`: SM facts and Samus' sprites by pose; unique tiles removed.
