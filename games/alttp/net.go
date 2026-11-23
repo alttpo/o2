@@ -318,7 +318,77 @@ func (g *Game) send(m gameMessage) {
 		return
 	}
 
+	if g.batch != nil && g.batch.add(g, m) {
+		return
+	}
 	m.SendToClient(c)
+}
+
+// maxGamePacket is the most game data merged into one packet; MaxPacketSize less the p5 envelope, with room to spare:
+const maxGamePacket = 1400
+
+// frameBatch merges the messages a frame sends to all players, and to the local player's own sector, into as few
+// packets as fit maxGamePacket. Messages to another sector (makeSectorMessageTo) go in packets of their own.
+type frameBatch struct {
+	all    *gameBroadcastMessage
+	sector *gameSectorMessage
+}
+
+// add merges m into the batch, sending the batch's packet first if m doesn't fit; false if m can't be merged.
+func (b *frameBatch) add(g *Game, m gameMessage) bool {
+	switch m := m.(type) {
+	case *gameBroadcastMessage:
+		if m.Len() > maxGamePacket {
+			return false
+		}
+		if b.all != nil && b.all.Len()+m.Len()-gameHeaderSize > maxGamePacket {
+			b.all.SendToClient(g.client)
+			b.all = nil
+		}
+		if b.all == nil {
+			b.all = g.makeBroadcastMessage()
+		}
+		b.all.merge(m)
+		return true
+	case *gameSectorMessage:
+		if m.hasSector || m.Len() > maxGamePacket {
+			return false
+		}
+		if b.sector != nil && b.sector.Len()+m.Len()-gameHeaderSize > maxGamePacket {
+			b.sector.SendToClient(g.client)
+			b.sector = nil
+		}
+		if b.sector == nil {
+			b.sector = g.makeSectorMessage()
+		}
+		b.sector.merge(&m.gameBroadcastMessage)
+		return true
+	}
+	return false
+}
+
+// flushBatch sends the frame's packets and ends the batch.
+func (g *Game) flushBatch() {
+	b := g.batch
+	g.batch = nil
+	if b == nil || g.client == nil || !g.client.IsConnected() {
+		return
+	}
+	if b.all != nil && !b.all.empty() {
+		b.all.SendToClient(g.client)
+	}
+	if b.sector != nil && !b.sector.empty() {
+		b.sector.SendToClient(g.client)
+	}
+}
+
+// merge appends the messages of o (without its header) to m.
+func (m *gameBroadcastMessage) merge(o *gameBroadcastMessage) {
+	base := m.Len() - gameHeaderSize
+	for _, s := range o.segs {
+		m.segs = append(m.segs, s+base)
+	}
+	m.Write(o.Bytes()[gameHeaderSize:])
 }
 
 // assignLocalIndex moves the local player to the index the server gave it.

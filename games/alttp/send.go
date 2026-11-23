@@ -124,6 +124,10 @@ func (g *Game) sendPackets() {
 		return
 	}
 	st.frame, st.frameOK = g.monotonicFrameTime, true
+	// one packet to all players and one to the sector this frame, as far as they fit (see frameBatch):
+	g.batch = &frameBatch{}
+	defer g.flushBatch()
+	g.sendSfx()
 	g.trackPeers()
 	// the messages to all players, in one packet:
 	all := g.makeBroadcastMessage()

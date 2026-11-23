@@ -40,6 +40,11 @@ type Game struct {
 	priorityReads   [3][]snes.Read
 
 	deserTable map[MessageType]DeserializeFunc
+	// the frame's packets, while sendPackets runs (see frameBatch):
+	batch *frameBatch
+	// sound effects to send with the next frame's packets:
+	sfxOut [][2]uint8
+
 	// strictMessages makes a message whose deserializer doesn't read all of it an error; for tests:
 	strictMessages bool
 

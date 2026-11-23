@@ -114,10 +114,21 @@ func (g *Game) readLocalSfx() {
 		if sfx == [2]uint8{} {
 			continue
 		}
+		// sent with the frame's packet to all players (see sendPackets):
+		if len(g.sfxOut) < sfxLocalCount {
+			g.sfxOut = append(g.sfxOut, sfx)
+		}
+	}
+}
+
+// sendSfx sends the sound effects read since the last frame sent.
+func (g *Game) sendSfx() {
+	for _, sfx := range g.sfxOut {
 		m := g.makeBroadcastMessage()
 		m.addBytes([]byte{byte(MsgSfx), sfx[0], sfx[1]})
 		g.send(m)
 	}
+	g.sfxOut = g.sfxOut[:0]
 }
 
 func (g *Game) DeserializeSfx(p *Player, r io.Reader) (err error) {

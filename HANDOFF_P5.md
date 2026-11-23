@@ -55,8 +55,9 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       leave on disconnect, echo backoff (G3).
 - [x] Game protocol v2: header `u8 frame`, `type, length, body` framing, renumbered messages, dropped messages, info
       blob `version, team`.
-- [ ] One packet per destination per frame: the run timing, reset, run gap/restore, sfx, map16 and ow events still
-      go in packets of their own; merge them into the frame's packets.
+- [x] One packet per destination per frame (`frameBatch` in net.go): everything `sendPackets` sends, sfx included,
+      merges into one packet to all and one to the own sector, split at `maxGamePacket`. Messages sent outside the
+      frame (slowbeat run timing, run gaps, reset messages) and to another sector still go alone.
 - [ ] Players list: show "incompatible version" for players whose info has another version (only logged and
       notified now).
 - [ ] Fact store keyed by hash; uploading fact 0x00; downloading others' facts.
@@ -77,3 +78,4 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 
 - o2-server `89fda17`: p5 server and facts, with tests.
 - o2 `6b333e4`: `client/protocol05` and the test hub.
+- o2 `7daac7d`: p5 networking and game protocol v2 (framing, renumbering, dropped messages).
