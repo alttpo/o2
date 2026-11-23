@@ -67,8 +67,9 @@ type Game struct {
 	lastServerTime     time.Time // server's clock when the last received message passed through the server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
 
-	// protocol 0x05 state (see net.go):
+	// protocol 0x05 state (see net.go) and facts (see facts.go):
 	net                netState
+	facts              factsState
 	lastServerRecvTime time.Time // our local clock when we received the last message
 	// the offset of the server's clock from ours, from echo round trips; see clock.go:
 	clock serverClock

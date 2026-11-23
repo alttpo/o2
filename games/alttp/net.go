@@ -138,6 +138,7 @@ func (g *Game) tickNet(now time.Time) {
 		g.sendRaw("join", pkt)
 	}
 	g.tickSector(now)
+	g.tickFacts(now)
 }
 
 // localSector returns the sector the local player is in, if any: none before a game is loaded and while resetting.
@@ -446,6 +447,7 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		if !wasJoined {
 			ns.echoes = 0
 			ns.sectorSet, ns.sectorAcked = false, false
+			g.factsJoined()
 		}
 		g.assignLocalIndex(int(m.PlayerIndex))
 		// back in the group after losing the server:
@@ -475,6 +477,12 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		}
 	case protocol05.PlayerLeft:
 		g.playerLeft(int(m.PlayerIndex), now)
+	case protocol05.FactStatus:
+		g.factStatus(&m)
+	case protocol05.FactList:
+		g.factList(&m)
+	case protocol05.FactData:
+		g.factChunk(&m)
 	case protocol05.RelayAll, protocol05.RelaySector:
 		index := int(m.PlayerIndex)
 		if index >= MaxPlayers || index == g.local.Index() || now.Before(ns.graceUntil[index]) {
@@ -586,6 +594,7 @@ func (g *Game) playerLeft(index int, now time.Time) {
 	}
 	g.net.graceUntil[index] = now.Add(playerGrace)
 	g.net.info[index] = netPlayerInfo{}
+	g.factsPlayerLeft(index)
 	p := &g.players[index]
 	if p.Ttl > 0 {
 		g.PlayerLeft(p)

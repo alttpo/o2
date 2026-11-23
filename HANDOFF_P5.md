@@ -36,6 +36,9 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
   grace or quotas. `alttpoPacket` in `alttpo_compat_test.go` builds framed v2 packets the way alttpo will (`m(type)`
   starts a message) and sends the sender's player-info first.
 - `client.Client.Disconnect` sends leave-group twice before closing.
+- Fact 0x00's item buffer is $D00 bytes ($7E9480-$7EA17F), not the $1200 first planned; PROTOCOL05.md is updated.
+- o2 can't bind the flute bird's chrs ($0E-$0F, $1E-$1F): its patch copies only $0AC0-$0AD7 of the DMA sources to SRAM,
+  and the bird's are at $0AF4-$0AF8. The fact has the bird's tiles anyway, for alttpo.
 
 ## Status
 
@@ -60,8 +63,10 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       frame (slowbeat run timing, run gaps, reset messages) and to another sector still go alone.
 - [ ] Players list: show "incompatible version" for players whose info has another version (only logged and
       notified now).
-- [ ] Fact store keyed by hash; uploading fact 0x00; downloading others' facts.
-- [ ] Fact 0x00 (Link graphics): bank $10, sword levels 1-4, shield levels 1-3, item buffer, flute bird.
+- [x] Fact store keyed by hash (`facts.go`); uploading fact 0x00 after every new join (first chunk alone until the
+      server answers); downloading a remote player's fact on demand (`factData`), checked against its hash.
+- [x] Fact 0x00 (Link graphics, `linkfact.go`): bank $10, sword levels 1-4, shield levels 1-3, item buffer, flute
+      bird; `TestLinkFact_MatchesGame` compares it with the game's own routines on the US and JP ROMs.
 - [ ] Sprites 0x04 / SpriteChrs 0x05 / SpritePalettes 0x06; remotesprites draws from the remote player's fact.
 - [x] Stop padding the group (`client.SetGroup`).
 
