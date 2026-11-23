@@ -43,8 +43,12 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - Fact 0x00's item buffer is $D00 bytes ($7E9480-$7EA17F), not the $1200 first planned; PROTOCOL05.md is updated.
 - Sprite entries carry no OAM index: their order is OAM order (front to back), and a receiver's `remoteSprite.index`
   is the position. Tests that need the sender's OAM index find it by the OAM bytes they set.
-- o2 can't bind the flute bird's chrs ($0E-$0F, $1E-$1F): its patch copies only $0AC0-$0AD7 of the DMA sources to SRAM,
-  and the bird's are at $0AF4-$0AF8. The fact has the bird's tiles anyway, for alttpo.
+- The flute's bird (chrs $0E-$0F, $1E-$1F) isn't synced in either direction (decided 2026-11-23): it isn't in fact
+  0x00 (now $8D80 = 36,224 bytes; o2 and alttpo build the same bytes, FNV-1a $63F9AEBD on the US ROM), and neither
+  client binds its chrs, so sprites showing them are never sent.
+- o2 draws the item in use as a part like the sword and shield (`remoteEquipBlocks`), within `remotePartMax` (4): the
+  table, SRAM state and NMI budget are unchanged. With the head and body, sword, shield and item all shown, the item is
+  left out (sword, shield, item order); in practice Link doesn't show his sword while using an item.
 
 ## Status
 
@@ -85,12 +89,10 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       (budget 600). Tests: `TestRemoteSpritesScenario_OwnGraphics`, `_SameGraphicsOtherSword`.
 - [ ] Remote players' palettes: o2 still draws them with the local palettes (`DeserializeSpritePalettes` discards
       them), so a custom sprite with its own palette shows with the local one.
-- [ ] Remote players' items in use (chrs $09-$0A, $19-$1A) aren't drawn by o2 (they weren't before either); the fact
-      has them now, so they could be a fifth part.
-- [ ] The flute bird: o2 doesn't send it at all. It is an ancilla (`Ancilla27_Duck`) drawn in ancilla OAM slots
-      with chr $0E (and Link's chrs $00/$02 while it carries him), not in Link's OAM entries, and `captureChrs`
-      doesn't capture it. Binding its chrs needs that first, plus $0AF4-$0AF9 in the Link OAM copy (one more DMA
-      after the graphics DMA sources; `linkOAMCopyReadSize` would be 247 of 255).
+- [x] Remote players' items in use (chrs $09-$0A, $19-$1A) drawn as a part (`remoteEquipment`): from the local item
+      buffer in WRAM while the graphics are the same or the fact isn't here, else from the fact through the SRAM
+      buffer. Tests: `TestRemoteSpritesScenario_ItemInUse`, `_ItemPastPartMax`.
+- [x] The flute bird: not synced (see decisions); removed from fact 0x00.
 - [x] Stop padding the group (`client.SetGroup`).
 
 ### alttpo
@@ -100,7 +102,7 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       `GameState::deserialize` and every serializer; each message is read from a copy of the packet that ends with it.
 - [x] Fact store, uploads, downloads (`Facts.as`); the server's hashes are trusted (no hashing in AngelScript).
 - [x] Fact 0x00 built from ROM (`LinkFact.as`), byte for byte the same as o2's on the US ROM (checked by running
-      both and comparing an FNV-1a hash: 37,248 bytes, $5F919A6A).
+      both and comparing an FNV-1a hash: 36,224 bytes, $63F9AEBD since the bird was dropped).
 - [x] Sprites 0x04 / 0x05 / 0x06 (`send_sprites`, `link_chr_tiles` in LocalGameState.as; `deserialize_sprite_chrs`,
       `resolve_sprite_chrs`, `deserialize_sprites` in GameState.as). Received chrs bound to a fact that hasn't
       downloaded yet aren't drawn (`chr_tile`); unbound chrs come from the local VRAM.
@@ -136,3 +138,7 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - o2 `cfc8070`: remote players drawn with their own graphics from fact 0x00.
 - alttpo `791a4b2`: the bird's flag read as a byte.
 - alttpo `443af9c`: SM facts and Samus' sprites by pose; unique tiles removed.
+- o2-server `f6b307c`: PROTOCOL05.md: the bird isn't synced; fact 0x00 is 36,224 bytes.
+- alttpo `88d31d5`: the bird out of fact 0x00 and its chrs unbound.
+- o2 `90c959a`: the bird out of fact 0x00.
+- o2 `ad629aa`: remote players' item in use drawn.
