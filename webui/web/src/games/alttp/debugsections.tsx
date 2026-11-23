@@ -377,7 +377,7 @@ function Fill({gfx, get, send, ready, edit}: Common) {
     const p = {gfx, ready, edit};
 
     return (
-        <Section title="Fill Up"
+        <Section title="Consumables"
                  note={edit ? "Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees, 10 arrows or bombs, or 32 magic." : undefined}>
             <div class="dbg-grid">
                 <Counter {...p} words={HEART_FULL} onMain={fill("hearts")} mainTitle="Fill up the hearts"
