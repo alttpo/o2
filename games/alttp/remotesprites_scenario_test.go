@@ -1750,3 +1750,99 @@ func TestRemoteSpritesScenario_SameGraphicsOtherSword(t *testing.T) {
 		t.Errorf("g1 downloads a fact it has")
 	}
 }
+
+// A remote player's item in use (chrs $09-$0A, $19-$1A) is drawn in its pose like the sword and shield: with the
+// local item buffer in WRAM before the player's fact is here, and with the fact's tiles through the SRAM buffer once it
+// is, if it differs from the local player's.
+func TestRemoteSpritesScenario_ItemInUse(t *testing.T) {
+	h := newRSScenario(t)
+	h.setTestSwordShield()
+	local, custom := testLinkFact(3), testLinkFact(5)
+	h.setTestLinkFacts(local, custom)
+	g1 := h.gs[0]
+	for i := 0; i < lfItemsSize; i++ {
+		g1.e.WRAM[lfItemsWRAM+i] = uint8(i*11 + i>>5)
+	}
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	// the item as a 16x16 sprite from chr $09 in front of the shield, a 16x16 sprite from chr $07, both behind Link:
+	setOAM(0x68, 0x58, 0x50, 0x09, 0x26, 0x02)
+	setOAM(0x69, 0x48, 0x58, 0x07, 0x26, 0x02)
+	// the poses: shield tiles $1A and $20, item tiles 8 and $18 of the item buffer:
+	for k, v := range []uint16{0x9340, 0x9400, 0x9580, 0x9780} {
+		binary.LittleEndian.PutUint16(e.WRAM[0x0AC4+k*2:], v)
+	}
+
+	// before the fact is here, with the local graphics:
+	h.frames(8)
+	if len(g1.g.facts.store) > 1 {
+		t.Fatalf("g2's fact already here")
+	}
+	// back to front: the shield, the item, the body and the head:
+	h.expectOAM("shield", 0, 0x7D, [4]byte{0x38, 0x50, 0x24, 0x26}, 0x02)
+	h.expectOAM("item", 0, 0x7C, [4]byte{0x48, 0x48, 0x0C, 0x26}, 0x02)
+	h.expectOAM("body", 0, 0x7B, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7A, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("nothing else", 0, 0x79)
+	if rows, expected := h.nmiRows(0), [][3]uint16{
+		{0x4200, 0x9000, 0}, {0x4300, 0x9200, 0}, {0x4220, 0x8400, 0}, {0x4320, 0x8600, 0},
+		{0x4240, 0x9340, partWRAM}, {0x4340, 0x9400, partWRAM}, {0x40C0, 0x9580, partWRAM}, {0x41C0, 0x9780, partWRAM},
+	}; !equalRows(rows, expected) {
+		t.Errorf("NMI rows %04x; expected %04x", rows, expected)
+	}
+	vram := runNMIHook(t, g1.e, g1.g)
+	for _, c := range []struct {
+		vram uint16
+		src  uint32
+	}{{0x40C0, 0x9580}, {0x41C0, 0x9780}} {
+		if actual, expected := vram.bytes(c.vram, 0x40), g1.e.WRAM[c.src:c.src+0x40]; !bytes.Equal(actual, expected) {
+			t.Errorf("VRAM $%04x = % x; expected WRAM $7E%04x = % x", c.vram, actual, c.src, expected)
+		}
+	}
+
+	// with g2's own graphics:
+	h.frames(40)
+	sh, it := uint16(lfShields>>5), uint16(lfItems>>5)
+	h.expectSRAMRows("custom", custom, []uint16{0x080, 0x090, 0x020, 0x030, sh + 0x02, sh + 0x08, it + 0x08, it + 0x18})
+	h.expectOAM("item", 0, 0x7C, [4]byte{0x48, 0x48, 0x0C, 0x26}, 0x02)
+
+	// the item's bottom row out of the item buffer: the item isn't drawn:
+	binary.LittleEndian.PutUint16(e.WRAM[0x0ACA:], 0xA200)
+	h.frames(8)
+	h.expectOAM("shield", 0, 0x7D, [4]byte{0x38, 0x50, 0x24, 0x26}, 0x02)
+	h.expectOAM("body", 0, 0x7C, [4]byte{0x40, 0x58, 0x20, 0x6E}, 0x02)
+	h.expectOAM("head", 0, 0x7B, [4]byte{0x40, 0x50, 0x22, 0x2E}, 0x02)
+	h.expectOAMUnused("no item", 0, 0x7A)
+}
+
+// With the head and body, at most remotePartMax parts are drawn: with the sword, shield and item all shown, the item
+// is left out.
+func TestRemoteSpritesScenario_ItemPastPartMax(t *testing.T) {
+	h := newRSScenario(t)
+	h.setTestSwordShield()
+	e := h.gs[1].e
+	setOAM := func(i int, x, y, chr, attr, ext uint8) {
+		copy(e.WRAM[0x0800+i*4:], []byte{x, y, chr, attr})
+		e.WRAM[0x0A20+i] = ext
+	}
+	setOAM(0x68, 0x48, 0x50, 0x05, 0x26, 0x02)
+	setOAM(0x69, 0x58, 0x58, 0x07, 0x26, 0x02)
+	setOAM(0x6A, 0x58, 0x48, 0x09, 0x26, 0x02)
+	for k, v := range []uint16{0x9060, 0x91E0, 0x9340, 0x9400, 0x9580, 0x9780} {
+		binary.LittleEndian.PutUint16(e.WRAM[0x0AC0+k*2:], v)
+	}
+	h.frames(8)
+	rows := h.nmiRows(0)
+	if len(rows) != 2*remotePartMax {
+		t.Fatalf("NMI rows %04x; expected %d", rows, 2*remotePartMax)
+	}
+	for _, r := range rows {
+		if r[1] >= lfItemsWRAM && r[1] < lfItemsWRAM+lfItemsSize {
+			t.Errorf("NMI rows %04x; expected no item row", rows)
+		}
+	}
+	h.expectOAMUnused("no item", 0, 0x79)
+}

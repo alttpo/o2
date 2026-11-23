@@ -27,7 +27,10 @@ import (
 //     graphics.
 //   - The same player's sword and shield are drawn in their pose with the local player's sword and shield tiles, which
 //     the game keeps in WRAM $7E9000..$7E947F (see swordshield.go), when the player's sword or shield is the same
-//     level. A sword or shield the local player doesn't have is not drawn.
+//     level. A sword or shield the local player doesn't have is not drawn. The item in use (rod, hammer, bow,
+//     hookshot, net, cane, book, shovel...) is drawn the same way from the item buffer the game builds in WRAM
+//     $7E9480..$7EA17F. With the head and body, at most remotePartMax of these get a part: the later ones in the
+//     order sword, shield, item are left out.
 //   - With the player's own graphics: players bind their chrs to tiles of their Link graphics fact (fact 0x00, see
 //     sprites.go and linkfact.go). Once o2 has a player's fact and it differs from the local player's (a custom Link
 //     sprite), or the player's sword or shield is another level, o2 copies the rows of tiles the parts show from the
@@ -39,7 +42,7 @@ import (
 //     or $66 alternating every 8 frames: an animated blob with eyes from the common sprite sheet, with a 16x16 shadow
 //     (chr $6C) under it like the game draws under enemies.
 //
-// VRAM: the head, body, sword and shield are each a "part" of 2x2 chrs that a NMI hook uploads into a VRAM slot, from
+// VRAM: the head, body, sword, shield and item are each a "part" of 2x2 chrs that a NMI hook uploads into a VRAM slot, from
 // LinkGraphics, WRAM or the SRAM buffer of rows from remote players' facts. The
 // slots (remoteSlots) are chrs that the game itself uploads in every NMI with core updates enabled: Link's sword,
 // shield and item chrs and the chrs that followers (Zelda, the old man, the bomb...) and a few NPC sprites with large
@@ -86,7 +89,7 @@ const (
 	//
 	//   - the extra sprites (shadows, sparkles, dust, projectiles, carried and thrown objects; see captureChrs) the
 	//     remote players draw behind Link;
-	//   - the slotted sprites: the head, body, sword and shield of the first player, drawn if the required parts got a
+	//   - the slotted sprites: the head, body, sword, shield and item of the first player, drawn if the required parts got a
 	//     VRAM slot;
 	//   - the shadows under the blobs, the first player's first if there are slotted sprites (it is skipped when they
 	//     are drawn);
@@ -125,7 +128,7 @@ const (
 	// the sprites show the top or bottom row of the part's chrs, which is uploaded:
 	partTopRow    = 0x01
 	partBottomRow = 0x02
-	// the part's tiles are in WRAM bank $7E (the sword and shield), else in LinkGraphics:
+	// the part's tiles are in WRAM bank $7E (the sword, shield and item), else in LinkGraphics:
 	partWRAM = 0x80
 	// the part's tiles are in the SRAM buffer of rows from remote players' facts (remoteTilesAddr), else as partWRAM
 	// says. With partWRAM, the bits of the VRAM word address of rsNMIList's rows that say where the source is:
@@ -317,7 +320,7 @@ func remoteSlotChrTables() (small, large [0x40]byte) {
 }
 
 // emitNMIHooks emits the two routines that NMI_DoUpdates calls with JSL to upload the rows of chrs that remoteDraw
-// listed this frame (the remote player's head, body, sword and shield) into their VRAM slots, and the upload
+// listed this frame (the remote player's head, body, sword, shield and item) into their VRAM slots, and the upload
 // subroutine they share. Both are called with A 8-bit, X and Y 16-bit, DB = $00 (or $80), D = $0000. It returns their
 // addresses:
 //
@@ -763,26 +766,31 @@ type slottedSprite struct {
 	off uint8
 }
 
-// remoteEquipBlocks are the chrs Link's sword and shield are uploaded to, 2x2 from chr, and the range of their tiles
-// in WRAM $7E9000 (see swordshield.go):
+// remoteEquipBlocks are the chrs Link's sword, shield and the item in use are uploaded to, 2x2 from chr, and where
+// their tiles are: from tile factFirst of fact 0x00, levelTiles tiles for each level from 1 to maxLevel, laid out as
+// WRAM bank $7E from wram (see swordshield.go and linkfact.go). The item buffer has a single "level".
 var remoteEquipBlocks = []struct {
 	chr        uint8
-	first, end int
-	maxLevel   uint8
+	factFirst  int
+	levelTiles int
+	maxLevel   int
+	wram       uint16
 }{
-	{0x05, 0, swordTileCount, 4},
-	{0x07, swordTileCount, swordShieldTileCount, 3},
+	{0x05, lfSwords >> 5, swordTileCount, 4, swordShieldWRAMStart},
+	{0x07, lfShields >> 5, shieldTileCount, 3, swordShieldWRAMStart + swordTileCount<<5},
+	{0x09, lfItems >> 5, lfItemsSize >> 5, 1, lfItemsWRAM},
 }
 
-// remoteEquipMax is the most sprites drawn for the sword or the shield (the game draws up to 3 for each):
+// remoteEquipMax is the most sprites drawn for the sword, the shield or the item (the game draws up to 3 for each):
 const remoteEquipMax = 4
 
-// remoteEquipment returns the parts and slotted sprites (with part indices starting at 0) of a remote player's sword
-// and shield, in the pose the player sent. They are drawn with the local player's sword and shield tiles in WRAM when
-// the remote player's are the same level and graphics, else with the tiles of its fact copied to the SRAM buffer of
-// rows (fact.data; see remoteTileRows). Without the fact, a sword or shield the local player doesn't have at the same
-// level is not drawn.
-func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact) (parts []remotePart, sprites []slottedSprite) {
+// remoteEquipment returns up to max parts and their slotted sprites (with part indices starting at 0) of a remote
+// player's sword, shield and the item in use, in the pose the player sent. They are drawn with the local player's
+// tiles in WRAM when the remote player's are the same level and graphics, else with the tiles of its fact copied to the
+// SRAM buffer of rows (fact.data; see remoteTileRows). Without the fact, a sword or shield the local player doesn't
+// have at the same level is not drawn; the item in use is drawn with the local item buffer, which the game builds from
+// ROM whatever the player has.
+func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact, max int) (parts []remotePart, sprites []slottedSprite) {
 	s := &g.swordShield
 	sorted := sortedByIndex(list)
 
@@ -805,20 +813,25 @@ func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact) (parts []re
 	}
 
 	for bi, b := range remoteEquipBlocks {
-		localLevel, localOK := s.swordLevel, s.swordOK
-		// the block's levels in the fact, one after the other:
-		factFirst, levelTiles := lfSwords>>5, swordTileCount
-		if bi == 1 {
-			localLevel, localOK = s.shieldLevel, s.shieldOK
-			factFirst, levelTiles = lfShields>>5, shieldTileCount
+		if len(parts) >= max {
+			break
 		}
-		localOK = s.ok && localOK && localLevel != 0 && localLevel <= b.maxLevel
+		var localLevel uint8
+		var localOK bool
+		switch bi {
+		case 0:
+			localLevel, localOK = s.swordLevel, s.ok && s.swordOK
+		case 1:
+			localLevel, localOK = s.shieldLevel, s.ok && s.shieldOK
+		default:
+			localLevel, localOK = 1, true
+		}
+		localOK = localOK && localLevel != 0 && int(localLevel) <= b.maxLevel
 
-		// the level the sprites show (that of the first tile in the block), and the possible first tiles of each row,
-		// as bits of the level's tiles laid out as WRAM $7E9000:
+		// the level the sprites show (that of the first tile in the block), and the first tile of each row in the
+		// level's tiles (-1 until a sprite shows the row, -2 if its sprites don't agree or show other tiles):
 		level := 0
-		var rows [2]uint64
-		var used [2]bool
+		rows := [2]int{-1, -1}
 		var block []slottedSprite
 		for _, sp := range sorted {
 			offs, ok := covered(&sp, b.chr)
@@ -830,21 +843,20 @@ func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact) (parts []re
 			}
 			for k, o := range offs {
 				row, col := int(o>>4), int(o&1)
-				var m uint64
-				if t := int(sp.tiles[k]); sp.tiles[k] != noFactTile && t >= factFirst && t < factFirst+int(b.maxLevel)*levelTiles {
-					l := (t-factFirst)/levelTiles + 1
+				first := -2
+				if t := int(sp.tiles[k]); sp.tiles[k] != noFactTile && t >= b.factFirst && t < b.factFirst+b.maxLevel*b.levelTiles {
+					l := (t-b.factFirst)/b.levelTiles + 1
 					if level == 0 {
 						level = l
 					}
-					if idx := b.first + (t-factFirst)%levelTiles; l == level && idx >= b.first+col && idx < b.end {
-						m = 1 << (idx - col)
+					if idx := (t - b.factFirst) % b.levelTiles; l == level && idx >= col {
+						first = idx - col
 					}
 				}
-				if used[row] {
-					rows[row] &= m
-				} else {
-					rows[row], used[row] = m, true
+				if rows[row] != -1 && rows[row] != first {
+					first = -2
 				}
+				rows[row] = first
 			}
 			block = append(block, slottedSprite{sp: sp, part: len(parts), off: offs[0]})
 		}
@@ -852,32 +864,32 @@ func (g *Game) remoteEquipment(list []remoteSprite, fact remoteFact) (parts []re
 			continue
 		}
 
-		// where the row of tiles starting at the tile first (laid out as WRAM $7E9000) is:
+		// where the row of tiles starting at the level's tile first is:
 		var src func(first int) (uint16, bool)
 		var flags uint8
 		switch {
 		case localOK && uint8(level) == localLevel && (fact.data == nil || fact.same):
 			flags = partWRAM
-			src = func(first int) (uint16, bool) { return uint16(swordShieldWRAMStart + first<<5), true }
+			src = func(first int) (uint16, bool) { return b.wram + uint16(first)<<5, true }
 		case fact.data != nil:
 			flags = partSRAM
 			src = func(first int) (uint16, bool) {
-				return g.remoteSprites.tileRow(fact, uint16(factFirst+(level-1)*levelTiles+first-b.first))
+				return g.remoteSprites.tileRow(fact, uint16(b.factFirst+(level-1)*b.levelTiles+first))
 			}
 		default:
 			continue
 		}
 
 		part := remotePart{flags: flags}
-		for row := range rows {
-			if !used[row] {
+		for row, first := range rows {
+			if first == -1 {
 				continue
 			}
-			if rows[row] == 0 {
+			if first < 0 {
 				part.flags = 0
 				break
 			}
-			a, ok := src(bits.TrailingZeros64(rows[row]))
+			a, ok := src(first)
 			if !ok {
 				part.flags = 0
 				break
@@ -1158,8 +1170,8 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 	}
 	binary.LittleEndian.PutUint16(t[rtLocation:], uint16(local.Location))
 
-	// the parts uploaded into VRAM slots: the body sprites back to front (they must all get a slot), then the sword and
-	// shield:
+	// the parts uploaded into VRAM slots: the body sprites back to front (they must all get a slot), then the sword,
+	// shield and item in use:
 	var parts []remotePart
 	var slotted []slottedSprite
 	if body != nil {
@@ -1182,7 +1194,7 @@ func (g *Game) buildRemoteSpritesTable(now time.Time) (t [remoteTableSize]byte, 
 			slotted = append(slotted, slottedSprite{sp: sp, part: len(parts) - 1})
 		}
 		t[rtRequired] = uint8(len(parts))
-		eqParts, eqSprites := g.remoteEquipment(players[0].Sprites.list, fact)
+		eqParts, eqSprites := g.remoteEquipment(players[0].Sprites.list, fact, remotePartMax-len(parts))
 		for _, es := range eqSprites {
 			es.part += len(parts)
 			slotted = append(slotted, es)
