@@ -287,7 +287,7 @@ func TestAlttpoCompat_TorchesFromAlttpo(t *testing.T) {
 		p := newAlttpoPacket(3, frame)
 		p.location(0x07, skEastern, 0x010000|uint32(ttRoom), 0, 0)
 		// LocalGameState::serialize_torches:
-		p.u8(0x0A, uint8(len(torches)/2)).u8(torches...)
+		p.m(MsgTorches).u8(uint8(len(torches) / 2)).u8(torches...)
 		p.name("alttpo")
 		p.send(t, g)
 	}

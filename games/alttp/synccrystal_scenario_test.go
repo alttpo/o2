@@ -120,7 +120,7 @@ func TestAlttpoCompat_CrystalSwitchFromAlttpo(t *testing.T) {
 		p := newAlttpoPacket(3, frame)
 		p.location(0x07, skEastern, 0x010012, 0, 0)
 		// LocalGameState::serialize_crystals:
-		p.u8(0x05, 0x01).u16(crystalSwitchOffs).u32(ts).u16(uint16(value))
+		p.m(MsgWRAM).u8(0x01).u16(crystalSwitchOffs).u32(ts).u16(uint16(value))
 		p.name("alttpo")
 		p.send(t, g)
 	}

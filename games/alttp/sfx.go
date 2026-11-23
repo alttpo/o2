@@ -115,9 +115,7 @@ func (g *Game) readLocalSfx() {
 			continue
 		}
 		m := g.makeBroadcastMessage()
-		m.WriteByte(byte(MsgSfx))
-		m.WriteByte(sfx[0])
-		m.WriteByte(sfx[1])
+		m.addBytes([]byte{byte(MsgSfx), sfx[0], sfx[1]})
 		g.send(m)
 	}
 }

@@ -849,15 +849,14 @@ func (g *Game) localRunTiming() *runTimingRemote {
 	return m
 }
 
-// sendRunTiming broadcasts the local player's message 0x84, in its own packet since older alttpo versions stop parsing
-// a packet at it.
+// sendRunTiming broadcasts the local player's run timing message.
 func (g *Game) sendRunTiming() {
 	if g.IsResetting() || g.LocalPlayer().Index() < 0 {
 		return
 	}
-	o := g.makeO2BroadcastMessage()
+	o := g.makeBroadcastMessage()
 	m := g.localRunTiming()
-	if err := SerializeRunTiming(o, m); err != nil {
+	if err := o.add(func(w io.Writer) error { return SerializeRunTiming(w, m) }); err != nil {
 		log.Printf("alttp: serialize run timing: %v\n", err)
 		return
 	}

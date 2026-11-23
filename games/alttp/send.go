@@ -3,6 +3,7 @@ package alttp
 import (
 	"hash/fnv"
 	"io"
+	"time"
 )
 
 // Sending game state
@@ -105,6 +106,8 @@ func (g *Game) sendPackets() {
 	if g.local.Index() < 0 {
 		return
 	}
+	// keep the join and the sector up to date (leave-sector while resetting):
+	g.tickNet(time.Now())
 	// don't send any state while the reset state machine is active:
 	if g.IsResetting() {
 		return
@@ -122,21 +125,9 @@ func (g *Game) sendPackets() {
 	}
 	st.frame, st.frameOK = g.monotonicFrameTime, true
 	g.trackPeers()
-	// whether some player doesn't read the compact messages (see compact.go):
-	legacy := g.legacyPeers()
-	if legacy {
-		st.compact.locOK, st.compact.skOK = false, false
-	}
-
 	// the messages to all players, in one packet:
 	all := g.makeBroadcastMessage()
-	if legacy {
-		g.addOnChange(all, &st.location, locationRefresh, func(w io.Writer) error {
-			return g.SerializeLocation(local, w)
-		})
-	} else {
-		g.addLocationCompact(all)
-	}
+	g.addLocationCompact(all)
 
 	// don't send any game state while the local player is not in a module safe for syncing (e.g. the startup
 	// screens, file select, copy/erase/name player and loading game modules $00-$05). In those modules the WRAM copy
@@ -162,17 +153,10 @@ func (g *Game) sendPackets() {
 
 	// small keys and heart pieces (delta based; shared with alttpo's SmallKeys.as and Hearts.as), last since they are
 	// the newest:
-	if legacy {
-		g.addOnChange(all, &st.smallKeys, smallKeysRefresh, g.SerializeSmallKeys)
-	} else {
-		g.addSmallKeysCompact(all)
-	}
+	g.addSmallKeysCompact(all)
 	g.addOnChange(all, &st.hearts, smallKeysRefresh, g.SerializeHearts)
 
 	g.sendIfAny(all)
-
-	// unique tiles to all players, before the sprites that use them:
-	g.sendUniqTiles()
 
 	// the messages to the players in the same sector, in one packet; Link's sprites first, since they are the
 	// oldest:

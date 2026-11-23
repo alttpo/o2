@@ -92,7 +92,7 @@ func TestRunRestore_GivenBackByOthers(t *testing.T) {
 	start, finish := g0.local.GameStartTime, g0.local.GameFinishTime
 
 	restartRun(g0)
-	g0.sendPlayerName()
+	g0.sendRunTimingBeat()
 	h.exchangeN(3)
 
 	p := &g1.players[g0.local.Index()]
@@ -120,7 +120,9 @@ func TestRunRestore_NotForAnotherPlayer(t *testing.T) {
 
 	restartRun(g0)
 	g0.local.NameF = "someone else"
-	g0.sendPlayerName()
+	// the new name goes out in a new join-group, as on the fastbeat:
+	g0.tickNet(time.Now())
+	g0.sendRunTimingBeat()
 	h.exchangeN(3)
 
 	if g0.runTiming.started {

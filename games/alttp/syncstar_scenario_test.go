@@ -149,7 +149,7 @@ func TestAlttpoCompat_StarSwitchFromAlttpo(t *testing.T) {
 		p := newAlttpoPacket(3, frame)
 		p.location(0x07, skEastern, 0x010000|uint32(ssRoom), 0, 0)
 		// StarSwitchLocal::serialize:
-		p.u8(0x19).u16(ssRoom).u32(ts).u8(uint8(value), uint8(value>>8))
+		p.m(MsgStarSwitch).u16(ssRoom).u32(ts).u8(uint8(value), uint8(value>>8))
 		p.name("alttpo")
 		p.send(t, g)
 	}
@@ -177,7 +177,7 @@ func sendAlttpoStar(t *testing.T, g *Game, frame uint8, location uint32, room ui
 	p := newAlttpoPacket(3, frame)
 	p.location(0x07, skEastern, location, 0, 0)
 	if room != 0xFFFF {
-		p.u8(0x19).u16(room).u32(ts).u8(value, overlay)
+		p.m(MsgStarSwitch).u16(room).u32(ts).u8(value, overlay)
 	}
 	p.name("alttpo")
 	p.send(t, g)

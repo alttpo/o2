@@ -151,8 +151,8 @@ func (g *Game) announceGaps(now time.Time) {
 			pg.announced = true
 			pg.until = now.Add(runGapRepeat)
 		}
-		o := g.makeO2BroadcastMessage()
-		if err := SerializeRunGap(o, pg.runGap); err != nil {
+		o := g.makeBroadcastMessage()
+		if err := o.add(func(w io.Writer) error { return SerializeRunGap(w, pg.runGap) }); err != nil {
 			log.Printf("alttp: serialize run gap: %v\n", err)
 			continue
 		}
@@ -278,8 +278,10 @@ func (g *Game) requestRunRestore(p *Player, m *runTimingRemote, startAt, finishA
 		return
 	}
 	p.restoreSent = now
-	o := g.makeO2BroadcastMessage()
-	if err := SerializeRunRestore(o, p, g.reset.lastCompleted, m, startAt, finishAt); err != nil {
+	o := g.makeBroadcastMessage()
+	if err := o.add(func(w io.Writer) error {
+		return SerializeRunRestore(w, p, g.reset.lastCompleted, m, startAt, finishAt)
+	}); err != nil {
 		log.Printf("alttp: serialize run restore: %v\n", err)
 		return
 	}

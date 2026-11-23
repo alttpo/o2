@@ -5,8 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"o2/client"
-	"o2/client/protocol04"
+	"o2/client/protocol05"
 	"o2/snes"
 	"testing"
 
@@ -81,42 +80,26 @@ func newSpriteTestRig(t *testing.T) *spriteTestRig {
 	return h
 }
 
-// frames runs n game frames and returns everything o2 sent to alttpo clients during them.
+// frames runs n game frames and returns the last sprites o2 sent during them, as alttpo parses them.
 func (h *spriteTestRig) frames(n int) (parsed alttpoParsed) {
 	h.t.Helper()
-	parsed.tiles = map[uint16][]byte{}
 	for f := 0; f < n; f++ {
 		h.gs.runFrame(h.t)
 		for len(h.gs.c.Wr) > 0 {
-			b := <-h.gs.c.Wr
-			var proto uint8
-			if _, err := client.ParseHeader(b, &proto); err != nil {
+			q, err := protocol05.DecodeRequest(<-h.gs.c.Wr)
+			if err != nil {
 				h.t.Fatal(err)
 			}
-			if proto != protocol04.Protocol {
+			if q.Kind != protocol05.BroadcastAll && q.Kind != protocol05.BroadcastSector {
 				continue
 			}
-			var gm protocol04.GroupMessage
-			if err := protocol04.Unmarshal(b[3:], &gm); err != nil {
-				h.t.Fatal(err)
-			}
-			payload := gm.Data
-			if (gm.Kind != protocol04.BroadcastAll && gm.Kind != protocol04.BroadcastSector) || (len(payload) > 3 && payload[3] >= 0x80) {
-				continue
-			}
-			types, p, err := alttpoParseFull(payload)
+			types, p, err := alttpoParseFull(q.Data)
 			if err != nil {
 				h.t.Fatalf("alttpo would fail to parse o2 packet: %v", err)
 			}
-			if bytes.IndexByte(types, byte(MsgSprites1)) >= 0 {
+			if bytes.IndexByte(types, byte(MsgSprites)) >= 0 {
 				// latest sprites:
 				parsed.sprites = p.sprites
-			}
-			for idx, tile := range p.tiles {
-				if _, dup := parsed.tiles[idx]; dup {
-					h.t.Errorf("unique tile %#03x sent more than once", idx)
-				}
-				parsed.tiles[idx] = tile
 			}
 		}
 	}
@@ -158,29 +141,6 @@ func TestLinkSprites_SentToAlttpo(t *testing.T) {
 	}
 	if shadow.b[3] != 0x6C || !equalU16(shadow.absidx, []uint16{noUniqTile, noUniqTile, noUniqTile, noUniqTile}) {
 		t.Errorf("shadow: expected chr $6C without uniqtiles; got % x %x", shadow.b, shadow.absidx)
-	}
-
-	// every referenced tile was sent exactly once with the data from ROM:
-	for _, idx := range append(head.absidx, body.absidx...) {
-		tile, ok := parsed.tiles[idx]
-		if !ok {
-			t.Errorf("tile %#03x was not sent", idx)
-			continue
-		}
-		if !bytes.Equal(tile, h.romTile(idx)) {
-			t.Errorf("tile %#03x: data does not match ROM", idx)
-		}
-	}
-	if len(parsed.tiles) != 8 {
-		t.Errorf("expected 8 tiles sent; got %d", len(parsed.tiles))
-	}
-
-	// a new pose only sends the new tiles:
-	e := h.gs.e
-	e.WRAM[0x0AD0], e.WRAM[0x0AD1] = 0x00, 0xA0 // body top row now $A000
-	parsed = h.frames(2)
-	if expected := []uint16{0x100, 0x101}; len(parsed.tiles) != 2 || parsed.tiles[0x100] == nil || parsed.tiles[0x101] == nil {
-		t.Errorf("expected only new tiles %x to be sent; got %d tiles", expected, len(parsed.tiles))
 	}
 }
 
@@ -229,25 +189,6 @@ func TestLinkSprites_OAMMoves(t *testing.T) {
 	parsed := h.frames(3)
 	if len(parsed.sprites) != 3 || parsed.sprites[0].b[0] != 0x38 {
 		t.Fatalf("expected Link's 3 sprites from OAM index $38; got %+v", parsed.sprites)
-	}
-}
-
-func TestLinkSprites_NakResendsTiles(t *testing.T) {
-	h := newSpriteTestRig(t)
-	h.frames(3)
-
-	// an alttpo player is missing two of our tiles:
-	p := newAlttpoPacket(5, 1)
-	p.u8(0x16).u16(2).u8(2).u16(0x21).u16(0x90)
-	p.send(t, h.gs.g)
-	// a NAK for another player is ignored:
-	p = newAlttpoPacket(5, 1)
-	p.u8(0x16).u16(7).u8(1).u16(0x30)
-	p.send(t, h.gs.g)
-
-	parsed := h.frames(1)
-	if len(parsed.tiles) != 2 || !bytes.Equal(parsed.tiles[0x21], h.romTile(0x21)) || !bytes.Equal(parsed.tiles[0x90], h.romTile(0x90)) {
-		t.Errorf("expected tiles $021 and $090 to be re-sent; got %d tiles", len(parsed.tiles))
 	}
 }
 
@@ -374,12 +315,6 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 	// palette 5 goes with the first sprite using it (the sword comes first in OAM):
 	if !bytes.Equal(sword.palette, e.WRAM[0xC6A0:0xC6C0]) || shield.palette != nil {
 		t.Errorf("expected palette 5 with the sword only")
-	}
-	for _, idx := range append(sword.absidx, shield.absidx...) {
-		expected, _ := g.swordShieldTile(idx)
-		if !bytes.Equal(parsed.tiles[idx], expected) {
-			t.Errorf("tile %#03x: expected sword/shield tile data", idx)
-		}
 	}
 }
 

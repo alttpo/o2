@@ -9,17 +9,15 @@ import (
 
 // Compact messages
 //
-// The location (0x01) and the small keys (0x82) change little from frame to frame, so clients that have the compact
-// messages send their changes instead (shared with alttpo, see its Compact.as):
+// The location (MsgLocation) and the small keys (MsgSmallKeys) change little from frame to frame, so clients send
+// their changes instead (shared with alttpo, see its Compact.as):
 //
-//   - 0x87 features: `features u8`, sent with the name every 500 ms; bit 0 (featureCompact) says the client reads 0x88
-//     and 0x89. While any player in the group hasn't said so, the full messages are sent as before (see legacyPeers).
-//   - 0x89 location changes: `base u8`, `mask u8`, then a u16 for each bit of mask: X ($01), Y ($02), X scroll offset
-//     ($04), Y scroll offset ($08). The values differ from those of the full location 0x01 sent in the packet whose
+//   - MsgLocationChanges: `base u8`, `mask u8`, then a u16 for each bit of mask: X ($01), Y ($02), X scroll offset
+//     ($04), Y scroll offset ($08). The values differ from those of the full location sent in the packet whose
 //     frame number (game header) is base; the other fields are that message's. A full location goes out when any other
 //     field changes, every locationKeyRefresh frames, and when a player joins.
-//   - 0x88 small key changes: `base u8`, `count u8`, then `k u8`, `net i16`, `value u8`, `ts u32` for each dungeon k
-//     that differs from the full small keys 0x82 sent in the packet with frame number base (session included). Sent
+//   - MsgSmallKeysChanges: `base u8`, `count u8`, then `k u8`, `net i16`, `value u8`, `ts u32` for each dungeon k
+//     that differs from the full small keys sent in the packet with frame number base (session included). Sent
 //     when the keys change and every smallKeysRefresh frames, with no dungeons when nothing changed. A full message goes
 //     out when more than smallKeysMaxChanges dungeons differ, every smallKeysKeyRefresh frames and when a player joins.
 //
@@ -27,8 +25,6 @@ import (
 // relative to the full message, not to the previous change, a lost packet is repaired by the next one.
 
 const (
-	featureCompact = uint8(0x01)
-
 	locationKeyRefresh  = 60
 	smallKeysKeyRefresh = 256
 	smallKeysMaxChanges = 2
@@ -41,10 +37,8 @@ const (
 	locChangeYOffs
 )
 
-// compactRemote is a remote player's features and the full messages its change messages are relative to.
+// compactRemote is the full messages a remote player's change messages are relative to.
 type compactRemote struct {
-	features uint8
-
 	locOK    bool
 	locFrame uint8
 	loc      [4]uint16
@@ -68,15 +62,6 @@ func (c *compactRemote) noteLocation(p *Player) {
 func (c *compactRemote) noteSmallKeys(p *Player, session uint32, net [smallKeyCount]int16, value [smallKeyCount]uint8, ts [smallKeyCount]uint32) {
 	c.skOK, c.skFrame, c.skSession = true, p.Frame, session
 	c.skNet, c.skValue, c.skTs = net, value, ts
-}
-
-func (g *Game) DeserializeFeatures(p *Player, r io.Reader) (err error) {
-	var f uint8
-	if f, err = readU8(r); err != nil {
-		return fmt.Errorf("error deserializing features: %w", err)
-	}
-	p.Compact.features = f
-	return
 }
 
 func (g *Game) DeserializeLocationChanges(p *Player, r io.Reader) (err error) {
@@ -130,16 +115,6 @@ func (g *Game) DeserializeSmallKeysChanges(p *Player, r io.Reader) (err error) {
 	}
 	g.applySmallKeys(p, c.skSession, net, value, ts)
 	return
-}
-
-// legacyPeers reports whether a player in the group hasn't said it reads the compact messages.
-func (g *Game) legacyPeers() bool {
-	for _, p := range g.RemotePlayers() {
-		if p.Compact.features&featureCompact == 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // compactLocal is what was sent of the compact messages.

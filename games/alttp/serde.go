@@ -1,75 +1,100 @@
 package alttp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"strings"
-	"time"
 )
 
 // SerializationVersion is the game ("script") protocol version shared with the alttpo emulator script project
-// (see `script_protocol` in alttpo's GameState.as). o2 and alttpo clients can only share game state in the same group
-// when this matches.
+// (see `script_protocol` in alttpo's GameState.as). Players send it in the info of their join-group (see joinInfo), and
+// players with another version are shown as incompatible and their messages are dropped.
+//
+// Game protocol v2 (see o2-server's PROTOCOL05.md): a packet is `u8 frame`, then messages of `u8 type, length,
+// body`; the length is 1 byte below 0x80, or 2 bytes (0x80 | low 7 bits, then the high 8 bits). Receivers skip
+// message types they don't know or implement by their length.
 //
 // NOTE: coordinate with alttpo when the serialization code changes in an incompatible way
-const SerializationVersion = 0x01
+const SerializationVersion = 0x02
 
 type MessageType uint8
 
-// Message types shared with alttpo; values must match `GameState::deserialize` in alttpo's GameState.as.
+// Message types shared with alttpo; values must match `GameState::deserialize` in alttpo's GameState.as. o2 doesn't
+// implement the SM and enemy data messages and skips them by their length.
 const (
 	MsgLocation         MessageType = 0x01
-	MsgSfx              MessageType = 0x02
-	MsgSprites1         MessageType = 0x03
-	MsgSprites2         MessageType = 0x04
-	MsgWRAM             MessageType = 0x05
-	MsgSRAM             MessageType = 0x06
-	MsgTilemaps         MessageType = 0x07 // retired; replaced by MsgMap16 and MsgManip, neither project sends it
-	MsgObjects          MessageType = 0x08 // reserved; not implemented by either project
+	MsgLocationChanges  MessageType = 0x02 // changes since the last MsgLocation; see compact.go
+	MsgSfx              MessageType = 0x03
+	MsgSprites          MessageType = 0x04
+	MsgSpriteChrs       MessageType = 0x05 // reserved for the sprite redesign (facts); not sent yet
+	MsgSpritePalettes   MessageType = 0x06 // reserved for the sprite redesign (facts); not sent yet
+	MsgWRAM             MessageType = 0x07
+	MsgSRAM             MessageType = 0x08
 	MsgAncillae         MessageType = 0x09
 	MsgTorches          MessageType = 0x0A
 	MsgPvP              MessageType = 0x0B
-	MsgPlayerName       MessageType = 0x0C
-	MsgSMEvents         MessageType = 0x0D
-	MsgSMSRAM           MessageType = 0x0E
-	MsgSMLocation       MessageType = 0x0F
-	MsgSMSprite         MessageType = 0x10 // reserved; not implemented by alttpo
-	MsgSMEnemies        MessageType = 0x11
-	MsgEnemyData        MessageType = 0x12
-	MsgEnemySegmentData MessageType = 0x13
-	MsgOverlordData     MessageType = 0x14
-	MsgUniqTiles        MessageType = 0x15
-	MsgNakUniqTiles     MessageType = 0x16
-	MsgMap16            MessageType = 0x17 // overworld map16 change log, broadcastSector; see syncmap16.go
-	MsgManip            MessageType = 0x18 // underworld manipulable objects, broadcastSector; see syncmanip.go
-	MsgStarSwitch       MessageType = 0x19 // star switch state of a room, broadcastSector; see syncstar.go
-	MsgRoomState        MessageType = 0x1A // trap doors, chest and key flags of a room, broadcastSector; see syncroom.go
-	MsgRoomDoors        MessageType = 0x1B // key doors and switches of a room, broadcastSector; see syncroom.go
-	MsgOwEvents         MessageType = 0x1C // overworld entrance animations and other events, broadcastSector; see syncowevents.go
-	MsgFlyingTiles      MessageType = 0x1D // tile room overlord state of a room, broadcastSector; see synctiles.go
-	MsgRoomKills        MessageType = 0x1E // kill triggers fired in a room, broadcastSector; see syncroomkills.go
-	MsgEnemiesKilled    MessageType = 0x1F // enemies killed in a room or area, broadcastSector; see syncenemieskilled.go
-	MsgRupees           MessageType = 0x20 // rupees of rupee floors deleted in a room, broadcastSector; see syncrupees.go
+	MsgMap16            MessageType = 0x0C // overworld map16 change log; see syncmap16.go
+	MsgManip            MessageType = 0x0D // underworld manipulable objects; see syncmanip.go
+	MsgStarSwitch       MessageType = 0x0E // star switch state of a room; see syncstar.go
+	MsgRoomState        MessageType = 0x0F // trap doors, chest and key flags of a room; see syncroom.go
+	MsgRoomDoors        MessageType = 0x10 // key doors and switches of a room; see syncroom.go
+	MsgOwEvents         MessageType = 0x11 // overworld entrance animations and other events; see syncowevents.go
+	MsgFlyingTiles      MessageType = 0x12 // tile room overlord state of a room; see synctiles.go
+	MsgRoomKills        MessageType = 0x13 // kill triggers fired in a room; see syncroomkills.go
+	MsgEnemiesKilled    MessageType = 0x14 // enemies killed in a room or area; see syncenemieskilled.go
+	MsgRupees           MessageType = 0x15 // rupees of rupee floors deleted in a room; see syncrupees.go
+	MsgEnemyData        MessageType = 0x16 // alttpo only
+	MsgEnemySegmentData MessageType = 0x17 // alttpo only
+	MsgOverlordData     MessageType = 0x18 // alttpo only
+	MsgSmallKeys        MessageType = 0x19 // see SmallKeys.as
+	MsgSmallKeysChanges MessageType = 0x1A // changes since the last MsgSmallKeys; see compact.go
+	MsgHearts           MessageType = 0x1B // see Hearts.as
+	MsgReset            MessageType = 0x1C // group reset; see reset.go
+	MsgRunTiming        MessageType = 0x1D // see RUN_TIMING.md and runtiming.go
+	MsgRunRestore       MessageType = 0x1E // gives a player back the run it lost; see runrestore.go
+	MsgRunGap           MessageType = 0x1F // a player's lost connection; see runrestore.go
+	MsgSMLocation       MessageType = 0x20 // alttpo only
+	MsgSMEvents         MessageType = 0x21 // alttpo only
+	MsgSMSRAM           MessageType = 0x22 // alttpo only
+	MsgSMEnemies        MessageType = 0x23 // alttpo only
 )
 
-// o2-originated message types. alttpo stops parsing a packet at the first message type it does not understand, so
-// these are sent in their own packets, separate from message types alttpo uses; see makeO2BroadcastMessage.
-const (
-	MsgO2RunTimes MessageType = 0x80 // o2-only
-	MsgReset      MessageType = 0x81 // group reset, also understood and sent by alttpo (RunTiming.as)
-	MsgSmallKeys  MessageType = 0x82 // also understood and sent by alttpo (SmallKeys.as)
-	MsgHearts     MessageType = 0x83 // also understood and sent by alttpo (Hearts.as)
-	MsgRunTiming  MessageType = 0x84 // run timing, shared with alttpo; see RUN_TIMING.md and runtiming.go
-	MsgRunRestore MessageType = 0x85 // gives a player back the run it lost, shared with alttpo; see runrestore.go
-	MsgRunGap     MessageType = 0x86 // a player's lost connection, shared with alttpo; see runrestore.go
-	// the compact messages, shared with alttpo; see compact.go:
-	MsgFeatures         MessageType = 0x87
-	MsgSmallKeysChanges MessageType = 0x88
-	MsgLocationChanges  MessageType = 0x89
-)
+// maxMsgLen is the longest message body the 2-byte length can express:
+const maxMsgLen = 0x7FFF
+
+// appendMsgLen appends a message length: 1 byte below 0x80, else 2 bytes.
+func appendMsgLen(b []byte, n int) []byte {
+	if n < 0x80 {
+		return append(b, uint8(n))
+	}
+	return append(b, 0x80|uint8(n&0x7F), uint8(n>>7))
+}
+
+// readMsgLen reads a message length from b, returning it and the bytes it took.
+func readMsgLen(b []byte) (n int, w int, ok bool) {
+	if len(b) < 1 {
+		return 0, 0, false
+	}
+	if b[0] < 0x80 {
+		return int(b[0]), 1, true
+	}
+	if len(b) < 2 {
+		return 0, 0, false
+	}
+	return int(b[0]&0x7F) | int(b[1])<<7, 2, true
+}
+
+// frameMessage returns the message msg (type byte, then body) with its length inserted after the type.
+func frameMessage(msg []byte) []byte {
+	if len(msg) == 0 {
+		return nil
+	}
+	b := append([]byte{msg[0]}, appendMsgLen(nil, len(msg)-1)...)
+	return append(b, msg[1:]...)
+}
 
 type DeserializeFunc func(p *Player, r io.Reader) error
 
@@ -77,23 +102,12 @@ func (g *Game) initSerde() {
 	g.deserTable = map[MessageType]DeserializeFunc{
 		MsgLocation:         g.DeserializeLocation,
 		MsgSfx:              g.DeserializeSfx,
-		MsgSprites1:         g.DeserializeSprites1,
-		MsgSprites2:         g.DeserializeSprites2,
+		MsgSprites:          g.DeserializeSprites,
 		MsgWRAM:             g.DeserializeWRAM,
 		MsgSRAM:             g.DeserializeSRAM,
 		MsgAncillae:         g.DeserializeAncillae,
 		MsgTorches:          g.DeserializeTorches,
 		MsgPvP:              g.DeserializePvP,
-		MsgPlayerName:       g.DeserializePlayerName,
-		MsgSMEvents:         skipBytes(0x54 + 2),
-		MsgSMSRAM:           skipBytes(0x40),
-		MsgSMLocation:       skipBytes(15),
-		MsgSMEnemies:        skipSMEnemies,
-		MsgEnemyData:        skipEnemyData,
-		MsgEnemySegmentData: skipEnemySegmentData,
-		MsgOverlordData:     skipOverlordData,
-		MsgUniqTiles:        skipUniqTiles,
-		MsgNakUniqTiles:     g.DeserializeNakUniqTiles,
 		MsgMap16:            g.DeserializeMap16,
 		MsgManip:            g.DeserializeManip,
 		MsgStarSwitch:       g.DeserializeStarSwitch,
@@ -104,14 +118,12 @@ func (g *Game) initSerde() {
 		MsgRoomKills:        g.DeserializeRoomKills,
 		MsgEnemiesKilled:    g.DeserializeEnemiesKilled,
 		MsgRupees:           g.DeserializeRupees,
-		MsgO2RunTimes:       g.DeserializeRunTimes,
 		MsgReset:            g.DeserializeReset,
 		MsgSmallKeys:        g.DeserializeSmallKeys,
 		MsgHearts:           g.DeserializeHearts,
 		MsgRunTiming:        g.DeserializeRunTiming,
 		MsgRunRestore:       g.DeserializeRunRestore,
 		MsgRunGap:           g.DeserializeRunGap,
-		MsgFeatures:         g.DeserializeFeatures,
 		MsgSmallKeysChanges: g.DeserializeSmallKeysChanges,
 		MsgLocationChanges:  g.DeserializeLocationChanges,
 	}
@@ -145,43 +157,16 @@ func writeU24(w io.Writer, value uint32) (err error) {
 // Deserialize parses a game packet from another player (o2 or alttpo). Malformed or incompatible packets are
 // rejected with an error rather than a panic.
 func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("alttp: deserialize: %v", rec)
-		}
-	}()
-
-	var (
-		serializationVersion uint8
-		frame                uint8
-	)
-
-	if err = binary.Read(r, binary.LittleEndian, &serializationVersion); err != nil {
+	data, err := io.ReadAll(r)
+	if err != nil {
 		return
 	}
-
-	if serializationVersion != SerializationVersion {
-		// ignore players using an incompatible protocol version:
-		if g.badVersionLogLimit&0x7F == 0 {
-			log.Printf("alttp: ignoring player[%02x] with serialization version %#02x; expected %#02x\n", uint8(p.Index()), serializationVersion, SerializationVersion)
-		}
-		g.badVersionLogLimit++
-		return fmt.Errorf("alttp: serialization version mismatch %#02x != %#02x", serializationVersion, SerializationVersion)
-	}
-
-	lastTeam := p.Team
-	if err = binary.Read(r, binary.LittleEndian, &p.Team); err != nil {
-		return
-	}
-	if p.Team != lastTeam {
-		g.shouldUpdatePlayersList = true
-	}
-
-	if err = binary.Read(r, binary.LittleEndian, &frame); err != nil {
-		return
+	if len(data) < 1 {
+		return fmt.Errorf("alttp: deserialize: empty packet")
 	}
 
 	// discard stale frame data:
+	frame := data[0]
 	nextFrame := int(frame)
 	lastFrame := int(p.Frame)
 	if lastFrame-nextFrame >= 128 {
@@ -193,43 +178,62 @@ func (g *Game) Deserialize(r io.Reader, p *Player) (err error) {
 	}
 	p.Frame = frame
 
-	for err != io.EOF {
-		// read message type or expect an EOF:
-		var msgType MessageType
-		if err = binary.Read(r, binary.LittleEndian, &msgType); err != nil {
-			break
+	for o := 1; o < len(data); {
+		msgType := MessageType(data[o])
+		o++
+		n, w, ok := readMsgLen(data[o:])
+		if !ok || o+w+n > len(data) {
+			return fmt.Errorf("alttp: deserialize: message %#02x truncated", uint8(msgType))
 		}
+		o += w
+		body := data[o : o+n]
+		o += n
 
 		deser, ok := g.deserTable[msgType]
 		if !ok {
-			// no way to know the length of an unknown message, so the rest of the packet is lost. Newer clients add
-			// message types at the end of their packets, so keep what was parsed so far and only log it once per player
-			// and message type:
+			// a message type o2 doesn't implement (SM, enemy data) or a newer one; skipped by its length:
 			key := uint32(p.Index())<<8 | uint32(msgType)
 			if _, logged := g.unknownMsgLogged[key]; !logged {
 				if g.unknownMsgLogged == nil {
 					g.unknownMsgLogged = make(map[uint32]struct{})
 				}
 				g.unknownMsgLogged[key] = struct{}{}
-				log.Printf("alttp: player[%02x]: ignoring unknown message type %#02x and the rest of its packet; is it a newer version?\n", uint8(p.Index()), uint8(msgType))
+				log.Printf("alttp: player[%02x]: skipping message type %#02x\n", uint8(p.Index()), uint8(msgType))
 			}
-			err = nil
-			break
+			continue
 		}
 
 		// while the reset state machine is active, ignore all game state from other players:
 		if msgType != MsgReset && g.IsResetting() {
-			break
+			continue
 		}
 
-		// call deserializer for the message type:
-		if err = deser(p, r); err != nil {
-			break
+		// a message that fails to deserialize doesn't take the rest of the packet with it:
+		if merr := g.deserializeOne(deser, p, msgType, body); merr != nil {
+			log.Printf("alttp: player[%02x]: message %#02x: %v\n", uint8(p.Index()), uint8(msgType), merr)
+			if err == nil {
+				err = merr
+			}
 		}
 	}
+	return
+}
 
-	if errors.Is(err, io.EOF) {
-		err = nil
+// deserializeOne calls a message's deserializer on its body.
+func (g *Game) deserializeOne(deser DeserializeFunc, p *Player, msgType MessageType, body []byte) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%v", rec)
+		}
+	}()
+	r := bytes.NewReader(body)
+	err = deser(p, r)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		// the deserializer wanted more than the message's length:
+		err = fmt.Errorf("read past the end of the message (%d bytes): %w", len(body), err)
+	} else if err == nil && g.strictMessages && r.Len() > 0 {
+		// a newer client may append fields to a message, so this is only an error in tests:
+		err = fmt.Errorf("%d of %d bytes not read", r.Len(), len(body))
 	}
 	return
 }
@@ -341,16 +345,8 @@ func (g *Game) DeserializeLocation(p *Player, r io.Reader) (err error) {
 	return
 }
 
-func (g *Game) DeserializeSprites1(p *Player, r io.Reader) (err error) {
+func (g *Game) DeserializeSprites(p *Player, r io.Reader) (err error) {
 	return g.deserializeRemoteSprites(p, r, 0)
-}
-
-func (g *Game) DeserializeSprites2(p *Player, r io.Reader) (err error) {
-	var start uint8
-	if start, err = readU8(r); err != nil {
-		return fmt.Errorf("error deserializing sprites continuation: %w", err)
-	}
-	return g.deserializeRemoteSprites(p, r, int(start))
 }
 
 func (g *Game) DeserializeWRAM(p *Player, r io.Reader) (err error) {
@@ -492,84 +488,6 @@ func (g *Game) DeserializePvP(p *Player, r io.Reader) (err error) {
 	return discard(r, int(count)*9)
 }
 
-func (g *Game) DeserializePlayerName(p *Player, r io.Reader) (err error) {
-	var name [20]byte
-	if _, err = io.ReadFull(r, name[:]); err != nil {
-		return fmt.Errorf("error deserializing name: %w", err)
-	}
-	lastName := p.NameF
-	p.NameF = strings.Trim(string(name[:]), " \t\n\r\000")
-	if lastName != p.NameF {
-		p.showJoinMessage = true
-		// refresh the players list
-		g.shouldUpdatePlayersList = true
-	}
-
-	return
-}
-
-// DeserializeRunTimes reads the o2-only game start and finish times used for the run timer. Players that send the run
-// timing message 0x84 (see runtiming.go) send these too, for older o2 versions; 0x84 takes precedence.
-func (g *Game) DeserializeRunTimes(p *Player, r io.Reader) (err error) {
-	var isZero bool
-
-	if err = binary.Read(r, binary.LittleEndian, &isZero); err != nil {
-		return
-	}
-	var startTime time.Time
-	if !isZero {
-		var startNano int64
-		if err = binary.Read(r, binary.LittleEndian, &startNano); err != nil {
-			return
-		}
-		startTime = time.Unix(startNano/1e9, startNano%1e9)
-	}
-
-	if err = binary.Read(r, binary.LittleEndian, &isZero); err != nil {
-		return
-	}
-	var finishTime time.Time
-	if !isZero {
-		var finishNano int64
-		if err = binary.Read(r, binary.LittleEndian, &finishNano); err != nil {
-			return
-		}
-		finishTime = time.Unix(finishNano/1e9, finishNano%1e9)
-	}
-
-	if p.RunTiming.OK {
-		return
-	}
-	if startTime != p.GameStartTime {
-		p.GameStartTime = startTime
-		g.shouldUpdatePlayersList = true
-	}
-	if finishTime != p.GameFinishTime {
-		p.GameFinishTime = finishTime
-		g.shouldUpdatePlayersList = true
-	}
-
-	return
-}
-
-// SerializeRunTimes writes the o2-only game start and finish times used for the run timer.
-func SerializeRunTimes(w io.Writer, start, finish time.Time) (err error) {
-	if err = binary.Write(w, binary.LittleEndian, uint8(MsgO2RunTimes)); err != nil {
-		return
-	}
-	for _, t := range []time.Time{start, finish} {
-		if err = binary.Write(w, binary.LittleEndian, t.IsZero()); err != nil {
-			return
-		}
-		if !t.IsZero() {
-			if err = binary.Write(w, binary.LittleEndian, t.UnixNano()); err != nil {
-				return
-			}
-		}
-	}
-	return
-}
-
 func (g *Game) SerializeLocation(p *Player, w io.Writer) (err error) {
 	if err = binary.Write(w, binary.LittleEndian, uint8(MsgLocation)); err != nil {
 		panic(fmt.Errorf("error serializing location: %w", err))
@@ -706,120 +624,5 @@ func readU16(r io.Reader) (v uint16, err error) {
 // The following skip over alttpo-only messages (Super Metroid / SMZ3 state, enemy sync and unique sprite tiles) so
 // that the rest of the packet can still be read. Formats follow alttpo's GameState.as deserialize_* functions.
 
-func skipBytes(n int) DeserializeFunc {
-	return func(p *Player, r io.Reader) error {
-		return discard(r, n)
-	}
-}
-
-func skipSMEnemies(p *Player, r io.Reader) (err error) {
-	var isEnemy, flag uint8
-	if isEnemy, err = readU8(r); err != nil {
-		return
-	}
-	if isEnemy == 34 {
-		return
-	}
-	// enemy index:
-	if err = discard(r, 1); err != nil {
-		return
-	}
-	if flag, err = readU8(r); err != nil {
-		return
-	}
-	if flag == 0 {
-		return
-	}
-	// 32 u16 enemy properties, host index, flag:
-	return discard(r, 32*2+2)
-}
-
 // alttpo: len(enemy_data_ptrs); one byte per property per sprite (two for OWDEATH spanning two properties):
 const alttpoEnemyDataProperties = 55
-
-func skipEnemyData(p *Player, r io.Reader) (err error) {
-	var mask uint16
-	if mask, err = readU16(r); err != nil {
-		return
-	}
-	// in_dungeon:
-	if err = discard(r, 1); err != nil {
-		return
-	}
-	for s := 0; s < 16; s++ {
-		if mask&(1<<s) == 0 {
-			continue
-		}
-		if err = discard(r, alttpoEnemyDataProperties); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func skipEnemySegmentData(p *Player, r io.Reader) (err error) {
-	var mask uint16
-	if mask, err = readU16(r); err != nil {
-		return
-	}
-	for s := 0; s < 16; s++ {
-		if mask&(1<<s) == 0 {
-			continue
-		}
-		var id uint8
-		if id, err = readU8(r); err != nil {
-			return
-		}
-		n := 0
-		switch id {
-		case 0xCF: // swamola
-			if s < 6 {
-				n = 4 * 0x20
-			}
-		case 0x09: // moldorm
-			n = 4 * 0x80
-		case 0x18: // mini moldorm
-			if s < 4 {
-				n = 4 * 0x20
-			}
-		case 0x54: // lanmolas
-			if s < 4 {
-				n = 4 * 0x40
-			}
-		default:
-			if s < 8 {
-				n = 7 * 0x10
-			}
-		}
-		if err = discard(r, n); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func skipOverlordData(p *Player, r io.Reader) (err error) {
-	var mask uint8
-	if mask, err = readU8(r); err != nil {
-		return
-	}
-	for s := 0; s < 8; s++ {
-		if mask&(1<<s) == 0 {
-			continue
-		}
-		// 9 u8 properties and 1 u16 property:
-		if err = discard(r, 9+2); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func skipUniqTiles(p *Player, r io.Reader) (err error) {
-	var count uint8
-	if count, err = readU8(r); err != nil {
-		return
-	}
-	// absidx (u16) and 16 u16 tile words:
-	return discard(r, int(count)*(2+32))
-}

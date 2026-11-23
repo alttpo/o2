@@ -40,10 +40,11 @@ type Game struct {
 	priorityReads   [3][]snes.Read
 
 	deserTable map[MessageType]DeserializeFunc
+	// strictMessages makes a message whose deserializer doesn't read all of it an error; for tests:
+	strictMessages bool
+
 	// unknown message types already logged, per player index and message type:
 	unknownMsgLogged map[uint32]struct{}
-
-	badVersionLogLimit uint8
 
 	// Notifications publishes notifications about game events intended for the player to see
 	Notifications interfaces.ObservableImpl
@@ -60,6 +61,9 @@ type Game struct {
 
 	lastServerTime     time.Time // server's clock when the last received message passed through the server
 	lastServerSentTime time.Time // our local clock when we sent the echo message
+
+	// protocol 0x05 state (see net.go):
+	net                netState
 	lastServerRecvTime time.Time // our local clock when we received the last message
 	// the offset of the server's clock from ours, from echo round trips; see clock.go:
 	clock serverClock
@@ -262,6 +266,7 @@ func NewGame(rom *snes.ROM) (g *Game) {
 		romFunctions:          make(map[romFunction]uint32),
 		lastUpdateTarget:      0xFFFFFF,
 		lastServerSentTime:    time.Now(),
+		net:                   netState{sessionID: newSessionID()},
 		lastServerRecvTime:    time.Now(),
 		activePlayers:         make([]*Player, 0, MaxPlayers),
 		remotePlayers:         make([]*Player, 0, MaxPlayers),

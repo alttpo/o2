@@ -398,9 +398,9 @@ func (g *Game) sendResetMessage(phase resetPhase, key resetKey) {
 		return
 	}
 
-	// in its own packet; alttpo takes part in the reset too (RunTiming.as):
-	m := g.makeO2BroadcastMessage()
-	if err := SerializeReset(m, phase, key); err != nil {
+	// alttpo takes part in the reset too (RunTiming.as):
+	m := g.makeBroadcastMessage()
+	if err := m.add(func(w io.Writer) error { return SerializeReset(w, phase, key) }); err != nil {
 		log.Printf("alttp: reset: serialize: %v\n", err)
 		return
 	}

@@ -2,7 +2,6 @@ package alttp
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"o2/snes"
@@ -12,12 +11,12 @@ import (
 
 // Link sprite sync (outgoing only)
 //
-// alttpo clients draw remote players from the OAM sprites they broadcast (message 0x03). Link's body sprites are drawn
+// alttpo clients draw remote players from the OAM sprites they broadcast (MsgSprites). Link's body sprites are drawn
 // from "unique tiles": 8x8 4bpp tiles identified by their index into Link's graphics in ROM (LinkGraphics, bank $10).
 // Each frame the game DMAs the tiles for Link's current pose from ROM to VRAM using the source addresses at
 // $0ACC/$0AD0/$0AD4 (head, body, aux; top row) and $0ACE/$0AD2/$0AD6 (bottom row). A tile's unique index is its
-// offset from the start of LinkGraphics divided by 32. Each unique tile is sent once (message 0x15); receivers that
-// lack one ask for it again with a NAK (message 0x16).
+// offset from the start of LinkGraphics divided by 32. The tile data itself is no longer sent; the sprite redesign
+// (o2-server's PROTOCOL05.md, "Sprites with facts") replaces unique tiles with the Link graphics fact.
 //
 // alttpo reads tiles from emulated VRAM; o2 reads them straight from its in-memory copy of the ROM, which also picks up
 // custom Link sprites patched into the ROM. Sword and shield tiles are rebuilt from ROM the same way the game builds
@@ -25,17 +24,14 @@ import (
 // Link's shadow is sent without tile data, the same as alttpo does: receivers draw it with their own shadow tiles.
 //
 // Incoming sprites are used to draw remote players (see remotesprites.go): one with Link's head, body, sword and shield,
-// whose tiles are taken from the local ROM and WRAM. Incoming unique tiles are ignored; tiles sent inline with the
-// sprites are only used to find alttpo players' sword and shield poses.
+// whose tiles are taken from the local ROM and WRAM. Tiles sent inline with the sprites are only used to find alttpo
+// players' sword and shield poses.
 
 // linkOAMCount is the number of OAM entries reserved for Link, starting at OAM index ($0352 >> 2):
 const linkOAMCount = 12
 
 // linkUniqTileCount is the number of LinkGraphics tiles that alttpo treats as unique tiles ($000..$37F):
 const linkUniqTileCount = 0x380
-
-// uniqTilesPerPacket keeps uniqtile packets well under a UDP packet size limit:
-const uniqTilesPerPacket = 24
 
 const noUniqTile = 0xFFFF
 
@@ -66,10 +62,6 @@ type linkSpriteSync struct {
 
 	// sprite palettes 0 through 7 ($7EC600..$7EC6FF; color 0 of palette 0 is not read, it is transparent anyway):
 	palettes [8][32]byte
-
-	// unique tiles already broadcast and tiles waiting to be broadcast:
-	sent    [swordShieldTileEnd]bool
-	pending []uint16
 }
 
 func (g *Game) initSpriteSync() {
@@ -239,11 +231,9 @@ func (g *Game) readLinkSprites() {
 		return
 	}
 
-	// rebuild sword and shield tiles if the player's equipment changed; receivers need the changed tiles again:
+	// rebuild sword and shield tiles if the player's equipment changed:
 	if g.wramFresh[0xF359] && g.wramFresh[0xF35A] {
-		for _, idx := range g.updateSwordShieldGfx(g.wram[0xF359], g.wram[0xF35A]) {
-			s.sent[idx] = false
-		}
+		g.updateSwordShieldGfx(g.wram[0xF359], g.wram[0xF35A])
 	}
 
 	s.sprites = s.sprites[:0]
@@ -293,12 +283,6 @@ func (g *Game) readLinkSprites() {
 				// tiles not available from ROM (sword, shield, etc.):
 				continue
 			}
-			for _, idx := range sp.absidx[:len(chrs)] {
-				if !s.sent[idx] {
-					s.sent[idx] = true
-					s.pending = append(s.pending, idx)
-				}
-			}
 		}
 
 		s.sprites = append(s.sprites, sp)
@@ -342,57 +326,12 @@ func (g *Game) readLinkSprites() {
 	s.fresh = true
 }
 
-// sendUniqTiles broadcasts the unique tiles not sent yet, to all players: each is sent once, so that a player who
-// enters the sector later has them (and asks for any it lacks with a NAK). The sprites go to the sector (see
-// addLinkSprites), since players only draw the players in their own location.
-func (g *Game) sendUniqTiles() {
-	s := &g.linkSprites
-
-	for len(s.pending) > 0 {
-		n := len(s.pending)
-		if n > uniqTilesPerPacket {
-			n = uniqTilesPerPacket
-		}
-		m := g.makeBroadcastMessage()
-		if err := g.SerializeUniqTiles(m, s.pending[:n]); err != nil {
-			log.Printf("alttp: sprites: %v\n", err)
-			s.pending = s.pending[:0]
-			break
-		}
-		g.send(m)
-		s.pending = s.pending[n:]
-	}
-}
-
-// SerializeUniqTiles writes message 0x15 with the tile data for the given unique tile indices.
-func (g *Game) SerializeUniqTiles(w io.Writer, absidx []uint16) (err error) {
-	if err = binary.Write(w, binary.LittleEndian, uint8(MsgUniqTiles)); err != nil {
-		return
-	}
-	if err = binary.Write(w, binary.LittleEndian, uint8(len(absidx))); err != nil {
-		return
-	}
-	for _, idx := range absidx {
-		tile, ok := g.linkTile(idx)
-		if !ok {
-			return fmt.Errorf("uniqtile %#03x not in ROM", idx)
-		}
-		if err = binary.Write(w, binary.LittleEndian, idx); err != nil {
-			return
-		}
-		if _, err = w.Write(tile); err != nil {
-			return
-		}
-	}
-	return
-}
-
 // SerializeLinkSprites writes message 0x03 in alttpo's format. Tile data is never sent inline; each palette in
 // sendPalette is sent along with the first sprite that uses it. alttpo draws remote sprites with the palettes it last
 // received from the player.
 func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite, sendPalette [8]bool) {
 	s := &g.linkSprites
-	_ = binary.Write(w, binary.LittleEndian, uint8(MsgSprites1))
+	_ = binary.Write(w, binary.LittleEndian, uint8(MsgSprites))
 	_ = binary.Write(w, binary.LittleEndian, uint8(len(sprites)))
 
 	var paletteSent [8]bool
@@ -415,42 +354,6 @@ func (g *Game) SerializeLinkSprites(w io.Writer, sprites []linkSprite, sendPalet
 			_, _ = w.Write(s.palettes[sp.pal][:])
 		}
 	}
-}
-
-// DeserializeNakUniqTiles handles a request from another player to re-send unique tiles they are missing.
-func (g *Game) DeserializeNakUniqTiles(p *Player, r io.Reader) (err error) {
-	var playerIndex uint16
-	if playerIndex, err = readU16(r); err != nil {
-		return
-	}
-	var count uint8
-	if count, err = readU8(r); err != nil {
-		return
-	}
-	s := &g.linkSprites
-	forUs := g.local != nil && int(playerIndex) == g.local.Index()
-	for i := 0; i < int(count); i++ {
-		var idx uint16
-		if idx, err = readU16(r); err != nil {
-			return
-		}
-		if !forUs || idx >= swordShieldTileEnd || !s.tileBankOK {
-			continue
-		}
-		// queue for re-sending if not already queued:
-		queued := false
-		for _, q := range s.pending {
-			if q == idx {
-				queued = true
-				break
-			}
-		}
-		if !queued {
-			s.sent[idx] = true
-			s.pending = append(s.pending, idx)
-		}
-	}
-	return
 }
 
 // oamCopyDying returns the screen positions of the enemies drawing their death that the trampoline listed with the

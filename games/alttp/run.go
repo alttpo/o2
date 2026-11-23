@@ -215,6 +215,7 @@ func (g *Game) run() {
 			if msg == nil {
 				// disconnected?
 				g.noteServerLost(g.local != nil && g.local.Index() >= 0)
+				g.netDisconnected()
 				for i := range g.players {
 					p := &g.players[i]
 					// reset Ttl for all players to make them inactive:
@@ -255,11 +256,8 @@ func (g *Game) run() {
 				return
 			}
 
-			if g.LocalPlayer().Index() < 0 && g.client != nil {
-				// request our player index:
-				m := g.makeJoinMessage()
-				g.send(m)
-			}
+			// join the group and the sector, and resend them until acked:
+			g.tickNet(time.Now())
 
 			if g.getQueue() != nil {
 				// only issue a new read if there's not an update-check in progress:
@@ -308,7 +306,7 @@ func (g *Game) run() {
 
 			g.sendEcho()
 
-			g.sendPlayerName()
+			g.sendRunTimingBeat()
 
 			// tell the others how long we were disconnected:
 			g.announceGaps(time.Now())
@@ -321,42 +319,12 @@ func (g *Game) run() {
 	}
 }
 
-func (g *Game) sendEcho() {
-	// send an echo to the server to measure roundtrip time:
-	g.lastServerSentTime = time.Now()
-	g.send(&gameEchoMessage{g: g})
-}
-
-func (g *Game) sendPlayerName() {
+// sendRunTimingBeat sends the run timing every slowbeat.
+func (g *Game) sendRunTimingBeat() {
 	// don't send any state (including run timer start/finish times) while resetting:
 	if g.IsResetting() {
 		return
 	}
-
-	p := g.LocalPlayer()
-
-	// broadcast player name to all clients (alttpo format; exactly 20 bytes):
-	m := g.makeBroadcastMessage()
-	m.WriteByte(byte(MsgPlayerName))
-	var name [20]byte
-	n := copy(name[:], p.Name())
-	for ; n < 20; n++ {
-		name[n] = ' '
-	}
-	m.Write(name[:])
-	// and that we read the compact messages (see compact.go), after the name since older clients stop at it:
-	m.addBytes([]byte{byte(MsgFeatures), featureCompact})
-	g.send(m)
-
-	// broadcast run timer to o2 clients only (older o2 versions read only this):
-	o := g.makeO2BroadcastMessage()
-	if err := SerializeRunTimes(o, p.GameStartTime, p.GameFinishTime); err != nil {
-		log.Printf("alttp: serialize run times: %v\n", err)
-		return
-	}
-	g.send(o)
-
-	// and the run timing, shared with alttpo:
 	g.stateLock.Lock()
 	g.sendRunTiming()
 	g.stateLock.Unlock()

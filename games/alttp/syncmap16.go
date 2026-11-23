@@ -387,7 +387,7 @@ func (g *Game) sendMap16() {
 		}
 		// to all players, so that players entering the area have the changes while it loads:
 		s := g.makeBroadcastMessage()
-		if err := g.SerializeMap16(s, start, end); err != nil {
+		if err := s.add(func(w io.Writer) error { return g.SerializeMap16(w, start, end) }); err != nil {
 			panic(err)
 		}
 		g.send(s)

@@ -44,7 +44,7 @@ func newResetTestHarness(t *testing.T) *resetTestHarness {
 	for i := range h.gs {
 		// local player is normally marked active when reading from the SNES:
 		h.gs[i].g.SetTTL(h.gs[i].g.local, 255)
-		h.gs[i].g.sendPlayerName()
+		h.gs[i].g.sendRunTimingBeat()
 	}
 	h.exchange()
 
@@ -93,7 +93,7 @@ func (h *resetTestHarness) setRunTimes() {
 	for i := range h.gs {
 		g := h.gs[i].g
 		setLocalRunTimes(g, h.now.Add(-time.Hour), h.now.Add(-time.Minute))
-		g.sendPlayerName()
+		g.sendRunTimingBeat()
 	}
 	h.exchange()
 	for i := range h.gs {
@@ -179,15 +179,16 @@ func TestReset_StateMachine(t *testing.T) {
 	// while resetting, a player sending old state must not be accepted:
 	h.gs[1].g.local.GameStartTime = h.now.Add(-time.Hour)
 	{
-		// bypass sendPlayerName's reset check to send run times anyway:
-		m := h.gs[1].g.makeO2BroadcastMessage()
-		if err := SerializeRunTimes(m, h.gs[1].g.local.GameStartTime, time.Time{}); err != nil {
+		// bypass sendRunTiming's reset check to send the run timing anyway:
+		g1 := h.gs[1].g
+		m := g1.makeBroadcastMessage()
+		if err := m.add(func(w io.Writer) error { return SerializeRunTiming(w, g1.localRunTiming()) }); err != nil {
 			t.Fatal(err)
 		}
-		h.gs[1].g.send(m)
+		g1.send(m)
 	}
 	// and the normal senders must not send anything:
-	h.gs[2].g.sendPlayerName()
+	h.gs[2].g.sendRunTimingBeat()
 	h.gs[2].g.sendPackets()
 	if len(h.gs[2].c.Wr) != 0 {
 		t.Fatalf("g3: expected no state sent while resetting")
@@ -226,7 +227,7 @@ func TestReset_StateMachine(t *testing.T) {
 
 	// normal syncing resumes:
 	setLocalRunTimes(h.gs[1].g, h.now, time.Time{})
-	h.gs[1].g.sendPlayerName()
+	h.gs[1].g.sendRunTimingBeat()
 	h.exchange()
 	if h.gs[0].g.players[localIndices[1]].GameStartTime.IsZero() {
 		t.Fatal("g1: expected to receive g2's state after reset finalized")

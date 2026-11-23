@@ -2,14 +2,13 @@ package alttp
 
 import (
 	"bytes"
-	"o2/client"
-	"o2/client/protocol04"
+	"o2/client/protocol05"
 	"testing"
 )
 
 // sentPacket is a game packet o2 sent, as the server got it.
 type sentPacket struct {
-	kind  protocol04.Kind
+	kind  protocol05.Kind
 	types []uint8
 	data  []byte
 }
@@ -21,40 +20,41 @@ func (h *spriteTestRig) sentPackets(n int) (frames [][]sentPacket) {
 		h.gs.runFrame(h.t)
 		var pkts []sentPacket
 		for len(h.gs.c.Wr) > 0 {
-			b := <-h.gs.c.Wr
-			var proto uint8
-			if _, err := client.ParseHeader(b, &proto); err != nil {
+			q, err := protocol05.DecodeRequest(<-h.gs.c.Wr)
+			if err != nil {
 				h.t.Fatal(err)
 			}
-			if proto != protocol04.Protocol {
+			if q.Kind != protocol05.BroadcastAll && q.Kind != protocol05.BroadcastSector {
 				continue
 			}
-			var gm protocol04.GroupMessage
-			if err := protocol04.Unmarshal(b[3:], &gm); err != nil {
-				h.t.Fatal(err)
+			types, _, err := alttpoParseFull(q.Data)
+			if err != nil {
+				h.t.Fatalf("alttpo would fail to parse o2 packet % x: %v", q.Data, err)
 			}
-			if gm.Kind != protocol04.BroadcastAll && gm.Kind != protocol04.BroadcastSector {
-				continue
-			}
-			sp := sentPacket{kind: gm.Kind, data: gm.Data}
-			if len(gm.Data) > 3 && gm.Data[3] < 0x80 {
-				// what alttpo parses; it stops at the first type it doesn't know:
-				types, _, err := alttpoParseFull(gm.Data)
-				if err != nil {
-					h.t.Fatalf("alttpo would fail to parse o2 packet % x: %v", gm.Data, err)
-				}
-				sp.types = types
-			} else if len(gm.Data) > 3 {
-				sp.types = []uint8{gm.Data[3]}
-			}
-			pkts = append(pkts, sp)
+			pkts = append(pkts, sentPacket{kind: q.Kind, types: types, data: q.Data})
 		}
 		frames = append(frames, pkts)
 	}
 	return
 }
 
-func countType(pkts []sentPacket, kind protocol04.Kind, t MessageType) (n int) {
+// gameMessages splits a game packet into its messages, each its type byte followed by its body.
+func gameMessages(pkt []byte) (msgs [][]byte) {
+	for o := 1; o < len(pkt); {
+		t := pkt[o]
+		o++
+		n, w, ok := readMsgLen(pkt[o:])
+		if !ok || o+w+n > len(pkt) {
+			return
+		}
+		o += w
+		msgs = append(msgs, append([]byte{t}, pkt[o:o+n]...))
+		o += n
+	}
+	return
+}
+
+func countType(pkts []sentPacket, kind protocol05.Kind, t MessageType) (n int) {
 	for _, p := range pkts {
 		if p.kind == kind && bytes.IndexByte(p.types, byte(t)) >= 0 {
 			n++
@@ -71,10 +71,10 @@ func TestSend_SpritesToSectorOnChange(t *testing.T) {
 
 	sent := 0
 	for f, pkts := range frames {
-		if n := countType(pkts, protocol04.BroadcastAll, MsgSprites1); n != 0 {
+		if n := countType(pkts, protocol05.BroadcastAll, MsgSprites); n != 0 {
 			t.Errorf("frame %d: sprites sent to all players", f)
 		}
-		sent += countType(pkts, protocol04.BroadcastSector, MsgSprites1)
+		sent += countType(pkts, protocol05.BroadcastSector, MsgSprites)
 	}
 	// the first frame, then a refresh every spritesRefresh frames:
 	if sent < 2 || sent > 3 {
@@ -84,7 +84,7 @@ func TestSend_SpritesToSectorOnChange(t *testing.T) {
 	// Link moves; sent at once:
 	h.gs.e.WRAM[0x0800+0x64*4] ^= 0x10
 	frames = h.sentPackets(2)
-	if countType(frames[0], protocol04.BroadcastSector, MsgSprites1)+countType(frames[1], protocol04.BroadcastSector, MsgSprites1) == 0 {
+	if countType(frames[0], protocol05.BroadcastSector, MsgSprites)+countType(frames[1], protocol05.BroadcastSector, MsgSprites) == 0 {
 		t.Errorf("expected changed sprites to be sent")
 	}
 }
@@ -101,7 +101,7 @@ func TestSend_SpritePalettesOnChange(t *testing.T) {
 		h.gs.e.WRAM[0x0800+0x64*4] ^= 0x10
 		for _, pkts := range h.sentPackets(1) {
 			for _, p := range pkts {
-				if p.kind != protocol04.BroadcastSector {
+				if p.kind != protocol05.BroadcastSector {
 					continue
 				}
 				_, parsed, _ := alttpoParseFull(p.data)
@@ -122,7 +122,7 @@ func TestSend_SpritePalettesOnChange(t *testing.T) {
 	var got []byte
 	for _, pkts := range h.sentPackets(3) {
 		for _, p := range pkts {
-			if p.kind == protocol04.BroadcastSector {
+			if p.kind == protocol05.BroadcastSector {
 				_, parsed, _ := alttpoParseFull(p.data)
 				for _, sp := range parsed.sprites {
 					if sp.palette != nil {
@@ -147,7 +147,7 @@ func TestSend_AllCoalescedOnChange(t *testing.T) {
 	for f, pkts := range frames {
 		state := 0
 		for _, p := range pkts {
-			if p.kind != protocol04.BroadcastAll {
+			if p.kind != protocol05.BroadcastAll {
 				continue
 			}
 			if bytes.IndexByte(p.types, byte(MsgLocation)) >= 0 || bytes.IndexByte(p.types, byte(MsgSmallKeys)) >= 0 {
@@ -157,7 +157,7 @@ func TestSend_AllCoalescedOnChange(t *testing.T) {
 		if state > 1 {
 			t.Errorf("frame %d: expected the location and small keys in one packet; got %d", f, state)
 		}
-		keys += countType(pkts, protocol04.BroadcastAll, MsgSmallKeys) + countType(pkts, protocol04.BroadcastAll, MsgSmallKeysChanges)
+		keys += countType(pkts, protocol05.BroadcastAll, MsgSmallKeys) + countType(pkts, protocol05.BroadcastAll, MsgSmallKeysChanges)
 	}
 	if keys < 2 || keys > 3 {
 		t.Errorf("expected unchanged small keys sent 2 or 3 times in %d frames; got %d", 2*smallKeysRefresh, keys)
@@ -171,16 +171,19 @@ func TestSend_UnderworldSRAMChanges(t *testing.T) {
 	sram := func(frames [][]sentPacket) (ranges [][2]int) {
 		for _, pkts := range frames {
 			for _, p := range pkts {
-				if p.kind != protocol04.BroadcastAll || len(p.data) <= 3 || p.data[3] != byte(MsgSRAM) {
+				if p.kind != protocol05.BroadcastAll {
 					continue
 				}
-				for c := 3; c+6 <= len(p.data) && p.data[c] == byte(MsgSRAM); {
-					start := int(p.data[c+2]) | int(p.data[c+3])<<8
-					count := int(p.data[c+4]) | int(p.data[c+5])<<8
+				for _, m := range gameMessages(p.data) {
+					if MessageType(m[0]) != MsgSRAM {
+						continue
+					}
+					body := m[1:]
+					start := int(body[1]) | int(body[2])<<8
+					count := int(body[3]) | int(body[4])<<8
 					if start < 0x250 {
 						ranges = append(ranges, [2]int{start, start + count})
 					}
-					c += 6 + count
 				}
 			}
 		}
@@ -226,7 +229,7 @@ func TestSend_BandwidthCounters(t *testing.T) {
 	if d := wire - float64(s.wire); d > 0.5 || d < -0.5 {
 		t.Errorf("expected the rows to add up to the total %d; got %f", s.wire, wire)
 	}
-	for _, name := range []string{msgTypeName(MsgLocation), msgTypeName(MsgSprites1), msgTypeName(MsgSmallKeys)} {
+	for _, name := range []string{msgTypeName(MsgLocation), msgTypeName(MsgSprites), msgTypeName(MsgSmallKeys)} {
 		if c := s.kinds[name]; c == nil || c.msgs == 0 || c.payload == 0 {
 			t.Errorf("expected %q counted; got %+v", name, c)
 		}
@@ -258,9 +261,6 @@ func TestSend_CompactBetweenO2Players(t *testing.T) {
 	}
 	f[70].preFrame = func(t testing.TB, gs [2]gameSync) {
 		dungeon(t, gs)
-		if gs[0].g.legacyPeers() || gs[1].g.legacyPeers() {
-			t.Errorf("expected both to read the compact messages")
-		}
 		gs[0].e.WRAM[0x22] += 0x10
 		gs[0].g.smallKeys.net[3] = 1
 	}
@@ -287,28 +287,4 @@ func TestSend_CompactBetweenO2Players(t *testing.T) {
 	}
 	tc := newGameSyncTestCase("VT test", f)
 	tc.runGameSyncTest(t)
-}
-
-// With a player whose client doesn't read the compact messages, the full ones are sent as before.
-func TestSend_LegacyPeerGetsFullMessages(t *testing.T) {
-	h := newSpriteTestRig(t)
-	g := h.gs.g
-	old := &g.players[5]
-	old.IndexF = 5
-	g.SetTTL(old, 255)
-	g.activePlayersClean = false
-
-	var full, changes int
-	for _, pkts := range h.sentPackets(40) {
-		g.SetTTL(old, 255)
-		for _, mt := range []MessageType{MsgSmallKeys, MsgLocation} {
-			full += countType(pkts, protocol04.BroadcastAll, mt)
-		}
-		for _, mt := range []MessageType{MsgSmallKeysChanges, MsgLocationChanges} {
-			changes += countType(pkts, protocol04.BroadcastAll, mt)
-		}
-	}
-	if full == 0 || changes != 0 {
-		t.Errorf("expected only full messages; got %d full, %d changes", full, changes)
-	}
 }

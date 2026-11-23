@@ -12,7 +12,7 @@ import (
 // Bandwidth
 //
 // Every packet o2 sends is counted by the game messages in it (see BANDWIDTH.md), and the debug page shows the rates
-// of the last second. A message's share of its packet's fixed cost (the protocol 04 envelope, the 3-byte game header
+// of the last second. A message's share of its packet's fixed cost (the protocol 05 envelope, the 1-byte game header
 // and the IPv4 and UDP headers) is in proportion to its size, so the wire rates of all rows add up to the total.
 //
 // The state messages that don't change every frame are sent when they change and refreshed every few frames, so that
@@ -58,13 +58,13 @@ type bandwidthState struct {
 // msgTypeName names a game message type for the debug page.
 func msgTypeName(t MessageType) string {
 	names := map[MessageType]string{
-		MsgLocation: "location", MsgSfx: "sfx", MsgSprites1: "sprites", MsgSprites2: "sprites cont.",
+		MsgLocation: "location", MsgLocationChanges: "location changes", MsgSfx: "sfx", MsgSprites: "sprites",
+		MsgSpriteChrs: "sprite chrs", MsgSpritePalettes: "sprite palettes",
 		MsgWRAM: "wram (crystal switch)", MsgSRAM: "sram", MsgAncillae: "ancillae", MsgTorches: "torches",
-		MsgPvP: "pvp", MsgPlayerName: "name", MsgUniqTiles: "uniq tiles", MsgNakUniqTiles: "uniq tiles nak",
-		MsgMap16: "map16", MsgManip: "manip", MsgStarSwitch: "star switch", MsgRoomState: "room state",
+		MsgPvP: "pvp", MsgMap16: "map16", MsgManip: "manip", MsgStarSwitch: "star switch", MsgRoomState: "room state",
 		MsgRoomDoors: "room doors", MsgOwEvents: "ow events", MsgFlyingTiles: "flying tiles",
-		MsgRoomKills: "room kills", MsgEnemiesKilled: "enemies killed", MsgRupees: "rupees", MsgO2RunTimes: "run times",
-		MsgReset: "reset", MsgSmallKeys: "small keys", MsgHearts: "hearts", MsgRunTiming: "run timing",
+		MsgRoomKills: "room kills", MsgEnemiesKilled: "enemies killed", MsgRupees: "rupees",
+		MsgReset: "reset", MsgSmallKeys: "small keys", MsgSmallKeysChanges: "small keys changes", MsgHearts: "hearts", MsgRunTiming: "run timing",
 		MsgRunRestore: "run restore", MsgRunGap: "run gap",
 	}
 	if n, ok := names[t]; ok {
@@ -101,7 +101,7 @@ func (g *Game) recordSent(kind string, sector bool, data []byte, segs []int, wir
 		c.wire += share
 	}
 
-	const header = 3
+	const header = gameHeaderSize
 	if len(data) <= header {
 		add(kind, 0, float64(wire))
 		return

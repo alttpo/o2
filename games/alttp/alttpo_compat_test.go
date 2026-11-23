@@ -5,18 +5,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"o2/client"
-	"o2/client/protocol04"
+	"o2/client/protocol05"
 	"testing"
 	"time"
 )
 
-// alttpoScriptProtocol is `script_protocol` from alttpo's GameState.as.
-const alttpoScriptProtocol = 0x01
-
 // alttpoParse is a model of alttpo's `GameState::deserialize` (GameState.as) used to verify that the packets o2 sends
-// parse correctly in alttpo. alttpo stops parsing a packet at the first unknown message type, so any unknown type is
-// treated as a failure here since the messages following it would be lost. It returns the message types parsed.
+// parse correctly in alttpo: game protocol v2 framing (frame, then `type, length, body` messages), and for the message
+// types both share, alttpo's own reading of the body, which must use exactly the message's length. It returns the
+// message types parsed.
 func alttpoParse(r []byte) (types []uint8, err error) {
 	types, _, err = alttpoParseFull(r)
 	return
@@ -30,172 +27,176 @@ type alttpoSprite struct {
 
 type alttpoParsed struct {
 	sprites []alttpoSprite
-	tiles   map[uint16][]byte
 }
 
-func alttpoParseFull(r []byte) (types []uint8, parsed alttpoParsed, err error) {
-	parsed.tiles = map[uint16][]byte{}
-	c := 0
+func alttpoParseFull(pkt []byte) (types []uint8, parsed alttpoParsed, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%v", rec)
+		}
+	}()
+	if len(pkt) < 1 {
+		return nil, parsed, fmt.Errorf("empty packet")
+	}
+	for o := 1; o < len(pkt); {
+		t := pkt[o]
+		o++
+		n, w, ok := readMsgLen(pkt[o:])
+		if !ok || o+w+n > len(pkt) {
+			return types, parsed, fmt.Errorf("message %#02x truncated", t)
+		}
+		o += w
+		body := pkt[o : o+n]
+		o += n
+		types = append(types, t)
+		used, known := alttpoParseBody(t, body, &parsed)
+		if known && used != len(body) {
+			return types, parsed, fmt.Errorf("message %#02x: alttpo reads %d of its %d bytes", t, used, len(body))
+		}
+	}
+	return
+}
+
+// alttpoParseBody reads a message body the way alttpo does, returning how many bytes it read; known is false for
+// message types without a model here (they are only checked for framing).
+func alttpoParseBody(t uint8, r []byte, parsed *alttpoParsed) (c int, known bool) {
 	need := func(n int) {
 		if c+n > len(r) {
-			panic(fmt.Errorf("read past end of packet at %d+%d > %d", c, n, len(r)))
+			panic(fmt.Errorf("message %#02x: read past end at %d+%d > %d", t, c, n, len(r)))
 		}
 	}
 	u8 := func() uint8 { need(1); c++; return r[c-1] }
 	u16 := func() uint16 { need(2); c += 2; return binary.LittleEndian.Uint16(r[c-2:]) }
 	skip := func(n int) { need(n); c += n }
 
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("%v", rec)
-		}
-	}()
-
-	if u8() != alttpoScriptProtocol {
-		return nil, parsed, fmt.Errorf("bad game protocol")
-	}
-	u8() // team
-	u8() // frame
-
-	for c < len(r) {
-		t := u8()
-		types = append(types, t)
-		switch t {
-		case 0x01: // location
-			skip(3 + 3 + 2*9 + 1)
-		case 0x02: // sfx
-			skip(2)
-		case 0x03, 0x04: // sprites
-			if t == 0x04 {
-				u8()
+	known = true
+	switch MessageType(t) {
+	case MsgLocation:
+		skip(3 + 3 + 2*9 + 1)
+	case MsgSfx:
+		skip(2)
+	case MsgSprites:
+		n := int(u8())
+		for i := 0; i < n; i++ {
+			var spr alttpoSprite
+			need(6)
+			copy(spr.b[:], r[c:c+6])
+			fl, b1, b4 := u8(), (func() uint8 { skip(1); return u8() })(), (func() uint8 { skip(2); return u8() })()
+			size := (b4 >> 1) & 1
+			if b1 == 0xF0 {
+				size = 0
 			}
-			n := int(u8())
-			for i := 0; i < n; i++ {
-				var spr alttpoSprite
-				need(6)
-				copy(spr.b[:], r[c:c+6])
-				fl, b1, b4 := u8(), (func() uint8 { skip(1); return u8() })(), (func() uint8 { skip(2); return u8() })()
-				size := (b4 >> 1) & 1
-				if b1 == 0xF0 {
-					size = 0
-				}
-				spr.absidx = append(spr.absidx, u16())
+			spr.absidx = append(spr.absidx, u16())
+			if size != 0 {
+				spr.absidx = append(spr.absidx, u16(), u16(), u16())
+			}
+			if fl&0x80 != 0 {
+				skip(32)
 				if size != 0 {
-					spr.absidx = append(spr.absidx, u16(), u16(), u16())
-				}
-				if fl&0x80 != 0 {
-					skip(32)
-					if size != 0 {
-						skip(96)
-					}
-				}
-				if b4&0x80 != 0 {
-					need(32)
-					spr.palette = r[c : c+32]
-					skip(32)
-				}
-				parsed.sprites = append(parsed.sprites, spr)
-			}
-		case 0x05: // wram
-			n := int(u8())
-			u16()
-			skip(n * 6)
-		case 0x06: // sram
-			u8() // in_sm
-			u16()
-			skip(int(u16()))
-		case 0x17: // map16 changes
-			skip(3) // location u24
-			u8()  // count
-			u8()  // start
-			skip(int(u8()) * 4)
-		case 0x19: // star switch
-			skip(2 + 4 + 2)
-		case 0x1C: // overworld events
-			skip(3 + 1 + 1)
-		case 0x1A: // room state
-			skip(2 + 1 + 4 + 1)
-		case 0x1B: // room key doors and switches
-			skip(2 + 1 + 1 + 4)
-		case 0x1E: // room kill triggers
-			skip(2 + 1)
-		case 0x1F: // enemies killed
-			if u8() == 0 {
-				skip(2 + 2) // room, mask
-			} else {
-				skip(3)              // location u24
-				skip(int(u8()) * 2) // blks
-			}
-		case 0x18: // manipulables
-			u16() // room
-			n := int(u8())
-			for i := 0; i < n; i++ {
-				skip(6)
-				if u8()&0x02 != 0 {
-					skip(8)
+					skip(96)
 				}
 			}
-		case 0x09: // ancillae
-			n := int(u8())
-			for i := 0; i < n; i++ {
-				if u8()&0x7F < 5 {
-					skip(0x20)
-				} else {
-					skip(0x16)
-				}
-			}
-		case 0x0A: // torches
-			skip(int(u8()) * 2)
-		case 0x0C: // name
-			skip(20)
-		case 0x82: // small keys
-			skip(4)
-			skip(int(u8()) * 7)
-		case 0x83: // hearts
-			skip(4 + 2 + 1)
-		case 0x87: // features
-			skip(1)
-		case 0x88: // small key changes
-			u8() // base
-			skip(int(u8()) * 8)
-		case 0x89: // location changes
-			u8() // base
-			m := u8()
-			for i := 0; i < 4; i++ {
-				if m&(1<<i) != 0 {
-					skip(2)
-				}
-			}
-		case 0x15: // uniqtiles
-			n := int(u8())
-			for i := 0; i < n; i++ {
-				idx := u16()
+			if b4&0x80 != 0 {
 				need(32)
-				parsed.tiles[idx] = r[c : c+32]
+				spr.palette = r[c : c+32]
 				skip(32)
 			}
-		default:
-			// alttpo also understands 0x0B, 0x0D-0x14 and 0x16 but o2 never sends them:
-			return types, parsed, fmt.Errorf("message type %#02x not expected from o2 (alttpo would drop the rest)", t)
+			parsed.sprites = append(parsed.sprites, spr)
 		}
+	case MsgWRAM:
+		n := int(u8())
+		u16()
+		skip(n * 6)
+	case MsgSRAM:
+		u8() // in_sm
+		u16()
+		skip(int(u16()))
+	case MsgMap16:
+		skip(3) // location u24
+		u8()    // count
+		u8()    // start
+		skip(int(u8()) * 4)
+	case MsgStarSwitch:
+		skip(2 + 4 + 2)
+	case MsgOwEvents:
+		skip(3 + 1 + 1)
+	case MsgRoomState:
+		skip(2 + 1 + 4 + 1)
+	case MsgRoomDoors:
+		skip(2 + 1 + 1 + 4)
+	case MsgRoomKills:
+		skip(2 + 1)
+	case MsgEnemiesKilled:
+		if u8() == 0 {
+			skip(2 + 2) // room, mask
+		} else {
+			skip(3)             // location u24
+			skip(int(u8()) * 2) // blks
+		}
+	case MsgManip:
+		u16() // room
+		n := int(u8())
+		for i := 0; i < n; i++ {
+			skip(6)
+			if u8()&0x02 != 0 {
+				skip(8)
+			}
+		}
+	case MsgAncillae:
+		n := int(u8())
+		for i := 0; i < n; i++ {
+			if u8()&0x7F < 5 {
+				skip(0x20)
+			} else {
+				skip(0x16)
+			}
+		}
+	case MsgTorches:
+		skip(int(u8()) * 2)
+	case MsgSmallKeys:
+		skip(4)
+		skip(int(u8()) * 7)
+	case MsgHearts:
+		skip(4 + 2 + 1)
+	case MsgSmallKeysChanges:
+		u8() // base
+		skip(int(u8()) * 8)
+	case MsgLocationChanges:
+		u8() // base
+		m := u8()
+		for i := 0; i < 4; i++ {
+			if m&(1<<i) != 0 {
+				skip(2)
+			}
+		}
+	default:
+		known = false
 	}
 	return
 }
 
-// alttpoPacket builds a protocol 04 broadcast as relayed by the server from an alttpo client. The buffer holds the
-// broadcast data (game packet header and messages).
+// alttpoPacket builds a broadcast as relayed by the server from an alttpo client: the game packet (frame, then framed
+// messages). Start each message with m.
 type alttpoPacket struct {
 	bytes.Buffer
 
 	index uint16
+	// starts are where the messages start:
+	starts []int
+	// playerName is the name its player-info carries:
+	playerName string
 }
 
 func newAlttpoPacket(index uint16, frame uint8) *alttpoPacket {
-	p := &alttpoPacket{index: index}
-	// script protocol, team, frame:
-	p.WriteByte(alttpoScriptProtocol)
-	p.WriteByte(0)
+	p := &alttpoPacket{index: index, playerName: "alttpo"}
 	p.WriteByte(frame)
+	return p
+}
+
+// m starts a message of type t.
+func (p *alttpoPacket) m(t MessageType) *alttpoPacket {
+	p.starts = append(p.starts, p.Len())
+	p.WriteByte(byte(t))
 	return p
 }
 
@@ -210,10 +211,62 @@ func (p *alttpoPacket) u32(v uint32) *alttpoPacket {
 }
 func (p *alttpoPacket) zeros(n int) *alttpoPacket { p.Write(make([]byte, n)); return p }
 
+// data returns the game packet with each message's length inserted.
+func (p *alttpoPacket) data() []byte {
+	b := p.Bytes()
+	out := []byte{b[0]}
+	for i, start := range p.starts {
+		end := len(b)
+		if i+1 < len(p.starts) {
+			end = p.starts[i+1]
+		}
+		out = append(out, frameMessage(b[start:end])...)
+	}
+	return out
+}
+
+// packet wraps the game packet in a protocol 05 relay-all as the server relays it.
+func (p *alttpoPacket) packet(t *testing.T) []byte {
+	t.Helper()
+	return protocol05.MakeRelay(p.index, time.Now(), false, 0, p.data())
+}
+
+// name sets the name of the player, which o2 learns from its player-info.
+func (p *alttpoPacket) name(name string) *alttpoPacket {
+	p.playerName = name
+	return p
+}
+
+// alttpoPlayerInfo tells g a remote player's name and info, as the server does when it joins.
+func alttpoPlayerInfo(t *testing.T, g *Game, index uint16, name string) {
+	t.Helper()
+	pkt := protocol05.MakePlayerInfo([]protocol05.PlayerInfoEntry{{PlayerIndex: index, Name: name, Info: []byte{SerializationVersion, 0}}})
+	if err := g.handleNetMessage(pkt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (p *alttpoPacket) send(t *testing.T, g *Game) {
+	t.Helper()
+	if pi := &g.net.info[p.index]; !pi.known || pi.name != p.playerName {
+		alttpoPlayerInfo(t, g, p.index, p.playerName)
+	}
+	m, err := protocol05.Decode(p.packet(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := &g.players[p.index]
+	rp.IndexF = int(p.index)
+	if err := g.Deserialize(bytes.NewReader(m.Data), rp); err != nil {
+		t.Fatalf("o2 failed to handle alttpo packet: %v", err)
+	}
+	g.SetTTL(rp, 255)
+}
+
 // The writers below follow alttpo's LocalGameState.as serialize_* functions.
 
 func (p *alttpoPacket) location(module, dungeon uint8, location uint32, x, y uint16) *alttpoPacket {
-	p.u8(0x01, module, 0, 0)
+	p.m(MsgLocation).u8(module, 0, 0)
 	p.u8(uint8(location), uint8(location>>8), uint8(location>>16))
 	p.u16(x).u16(y)
 	p.u16(uint16(dungeon)).u16(0) // dungeon, entrance
@@ -224,14 +277,8 @@ func (p *alttpoPacket) location(module, dungeon uint8, location uint32, x, y uin
 	return p
 }
 
-func (p *alttpoPacket) name(name string) *alttpoPacket {
-	p.u8(0x0C)
-	p.WriteString(fmt.Sprintf("%-20s", name))
-	return p
-}
-
 func (p *alttpoPacket) sram(start uint16, data []byte) *alttpoPacket {
-	p.u8(0x06, 0)
+	p.m(MsgSRAM).u8(0)
 	p.u16(start).u16(uint16(len(data)))
 	p.Write(data)
 	return p
@@ -239,7 +286,7 @@ func (p *alttpoPacket) sram(start uint16, data []byte) *alttpoPacket {
 
 // smallKeyDeltas follows alttpo's SmallKeysLocal::serialize (SmallKeys.as).
 func (p *alttpoPacket) smallKeyDeltas(session uint32, net [16]int16, value [16]uint8, ts [16]uint32) *alttpoPacket {
-	p.u8(0x82).u32(session).u8(16)
+	p.m(MsgSmallKeys).u32(session).u8(16)
 	for k := 0; k < 16; k++ {
 		p.u16(uint16(net[k])).u8(value[k]).u32(ts[k])
 	}
@@ -248,37 +295,11 @@ func (p *alttpoPacket) smallKeyDeltas(session uint32, net [16]int16, value [16]u
 
 // heartDeltas follows alttpo's HeartsLocal::serialize (Hearts.as).
 func (p *alttpoPacket) heartDeltas(session uint32, net int16, value uint8) *alttpoPacket {
-	return p.u8(0x83).u32(session).u16(uint16(net)).u8(value)
-}
-
-// packet wraps the broadcast data in a protocol 04 packet as the server relays it.
-func (p *alttpoPacket) packet(t *testing.T) []byte {
-	t.Helper()
-	b, err := protocol04.MakePacket(&protocol04.GroupMessage{
-		Group:          "test",
-		PlayerTime:     1,
-		ServerTime:     time.Now().UnixNano(),
-		PlayerIndex:    uint32(p.index),
-		PlayerInSector: 0x010012,
-		Kind:           protocol04.BroadcastAll,
-		Data:           p.Bytes(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-func (p *alttpoPacket) send(t *testing.T, g *Game) {
-	t.Helper()
-	if err := g.handleNetMessage(p.packet(t)); err != nil {
-		t.Fatalf("o2 failed to handle alttpo packet: %v", err)
-	}
+	return p.m(MsgHearts).u32(session).u16(uint16(net)).u8(value)
 }
 
 // TestAlttpoCompat_O2PacketsParseInAlttpo captures every packet o2 sends over several hundred frames and verifies that
-// all packets containing alttpo message types parse completely under alttpo's rules, and that o2-only message types
-// only travel in their own packets (which alttpo stops parsing at their first message).
+// they all parse under alttpo's rules: framing, and the body of every message type both share.
 func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
 	if err != nil {
@@ -295,52 +316,35 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 	gs.e.WRAM[0xF36F] = 1
 
 	seen := map[uint8]int{}
-	alttpoCount, o2Count, sectorCount := 0, 0, 0
+	allCount, sectorCount := 0, 0
 	for f := 0; f < 256; f++ {
 		if f == 100 {
-			// o2-only reset messages must not reach alttpo:
 			gs.g.initiateReset(time.Now())
 		}
 		gs.g.tickReset(time.Now())
 		gs.runFrame(t)
 		if f%30 == 0 {
-			gs.g.sendPlayerName()
+			gs.g.sendRunTimingBeat()
 		}
 		for len(gs.c.Wr) > 0 {
-			b := <-gs.c.Wr
-			var proto uint8
-			if _, err := client.ParseHeader(b, &proto); err != nil {
+			q, err := protocol05.DecodeRequest(<-gs.c.Wr)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if proto != protocol04.Protocol {
-				t.Fatalf("unexpected server protocol %d", proto)
-			}
-			var gm protocol04.GroupMessage
-			if err := protocol04.Unmarshal(b[3:], &gm); err != nil {
-				t.Fatal(err)
-			}
-			if gm.Group != "test" {
-				t.Fatalf("unexpected group %q", gm.Group)
-			}
-			if gm.Kind != protocol04.BroadcastAll && gm.Kind != protocol04.BroadcastSector {
+			if q.Kind != protocol05.BroadcastAll && q.Kind != protocol05.BroadcastSector {
 				continue
 			}
-			if gm.Kind == protocol04.BroadcastSector {
-				if gm.TargetSector != gm.PlayerInSector {
-					t.Fatalf("expected sector packet for own sector %#x; got %#x", gm.PlayerInSector, gm.TargetSector)
+			if q.Kind == protocol05.BroadcastSector {
+				if want := broadcastSector(gs.g.local.Location); q.Sector != want {
+					t.Fatalf("expected sector packet for own sector %#x; got %#x", want, q.Sector)
 				}
 				sectorCount++
+			} else {
+				allCount++
 			}
-			payload := gm.Data
-			if len(payload) > 3 && payload[3] >= 0x80 {
-				// o2-only packet; alttpo stops parsing at its first message:
-				o2Count++
-				continue
-			}
-			alttpoCount++
-			types, err := alttpoParse(payload)
+			types, err := alttpoParse(q.Data)
 			if err != nil {
-				t.Fatalf("alttpo would fail to parse o2 packet %x: %v", payload, err)
+				t.Fatalf("alttpo would fail to parse o2 packet %x: %v", q.Data, err)
 			}
 			for _, ty := range types {
 				seen[ty]++
@@ -348,12 +352,12 @@ func TestAlttpoCompat_O2PacketsParseInAlttpo(t *testing.T) {
 		}
 	}
 
-	if alttpoCount == 0 || o2Count == 0 || sectorCount == 0 {
-		t.Fatalf("expected alttpo, o2-only and sector packets; got %d, %d and %d", alttpoCount, o2Count, sectorCount)
+	if allCount == 0 || sectorCount == 0 {
+		t.Fatalf("expected packets to all and to the sector; got %d and %d", allCount, sectorCount)
 	}
-	for _, ty := range []uint8{0x01, 0x05, 0x06, 0x0C} {
-		if seen[ty] == 0 {
-			t.Errorf("expected o2 to send message type %#02x to alttpo", ty)
+	for _, ty := range []MessageType{MsgLocation, MsgWRAM, MsgSRAM, MsgRunTiming, MsgReset} {
+		if seen[uint8(ty)] == 0 {
+			t.Errorf("expected o2 to send message type %#02x", ty)
 		}
 	}
 }
@@ -368,20 +372,19 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 	g := gs.g
 	const remote = 3
 
-	// main packet: location, name, sfx, pvp, ancillae, crystal switch, small keys
+	// main packet: location, sfx, pvp, ancillae, crystal switch, small keys
 	{
 		p := newAlttpoPacket(remote, 10)
 		p.location(0x07, 0x04, 0x010012, 0x1234, 0x5678)
-		p.name("alttpo")
-		p.u8(0x02, 0x11, 0x22) // sfx
+		p.m(MsgSfx).u8(0x11, 0x22)
 		// pvp: active hitbox, 2 attacks:
-		p.u8(0x0B, 1).u16(1).u16(2).u8(8, 8, 3, 4).u8(1, 2).u8(2)
+		p.m(MsgPvP).u8(1).u16(1).u16(2).u8(8, 8, 3, 4).u8(1, 2).u8(2)
 		p.u16(0).u8(1, 2, 3, 4, 5, 6, 7)
 		p.u16(1).u8(1, 2, 3, 4, 5, 6, 7)
 		// ancillae: one front-slot (0x20 facts) and one back-slot (0x16 facts):
-		p.u8(0x09, 2, 0x81).zeros(0x20).u8(0x06).zeros(0x16)
+		p.m(MsgAncillae).u8(2, 0x81).zeros(0x20).u8(0x06).zeros(0x16)
 		// crystal switch:
-		p.u8(0x05, 0x01).u16(0xC172).u32(5).u16(1)
+		p.m(MsgWRAM).u8(0x01).u16(0xC172).u32(5).u16(1)
 		var net [16]int16
 		var value [16]uint8
 		var ts [16]uint32
@@ -401,49 +404,46 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		t.Errorf("expected remote small keys session 01020304 with Eastern Palace = 3; got %+v", rk)
 	}
 
-	// sprites packet with chr data, palettes and uniqtile indices, followed by uniqtiles and a NAK:
+	// sprites packet with chr data, palettes and uniqtile indices:
 	{
 		p := newAlttpoPacket(remote, 10)
-		p.u8(0x16).u16(remote).u8(2).u16(1).u16(2)
-		p.u8(0x03, 3)
+		p.m(MsgSprites).u8(3)
 		// small sprite with chr + palette:
 		p.u8(0x80, 0x10, 0x20, 0x30, 0x40, 0x80).u16(0xFFFF).zeros(32).zeros(32)
 		// large sprite with chr data (4 chrs) and uniqtile indices:
 		p.u8(0x81, 0x10, 0x20, 0x30, 0x40, 0x02).u16(1).u16(2).u16(3).u16(4).zeros(32 * 4)
 		// disabled large-flagged sprite (b1 = $F0 means size is not decoded):
 		p.u8(0x02, 0x00, 0xF0, 0x00, 0x00, 0x02).u16(5)
-		p.u8(0x04, 3, 1).u8(0x05, 0, 0, 0, 0, 0).u16(6)
-		p.u8(0x15, 1).u16(7).zeros(32)
-		p.name("alttpo2")
+		p.location(0x07, 0x04, 0x010012, 0x1235, 0x5678)
 		p.send(t, g)
 	}
-	if rp.Name() != "alttpo2" {
-		t.Errorf("expected parsing to continue past sprite messages; name = %q", rp.Name())
+	if rp.X != 0x1235 {
+		t.Errorf("expected parsing to continue past sprite messages; x = %04x", rp.X)
 	}
 
 	// enemy sync packet:
 	{
 		p := newAlttpoPacket(remote, 10)
 		// enemy data for 2 sprites (dungeon):
-		p.u8(0x12).u16(0x0003).u8(1).zeros(2 * 55)
+		p.m(MsgEnemyData).u16(0x0003).u8(1).zeros(2 * 55)
 		// enemy segment data: moldorm in slot 0, swamola in slot 7 (no data), default in slot 1:
-		p.u8(0x13).u16(0x0083).u8(0x09).zeros(4 * 0x80).u8(0x30).zeros(7 * 0x10).u8(0xCF)
+		p.m(MsgEnemySegmentData).u16(0x0083).u8(0x09).zeros(4 * 0x80).u8(0x30).zeros(7 * 0x10).u8(0xCF)
 		// overlords 0 and 2:
-		p.u8(0x14, 0x05).zeros(2 * 11)
+		p.m(MsgOverlordData).u8(0x05).zeros(2 * 11)
 		// torches:
-		p.u8(0x0A, 2, 1, 5, 2, 6)
+		p.m(MsgTorches).u8(2, 1, 5, 2, 6)
 		// manipulables: a pot that was lifted and a push block:
-		p.u8(0x18).u16(0x0012).u8(2)
+		p.m(MsgManip).u16(0x0012).u8(2)
 		p.u16(0x1111).u16(0x0030).u16(0x0410).u8(0x03).u16(0x0D0E).u16(0x0D1E).u16(0x4D0E).u16(0x4D1E)
 		p.u16(0x0000).u16(0x0008).u16(0x0820).u8(0x00)
 		// map16 changes (alttpo sends these to its sector in the overworld; the parser does not care):
 		// location u24 ($000018: Kakariko Village, light world):
-		p.u8(0x17, 0x18).u16(0x0000).u8(2, 0, 2).u16(0x0410).u16(0x0DC7).u16(0x0412).u16(0x0DC7)
-		p.name("alttpo3")
+		p.m(MsgMap16).u8(0x18).u16(0x0000).u8(2, 0, 2).u16(0x0410).u16(0x0DC7).u16(0x0412).u16(0x0DC7)
+		p.location(0x07, 0x04, 0x010012, 0x1236, 0x5678)
 		p.send(t, g)
 	}
-	if rp.Name() != "alttpo3" {
-		t.Errorf("expected parsing to continue past enemy messages; name = %q", rp.Name())
+	if rp.X != 0x1236 {
+		t.Errorf("expected parsing to continue past enemy messages; x = %04x", rp.X)
 	}
 
 	// SRAM packet:
@@ -460,28 +460,35 @@ func TestAlttpoCompat_AlttpoPacketsParseInO2(t *testing.T) {
 		t.Errorf("expected remote SRAM [$280] = 20; got %02x", rp.SRAM.data[0x280])
 	}
 
-	// Super Metroid (SMZ3) packet:
+	// Super Metroid (SMZ3) packet; o2 skips these by their length:
 	{
 		p := newAlttpoPacket(remote, 12)
-		p.u8(0x0F).zeros(15)
-		p.u8(0x0D).zeros(0x54 + 2)
-		p.u8(0x0E).zeros(0x40)
-		p.u8(0x11, 34)
-		p.u8(0x11, 1, 2, 0)
-		p.u8(0x11, 1, 3, 1).zeros(64 + 2)
-		p.name("alttpo4")
+		p.m(MsgSMLocation).zeros(15)
+		p.m(MsgSMEvents).zeros(0x54 + 2)
+		p.m(MsgSMSRAM).zeros(0x40)
+		p.m(MsgSMEnemies).u8(34)
+		p.m(MsgSMEnemies).u8(1, 2, 0)
+		p.m(MsgSMEnemies).u8(1, 3, 1).zeros(64 + 2)
+		p.location(0x07, 0x04, 0x010012, 0x1237, 0x5678)
 		p.send(t, g)
 	}
-	if rp.Name() != "alttpo4" {
-		t.Errorf("expected parsing to continue past Super Metroid messages; name = %q", rp.Name())
+	if rp.X != 0x1237 {
+		t.Errorf("expected parsing to continue past Super Metroid messages; x = %04x", rp.X)
 	}
 
-	// a different script protocol version is ignored without taking down the game:
+	// a player with a different game protocol version is ignored:
 	{
-		p := newAlttpoPacket(remote, 13)
-		p.Bytes()[0] = 0x16
-		if err := g.handleNetMessage(p.packet(t)); err == nil {
-			t.Fatalf("expected a version mismatch error")
+		pkt := protocol05.MakePlayerInfo([]protocol05.PlayerInfoEntry{{PlayerIndex: 5, Name: "old", Info: []byte{0x01, 0}}})
+		if err := g.handleNetMessage(pkt); err != nil {
+			t.Fatal(err)
+		}
+		p := newAlttpoPacket(5, 13)
+		p.location(0x07, 0x04, 0x010012, 0x1238, 0x5678)
+		if err := g.handleNetMessage(p.packet(t)); err != nil {
+			t.Fatal(err)
+		}
+		if g.players[5].X == 0x1238 {
+			t.Errorf("expected the incompatible player's messages to be dropped")
 		}
 	}
 }
@@ -551,7 +558,7 @@ func TestAlttpoCompat_RemoteWithoutDoorState(t *testing.T) {
 func TestAlttpoCompat_BroadcastSector(t *testing.T) {
 	for _, tc := range []struct {
 		location uint32
-		want     uint64
+		want     uint32
 	}{
 		{0x000012, 0x000012}, // light world overworld
 		{0x020052, 0x020052}, // dark world overworld
@@ -669,7 +676,7 @@ func TestAlttpoCompat_HeartDeltasFromAlttpo(t *testing.T) {
 }
 
 // TestAlttpoCompat_UnknownMessageTypeKeepsPacket verifies that a message type o2 does not know (e.g. one added by a newer
-// client at the end of its packet) does not fail the packet: the messages before it are kept.
+// client) is skipped by its length, and the messages after it are read.
 func TestAlttpoCompat_UnknownMessageTypeKeepsPacket(t *testing.T) {
 	gs, err := createTestGameSync("VT test", "o2player", io.Discard)
 	if err != nil {
@@ -679,12 +686,12 @@ func TestAlttpoCompat_UnknownMessageTypeKeepsPacket(t *testing.T) {
 
 	for frame := uint8(1); frame <= 3; frame++ {
 		p := newAlttpoPacket(3, frame)
-		p.name("newer")
-		p.u8(0xFE, 1, 2, 3)
+		p.m(0xFE).u8(1, 2, 3)
+		p.location(0x07, 0x04, 0x010012, 0x1239, 0)
 		p.send(t, g)
 	}
-	if name := g.players[3].Name(); name != "newer" {
-		t.Errorf("expected the name before the unknown message type to be kept; got %q", name)
+	if x := g.players[3].X; x != 0x1239 {
+		t.Errorf("expected the message after the unknown message type to be read; x = %04x", x)
 	}
 	if n := len(g.unknownMsgLogged); n != 1 {
 		t.Errorf("expected the unknown message type to be logged once; got %d entries", n)

@@ -7,8 +7,7 @@ import (
 	"github.com/alttpo/snes/emulator"
 	"io"
 	"log"
-	"o2/client"
-	"o2/client/protocol04"
+	"o2/client/protocol05"
 	"o2/interfaces"
 	"o2/snes"
 	"reflect"
@@ -41,64 +40,37 @@ type testServer struct {
 	Clients []*testClient
 	Now     time.Time
 
-	// sectors holds each client's last reported playerInSector:
-	sectors map[int]uint64
+	// hub routes packets between the clients like o2-server (protocol 0x05):
+	hub *protocol05.Hub
 }
 
 func (s *testServer) AdvanceTime(duration time.Duration) {
 	s.Now = s.Now.Add(duration)
 }
 
+func (s *testServer) now() time.Time {
+	if s.Now.IsZero() {
+		return time.Now()
+	}
+	return s.Now
+}
+
 func (s *testServer) HandleMessageFromClient(t testing.TB, i int, b []byte) (err error) {
-	c := s.Clients[i]
-
-	var protocolVersion uint8
-	if _, err = client.ParseHeader(b, &protocolVersion); err != nil {
-		return
+	if s.hub == nil {
+		s.hub = protocol05.NewHub(s.now)
 	}
-	if protocolVersion != protocol04.Protocol {
-		return
-	}
-
-	// handle the message like o2-server does:
-	gm := protocol04.GroupMessage{}
-	if err = protocol04.Unmarshal(b[3:], &gm); err != nil {
-		return
-	}
-
-	gm.PlayerIndex = uint32(i)
-	gm.ServerTime = s.Now.UnixNano()
-	if s.sectors == nil {
-		s.sectors = make(map[int]uint64)
-	}
-	s.sectors[i] = gm.PlayerInSector
-
-	var pkt []byte
-	if pkt, err = protocol04.MakePacket(&gm); err != nil {
-		return
-	}
-
-	switch gm.Kind {
-	case protocol04.JoinGroup, protocol04.Echo:
+	for _, d := range s.hub.Handle(i, b) {
+		if d.To >= len(s.Clients) {
+			// a client the test took away:
+			continue
+		}
 		if t != nil {
-			log.Printf("server: c[%d] %s\n", i, gm.Kind)
-		}
-		c.Rd <- pkt
-	case protocol04.BroadcastAll, protocol04.BroadcastSector:
-		for j := range s.Clients {
-			if j == i {
-				continue
+			if m, err := protocol05.Decode(d.Pkt); err == nil {
+				log.Printf("server: c[%d] -> c[%d] %s\n", i, d.To, m.Kind)
 			}
-			if gm.Kind == protocol04.BroadcastSector && s.sectors[j] != gm.TargetSector {
-				// only relay BroadcastSector to clients in the target sector:
-				continue
-			}
-
-			log.Printf("server: c[%d] -> c[%d] %s\n", i, j, gm.Kind)
-			s.Clients[j].Rd <- pkt
 		}
+		s.Clients[d.To].Rd <- d.Pkt
 	}
-
 	return
 }
 
@@ -249,10 +221,11 @@ func createTestGameSync(romTitle string, playerName string, logger io.Writer) (g
 	}
 	gs.g.ProvideClient(gs.c)
 
-	// request our player index:
-	m := gs.g.makeJoinMessage()
-	gs.g.send(m)
-	gs.g.sendPlayerName()
+	// report messages that don't read their whole body (a size mismatch with alttpo):
+	gs.g.strictMessages = true
+
+	// join the group:
+	gs.g.tickNet(time.Now())
 	gs.g.sendEcho()
 
 	// initialize reads:

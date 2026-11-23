@@ -194,7 +194,7 @@ func (g *Game) sendOwEvents() {
 	}
 
 	m := g.makeSectorMessage()
-	if err := g.SerializeOwEvents(m); err != nil {
+	if err := m.add(g.SerializeOwEvents); err != nil {
 		panic(err)
 	}
 	g.send(m)
