@@ -2,6 +2,7 @@ package underworldmap
 
 import (
 	"github.com/alttpo/snes/emulator/cpu65c816"
+	"github.com/alttpo/snes/emulator/memory"
 )
 
 // Loading a room spends most of its time decompressing the dungeon's graphics and loading them into VRAM, the same
@@ -183,6 +184,17 @@ func (m trackedWRAM) Write(address uint32, value byte) {
 	if r := m.e.recording; r != nil {
 		r.mark(i)
 	}
+}
+
+var _ memory.Direct = trackedWRAM{}
+
+// DirectBytes lets the bus read WRAM in place (memory.Direct). The bytes are read-only to it, so writes still come
+// through Write, which notes them.
+func (m trackedWRAM) DirectBytes(address uint32) ([]byte, bool) {
+	if address < m.offset || address-m.offset >= uint32(len(m.data)) {
+		return nil, false
+	}
+	return m.data[address-m.offset:], false
 }
 
 func (m trackedWRAM) Shutdown()                  {}
