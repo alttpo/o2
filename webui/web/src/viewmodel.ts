@@ -95,6 +95,8 @@ export interface GameALTTPViewModel extends GameViewModel {
     syncChests: boolean;
     syncTunicColor: boolean;
     syncSprites: boolean;
+    // switched on the /debug page: the game view can change what the player has (see games/alttp/debugsections.tsx):
+    debugMode?: boolean;
 }
 
 export type GameViewProps = {

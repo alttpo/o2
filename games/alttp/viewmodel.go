@@ -425,6 +425,7 @@ type setFieldArgs struct {
 	DisableBgMusic      *bool `json:"disableBgMusic"`
 	SyncTunicColor      *bool `json:"syncTunicColor"`
 	SyncSprites         *bool `json:"syncSprites"`
+	DebugMode           *bool `json:"debugMode"`
 }
 
 func (c *setFieldCmd) CreateArgs() interfaces.CommandArgs { return &setFieldArgs{} }
@@ -503,6 +504,10 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 	}
 	if f.SyncSprites != nil {
 		g.SyncSprites = *f.SyncSprites
+		g.clean = false
+	}
+	if f.DebugMode != nil {
+		g.DebugMode = *f.DebugMode
 		g.clean = false
 	}
 	if f.PlayerColor != nil {

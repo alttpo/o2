@@ -15,12 +15,14 @@ import (
 
 // Debug tools
 //
-// The web UI's /debug page gives and takes away items, fills up the player and kills enemies to speed up debugging.
+// The web UI's game view gives and takes away items, fills up the player and kills enemies to speed up debugging, once
+// debug mode (Game.DebugMode) is switched on from the /debug page; while it is off the view only shows what the player
+// has and the "debug" command does nothing.
 // Every change is made by an asm routine the game runs in a frame (the same way syncs are applied), so that a change
 // can't be lost to a write racing with the game. Like any change the local player makes, a change to the SRAM
 // copy in WRAM ($7EF340..$7EF3FF) is seen by the sync code and shared with the group according to the sync settings.
 //
-// The page has two parts:
+// The view has two parts:
 //
 //   - "game/debug", a view model with the SRAM copy at $7EF340..$7EF3FF so the page shows what the player has;
 //   - the "debug" command with a list of operations, and the "debugGfx" command, which returns the HUD's 2bpp graphics
@@ -153,6 +155,10 @@ func (c *debugCmd) Execute(args interfaces.CommandArgs) error {
 	}
 
 	g := c.g
+	if !g.DebugMode {
+		log.Printf("alttp: debug: debug mode is off; dropped %d operations\n", len(f.Ops))
+		return nil
+	}
 	d := &g.debug
 	due := time.Now().Add(debugOpTTL)
 

@@ -1,4 +1,4 @@
-// The game's own graphics for the debug page.
+// The game's own graphics for the alttp game view's items, equipment and hearts.
 //
 // The backend decompresses the 2bpp graphics the HUD and item menu draw their icons with (graphics packs $6A, $6B
 // and $69, which the game uploads to BG3's VRAM) and the HUD palette from the ROM, and sends them as data. They are

@@ -1,9 +1,13 @@
-// The /debug page: tools to give and take away items, fill up the player and kill enemies while debugging.
-// Each icon is drawn from the game's own graphics (see debuggfx.tsx).
+// The alttp game view's sections of what the player has: what to fill up, Y items, equipment, abilities, dungeon
+// items, pendants and crystals, and heart containers and pieces. Each icon is drawn from the game's own graphics (see
+// debuggfx.tsx).
+//
+// They only show what the player has until debug mode is switched on from the /debug page. In debug mode clicking
+// them gives and takes away items, and the progression, enemies and warp sections are shown too.
 
 import {Fragment, h} from "preact";
 import {useState} from "preact/hooks";
-import {ConnectionLost, useConnection} from "./connection";
+import {GameALTTPViewModel, GameViewProps} from "../../viewmodel";
 import {DebugOp, Gfx, Icon, useGfx} from "./debuggfx";
 import {
     abilities, ARROW_MAX, ARROW_WORDS, BOMB_MAX, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
@@ -13,27 +17,11 @@ import {
 } from "./debugdata";
 
 // the "game/debug" view model:
-interface DebugState {
+export interface DebugState {
     sram: number[];
     // $040C: the dungeon Link is in, $FF in the overworld
     dungeon: number;
     inGame: boolean;
-}
-
-// the "game/bandwidth" view model: what o2 sent in the last second, per game message type (see bandwidth.go):
-interface BandwidthRow {
-    name: string;
-    // messages per second, their bytes per second, and with their share of the packets' fixed cost:
-    msgs: number;
-    bytes: number;
-    wire: number;
-}
-
-interface BandwidthState {
-    packets: number;
-    sectorPackets: number;
-    wire: number;
-    rows: BandwidthRow[] | null;
 }
 
 type Send = (...ops: DebugOp[]) => void;
@@ -44,21 +32,43 @@ interface Common {
     send: Send;
     // whether the game is running, so that a change is applied:
     ready: boolean;
+    // debug mode: whether clicking changes things. Without it nothing is clickable and nothing says it could be:
+    edit: boolean;
+}
+
+interface CellProps {
+    edit: boolean;
+    cls: string;
+    disabled?: boolean;
+    // the tooltip in debug mode, which says what a click does:
+    title?: string;
+    // the tooltip outside debug mode, which only names what is shown:
+    info?: string;
+    style?: string;
+    onClick?: (e: MouseEvent) => void;
+    children?: any;
+}
+
+// Cell is a button in debug mode, and otherwise a plain box that looks the same but does nothing.
+function Cell({edit, cls, disabled, title, info, style, onClick, children}: CellProps) {
+    return edit
+        ? <button type="button" class={cls} disabled={disabled} title={title} style={style} onClick={onClick}>{children}</button>
+        : <div class={cls} title={info} style={style}>{children}</div>;
 }
 
 // ChoiceButton gives the item if the player doesn't have it, and takes it away if they do. Names are in the tooltip.
-function ChoiceButton({c, gfx, get, send, ready, scale = 3}: Common & { c: Choice, scale?: number }) {
+function ChoiceButton({c, gfx, get, send, ready, edit, scale = 3}: Common & { c: Choice, scale?: number }) {
     const has = c.has(get);
     return (
-        <button type="button" class={"dbg-btn" + (has ? " on" : "")} disabled={!ready}
-                title={(has ? "Remove " : "Give ") + c.name}
-                onClick={() => send(...(has ? c.take : c.give))}>
+        <Cell edit={edit} cls={"dbg-btn" + (has ? " on" : "")} disabled={!ready}
+              title={(has ? "Remove " : "Give ") + c.name} info={c.name}
+              onClick={() => send(...(has ? c.take : c.give))}>
             <Icon gfx={gfx} words={c.words} w={c.w} scale={scale} dim={!has} hide={c.hide}/>
-        </button>
+        </Cell>
     );
 }
 
-function Section({title, note, children}: { title: string, note?: string, children?: any }) {
+export function Section({title, note, children}: { title: string, note?: string, children?: any }) {
     return (
         <div class="content dbg-section">
             <h3>{title}</h3>
@@ -117,10 +127,11 @@ function Both({gfx, words, words2}: { gfx: Gfx | null, words: number[], words2: 
     );
 }
 
-function YGrid({gfx, get, send, ready, bottles}: Common & { bottles: Bottles }) {
+function YGrid({gfx, get, send, ready, edit, bottles}: Common & { bottles: Bottles }) {
     const {slots, count, selectedIndex} = bottles;
     return (
-        <Section title="Y Items" note="Click an item to go to its next level; shift-click to go back. The bottle steps through 0 to 4 bottles.">
+        <Section title="Y Items"
+                 note={edit ? "Click an item to go to its next level; shift-click to go back. The bottle steps through 0 to 4 bottles." : undefined}>
             <div class="dbg-yitems">
                 <div class="dbg-ygrid">
                     {yGrid.map(c => {
@@ -129,37 +140,42 @@ function YGrid({gfx, get, send, ready, bottles}: Common & { bottles: Bottles }) 
                             const words = (bottleContents[v] ?? bottleContents[2]).words;
                             const around = BOTTLE_COUNT + 1;
                             return (
-                                <button type="button" key={c.name} class={"dbg-btn" + (count > 0 ? " on" : "")} disabled={!ready}
-                                        title={count + " of " + BOTTLE_COUNT + " bottles: click for " + (count + 1) % around +
-                                            ", shift-click for " + (count + BOTTLE_COUNT) % around}
-                                        onClick={e => bottles.stepCount(e.shiftKey ? -1 : 1)}>
+                                <Cell key={c.name} edit={edit} cls={"dbg-btn" + (count > 0 ? " on" : "")} disabled={!ready}
+                                      title={count + " of " + BOTTLE_COUNT + " bottles: click for " + (count + 1) % around +
+                                          ", shift-click for " + (count + BOTTLE_COUNT) % around}
+                                      info={count + " of " + BOTTLE_COUNT + " bottles"}
+                                      onClick={e => bottles.stepCount(e.shiftKey ? -1 : 1)}>
                                     <Icon gfx={gfx} words={v !== 0 ? words : bottleContents[2].words} dim={count === 0}/>
-                                </button>
+                                </Cell>
                             );
                         }
                         const cur = c.current(get);
                         const next = (dir: number) => c.levels[(cur + dir + c.levels.length) % c.levels.length];
                         const shown = c.levels[cur === 0 ? 1 : cur];
                         return (
-                            <button type="button" key={c.name} class={"dbg-btn" + (cur !== 0 ? " on" : "")} disabled={!ready}
-                                    title={c.name + ": " + c.levels[cur].name + " (click for " + next(1).name + ")"}
-                                    onClick={e => send(...next(e.shiftKey ? -1 : 1).ops)}>
+                            <Cell key={c.name} edit={edit} cls={"dbg-btn" + (cur !== 0 ? " on" : "")} disabled={!ready}
+                                  title={c.name + ": " + c.levels[cur].name + " (click for " + next(1).name + ")"}
+                                  info={c.name + ": " + c.levels[cur].name}
+                                  onClick={e => send(...next(e.shiftKey ? -1 : 1).ops)}>
                                 {shown.words2
                                     ? <Both gfx={gfx} words={shown.words} words2={shown.words2}/>
                                     : <Icon gfx={gfx} words={shown.words} dim={cur === 0}/>}
-                            </button>
+                            </Cell>
                         );
                     })}
                 </div>
                 <div class="dbg-bottles">
                     {slots.map((v, i) => (
-                        <button type="button" key={i} class={"dbg-btn" + (v !== 0 ? " on" : "") + (i === selectedIndex ? " selected" : "")}
-                                disabled={!ready || v === 0}
-                                title={v === 0 ? "Bottle " + (i + 1) + ": not available" : "Bottle " + (i + 1) + ": " + bottleContents[v]?.name +
-                                    (i === selectedIndex ? " (selected)" : "") + ". Click for the next contents, shift-click for the previous"}
-                                onClick={e => bottles.cycle(i, e.shiftKey ? -1 : 1)}>
+                        <Cell key={i} edit={edit}
+                              cls={"dbg-btn" + (v !== 0 ? " on" : "") + (i === selectedIndex ? " selected" : "")}
+                              disabled={!ready || v === 0}
+                              title={v === 0 ? "Bottle " + (i + 1) + ": not available" : "Bottle " + (i + 1) + ": " + bottleContents[v]?.name +
+                                  (i === selectedIndex ? " (selected)" : "") + ". Click for the next contents, shift-click for the previous"}
+                              info={v === 0 ? "Bottle " + (i + 1) + ": not available" : "Bottle " + (i + 1) + ": " + bottleContents[v]?.name +
+                                  (i === selectedIndex ? " (selected)" : "")}
+                              onClick={e => bottles.cycle(i, e.shiftKey ? -1 : 1)}>
                             <Icon gfx={gfx} words={(v !== 0 ? bottleContents[v] ?? bottleContents[2] : bottleContents[2]).words} dim={v === 0}/>
-                        </button>
+                        </Cell>
                     ))}
                 </div>
             </div>
@@ -171,9 +187,9 @@ function YGrid({gfx, get, send, ready, bottles}: Common & { bottles: Bottles }) 
 let swordNone = 0;
 
 // Equipment is laid out as the item menu does: sword, shield and armor in a row.
-function Equipment({gfx, get, send, ready}: Common) {
+function Equipment({gfx, get, send, ready, edit}: Common) {
     return (
-        <Section title="Equipment" note="Click to upgrade, wrapping around; shift-click to downgrade.">
+        <Section title="Equipment" note={edit ? "Click to upgrade, wrapping around; shift-click to downgrade." : undefined}>
             <div class="dbg-grid">
                 {equipment.map(e => {
                     const v = get(e.addr);
@@ -185,11 +201,12 @@ function Equipment({gfx, get, send, ready}: Common) {
                         {t: "gfx", w: e.gfx});
                     const n = e.levels.length;
                     return (
-                        <button type="button" key={e.name} class="dbg-btn on" disabled={!ready}
-                                title={e.name + " $" + v.toString(16).toUpperCase().padStart(2, "0") + ": " + e.levels[cur].name + " (click for " + e.levels[(cur + 1) % n].name + ")"}
-                                onClick={ev => to((cur + (ev.shiftKey ? n - 1 : 1)) % n)}>
+                        <Cell key={e.name} edit={edit} cls="dbg-btn on" disabled={!ready}
+                              title={e.name + " $" + v.toString(16).toUpperCase().padStart(2, "0") + ": " + e.levels[cur].name + " (click for " + e.levels[(cur + 1) % n].name + ")"}
+                              info={e.name + ": " + e.levels[cur].name}
+                              onClick={ev => to((cur + (ev.shiftKey ? n - 1 : 1)) % n)}>
                             <Icon gfx={gfx} words={e.levels[cur].words}/>
-                        </button>
+                        </Cell>
                     );
                 })}
             </div>
@@ -212,19 +229,19 @@ const PANEL_SCALE = 3;
 const TILE = 8 * PANEL_SCALE;
 
 // Panel places icons at the tile positions of the item menu's progress panel:
-function Panel({items, gfx, get, send, ready}: Common & { items: Placed[] }) {
+function Panel({items, gfx, get, send, ready, edit}: Common & { items: Placed[] }) {
     return (
         <div class="dbg-panel" style={`width: ${PANEL_W * TILE}px; height: ${PANEL_H * TILE}px`}>
             {items.map(it => {
                 const has = it.c.has(get);
                 return (
-                    <button type="button" key={it.c.name} class={"dbg-btn dbg-bare" + (has ? " on" : "")} disabled={!ready}
-                            title={(has ? "Remove " : "Give ") + it.c.name}
-                            style={`left: ${it.x * TILE - 3}px; top: ${it.y * TILE - 3}px`}
-                            onClick={() => send(...(has ? it.c.take : it.c.give))}>
+                    <Cell key={it.c.name} edit={edit} cls={"dbg-btn dbg-bare" + (has ? " on" : "")} disabled={!ready}
+                          title={(has ? "Remove " : "Give ") + it.c.name} info={it.c.name}
+                          style={`left: ${it.x * TILE - 3}px; top: ${it.y * TILE - 3}px`}
+                          onClick={() => send(...(has ? it.c.take : it.c.give))}>
                         <Icon gfx={gfx} words={has || !it.missing ? it.c.words : it.missing} w={it.c.w} scale={PANEL_SCALE}
                               dim={!has && !it.missing}/>
-                    </button>
+                    </Cell>
                 );
             })}
         </div>
@@ -261,29 +278,31 @@ interface CounterProps {
     // the whole card is out of use:
     off?: boolean;
     ready: boolean;
+    edit: boolean;
 }
 
-// Counter is a card with an icon, a count and buttons to take one away and give one. Clicking the icon does the main
-// thing, which for the consumables is to fill up.
-function Counter({gfx, words, w = 1, scale = 5, onMain, mainTitle, text, textTitle, dec, inc, off = false, ready}: CounterProps) {
+// Counter is a card with an icon, a count and, in debug mode, buttons to take one away and give one. Clicking the
+// icon does the main thing, which for the consumables is to fill up.
+function Counter({gfx, words, w = 1, scale = 5, onMain, mainTitle, text, textTitle, dec, inc, off = false, ready, edit}: CounterProps) {
     const idle = !ready || off;
+    const icon = <Icon gfx={gfx} words={words} w={w} scale={scale} dim={off}/>;
     return (
         <div class={"dbg-btn dbg-static" + (off ? " off" : "")}>
-            <button type="button" class="dbg-main" disabled={idle || !onMain} title={mainTitle} onClick={onMain}>
-                <Icon gfx={gfx} words={words} w={w} scale={scale} dim={off}/>
-            </button>
+            {edit
+                ? <button type="button" class="dbg-main" disabled={idle || !onMain} title={mainTitle} onClick={onMain}>{icon}</button>
+                : <div class="dbg-main">{icon}</div>}
             <span class="dbg-count" title={textTitle}>{text}</span>
-            <span class="dbg-step">
+            {edit && <span class="dbg-step">
                 <button type="button" disabled={idle || dec.disabled} title={dec.title}
                         onClick={e => dec.onClick(e.shiftKey)}>−</button>
                 <button type="button" disabled={idle || inc.disabled} title={inc.title}
                         onClick={e => inc.onClick(e.shiftKey)}>+</button>
-            </span>
+            </span>}
         </div>
     );
 }
 
-function DungeonItems({gfx, get, send, ready, state}: Common & { state?: DebugState }) {
+function DungeonItems({gfx, get, send, ready, edit, state}: Common & { state?: DebugState }) {
     // the dungeon chosen, or -1 for the one Link is in:
     const [chosen, setChosen] = useState(-1);
     const inDungeon = !!state && state.dungeon !== 0xFF && (state.dungeon >> 1) < dungeons.length;
@@ -303,33 +322,33 @@ function DungeonItems({gfx, get, send, ready, state}: Common & { state?: DebugSt
                 </select>
             </div>
             <div class="dbg-grid dbg-sub">
-                <Counter gfx={gfx} ready={ready} words={SMALL_KEY_WORDS} scale={6}
+                <Counter gfx={gfx} ready={ready} edit={edit} words={SMALL_KEY_WORDS} scale={6}
                          text={keys >= 0 && keys !== 0xFF ? keys : "-"} textTitle="Small keys of the dungeon Link is in"
                          dec={{title: "Take a small key", disabled: !inDungeon, onClick: () => send({t: "keys", d: -1})}}
                          inc={{title: "Give a small key", disabled: !inDungeon, onClick: () => send({t: "keys", d: 1})}}/>
                 {d >= 0 && dungeonItems(d).map(c => (
-                    <ChoiceButton key={c.name} c={c} gfx={gfx} get={get} send={send} ready={ready}/>
+                    <ChoiceButton key={c.name} c={c} gfx={gfx} get={get} send={send} ready={ready} edit={edit}/>
                 ))}
             </div>
         </Section>
     );
 }
 
-function Hearts({gfx, get, send, ready}: Common) {
+function Hearts({gfx, get, send, ready, edit}: Common) {
     const containers = get(0xF36C) >> 3;
     const pieces = get(0xF36B) & 3;
     const step = (c: number, p: number) => send({t: "hearts", c, p});
     const full = containers >= 20;
     return (
-        <Section title="Heart Containers and Pieces" note="Click the heart to have 20 full hearts.">
+        <Section title="Heart Containers and Pieces" note={edit ? "Click the heart to have 20 full hearts." : undefined}>
             <div class="dbg-row">
-                <Counter gfx={gfx} ready={ready} words={HEART_FULL}
+                <Counter gfx={gfx} ready={ready} edit={edit} words={HEART_FULL}
                          onMain={() => send({t: "set", a: 0xF36C, v: 0xA0}, {t: "set", a: 0xF36D, v: 0xA0})}
                          mainTitle="Give heart containers up to 20 hearts and fill them up"
                          text={containers} textTitle="Heart containers"
                          dec={{title: "Remove a heart container", disabled: containers <= 1, onClick: () => step(-1, 0)}}
                          inc={{title: "Give a heart container", disabled: full, onClick: () => step(1, 0)}}/>
-                <Counter gfx={gfx} ready={ready} words={HEART_HALF} off={full}
+                <Counter gfx={gfx} ready={ready} edit={edit} words={HEART_HALF} off={full}
                          text={pieces + "/4"} textTitle="Heart pieces, 4 make a container"
                          dec={{title: "Remove a heart piece", disabled: containers <= 1 && pieces === 0, onClick: () => step(0, -1)}}
                          inc={{title: "Give a heart piece", onClick: () => step(0, 1)}}/>
@@ -341,7 +360,7 @@ function Hearts({gfx, get, send, ready}: Common) {
 // the most rupees the wallet holds:
 const RUPEE_MAX = 999;
 
-function Fill({gfx, get, send, ready}: Common) {
+function Fill({gfx, get, send, ready, edit}: Common) {
     const hearts = get(0xF36D);
     const heartCap = get(0xF36C);
     const magic = get(0xF36E);
@@ -355,10 +374,11 @@ function Fill({gfx, get, send, ready}: Common) {
     const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
     const setRupees = (v: number) => send({t: "set", a: 0xF360, v: v & 0xFF}, {t: "set", a: 0xF361, v: v >> 8});
     const fill = (w: string) => () => send({t: "fill", w});
-    const p = {gfx, ready};
+    const p = {gfx, ready, edit};
 
     return (
-        <Section title="Fill Up" note="Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees, 10 arrows or bombs, or 32 magic.">
+        <Section title="Fill Up"
+                 note={edit ? "Click an icon to fill it up. The buttons change it by one; shift-click for 20 rupees, 10 arrows or bombs, or 32 magic." : undefined}>
             <div class="dbg-grid">
                 <Counter {...p} words={HEART_FULL} onMain={fill("hearts")} mainTitle="Fill up the hearts"
                          text={+(hearts / 8).toFixed(2)} textTitle="Hearts"
@@ -480,64 +500,25 @@ function Warp({send, ready}: Common) {
     );
 }
 
-// Bandwidth shows what o2 sends, per message type. Wire bytes include each message's share of its packet's envelope
-// and IPv4/UDP headers.
-function Bandwidth({bw}: { bw?: BandwidthState }) {
-    const kib = (b: number) => (b / 1024).toFixed(2);
-    return (
-        <Section title="Bandwidth sent"
-                 note="Last second, per message type. Wire includes each message's share of its packet's headers.">
-            {!bw ? <div class="dbg-note">Nothing sent yet.</div> : (
-                <Fragment>
-                    <div>
-                        {bw.packets.toFixed(1)} packets/s ({bw.sectorPackets.toFixed(1)} to the sector), {kib(bw.wire)} KiB/s
-                    </div>
-                    <table class="dbg-bandwidth">
-                        <thead>
-                        <tr>
-                            <th style="text-align: left">message</th>
-                            <th>msgs/s</th>
-                            <th>B/s</th>
-                            <th>wire KiB/s</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {(bw.rows ?? []).map(r => (
-                            <tr key={r.name}>
-                                <td style="text-align: left">{r.name}</td>
-                                <td style="text-align: right">{r.msgs.toFixed(1)}</td>
-                                <td style="text-align: right">{r.bytes.toFixed(0)}</td>
-                                <td style="text-align: right">{kib(r.wire)}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </Fragment>
-            )}
-        </Section>
-    );
-}
-
-export default function DebugApp() {
-    const {ch, lost, mainWrapper, vm} = useConnection();
-
-    const created = vm.game?.isCreated || false;
+// DebugSections shows what the player has in the alttp game view, and in debug mode changes it.
+export function DebugSections({ch, vm}: GameViewProps) {
+    const game = vm.game as GameALTTPViewModel;
+    const edit = !!game.debugMode;
     const state = vm["game/debug"] as DebugState | undefined;
-    const bw = vm["game/bandwidth"] as BandwidthState | undefined;
-    const {gfx, error} = useGfx(created);
+    const {gfx, error} = useGfx(game.isCreated);
 
     const sram = state?.sram;
     const get: Getter = addr => sram?.[addr - SRAM_FIRST] ?? 0;
-    const send: Send = (...ops) => ch.command("game", "debug", {ops});
-    const ready = created && !!state?.inGame;
+    const send: Send = (...ops) => {
+        if (edit) ch.command("game", "debug", {ops});
+    };
+    const ready = !!state?.inGame;
 
-    const p: Common = {gfx, get, send, ready};
+    const p: Common = {gfx, get, send, ready, edit};
     const bottles = useBottles(get, send);
 
     let status = "";
-    if (!created) {
-        status = "Select a game ROM on the main page first.";
-    } else if (!state) {
+    if (!state) {
         status = "Waiting for the game: connect the SNES and start the patched ROM.";
     } else if (!state.inGame) {
         status = "Link is not in the game right now (title, file select or a transition); the buttons wait for it.";
@@ -545,52 +526,24 @@ export default function DebugApp() {
 
     return (
         <Fragment>
-            <div id="main-wrapper" ref={mainWrapper} class={lost ? "disabled" : ""}>
-                <header>
-                    <section class="rounded darken padded squeeze">
-                        <h1>O2 Debug{created ? " - " + vm.game.gameName : ""}</h1>
-                    </section>
-                </header>
-                <section class="squeeze">
-                    <div class="flex-wrap">
-                        <div class="content" style="width: 100%; display: flex">
-                            <div style="flex: 1">
-                                <a href="/">« Back to O2</a>
-                            </div>
-                            <div style="flex: 6; text-align: center">
-                                {status
-                                    ? <span style="color: #ffb000">{status}</span>
-                                    : <span style="color: green">🟢 Connected to the game</span>}
-                                {error && created && <div style="color: red; font-size: smaller">
-                                    Graphics: {error}
-                                </div>}
-                            </div>
-                        </div>
-                        <div class="content" style="width: 100%">
-                            <span class="dbg-note">
-                                Changes are made by the game itself within a frame. Like anything the player does, they are shared
-                                with the group by the sync settings on the main page.
-                            </span>
-                        </div>
-                        <hr/>
-
-                        <div class="dbg-columns">
-                            <Fill {...p}/>
-                            <YGrid {...p} bottles={bottles}/>
-                            <Equipment {...p}/>
-                            <Abilities {...p}/>
-                            <DungeonItems {...p} state={state}/>
-                            <PendantsAndCrystals {...p}/>
-                            <Hearts {...p}/>
-                            <Progress {...p}/>
-                            <Enemies {...p}/>
-                            <Warp {...p}/>
-                            <Bandwidth bw={bw}/>
-                        </div>
-                    </div>
-                </section>
+            {edit && <div class="dbg-note">
+                Debug mode: changes are made by the game itself within a frame. Like anything the player does, they are
+                shared with the group by the sync settings.
+                {status && <div style="color: #ffb000">{status}</div>}
+            </div>}
+            {error && <div style="color: red; font-size: smaller">Graphics: {error}</div>}
+            <div class="dbg-columns">
+                <Fill {...p}/>
+                <YGrid {...p} bottles={bottles}/>
+                <Equipment {...p}/>
+                <Abilities {...p}/>
+                <DungeonItems {...p} state={state}/>
+                <PendantsAndCrystals {...p}/>
+                <Hearts {...p}/>
+                {edit && <Progress {...p}/>}
+                {edit && <Enemies {...p}/>}
+                {edit && <Warp {...p}/>}
             </div>
-            {lost && <ConnectionLost/>}
         </Fragment>
     );
 }

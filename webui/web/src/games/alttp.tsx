@@ -3,6 +3,7 @@ import {useEffect, useLayoutEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {setField} from "../util";
 import {WorldMap} from "./alttpmap";
+import {DebugSections} from "./alttp/debugsections";
 
 // localStorage key of the height the user resized the notification history to:
 const historyHeightKey = "o2.alttp.notificationHistoryHeight";
@@ -494,6 +495,9 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
                         </Fragment>}
                 </Fragment>))
             }
+        </div>
+        <div style="grid-column: 1 / -1; margin-top: 0.5em">
+            <DebugSections ch={ch} vm={vm}/>
         </div>
         <div style="grid-column: 1 / -1; margin-top: 0.5em">
             <div>updates:</div>

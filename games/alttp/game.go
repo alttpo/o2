@@ -252,6 +252,9 @@ type Game struct {
 	SyncTunicColor bool `json:"syncTunicColor"`
 	// SyncSprites draws remote players in the same room or area; see remotesprites.go:
 	SyncSprites bool `json:"syncSprites"`
+	// DebugMode is switched on the /debug page: the game view's items, equipment and hearts can then be changed, and
+	// its progression, enemies and warp sections are shown. While it is off the debug command does nothing:
+	DebugMode bool `json:"debugMode"`
 }
 
 func (f *Factory) NewGame(rom *snes.ROM) games.Game {

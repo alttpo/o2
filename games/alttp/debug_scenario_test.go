@@ -28,6 +28,8 @@ func newDebugScenario(t *testing.T, dungeon uint8) (gs gameSync) {
 		e.WRAM[0x040C] = dungeon
 		e.WRAM[0xF36F] = 1
 	}
+	// the debug command only runs in debug mode:
+	gs.g.DebugMode = true
 	return
 }
 
@@ -82,6 +84,19 @@ func TestDebug_Rejects(t *testing.T) {
 		{T: "bogus"},
 		{T: debugOpKeys, D: 2},
 	}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(gs.g.debug.queue); n != 0 {
+		t.Errorf("expected no operation to be queued; got %d", n)
+	}
+}
+
+// Outside debug mode the debug command queues nothing.
+func TestDebug_OffInNormalMode(t *testing.T) {
+	gs := newDebugScenario(t, 0xFF)
+	gs.g.DebugMode = false
+	cmd := &debugCmd{gs.g}
+	if err := cmd.Execute(&debugArgs{Ops: []debugOp{{T: debugOpSet, A: 0xF345, V: 1}}}); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(gs.g.debug.queue); n != 0 {

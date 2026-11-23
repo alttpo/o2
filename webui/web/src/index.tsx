@@ -8,7 +8,7 @@ import SNESView from "./snesview";
 import ROMView, {PatchView} from "./romview";
 import ServerView from "./serverview";
 import GameView from "./gameview";
-import DebugApp from "./debugview";
+import DebugApp from "./games/alttp/debugview";
 import {CommandHandler, ConnectionLost, useConnection} from "./connection";
 
 const ReactHint = ReactHintFactory({Component, createElement: h, createRef: createRef})

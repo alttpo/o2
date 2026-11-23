@@ -604,7 +604,7 @@ button.game-action {
     color: #8cf;
 }
 
-/* the debug page: */
+/* the debug page, and the alttp game view's items, equipment and hearts (see games/alttp/debugsections.tsx): */
 /* the sections flow down the columns, each starting where the one before it ends, so there are no gaps to fill: */
 .dbg-columns {
     width: 100%;
@@ -669,7 +669,7 @@ button.game-action {
     border-radius: 6px;
 }
 
-.dbg-btn:hover:not(:disabled) {
+button.dbg-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.12);
 }
 
@@ -742,7 +742,7 @@ button.game-action {
     background-color: #15151d !important;
 }
 
-.dbg-btn:hover:not(:disabled) {
+button.dbg-btn:hover:not(:disabled) {
     background-color: #25252f !important;
 }
 
@@ -839,7 +839,7 @@ button.game-action {
     border-radius: 4px;
 }
 
-.dbg-section .dbg-main:hover:not(:disabled) {
+.dbg-section button.dbg-main:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.12);
 }
 
