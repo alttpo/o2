@@ -75,7 +75,7 @@ export function useConnection() {
             isLoaded: false, name: "", title: "", region: "", version: "", folder: "", filename: ""
         },
         server: {
-            isConnected: false, hostName: "", groupName: "", playerName: "", team: 0
+            isConnected: false, hostName: "", groupName: "", password: "", playerName: "", team: 0
         },
         game: {
             isCreated: false,

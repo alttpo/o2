@@ -13,6 +13,7 @@ type Client struct {
 
 	// model state:
 	group    string
+	password string
 	hostName string
 }
 
@@ -29,6 +30,13 @@ func (c *Client) SetGroup(group string) {
 	c.group = strings.TrimSpace(group)
 	log.Printf("client: actual group name '%s'\n", c.group)
 }
+
+// Password is the group's password, empty for a group without one. It never leaves the client; see protocol05's auth.go.
+func (c *Client) Password() string { return c.password }
+
+// SetPassword sets the password of the group to join: it's set on the group if this player is the first to join it,
+// and proven otherwise.
+func (c *Client) SetPassword(password string) { c.password = password }
 
 func (c *Client) SetHostName(hostName string) { c.hostName = hostName }
 func (c *Client) HostName() string            { return c.hostName }

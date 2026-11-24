@@ -63,6 +63,7 @@ export interface ServerViewModel {
 
     hostName: string;
     groupName: string;
+    password: string;
     playerName: string;
     team: number;
 }

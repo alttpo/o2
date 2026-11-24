@@ -14,12 +14,14 @@ function ServerView({ch, server}: ServerProps) {
 
     const [hostName, setHostName] = useState('');
     const [groupName, setGroupName] = useState('');
+    const [password, setPassword] = useState('');
     const [playerName, setPlayerName] = useState('');
     const [team, setTeam] = useState(0);
 
     useEffect(() => {
         setHostName(server?.hostName);
         setGroupName(server?.groupName);
+        setPassword(server?.password ?? '');
         setPlayerName(server?.playerName);
         setTeam(server?.team);
     }, [server]);
@@ -56,7 +58,7 @@ function ServerView({ch, server}: ServerProps) {
     return <div class={"grid collapsible" + (collapsed ? " collapsed" : "")} style="grid-template-columns: max-content minmax(0, 1fr)">
         <h5 style="grid-column: 1 / span 2">
             <span data-rh-at="left" data-rh="To play online with other players, connect to a server
-and enter a group name you wish to join. Groups are created on the fly by whoever enters the group name first."
+and enter a group name you wish to join. Groups are created on the fly by whoever enters the group name first, who can also protect it with a password."
         >Connect to a server:&nbsp;2️⃣</span>
             <span class="collapse-icon" onClick={() => set_collapsed(st => !st)}>{ collapsed ? "🔽": "🔼" }</span>
         </h5>
@@ -75,6 +77,14 @@ and enter a group name you wish to join. Groups are created on the fly by whoeve
                title="A group name uniquely identifies the group of players you wish to sync items and progress with; max 20 characters, case-insensitive, leading and trailing whitespace are trimmed"
                id="groupName"
                onInput={setField.bind(this, sendServerCommand, setGroupName, "groupName", getTargetValueString)}/>
+        <label for="password">Password:</label>
+        <input type="password"
+               autocomplete="off"
+               style="min-width: 0; width: 100%; box-sizing: border-box"
+               value={password}
+               title="Optional. If you are the first to join the group, this sets the group's password; everyone else must enter the same one. Only a hash of it is sent, so it keeps uninvited players out but does not hide from someone watching network traffic."
+               id="password"
+               onInput={setField.bind(this, sendServerCommand, setPassword, "password", getTargetValueString)}/>
 
         <label for="playerName">Player Name:</label>
         <input type="text"

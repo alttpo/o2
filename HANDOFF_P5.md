@@ -59,7 +59,7 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - [x] facts: fact-put, fact-status, fact-list, fact-get, fact-data, quotas, dedupe, group lifetime.
 - [x] `protocol05_test.go`.
 - [x] `main.go` dispatch and expiry.
-- [ ] influx metrics for p5 (not started; p4's metrics take p4 types).
+- [x] influx metrics for p5 (o2-server: `networkmetrics.go` sums per second; p5 reports kind bytes per group, no client tag).
 
 ### o2
 
@@ -142,3 +142,13 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - alttpo `88d31d5`: the bird out of fact 0x00 and its chrs unbound.
 - o2 `90c959a`: the bird out of fact 0x00.
 - o2 `ad629aa`: remote players' item in use drawn.
+
+### Group passwords
+
+- [x] Optional, set by the first player of a group; keeps uninvited players out, not meant against sniffers. join-group's
+      optional trailing auth field is `u8 length, token` with token = SHA-256("o2-p5-group:" || password). The group's
+      first join sets it; later joins must match (join-nak 2 no token, 3 wrong token, 4 group has no password or bad
+      field; no body). Scheme in o2-server `p5auth.go`; o2: `client/protocol05/auth.go`, `games/alttp/net.go`
+      (`netJoinRefused`), password field in the Server view (kept in the config file in plain text). The test vector
+      is shared by both repos. alttpo: `Protocol.as` `p5_auth_token`, `receive.as`, Password box in `SettingsWindow.as`; it needs bsnes-as's `sha256(string)` global (script-string.cpp).
+- [ ] Not in PROTOCOL05.md (the file is only in `backup/protocol05-before-squash`).

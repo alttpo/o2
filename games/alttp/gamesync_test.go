@@ -18,7 +18,11 @@ import (
 type testClient struct {
 	Rd chan []byte
 	Wr chan []byte
+
+	password string
 }
+
+func (t *testClient) Password() string { return t.password }
 
 func (t *testClient) Group() []byte {
 	return []byte("test")

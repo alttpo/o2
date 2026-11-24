@@ -18,6 +18,7 @@ type ServerViewModel struct {
 	IsConnected bool   `json:"isConnected"`
 	HostName    string `json:"hostName"`
 	GroupName   string `json:"groupName"`
+	Password    string `json:"password"`
 	Team        uint8  `json:"team"`
 	PlayerName  string `json:"playerName"`
 }
@@ -25,6 +26,7 @@ type ServerViewModel struct {
 type ServerConfiguration struct {
 	HostName   string `json:"hostName"`
 	GroupName  string `json:"groupName"`
+	Password   string `json:"password"`
 	Team       uint8  `json:"team"`
 	PlayerName string `json:"playerName"`
 }
@@ -38,11 +40,13 @@ func (v *ServerViewModel) LoadConfiguration(config *ServerConfiguration) {
 	args := &setFieldArgs{
 		HostName:   new(string),
 		GroupName:  new(string),
+		Password:   new(string),
 		Team:       new(uint8),
 		PlayerName: new(string),
 	}
 	*args.HostName = config.HostName
 	*args.GroupName = config.GroupName
+	*args.Password = config.Password
 	*args.Team = config.Team
 	*args.PlayerName = config.PlayerName
 
@@ -62,6 +66,7 @@ func (v *ServerViewModel) SaveConfiguration(config *ServerConfiguration) {
 
 	config.HostName = v.HostName
 	config.GroupName = v.GroupName
+	config.Password = v.Password
 	config.PlayerName = v.PlayerName
 	config.Team = v.Team
 }
@@ -161,6 +166,7 @@ func (ce *ServerConnectCommand) Execute(_ interfaces.CommandArgs) error {
 
 	log.Printf("client: set group '%s'\n", v.GroupName)
 	vm.client.SetGroup(v.GroupName)
+	vm.client.SetPassword(v.Password)
 
 	vm.client.SetHostName(v.HostName)
 
@@ -202,6 +208,7 @@ type setFieldCmd struct{ v *ServerViewModel }
 type setFieldArgs struct {
 	HostName   *string `json:"hostName"`
 	GroupName  *string `json:"groupName"`
+	Password   *string `json:"password"`
 	Team       *uint8  `json:"team"`
 	PlayerName *string `json:"playerName"`
 }
@@ -226,6 +233,13 @@ func (c *setFieldCmd) Execute(args interfaces.CommandArgs) error {
 		client := vm.client
 		if client != nil {
 			client.SetGroup(c.v.GroupName)
+		}
+		c.v.MarkDirty()
+	}
+	if f.Password != nil {
+		c.v.Password = *f.Password
+		if client := vm.client; client != nil {
+			client.SetPassword(c.v.Password)
 		}
 		c.v.MarkDirty()
 	}

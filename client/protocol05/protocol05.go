@@ -217,13 +217,15 @@ type Join struct {
 	Group     string
 	Name      string
 	Info      []byte
+	// Auth is the optional auth field, the password's AuthToken:
+	Auth []byte
 }
 
 func MakeJoin(j *Join) ([]byte, error) {
-	if len(j.Group) > 0xFF || len(j.Name) > 0xFF || len(j.Info) > 0xFF {
+	if len(j.Group) > 0xFF || len(j.Name) > 0xFF || len(j.Info) > 0xFF || len(j.Auth) > 0xFF {
 		return nil, ErrTooLong
 	}
-	b := start(JoinGroup, 12+len(j.Group)+len(j.Name)+len(j.Info))
+	b := start(JoinGroup, 13+len(j.Group)+len(j.Name)+len(j.Info)+len(j.Auth))
 	b = append(b, j.JoinSeq)
 	b = binary.LittleEndian.AppendUint64(b, j.SessionID)
 	b = append(b, uint8(len(j.Group)))
@@ -232,6 +234,10 @@ func MakeJoin(j *Join) ([]byte, error) {
 	b = append(b, j.Name...)
 	b = append(b, uint8(len(j.Info)))
 	b = append(b, j.Info...)
+	if len(j.Auth) > 0 {
+		b = append(b, uint8(len(j.Auth)))
+		b = append(b, j.Auth...)
+	}
 	return b, nil
 }
 
@@ -490,6 +496,9 @@ func DecodeRequest(pkt []byte) (q Request, err error) {
 		q.Join.Group = string(r.tiny())
 		q.Join.Name = string(r.tiny())
 		q.Join.Info = r.tiny()
+		if len(r.b) > 0 {
+			q.Join.Auth = r.tiny()
+		}
 	case LeaveGroup:
 	case JoinSector:
 		q.SectorSeq = r.u8()

@@ -24,6 +24,8 @@ import (
 const (
 	// netResend is how often unacked joins and sectors are resent:
 	netResend = 100 * time.Millisecond
+	// authNotifyEvery is how often a refused password is shown again:
+	authNotifyEvery = 8 * time.Second
 	// whoIsResend is how often who-is is sent for the same player:
 	whoIsResend = 500 * time.Millisecond
 	// playerGrace is how long a slot whose player left is reserved; the server reserves it as long:
@@ -47,6 +49,13 @@ type netState struct {
 	sentGroup string
 	sentName  string
 	sentInfo  string
+	// the password the join was made with, see protocol05's auth.go:
+	sentPassword string
+	// the server refused the password (or lack of one); no more joins until the group or password changes:
+	authBlocked bool
+	// what to tell the player about it, and when it was last told:
+	authMsg      string
+	authNotified time.Time
 
 	// the sector last sent (inSector false: leave-sector), and whether it was acked:
 	sectorSeq   uint8
@@ -117,12 +126,15 @@ func (g *Game) tickNet(now time.Time) {
 	}
 	ns := &g.net
 	local := g.LocalPlayer()
-	group, info := string(c.Group()), string(g.joinInfo())
-	if group != ns.sentGroup || local.NameF != ns.sentName || info != ns.sentInfo {
+	group, info, password := string(c.Group()), string(g.joinInfo()), c.Password()
+	if group != ns.sentGroup || local.NameF != ns.sentName || info != ns.sentInfo || password != ns.sentPassword {
 		ns.joinSeq++
 		ns.joinAcked = false
 		ns.joinSent = time.Time{}
-		ns.sentGroup, ns.sentName, ns.sentInfo = group, local.NameF, info
+		if group != ns.sentGroup || password != ns.sentPassword {
+			ns.authBlocked = false
+		}
+		ns.sentGroup, ns.sentName, ns.sentInfo, ns.sentPassword = group, local.NameF, info, password
 	}
 	if group != ns.infoGroup {
 		// the players listed as incompatible were in the other group:
@@ -134,7 +146,11 @@ func (g *Game) tickNet(now time.Time) {
 			}
 		}
 	}
-	if !ns.joinAcked && now.Sub(ns.joinSent) >= netResend {
+	if ns.authBlocked && now.Sub(ns.authNotified) >= authNotifyEvery {
+		ns.authNotified = now
+		g.PushNotification(ns.authMsg)
+	}
+	if !ns.joinAcked && !ns.authBlocked && now.Sub(ns.joinSent) >= netResend {
 		ns.joinSent = now
 		pkt, err := protocol05.MakeJoin(&protocol05.Join{
 			JoinSeq:   ns.joinSeq,
@@ -142,6 +158,7 @@ func (g *Game) tickNet(now time.Time) {
 			Group:     group,
 			Name:      local.NameF,
 			Info:      []byte(info),
+			Auth:      protocol05.AuthToken(password),
 		})
 		if err != nil {
 			log.Printf("alttp: join: %v\n", err)
@@ -151,6 +168,26 @@ func (g *Game) tickNet(now time.Time) {
 	}
 	g.tickSector(now)
 	g.tickFacts(now)
+}
+
+// netJoinRefused handles the join-nak reasons of group passwords: the join isn't sent again until the group or the
+// password changes.
+func (g *Game) netJoinRefused(m *protocol05.Message) {
+	var msg string
+	switch m.Reason {
+	case protocol05.NakAuthRequired:
+		msg = "this group needs a password"
+	case protocol05.NakAuthFailed:
+		msg = "wrong group password"
+	case protocol05.NakAuthUnexpected:
+		msg = "this group exists without a password"
+	default:
+		return
+	}
+	log.Printf("alttp: server: %s\n", msg)
+	// tickNet tells the player, and again every authNotifyEvery while the join stays refused:
+	g.net.authMsg, g.net.authNotified = msg, time.Time{}
+	g.net.authBlocked = true
 }
 
 // localSector returns the sector the local player is in, if any: none before a game is loaded and while resetting.
@@ -191,6 +228,7 @@ func (g *Game) netDisconnected() {
 	ns := &g.net
 	ns.joinAcked, ns.joinSent = false, time.Time{}
 	ns.sentGroup, ns.sentName, ns.sentInfo = "", "", ""
+	ns.authBlocked = false
 	ns.sectorSet, ns.sectorAcked = false, false
 }
 
@@ -466,6 +504,10 @@ func (g *Game) handleNetMessage(msg []byte) (err error) {
 		g.noteServerBack()
 		g.tickSector(now)
 	case protocol05.JoinNak:
+		if m.Reason >= protocol05.NakAuthRequired {
+			g.netJoinRefused(&m)
+			return
+		}
 		if m.Reason == protocol05.NakGroupFull {
 			log.Println("alttp: server: group full")
 		}

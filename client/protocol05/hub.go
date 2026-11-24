@@ -13,6 +13,10 @@ type Hub struct {
 
 	byConn  map[int]int
 	players []hubPlayer
+
+	// the group's password token, set by the first join with one; created is true once anyone joined:
+	created bool
+	token   []byte
 }
 
 type hubPlayer struct {
@@ -80,6 +84,27 @@ func (h *Hub) Handle(conn int, pkt []byte) (out []Delivery) {
 
 	if q.Kind == JoinGroup {
 		idx, ok := h.byConn[conn]
+		if !ok || !h.players[idx].live {
+			// group passwords, as in o2-server's p5auth.go:
+			a := q.Join.Auth
+			switch {
+			case len(a) != 0 && len(a) != sha256.Size, h.created && h.token == nil && len(a) != 0:
+				send(conn, MakeJoinNak(NakAuthUnexpected))
+				return
+			case h.created && h.token != nil && len(a) == 0:
+				send(conn, MakeJoinNak(NakAuthRequired))
+				return
+			case h.created && h.token != nil && string(a) != string(h.token):
+				send(conn, MakeJoinNak(NakAuthFailed))
+				return
+			case !h.created:
+				h.token = append([]byte(nil), a...)
+				if len(a) == 0 {
+					h.token = nil
+				}
+			}
+			h.created = true
+		}
 		fresh := !ok || !h.players[idx].live
 		if !ok {
 			// a session that left keeps its index:
