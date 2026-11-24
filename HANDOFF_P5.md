@@ -159,6 +159,8 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - alttpo `88d31d5`: the bird out of fact 0x00 and its chrs unbound.
 - o2 `90c959a`: the bird out of fact 0x00.
 - o2 `ad629aa`: remote players' item in use drawn.
+- o2 `829c0b2`: follower graphics fact 0x01; o2's follower sent, bound by pose.
+- alttpo `c6ff726`: follower graphics fact 0x01; followers bound by pose and drawn from the sender's fact.
 
 ### Group passwords
 
