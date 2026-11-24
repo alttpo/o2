@@ -343,6 +343,72 @@ func TestLinkSprites_SwordAndShield(t *testing.T) {
 	}
 }
 
+// The follower's two 16x16 sprites are sent in OAM order with Link's, their chrs bound to its tiles in the follower
+// graphics fact by pose (dma_var6 and dma_var7); another follower, or another pose, binds other tiles.
+func TestLinkSprites_Follower(t *testing.T) {
+	h := newSpriteTestRig(t)
+	e := h.gs.e
+
+	// the blind maiden, behind Link (sort_sprites_setting 0: OAM index $70 on), above the water ripples under her feet:
+	e.WRAM[0xF3CC], e.WRAM[0x0FB3] = 0x06, 0x00
+	e.WRAM[0x0AE8], e.WRAM[0x0AEA] = 0x40, 0x80
+	for k, o := range [][4]uint8{{0x80, 0x70, 0xD8, 0x24}, {0x88, 0x70, 0xD8, 0x64}, {0x80, 0x60, 0x20, 0x08}, {0x80, 0x68, 0x22, 0x08}} {
+		copy(e.WRAM[0x0800+(0x70+k)*4:], o[:])
+		e.WRAM[0x0A20+0x70+k] = []uint8{0, 0, 2, 2}[k]
+	}
+
+	parsed := h.frames(4)
+	var chrs []uint8
+	for _, sp := range parsed.sprites {
+		chrs = append(chrs, sp.b[2])
+	}
+	// head, body and shadow, then the follower (higher OAM indexes); not the ripples under its feet:
+	if !bytes.Equal(chrs, []byte{0x00, 0x02, 0x6C, 0x20, 0x22}) {
+		t.Fatalf("expected Link's and the follower's sprites; got chrs % x", chrs)
+	}
+	follower := parsed.sprites[3]
+	if !bytes.Equal(follower.b[:], []byte{0x80, 0x60, 0x20, 0x08, 0x02}) {
+		t.Errorf("unexpected follower OAM bytes % x", follower.b)
+	}
+	expect := func(what string, follower, dma6, dma7 uint32) {
+		t.Helper()
+		base := uint32(factFollowerGraphics)<<16 | follower*followerFactTiles
+		for chr, tile := range map[uint8]uint32{
+			0x20: base + dma6>>4, 0x21: base + dma6>>4 + 1, 0x30: base + dma6>>4 + 16, 0x31: base + dma6>>4 + 17,
+			0x22: base + dma7>>4, 0x23: base + dma7>>4 + 1, 0x32: base + dma7>>4 + 16, 0x33: base + dma7>>4 + 17,
+		} {
+			if got, ok := parsed.chrs[chr]; !ok || got != tile {
+				t.Errorf("%s: chr $%02x: expected fact 1 tile %#x; got %#x (%v)", what, chr, tile&0xFFFF, got, ok)
+			}
+		}
+	}
+	expect("maiden", 0x06, 0x40, 0x80)
+	// Link's chrs stay bound to the Link graphics fact:
+	if got := parsed.chrs[0x00]; got != 0x20 {
+		t.Errorf("chr $00: expected fact 0 tile $20; got %#x", got)
+	}
+
+	// another pose, then another follower:
+	e.WRAM[0x0AE8], e.WRAM[0x0AEA] = 0x00, 0xA0
+	parsed = h.frames(2)
+	expect("maiden's next pose", 0x06, 0x00, 0xA0)
+	e.WRAM[0xF3CC] = 0x01
+	parsed = h.frames(2)
+	expect("Zelda", 0x01, 0x00, 0xA0)
+
+	// no follower: neither sent nor bound:
+	e.WRAM[0xF3CC] = 0x00
+	parsed = h.frames(2)
+	for _, sp := range parsed.sprites {
+		if sp.b[2] == 0x20 || sp.b[2] == 0x22 {
+			t.Errorf("follower sprite sent without a follower: % x", sp.b)
+		}
+	}
+	if _, ok := parsed.chrs[0x20]; ok {
+		t.Errorf("chr $20 bound without a follower")
+	}
+}
+
 // alttpo draws remote sprites only with palettes the remote player sent, so every palette used is sent: Link's,
 // the shadow's and the dash dust's.
 func TestLinkSprites_PalettesSentForEffects(t *testing.T) {

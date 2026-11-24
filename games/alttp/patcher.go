@@ -19,8 +19,8 @@ import (
 //
 //	$706000..$7062FF  zeroed by the patched init code on reset:
 //	  $706000           capture tables: ancilla types ($40 bytes) and chrs ($100 bytes); see emitCaptureExtras
-//	  $706140..$70620E  copy of Link's OAM entries and the local player's captured sparkles, dust, projectiles and
-//	                    carried and thrown objects and sound effects, written by the trampoline every frame
+//	  $706140..$70623E  copy of Link's OAM entries and the local player's captured sparkles, dust, projectiles and
+//	                    carried and thrown objects, sound effects and follower, written by the trampoline every frame
 //	  $7062F0..$7062F3  the player's colors for Link's palette (written by o2); see linkcolor.go
 //	  $7062F4..$7062FC  remote sound effects for the game to play (written by o2); see sfx.go
 //	$706300..$706605  remote map16 changes staged for area loads (written by o2; both tables are emptied by the
@@ -120,9 +120,27 @@ const (
 	// the screen positions of the enemies drawing their death in the frame the extras were captured in, listed on the
 	// first captured chr of enemyDeathChrs (see emitDyingEnemiesList), for o2 to leave out the death chrs near them:
 	// byte length (u16; $FFFF if more than linkOAMDyingMax enemies were dying), then x and y (s16 each):
-	linkOAMCopyDying    = linkOAMCopySfx + sfxLocalSize
-	linkOAMDyingMax     = 8
-	linkOAMCopyReadSize = linkOAMCopyDying + 2 + linkOAMDyingMax*4
+	linkOAMCopyDying = linkOAMCopySfx + sfxLocalSize
+	linkOAMDyingMax  = 8
+	// the follower's sprites (see emitFollowerCopy), at the offsets lfc*:
+	linkOAMCopyFollower = linkOAMCopyDying + 2 + linkOAMDyingMax*4
+	linkOAMCopyReadSize = linkOAMCopyFollower + lfcSize
+)
+
+// layout of the follower's sprites at linkOAMCopyFollower:
+const (
+	// the follower ($7EF3CC), 0 if none was found drawn this frame:
+	lfcFollower = 0
+	// the OAM index of its chr $22 entry:
+	lfcIndex = 1
+	// the entry before it (x, y, chr, attributes; Y = $F0 if it isn't the follower's chr $20, as for the purple chest
+	// and the super bomb), then the chr $22 entry:
+	lfcEntries = 2
+	// the extended attributes of both entries (size << 1 | x bit 8):
+	lfcExt = lfcEntries + 8
+	// dma_var6 and dma_var7 ($0AE8, $0AEA), which the follower's chrs $20 and $22 are uploaded from:
+	lfcDMA  = lfcExt + 2
+	lfcSize = lfcDMA + 2
 )
 
 // o2 reads the copy with a single read of at most 255 bytes:
@@ -498,7 +516,12 @@ func emitPreMain(a *asm.Emitter, gameModes []byte, remoteFrame, manipPending uin
 	a.Comment("apply the attributes of manipulable objects the room load applied:")
 	a.JSL(manipPending)
 	a.Comment("remote sprites: copy Link's OAM entries, sparkles and dust for o2 to send, and draw remote players:")
-	emitGateTest(a, gateSprites, "preMainExit")
+	a.Comment("the sprites gate (preMainExit is too far for a branch):")
+	a.LDA_long(gatesAddr)
+	a.AND_imm8_b(gateSprites)
+	a.BNE("preMain_sprites")
+	a.JMP_abs("preMainExit")
+	a.Label("preMain_sprites")
 	emitTimeCheckLong(a, mustLateLineFor(linkOAMCopyCycles, "Link OAM copy"), "linkOAMCopy_time", "linkOAMCopy_late")
 	emitLinkOAMCopy(a)
 	a.Label("linkOAMCopy_late")
@@ -820,8 +843,8 @@ func (r *patchROM) write(rom *snes.ROM, text io.Writer) (err error) {
 // coordinates of all entries to $F0 and made Link disappear for alttpo players. o2 may still read the copy while it
 // is being written, which at worst mixes two consecutive frames' entries.
 //
-// Cycles (cycles_test.go, with the gate test and the manipPending call before it): 26 with the sprites gate off, 179
-// with it on.
+// Cycles (cycles_test.go, with the gate test and the manipPending call before it): 28 with the sprites gate off, 235
+// with it on, 478 with a follower in the last OAM entry emitFollowerCopy looks at.
 func emitLinkOAMCopy(a *asm.Emitter) {
 	a.Comment("copy Link's OAM entries to SRAM before the next frame clears them, with DMA channel 5 from the WRAM port")
 	a.Comment("(neither the game nor randomizers use channel 5); the copies are contiguous in SRAM:")
@@ -867,8 +890,114 @@ func emitLinkOAMCopy(a *asm.Emitter) {
 	a.LDA_imm16_w(linkOAMCopyDMASize)
 	a.STA_abs(0x4355)
 	a.STX_abs(0x420B)
+	emitFollowerCopy(a)
 	a.PLB()
 	a.PLP()
+}
+
+// followerOAMRegions are the OAM indexes Follower_AnimateMovement_preserved draws the follower into, for each
+// sort_sprites_setting ($0FB3): kTagalongDraw_SprOffs0 (the follower in front of Link) and kTagalongDraw_SprOffs1,
+// divided by 4. Its chr $22 entry is one of the first 4 of either: chr $20 before it, and before that the two entries
+// of the water ripples or grass under its feet when it is in shallow water or tall grass.
+var followerOAMRegions = [2][2]uint16{{0x5C, 0x70}, {0x30, 0x44}}
+
+// emitFollowerCopy copies the follower's sprites to linkOAMCopyFollower: it looks for the follower's chr $22 entry
+// (name table 0, on screen) among the OAM entries the follower may be drawn into (followerOAMRegions), and copies it,
+// the entry before it, their extended attributes, dma_var6 and dma_var7. Called from emitLinkOAMCopy with DB = $00,
+// A 16-bit; leaves A and X 16-bit.
+//
+// Cycles: about 20 without a follower, at most about 250 with one (cycles_test.go, lagcheck_test.go).
+func emitFollowerCopy(a *asm.Emitter) {
+	f := func(o uint32) uint32 { return linkOAMCopyAddr + linkOAMCopyFollower + o }
+	regions := followerOAMRegions
+	a.Comment("the follower's sprites, if it has any drawn on screen:")
+	a.REP(0x30)
+	a.LDA_long(0x7EF3CC)
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("lfc_none")
+	a.CMP_imm16_w(followerCount)
+	a.BCC("lfc_follower")
+	a.Label("lfc_none")
+	a.SEP(0x20)
+	a.LDA_imm8_b(0x00)
+	a.JMP_abs("lfc_done")
+	a.AssumeREP(0x30)
+	a.Label("lfc_follower")
+	a.Comment("X = the byte offset of the first region's first entry, for sort_sprites_setting:")
+	a.LDX_imm16_w(regions[0][0] << 2)
+	a.LDA_abs(0x0FB3)
+	a.AND_imm16_w(0x00FF)
+	a.BEQ("lfc_look")
+	a.LDX_imm16_w(regions[1][0] << 2)
+	a.Label("lfc_look")
+	a.SEP(0x20)
+	a.Comment("the first 4 entries of each region: chr $22 in name table 0, on screen (ClearOAMBuffer leaves the chrs")
+	a.Comment("of the last frame, with Y = $F0):")
+	for i := 0; i < 8; i++ {
+		d := uint16(i&3) << 2
+		if i >= 4 {
+			d += (regions[0][1] - regions[0][0]) << 2
+		}
+		next := fmt.Sprintf("lfc_next%d", i)
+		a.LDA_abs_x(0x0802 + d)
+		a.CMP_imm8_b(0x22)
+		a.BNE(next)
+		a.LDA_abs_x(0x0803 + d)
+		a.LSR()
+		a.BCS(next)
+		a.LDA_abs_x(0x0801 + d)
+		a.CMP_imm8_b(0xF0)
+		a.BEQ(next)
+		a.REP(0x21)
+		a.TXA()
+		a.ADC_imm16_w(d)
+		a.TAX()
+		a.JMP_abs("lfc_found")
+		a.AssumeSEP(0x20)
+		a.Label(next)
+	}
+	a.JMP_abs("lfc_none")
+	a.AssumeREP(0x20)
+
+	a.Label("lfc_found")
+	a.LDA_abs_x(0x0800)
+	a.STA_long(f(lfcEntries + 4))
+	a.LDA_abs_x(0x0802)
+	a.STA_long(f(lfcEntries + 6))
+	a.Comment("the entry before it, if it is chr $20 in name table 0:")
+	a.LDA_abs_x(0x07FE)
+	a.AND_imm16_w(0x01FF)
+	a.CMP_imm16_w(0x0020)
+	a.BNE("lfc_no20")
+	a.LDA_abs_x(0x07FC)
+	a.STA_long(f(lfcEntries + 0))
+	a.LDA_abs_x(0x07FE)
+	a.STA_long(f(lfcEntries + 2))
+	a.BRA("lfc_ext")
+	a.Label("lfc_no20")
+	a.LDA_imm16_w(0xF000)
+	a.STA_long(f(lfcEntries + 0))
+	a.Label("lfc_ext")
+	a.Comment("X = the OAM index; the extended attributes of both entries:")
+	a.TXA()
+	a.LSR()
+	a.LSR()
+	a.TAX()
+	a.LDA_abs_x(0x0A1F)
+	a.STA_long(f(lfcExt))
+	a.SEP(0x20)
+	a.TXA()
+	a.STA_long(f(lfcIndex))
+	a.LDA_abs(0x0AE8)
+	a.STA_long(f(lfcDMA))
+	a.LDA_abs(0x0AEA)
+	a.STA_long(f(lfcDMA + 1))
+	a.LDA_long(0x7EF3CC)
+	a.Label("lfc_done")
+	a.STA_long(f(lfcFollower))
+	a.REP(0x20)
+	a.Comment("emitLinkOAMCopy's PLP restores the index registers' width:")
+	a.AssumeSEP(0x10)
 }
 
 func (p *Patcher) readAt(busAddr uint32) {

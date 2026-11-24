@@ -140,8 +140,21 @@ more messages, which corrupted the rest of the packet.
   cycles per frame while someone is in the same location; the scan of the OAM buffer (up to about 5,000 cycles)
   only runs while one exists. alttpo draws remote sprites only with palettes the remote player sent, so o2 sends
   every OBJ palette its sprites use (it used to send only palettes 5-7, which made sparkles and dust black), read
-  from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (items in use, held
-  items like the lamp, followers) are not sent. o2 also does not send ancillae, tilemaps or PvP.
+  from `$7EC601..$7EC6FF` (color 0 of palette 0 is transparent and not read). Other sprites (held items like the lamp)
+  are not sent. o2 also does not send ancillae, tilemaps or PvP.
+- **Followers are sent and bound by pose (fact 0x01).** A follower's two 16x16 sprites (chrs `$20` and `$22`; only
+  `$22` for the purple chest and the super bomb) show tiles NMI_DoUpdates uploads every frame from the buffer
+  LoadFollowerGraphics built for the follower (`$7EB940`, two rows of 16 tiles), at `dma_var6`/`dma_var7`
+  (`$0AE8`/`$0AEA`) and `$200` bytes below. Both clients build the follower graphics fact (fact 0x01) from ROM: that
+  buffer for every follower `$00`-`$0D`, `$400` bytes each (`$3800` in all; FNV-1a `$06AC8A41` on the US and JP
+  ROMs, the same in both). MsgSpriteChrs binds chr `$20` (n = 2) to tile `follower*32 + dma_var6/16`, `$30` to 16
+  tiles after it, and `$22`/`$32` the same with `dma_var7`, only while a follower (`$7EF3CC` `$01`-`$0D`) is drawn.
+  alttpo draws bound chrs `$20`-`$3F` from the sender's fact, so another player's follower shows with that player's
+  follower and pose, not the local one's VRAM; unbound ones (NPCs using the same chrs) are still drawn from the local
+  VRAM. o2 sends its follower: the trampoline copies the follower's chr `$22` entry, the entry before it, their
+  extended attributes, `$7EF3CC` and the DMA variables to SRAM after Link's (`emitFollowerCopy`; it looks at the first
+  4 OAM entries of the two regions `Follower_AnimateMovement_preserved` draws into for the sort setting). o2 does not
+  draw remote players' followers.
 - **Enemy deaths are not sent as player sprites.** Enemies are synced on their own (alttpo), so every player in the
   room draws an enemy's death poof (`SpriteDeath_DrawPoof`), explosion (`SpriteModule_Explode`) or poof
   (`SpriteModule_Poof`) already. Both used to also send them along with their player's sprites, since some of their

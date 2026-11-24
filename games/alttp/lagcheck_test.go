@@ -195,6 +195,10 @@ func TestLagCheck_Budgets(t *testing.T) {
 			binary.LittleEndian.PutUint16(l[6:], 0x0100)
 			e.WRAM[0x1_2000+0x80] = uint8(manipAttrBase)
 			e.WRAM[0x1000], e.WRAM[0x1001] = 0, 0
+			// a follower in the last OAM entry emitFollowerCopy looks at:
+			e.WRAM[0xF3CC], e.WRAM[0x0FB3] = 0x01, 0x01
+			last := int(followerOAMRegions[1][1]) + 3
+			copy(e.WRAM[0x0800+(last-1)*4:], []byte{0x40, 0x50, 0x20, 0x28, 0x40, 0x58, 0x22, 0x28})
 		})
 	}
 

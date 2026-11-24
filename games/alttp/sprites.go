@@ -25,6 +25,11 @@ import (
 // objects) from their own VRAM. Sprites showing one of Link's chrs that has no tile (e.g. an unknown DMA source) are not
 // sent.
 //
+// The follower's two 16x16 sprites (chrs $20 and $22) are sent the same way, from the copy the patched ROM makes of
+// them (see emitFollowerCopy), with their chrs bound by pose to tiles of the follower graphics fact (fact 0x01, see
+// followerfact.go), so that receivers draw the follower this player has, in its pose. o2 doesn't draw remote players'
+// followers itself.
+//
 // Incoming sprites are used to draw remote players (see remotesprites.go).
 
 // linkOAMCount is the number of OAM entries reserved for Link, starting at OAM index ($0352 >> 2):
@@ -50,6 +55,35 @@ var linkChrRows = []struct {
 	{0x07, 2, 0x0AC4, true}, {0x17, 2, 0x0AC6, true}, // shield
 	{0x09, 2, 0x0AC8, true}, {0x19, 2, 0x0ACA, true}, // item in use
 }
+
+// followerChrRows are the rows of the follower's chrs that NMI_DoUpdates uploads every frame from the buffer
+// LoadFollowerGraphics built (see followerfact.go): chrs $20-$21 from dma_var6, $22-$23 from dma_var7, and the bottom
+// rows $200 bytes further on.
+var followerChrRows = []struct {
+	chr, n uint8
+	// 0 for dma_var6, 1 for dma_var7:
+	dma    int
+	bottom bool
+}{
+	{0x20, 2, 0, false}, {0x30, 2, 0, true},
+	{0x22, 2, 1, false}, {0x32, 2, 1, true},
+}
+
+// spriteChrRow is a row of chrs bound to tiles of a fact in MsgSpriteChrs.
+type spriteChrRow struct {
+	chr, n, fact uint8
+}
+
+// spriteChrRows are the rows of chrs o2 binds: Link's to fact 0x00, the follower's to fact 0x01.
+var spriteChrRows = func() (rows []spriteChrRow) {
+	for _, r := range linkChrRows {
+		rows = append(rows, spriteChrRow{r.chr, r.n, factLinkGraphics})
+	}
+	for _, r := range followerChrRows {
+		rows = append(rows, spriteChrRow{r.chr, r.n, factFollowerGraphics})
+	}
+	return
+}()
 
 // isLinkChr reports whether chr is one of Link's chrs in linkChrRows.
 func isLinkChr(chr uint16) bool {
@@ -83,8 +117,9 @@ type linkSpriteSync struct {
 	// sprite palettes 0 through 7 ($7EC600..$7EC6FF; color 0 of palette 0 is not read, it is transparent anyway):
 	palettes [8][32]byte
 
-	// the tiles of fact 0x00 that Link's chrs $00..$1F show this frame; noFactTile where none:
-	chrTiles [0x20]uint16
+	// the tiles of fact 0x00 that Link's chrs $00..$1F show this frame, and of fact 0x01 that the follower's chrs
+	// $20-$23 and $30-$33 show (see followerChrRows); noFactTile where none:
+	chrTiles [0x40]uint16
 }
 
 func (g *Game) initSpriteSync() {
@@ -152,7 +187,7 @@ func (s *linkSpriteSync) oamCopyDMAU16(addr uint32) uint16 {
 
 // linkChrTiles returns the tiles of fact 0x00 that Link's chrs show, from the DMA source addresses in the copy of
 // Link's OAM entries and the sword and shield levels.
-func (g *Game) linkChrTiles() (tiles [0x20]uint16) {
+func (g *Game) linkChrTiles() (tiles [0x40]uint16) {
 	s := &g.linkSprites
 	for i := range tiles {
 		tiles[i] = noFactTile
@@ -168,6 +203,70 @@ func (g *Game) linkChrTiles() (tiles [0x20]uint16) {
 		}
 	}
 	return
+}
+
+// followerChrTiles sets the tiles of fact 0x01 that the follower's chrs show, from the follower and dma_var6 and
+// dma_var7 in the copy of its sprites (see emitFollowerCopy).
+func (s *linkSpriteSync) followerChrTiles(tiles *[0x40]uint16) {
+	fc := s.oamCopy[linkOAMCopyFollower:]
+	for _, r := range followerChrRows {
+		t := followerFactTile(fc[lfcFollower], fc[lfcDMA+r.dma])
+		if t == noFactTile {
+			continue
+		}
+		if r.bottom {
+			t += followerFactBottomRow
+		}
+		for k := uint8(0); k < r.n; k++ {
+			tiles[r.chr+k] = t + uint16(k)
+		}
+	}
+}
+
+// followerSprites returns the follower's sprites from the copy (see emitFollowerCopy): its chr $20 and $22 entries
+// that are on screen and whose chrs have tiles.
+func (s *linkSpriteSync) followerSprites() (sprites []linkSprite) {
+	fc := s.oamCopy[linkOAMCopyFollower:]
+	if fc[lfcFollower] == 0 || fc[lfcIndex] == 0 || fc[lfcIndex] >= 0x80 {
+		return nil
+	}
+	for k := 0; k < 2; k++ {
+		sp := linkSprite{index: fc[lfcIndex] - 1 + uint8(k)}
+		copy(sp.b[:4], fc[lfcEntries+k*4:])
+		sp.b[4] = fc[lfcExt+k] & 0x03
+		sp.size = (sp.b[4] >> 1) & 1
+		sp.pal = (sp.b[3] >> 1) & 7
+		if sp.b[2] != 0x20+uint8(k)*2 || sp.b[3]&1 != 0 || !oamOnScreen(&sp) {
+			continue
+		}
+		chr := uint16(sp.b[2])
+		chrs := []uint16{chr}
+		if sp.size != 0 {
+			chrs = append(chrs, chr+0x01, chr+0x10, chr+0x11)
+		}
+		ok := true
+		for _, c := range chrs {
+			ok = ok && s.chrTiles[c] != noFactTile
+		}
+		if ok {
+			sprites = append(sprites, sp)
+		}
+	}
+	return
+}
+
+// oamOnScreen reports whether an OAM entry is enabled and on screen horizontally, the way alttpo's
+// Sprite::decodeOAMTableBytes decides.
+func oamOnScreen(sp *linkSprite) bool {
+	if sp.b[1] == 0xF0 {
+		return false
+	}
+	px := 8
+	if sp.size != 0 {
+		px = 16
+	}
+	x := oamX(sp)
+	return x > -px && x < 256
 }
 
 // isLinkShadowChr reports whether chr is one of Link's shadow tiles: $6C on the ground, $28 or $38 while recoiling or
@@ -226,6 +325,7 @@ func (g *Game) readLinkSprites() {
 		g.updateSwordShieldGfx(g.wram[0xF359], g.wram[0xF35A])
 	}
 	s.chrTiles = g.linkChrTiles()
+	s.followerChrTiles(&s.chrTiles)
 
 	s.sprites = s.sprites[:0]
 	for j := 0; j < linkOAMCount; j++ {
@@ -242,18 +342,7 @@ func (g *Game) readLinkSprites() {
 		sp.pal = (sp.b[3] >> 1) & 7
 
 		// skip disabled sprites the same way alttpo's Sprite::decodeOAMTableBytes does:
-		if sp.b[1] == 0xF0 {
-			continue
-		}
-		x := int(sp.b[0]) | int(sp.b[4]&1)<<8
-		if x >= 256 {
-			x -= 512
-		}
-		px := 8
-		if sp.size != 0 {
-			px = 16
-		}
-		if !(x > -px && x < 256) {
+		if !oamOnScreen(&sp) {
 			continue
 		}
 
@@ -278,6 +367,9 @@ func (g *Game) readLinkSprites() {
 
 		s.sprites = append(s.sprites, sp)
 	}
+
+	// the follower's sprites, bound to tiles of fact 0x01:
+	s.sprites = append(s.sprites, s.followerSprites()...)
 
 	// captured sparkles, dust, projectiles and carried and thrown objects (see emitCaptureExtras): their tiles are
 	// static or in the common sprite sheets, which receivers draw from their own VRAM:
@@ -335,10 +427,10 @@ func SerializeSprites(w io.Writer, sprites []linkSprite) error {
 }
 
 // SerializeSpriteChrs writes MsgSpriteChrs: `u8 count`, then per binding `u8 chr, u8 n, u8 factNum, u16 factTile`:
-// chrs [chr, chr+n) show tiles [factTile, factTile+n) of the fact. Only the rows of Link's chrs that the sprites show
-// are bound.
-func SerializeSpriteChrs(w io.Writer, sprites []linkSprite, tiles *[0x20]uint16) error {
-	var used [0x20]bool
+// chrs [chr, chr+n) show tiles [factTile, factTile+n) of the fact. Only the rows of Link's and the follower's chrs
+// (spriteChrRows) that the sprites show are bound.
+func SerializeSpriteChrs(w io.Writer, sprites []linkSprite, tiles *[0x40]uint16) error {
+	var used [0x40]bool
 	for _, sp := range sprites {
 		if sp.b[3]&1 != 0 {
 			continue
@@ -349,14 +441,14 @@ func SerializeSpriteChrs(w io.Writer, sprites []linkSprite, tiles *[0x20]uint16)
 			chrs = append(chrs, chr+0x01, chr+0x10, chr+0x11)
 		}
 		for _, c := range chrs {
-			if c < 0x20 {
+			if c < 0x40 {
 				used[c] = true
 			}
 		}
 	}
 	var entries []byte
 	n := 0
-	for _, r := range linkChrRows {
+	for _, r := range spriteChrRows {
 		any := false
 		for k := uint8(0); k < r.n; k++ {
 			any = any || used[r.chr+k]
@@ -364,7 +456,7 @@ func SerializeSpriteChrs(w io.Writer, sprites []linkSprite, tiles *[0x20]uint16)
 		if !any || tiles[r.chr] == noFactTile {
 			continue
 		}
-		entries = append(entries, r.chr, r.n, factLinkGraphics, uint8(tiles[r.chr]), uint8(tiles[r.chr]>>8))
+		entries = append(entries, r.chr, r.n, r.fact, uint8(tiles[r.chr]), uint8(tiles[r.chr]>>8))
 		n++
 	}
 	if n == 0 {

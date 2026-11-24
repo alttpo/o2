@@ -412,10 +412,23 @@ func newRSCycleScenario(t *testing.T) *skScenario {
 	return h
 }
 
-// The remote sprites code with 3 remote players in the room, and nothing else drawn.
+// The remote sprites code with 3 remote players in the room, and nothing else drawn but the local player's follower,
+// in the last OAM entry emitFollowerCopy looks at.
 func TestCycleBudgets_RemoteSprites(t *testing.T) {
 	p := newCycleProfile(t, "VT test")
 	h := newRSCycleScenario(t)
+	g1 := h.gs[0]
+	e := g1.e
+	e.WRAM[0xF3CC], e.WRAM[0x0FB3] = 0x01, 0x00
+	last := int(followerOAMRegions[0][1]) + 3
+	// the module draws the follower every frame:
+	before := g1.beforeEmulate
+	g1.beforeEmulate = func() {
+		if before != nil {
+			before()
+		}
+		copy(e.WRAM[0x0800+(last-1)*4:], []byte{0x40, 0x50, 0x20, 0x28, 0x40, 0x58, 0x22, 0x28})
+	}
 	for f := 0; f < 8; f++ {
 		h.profileFrame(p, 0)
 	}
@@ -425,8 +438,8 @@ func TestCycleBudgets_RemoteSprites(t *testing.T) {
 		"remoteFrame": 7_800,
 		"NMI hooks":   50,
 		"NMI upload":  600,
-		// with the Link OAM copy's time check:
-		"preMain: manip pending call, gate, Link OAM copy": 230,
+		// with the Link OAM copy's time check, and the follower copy's worst case:
+		"preMain: manip pending call, gate, Link OAM copy": 560,
 	})
 }
 

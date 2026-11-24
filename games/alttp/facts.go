@@ -10,7 +10,8 @@ import (
 // Facts (see o2-server's PROTOCOL05.md, "Facts")
 //
 // A fact is immutable data a player uploads once; the server keeps it and hands it to the others. o2 uploads the Link
-// graphics fact (fact 0x00, see linkfact.go) after every new join: the first chunk alone, then, unless the server
+// graphics fact (fact 0x00, see linkfact.go) and the follower graphics fact (fact 0x01, see followerfact.go) after every
+// new join: the first chunk alone, then, unless the server
 // answers that it has the fact already, the rest at factPutPerTick chunks per tick, resending what fact-status
 // doesn't mark received after factResend. The server's fact-lists say which facts each player has (number, size and
 // hash); o2 keeps fact contents by hash, its own included, and downloads a remote player's fact only when something
@@ -81,6 +82,11 @@ func (g *Game) buildLocalFacts() {
 		log.Printf("alttp: facts: no Link graphics fact: %v\n", err)
 	} else {
 		f.local[factLinkGraphics] = &localFact{data: fact}
+	}
+	if fact, err := g.buildFollowerFact(); err != nil {
+		log.Printf("alttp: facts: no follower graphics fact: %v\n", err)
+	} else {
+		f.local[factFollowerGraphics] = &localFact{data: fact}
 	}
 }
 

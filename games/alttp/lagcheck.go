@@ -38,11 +38,11 @@ const (
 
 	// the time checks of the pieces of preMain after the module, each from the check to the next check (or the end of
 	// preMain), with a margin over what lagcheck_test.go (TestLagCheck_Budgets) measures from the check to the end of
-	// the piece (130, 184, 170 and 217 + RoomDraw_16x16Single); sfx's also covers manipPending with nothing pending and
+	// the piece (130, 184, 446 with a follower and 217 + RoomDraw_16x16Single); sfx's also covers manipPending with nothing pending and
 	// the sprites gate test after it:
 	linkColorCycles    = 300
 	sfxCycles          = 300
-	linkOAMCopyCycles  = 250
+	linkOAMCopyCycles  = 500
 	manipPendingCycles = 150
 	// one object of the manipulable objects pending after a room load: RoomDraw_16x16Single and the pending entry:
 	manipPendingEntryCycles = updRoomDrawCycles + 300

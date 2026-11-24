@@ -49,6 +49,15 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
 - o2 draws the item in use as a part like the sword and shield (`remoteEquipBlocks`), within `remotePartMax` (4): the
   table, SRAM state and NMI budget are unchanged. With the head and body, sword, shield and item all shown, the item is
   left out (sword, shield, item order); in practice Link doesn't show his sword while using an item.
+- Fact 0x01, the follower graphics (2026-11-24): for every follower $00-$0D ($7EF3CC), the $400-byte buffer
+  LoadFollowerGraphics builds at $7EB940 (two rows of 16 tiles), at follower * $400 ($3800 = 14,336 bytes). Senders
+  bind chr $20 (n = 2) to tile follower*32 + dma_var6/16 ($0AE8), chr $30 to 16 tiles after it, and chrs $22/$32 the
+  same with dma_var7 ($0AEA), only while $7EF3CC is $01-$0D; MsgSpriteChrs is unchanged, it just binds chrs up to $3F
+  now. NPCs that borrow the follower chrs with no follower (crystal maidens, Kiki, the old mountain man) stay unbound.
+  o2 finds its follower's OAM entries by looking for chr $22 (name table 0, on screen) in the first 4 entries of the
+  two OAM regions Follower_AnimateMovement_preserved uses for the sort setting ($0FB3); the copy of Link's OAM
+  entries grew by 14 bytes to 255, the most one read takes. Worst case 478 cycles for the copy (was 235);
+  linkOAMCopyCycles is 500.
 
 ## Status
 
@@ -94,6 +103,12 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       buffer. Tests: `TestRemoteSpritesScenario_ItemInUse`, `_ItemPastPartMax`.
 - [x] The flute bird: not synced (see decisions); removed from fact 0x00.
 - [x] Stop padding the group (`client.SetGroup`).
+- [x] Follower graphics fact (fact 0x01, `followerfact.go`) built from ROM and uploaded; `TestFollowerFact_MatchesGame`
+      runs the game's LoadFollowerGraphics for every follower on the US and JP ROMs. o2 sends its follower's sprites
+      with chrs `$20`-`$23`/`$30`-`$33` bound by pose (`emitFollowerCopy`, `followerChrRows`); test
+      `TestLinkSprites_Follower`.
+- [ ] o2 draws remote players' followers: not done (decided 2026-11-24). It needs two more parts per player through
+      the NMI upload (562 of 600 cycles already), so it would cost the sword, shield or item, or a bigger budget.
 
 ### alttpo
 
@@ -110,14 +125,16 @@ No compatibility with p4 or game protocol v1 is kept anywhere. o2 and alttpo mus
       SM, and the same on SMZ3) and Samus' sprites by pose (`sm_chr_rows`); `send_sprites` takes its rows from
       `link_chr_rows` or `sm_chr_rows`. Checked only by compiling and by running the row builder over every pose.
 - [x] Cleanup: the unique tile capture and drawing are gone.
+- [x] Follower graphics fact (fact 0x01, `FollowerFact.as`), byte for byte o2's (FNV-1a $06AC8A41 on the US and JP
+      ROMs); `send_sprites` binds the follower's chrs by pose (`follower_chr_rows`) and receivers draw bound chrs up to
+      $3F from the sender's fact.
 - [ ] SMZ3: no Link graphics fact is built ("sprite sheet routines not found in ROM"): `LinkFactBuilder.find` only
       knows the US and JP addresses of `Decompress_sprite_arbitrary` etc., and SMZ3 moves ALTTP's code. Link's
       sprites aren't sent in SMZ3 until it finds them there.
 
 ### Open follow-ups (both clients)
 
-- [ ] Followers' graphics as a fact (chrs $20-$23, $30-$33): alttpo used to send them inline; receivers now draw a
-      remote follower with their own VRAM's tiles.
+- [x] Followers' graphics as a fact (chrs $20-$23, $30-$33): fact 0x01, bound by pose (see decisions).
 - [ ] End-to-end check with o2-server, o2 and alttpo running together (not done in this session: only unit tests for
       o2-server and o2, and compile checks for alttpo).
 
