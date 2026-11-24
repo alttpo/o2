@@ -441,6 +441,9 @@ func (g *Game) enqueueMainRead(q []snes.Read) []snes.Read {
 
 func (g *Game) queueReads(q []snes.Read) []snes.Read {
 	if g.monotonicFrameTime&7 == 7 {
+		// Link's sprites and sfx are sent every frame, so read their copy on this cycle too; before the SRAM, which
+		// changes far less often, so that it is read as close to the frame as the other cycles read it:
+		q = g.enqueueSpriteReads(q)
 		// read SRAM data less frequently:
 		q = g.enqueueSRAMRead(q)
 
