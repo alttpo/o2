@@ -34,23 +34,57 @@ type Options struct {
 	Scale int
 	// Logger, if set, gets a line for each entrance and room the flood fill visits.
 	Logger io.Writer
+	// OnRoom, if set, is called with each room as soon as it is drawn, at full size (RoomPixels), from one of several
+	// goroutines at once. img is only valid during the call.
+	OnRoom func(r *Room, img *image.NRGBA)
+	// NoImage leaves Map.Image nil, for callers that only want the rooms from OnRoom.
+	NoImage bool
+}
+
+// Entrance is the state an underworld entrance enters the underworld with.
+type Entrance struct {
+	ID uint8
+	// Room is the room it starts in, and Start where Link is in it:
+	Room  uint16
+	Start StartPos
+	// Blockset is the dungeon's main tileset ($0AA1), Palace the dungeon ($040C, $FF for caves and houses) and Floor
+	// the floor ($A4) the entrance sets:
+	Blockset uint8
+	Palace   uint8
+	Floor    int8
 }
 
 // Room is a room the flood fill reached.
 type Room struct {
 	Room uint16
-	// Entrance is the entrance whose graphics the room was drawn with.
-	Entrance uint8
+	// Entrance is the entrance whose graphics the room was drawn with, and EntranceState what it enters with.
+	Entrance      uint8
+	EntranceState *Entrance
 	// From is the room Link came from and Via the way he came, which is ExitEntrance for the entrance's own room.
 	From uint16
 	Via  Exit
 	// Exits are the ways out of the room the flood fill found.
 	Exits []Exit
+	// Walk is where Link can be in the room.
+	Walk *Walk
+	// Starts are the entrances that start in the room.
+	Starts []*Entrance
+	// Palace is the dungeon ($040C) Link is in when he gets to the room from Entrance: the entrance's, switched
+	// between the sewers ($00) and Hyrule Castle ($02) by the dungeon toggle doors on the way.
+	Palace uint8
+	// FullSize tells, for each quadrant of the room (link_quadrant_y | link_quadrant_x: 0 top left, 1 top right, 2
+	// bottom left, 3 bottom right), whether the screen scrolls over the whole room horizontally (bit 0) and
+	// vertically (bit 1) or stays in the quadrant (quadrant_fullsize_x and _y; see Dungeon_AdjustForRoomLayout).
+	FullSize [4]uint8
+	// Floor is the room's floor, counted from the entrance's by the drops (one down) and staircases (one up or down)
+	// the flood fill took to get to the room, if FloorKnown.
+	Floor      int8
+	FloorKnown bool
 }
 
 // drawRoom is a room to draw into the map.
 type drawRoom struct {
-	room uint16
+	room *Room
 	gfx  *roomGfx
 }
 
@@ -69,6 +103,8 @@ type Map struct {
 	Image *image.NRGBA
 	// Rooms are the rooms reached, by room number; nil for those never reached.
 	Rooms [RoomCount]*Room
+	// Entrances are the entrances loaded, by entrance number; nil for those that start in a room drawn before.
+	Entrances [EntranceCount]*Entrance
 	// RoomSize is the size of each room in Image in pixels.
 	RoomSize int
 }
@@ -108,13 +144,13 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 	}
 
 	size := RoomPixels / scale
-	m = &Map{
-		Image:    image.NewNRGBA(image.Rect(0, 0, GridColumns*size, GridRows*size)),
-		RoomSize: size,
-	}
-	// opaque black for the rooms never reached:
-	for i := 3; i < len(m.Image.Pix); i += 4 {
-		m.Image.Pix[i] = 0xFF
+	m = &Map{RoomSize: size}
+	if !opts.NoImage {
+		m.Image = image.NewNRGBA(image.Rect(0, 0, GridColumns*size, GridRows*size))
+		// opaque black for the rooms never reached:
+		for i := 3; i < len(m.Image.Pix); i += 4 {
+			m.Image.Pix[i] = 0xFF
+		}
 	}
 	// rooms are drawn on other goroutines while the emulator loads the next ones:
 	draws := make(chan drawRoom, runtime.GOMAXPROCS(0))
@@ -126,8 +162,13 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 			full := image.NewNRGBA(image.Rect(0, 0, RoomPixels, RoomPixels))
 			for d := range draws {
 				d.gfx.render(full, 0, 0)
-				col, row := int(d.room%GridColumns), int(d.room/GridColumns)
-				downscale(m.Image, col*size, row*size, full, scale)
+				if m.Image != nil {
+					col, row := int(d.room.Room%GridColumns), int(d.room.Room/GridColumns)
+					downscale(m.Image, col*size, row*size, full, scale)
+				}
+				if opts.OnRoom != nil {
+					opts.OnRoom(d.room, full)
+				}
 			}
 		}()
 	}
@@ -144,7 +185,43 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 		room uint16
 		from uint16
 		via  Exit
+		// the floor of the room, if known:
+		floor      int8
+		floorKnown bool
+		// the dungeon Link is in ($040C):
+		palace uint8
+		// whether the flood went through a dungeon toggle door to the room and was put off to the next round:
+		toggled bool
 	}
+
+	// every entrance's room and state, from Dungeon_LoadEntrance alone:
+	headers := findRoomHeaders(rom)
+	starts := make(map[uint16][]*Entrance)
+	for id := 0; id < EntranceCount; id++ {
+		start, err := e.peekEntrance(uint8(id))
+		if err != nil {
+			return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
+		}
+		if start >= RoomCount {
+			continue
+		}
+		ent := &Entrance{
+			ID:   uint8(id),
+			Room: start,
+			Start: StartPos{
+				X:     e.wram16(0x22) & 0x1FF,
+				Y:     e.wram16(0x20) & 0x1FF,
+				Layer: e.wram8(0xEE),
+				Lower: e.wram8(0x0476),
+			},
+			Blockset: e.wram8(0x0AA1),
+			Palace:   e.wram8(0x040C),
+			Floor:    int8(e.wram8(0xA4)),
+		}
+		m.Entrances[id] = ent
+		starts[start] = append(starts[start], ent)
+	}
+
 	roots := make([][]visit, EntranceCount)
 	for round := 0; ; round++ {
 		next := make([][]visit, EntranceCount)
@@ -163,23 +240,24 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 				continue
 			}
 
-			var start uint16
+			ent := m.Entrances[id]
+			if ent == nil {
+				continue
+			}
 			if round == 0 {
 				// skip entrances that start in a room already drawn:
-				if start, err = e.peekEntrance(uint8(id)); err != nil {
-					return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
-				}
-				if start >= RoomCount || m.Rooms[start] != nil {
-					logf("entrance $%02x: room $%03x\n", id, start)
+				logf("entrance $%02x: room $%03x\n", id, ent.Room)
+				if m.Rooms[ent.Room] != nil {
 					continue
 				}
 			}
-			if start, err = e.loadEntrance(uint8(id)); err != nil {
+			if _, err = e.loadEntrance(uint8(id)); err != nil {
 				return nil, fmt.Errorf("underworldmap: entrance $%02x: %w", id, err)
 			}
 			if round == 0 {
-				logf("entrance $%02x: room $%03x\n", id, start)
-				stack[0].room, stack[0].from, stack[0].via.To = start, start, start
+				stack[0].room, stack[0].from, stack[0].via.To = ent.Room, ent.Room, ent.Room
+				stack[0].floor, stack[0].floorKnown = ent.Floor, true
+				stack[0].palace = ent.Palace
 			} else {
 				logf("entrance $%02x: round %d\n", id, round)
 			}
@@ -200,12 +278,30 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 				}
 
 				data := e.readRoomData(v.room)
+				// the flood goes through a dungeon toggle door into the room on its side: put it off to the next
+				// round, so that the entrances of the dungeon on this side get to the room first (the door between
+				// Hyrule Castle's throne room and the passage to the Sanctuary, which the Sanctuary's entrance would
+				// otherwise take all of Hyrule Castle through):
+				if !v.toggled && v.via.isEdge() && data.toggleNear(arrivalTile(v.via.Tile)) {
+					logf("  room $%03x from $%03x through a dungeon toggle door: next round\n", v.room, v.from)
+					v.toggled = true
+					v.palace = togglePalace(v.palace)
+					next[id] = append(next[id], v)
+					more = true
+					continue
+				}
 				r := &Room{
-					Room:     v.room,
-					Entrance: uint8(id),
-					From:     v.from,
-					Via:      v.via,
-					Exits:    data.exits(pitsHurt[v.room]),
+					Room:          v.room,
+					Entrance:      uint8(id),
+					EntranceState: m.Entrances[id],
+					From:          v.from,
+					Via:           v.via,
+					Exits:         data.exits(pitsHurt[v.room]),
+					Floor:         v.floor,
+					FloorKnown:    v.floorKnown,
+					Starts:        starts[v.room],
+					Palace:        v.palace,
+					FullSize:      data.fullSize(),
 				}
 				// floor running off the edge of a room is only a way through if the next room has a way back, as
 				// some rooms' floor runs under their outer walls:
@@ -213,10 +309,26 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 					logf("  room $%03x from $%03x by walkway: no way back\n", v.room, v.from)
 					continue
 				}
+				// where the entrances that start in the room put Link:
+				var startPos []StartPos
+				for _, st := range r.Starts {
+					startPos = append(startPos, st.Start)
+				}
+				// the staircases from other rooms, and the level they bring Link in on:
+				var arrivals []arrival
+				for _, x := range r.Exits {
+					if x.Kind != ExitStairs {
+						continue
+					}
+					if lower, ok := headers.arrivalLower(x.To, v.room); ok {
+						arrivals = append(arrivals, arrival{tile: x.Tile, lower: lower})
+					}
+				}
+				r.Walk = data.computeWalk(r.Exits, startPos, arrivals)
 				m.Rooms[v.room] = r
 				logf("  room $%03x from $%03x by %s\n", v.room, v.from, v.via.Kind)
 
-				draws <- drawRoom{room: v.room, gfx: e.readRoomGfx()}
+				draws <- drawRoom{room: r, gfx: e.readRoomGfx()}
 
 				// push in reverse so the first exit found is visited first:
 				for i := len(r.Exits) - 1; i >= 0; i-- {
@@ -225,7 +337,26 @@ func Generate(rom []byte, opts Options) (m *Map, err error) {
 					if x.To >= RoomCount || m.Rooms[x.To] != nil {
 						continue
 					}
-					w := visit{room: x.To, from: v.room, via: x}
+					w := visit{room: x.To, from: v.room, via: x, floor: r.Floor, floorKnown: r.FloorKnown, palace: r.Palace}
+					switch {
+					case x.Kind.isDrop():
+						w.floor--
+					case x.Kind == ExitStairs:
+						// the staircases whose attribute has bit 2 set go down (DungeonTransition_AdjustForFatStairScroll):
+						if data.attrs[x.Tile&0x1FFF]&4 != 0 {
+							w.floor--
+						} else {
+							w.floor++
+						}
+					}
+					if x.isEdge() && data.toggleNear(x.Tile) {
+						// through a dungeon toggle door on this side:
+						w.toggled = true
+						w.palace = togglePalace(w.palace)
+						next[id] = append(next[id], w)
+						more = true
+						continue
+					}
 					if x.Kind.isDrop() {
 						next[id] = append(next[id], w)
 						more = true

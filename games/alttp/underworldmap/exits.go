@@ -160,6 +160,11 @@ type roomData struct {
 	bombableFloors []uint16
 	// the tilemap positions of the large blocks Link can lift to reveal a hole, also from the replacement tiles:
 	blockHoles []uint16
+	// dung_layout_and_starting_quadrant ($040E), dung_unk2 ($FC) and dung_blastwall_flag_x and _y ($0452, $0453),
+	// which pick where the screen scrolls in each quadrant:
+	layout         uint8
+	unk2           uint16
+	blastX, blastY bool
 }
 
 // holeTags are the room tags that open holes in the floor when triggered, by loading an overlay with them
@@ -224,6 +229,9 @@ func (e *emu) readRoomData(room uint16) *roomData {
 	}
 	copy(r.travel[:], w[0xC000:0xC005])
 	r.collision = w[0x046C]
+	r.layout = w[0x040E]
+	r.unk2 = binary.LittleEndian.Uint16(w[0xFC:])
+	r.blastX, r.blastY = w[0x0452] != 0, w[0x0453] != 0
 	r.tags = [2]uint8{w[0xAE], w[0xAF]}
 	// dung_misc_objs_index ($042C) counts the replacement tiles; RoomDraw_BombableFloor draws each bombable floor
 	// as four with states $3030..$3333, and the large pick up block (object $2C) with $2020..$2323, which reveals
@@ -264,7 +272,7 @@ func (r *roomData) exits(pitsHurt bool) (exits []Exit) {
 
 	// doors on the edges of the room into the rooms next to it:
 	for _, d := range r.doors {
-		if d.typ.isExit() || d.typ.isStairMask() || !d.onEdge() {
+		if d.typ.isExit() || d.typ.isStairMask() || !d.onEdge() || r.leadsOutside(d) {
 			continue
 		}
 		to, ok := neighbor(r.room, d.dir)
@@ -298,6 +306,42 @@ func (r *roomData) exits(pitsHurt bool) (exits []Exit) {
 				}
 				if to, ok := neighbor(r.room, edge.d); ok {
 					add(ExitWalkway, to, layer|edge.pos)
+				}
+			}
+		}
+	}
+
+	// in rooms with collision on one layer, corridors of BG2 that Link walks along on the lower level under BG1's
+	// walls, off the edge of the room (Thieves' Town's entrance hall $0DB, $0DC to the rooms north of it): runs of
+	// floor at most 16 cells wide between BG2's walls, as the BG2 of most of these rooms is filler that runs off every
+	// edge without walls:
+	if len(r.walkwayLayers()) == 1 {
+		for _, edge := range [...]struct {
+			d   direction
+			pos func(i uint16) uint16
+		}{
+			{dirNorth, func(i uint16) uint16 { return 1<<6 | i }},
+			{dirSouth, func(i uint16) uint16 { return 0x3E<<6 | i }},
+			{dirWest, func(i uint16) uint16 { return i<<6 | 1 }},
+			{dirEast, func(i uint16) uint16 { return i<<6 | 0x3E }},
+		} {
+			to, ok := neighbor(r.room, edge.d)
+			if !ok {
+				continue
+			}
+			wall := func(v uint8) bool { return v >= 0x01 && v <= 0x04 }
+			for i := uint16(2); i < 0x3E; {
+				if r.attrs[0x1000|edge.pos(i)] != attrFloor {
+					i++
+					continue
+				}
+				start := i
+				for i < 0x3E && r.attrs[0x1000|edge.pos(i)] == attrFloor {
+					i++
+				}
+				if start > 2 && i < 0x3E && i-start <= 16 &&
+					wall(r.attrs[0x1000|edge.pos(start-1)]) && wall(r.attrs[0x1000|edge.pos(i)]) {
+					add(ExitWalkway, to, 0x1000|edge.pos(start))
 				}
 			}
 		}
@@ -357,4 +401,112 @@ func (r *roomData) exits(pitsHurt bool) (exits []Exit) {
 		}
 	}
 	return
+}
+
+// leadsOutside reports whether the door's tiles take Link out of the underworld ($8E, $8F:
+// TileBehavior_Entrance), whatever its type: the secret passage under Hyrule Castle ($055) has a door of type 0 on
+// its south edge that leads out, not to Thieves' Town's room $065 below it.
+func (r *roomData) leadsOutside(d door) bool {
+	row, col := int(d.row()), int(d.col())
+	for rr := row - 2; rr <= row+6; rr++ {
+		for cc := col - 2; cc <= col+6; cc++ {
+			if rr < 0 || rr >= 64 || cc < 0 || cc >= 64 {
+				continue
+			}
+			if v := r.attrs[rr*64+cc]; v == 0x8E || v == 0x8F {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isEdge reports whether the exit is on the edge of the room into the room next to it.
+func (x Exit) isEdge() bool {
+	return x.Kind == ExitDoorway || x.Kind == ExitWalkway || x.Kind == ExitBombable
+}
+
+// arrivalTile is where Link comes into the next room through an edge exit at tile: on the other side of the room.
+func arrivalTile(tile uint16) uint16 {
+	row, col := tile>>6&0x3F, tile&0x3F
+	if row <= 8 || row >= 0x3F-8 {
+		row = 0x3F - row
+	} else {
+		col = 0x3F - col
+	}
+	return tile&0x1000 | row<<6 | col
+}
+
+// isDungeonToggle reports whether the attribute is a door that switches the dungeon Link is in between the sewers
+// and Hyrule Castle ($040C ^= 2) when Link goes through it (TileBehavior_DungeonToggleManualDoor,
+// _DungeonToggleShutterDoor and _LayerAndDungeonToggleShutterDoor, which set room_transitioning_flags bit 1).
+func isDungeonToggle(v uint8) bool {
+	return (v >= 0xA0 && v <= 0xA5) || (v >= 0x98 && v <= 0x9F) || (v >= 0xA8 && v <= 0xAF)
+}
+
+// toggleNear reports whether there is a dungeon toggle door within 8 tiles of tile, on either layer.
+func (r *roomData) toggleNear(tile uint16) bool {
+	row, col := int(tile>>6&0x3F), int(tile&0x3F)
+	for rr := row - 8; rr <= row+8; rr++ {
+		for cc := col - 8; cc <= col+8; cc++ {
+			if rr < 0 || rr >= 64 || cc < 0 || cc >= 64 {
+				continue
+			}
+			if isDungeonToggle(r.attrs[rr*64+cc]) || isDungeonToggle(r.attrs[0x1000+rr*64+cc]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func togglePalace(p uint8) uint8 {
+	if p == 0xFF {
+		return p
+	}
+	return p ^ 2
+}
+
+// kLayoutQuadrantFlags in zelda3's dungeon.c: by the room's layout and Link's quadrant, the sides of the quadrant
+// the screen doesn't scroll past (bit 0 left half, 1 right half: horizontally; bit 2 top half, 3 bottom half:
+// vertically).
+var layoutQuadrantFlags = [32]uint8{
+	0xF, 0xF, 0xF, 0xF, 0xB, 0xB, 7, 7, 0xF, 0xB, 0xF, 7, 0xB, 0xF, 7, 0xF,
+	0xE, 0xD, 0xE, 0xD, 0xF, 0xF, 0xE, 0xD, 0xE, 0xD, 0xF, 0xF, 0xA, 9, 6, 5,
+}
+
+// fullSize computes Room.FullSize like Dungeon_AdjustForRoomLayout does.
+func (r *roomData) fullSize() (f [4]uint8) {
+	for q := 0; q < 4; q++ {
+		qx, qy := q&1, q&2
+		flags := layoutQuadrantFlags[(int(r.layout)|qy|qx)&0x1F]
+		bit := uint8(1)
+		if qx != 0 {
+			bit = 2
+		}
+		if r.blastX || flags&bit == 0 {
+			f[q] |= 1
+		}
+		bit = 4
+		if qy != 0 {
+			bit = 8
+		}
+		if r.blastY || flags&bit == 0 {
+			f[q] |= 2
+		}
+		if r.unk2&0xFF != 0 {
+			f[q] = f[q]&^1 | boolBit(r.unk2&0xFF == 2)
+		}
+		if r.unk2>>8 != 0 {
+			f[q] = f[q]&^2 | boolBit(r.unk2>>8 == 2)<<1
+		}
+	}
+	return
+}
+
+func boolBit(b bool) uint8 {
+	if b {
+		return 1
+	}
+	return 0
 }

@@ -154,3 +154,59 @@ func addressesFor(rom []byte) (*romAddresses, error) {
 		)
 	}
 }
+
+// roomHeaders reads the rooms' headers (RoomHeaderPointers, which LoadRoomHeader reads with
+// `LDA.l RoomHeaderPointers,X : STA.b $0D : SEP #$20 : REP #$10 : LDA.b #^RoomHeaderPointers : STA.b $0F`, found by
+// those bytes so that it works in any version of the game).
+type roomHeaders struct {
+	rom   []byte
+	table uint32
+	bank  uint8
+}
+
+func findRoomHeaders(rom []byte) *roomHeaders {
+	for i := 0; i+15 <= len(rom); i++ {
+		b := rom[i:]
+		if b[0] == 0xBF && b[4] == 0x85 && b[5] == 0x0D && b[6] == 0xE2 && b[7] == 0x20 && b[8] == 0xC2 && b[9] == 0x10 &&
+			b[10] == 0xA9 && b[12] == 0x85 && b[13] == 0x0F {
+			return &roomHeaders{rom: rom, table: uint32(b[1]) | uint32(b[2])<<8 | uint32(b[3])<<16, bank: b[11]}
+		}
+	}
+	return nil
+}
+
+// header returns the bytes of room's header.
+func (h *roomHeaders) header(room uint16) ([]byte, bool) {
+	if h == nil {
+		return nil, false
+	}
+	o := romOffset(h.table) + uint32(room)*2
+	if int(o)+2 > len(h.rom) {
+		return nil, false
+	}
+	p := romOffset(uint32(h.bank)<<16 | uint32(h.rom[o]) | uint32(h.rom[o+1])<<8)
+	if int(p)+14 > len(h.rom) {
+		return nil, false
+	}
+	return h.rom[p : p+14], true
+}
+
+// arrivalLower returns whether Link comes into room `to` on the lower level ($0476) by the staircase from room
+// `from`: from's staircase plane for its staircase to `to` (dung_hdr_staircase_plane, set by Module07_11_0B and
+// Module07_0E_13 through kTeleportPitLevel1).
+func (h *roomHeaders) arrivalLower(from, to uint16) (lower uint8, ok bool) {
+	hdr, ok := h.header(from)
+	if !ok || from&0xFF00 != to&0xFF00 {
+		return 0, false
+	}
+	planes := [4]uint8{hdr[7] >> 2 & 3, hdr[7] >> 4 & 3, hdr[7] >> 6 & 3, hdr[8] & 3}
+	for j := 0; j < 4; j++ {
+		if hdr[10+j] == uint8(to) {
+			if planes[j] >= 1 {
+				return 1, true
+			}
+			return 0, true
+		}
+	}
+	return 0, false
+}

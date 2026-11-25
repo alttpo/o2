@@ -488,6 +488,59 @@ h5, h6 {
     image-rendering: pixelated;
 }
 
+/* the underworld's rooms, each placed in its cell of the map as it is drawn: */
+.world-map-rooms {
+    position: absolute;
+    inset: 0;
+}
+
+.world-map-rooms > img {
+    position: absolute;
+}
+
+.world-map-progress {
+    position: absolute;
+    right: 0.5em;
+    bottom: 0.5em;
+    color: rgb(140, 140, 140);
+    font-size: 0.8rem;
+    pointer-events: none;
+}
+
+.world-map-picking {
+    cursor: crosshair;
+    /* a double click warps, and shouldn't select the axis labels: */
+    user-select: none;
+}
+
+/* the zoomed-in view of the room under the cursor while a warp target is picked: */
+.warp-lens {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    background: black;
+    border: 1px solid rgb(140, 140, 140);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.warp-lens > canvas {
+    display: block;
+    image-rendering: pixelated;
+}
+
+.warp-lens-caption {
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    color: rgb(220, 220, 220);
+    white-space: nowrap;
+}
+
+/* the dungeon, number and name of the room, which can be longer than the lens is wide: */
+.warp-lens-place {
+    width: 216px;
+    white-space: normal;
+}
+
 .world-map-frame > svg {
     position: absolute;
     inset: 0;

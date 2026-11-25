@@ -9,6 +9,7 @@ import {Fragment, h} from "preact";
 import {useState} from "preact/hooks";
 import {GameALTTPViewModel, GameViewProps} from "../../viewmodel";
 import {DebugOp, Gfx, Icon, useGfx} from "./debuggfx";
+import {targetText, warpOp, WarpTarget} from "./warpmap";
 import {
     abilities, ARROW_MAX, ARROW_WORDS, BOMB_MAX, BOMB_WORDS, BOTTLE_ADDR, BOTTLE_CELL, BOTTLE_COUNT, BOTTLE_SELECTED, bottleContents,
     bottleCycle, Choice, dungeonItems, dungeons, equipment, Getter, halfMagic, HEART_FULL,
@@ -466,8 +467,14 @@ function Enemies({send, ready}: Common) {
     );
 }
 
-// Warp sends Link through a place's door, into the underworld at its entrance or out onto the overworld at its exit.
-function Warp({send, ready}: Common) {
+interface WarpProps extends Common {
+    warpTarget: WarpTarget | null;
+    setWarpTarget: (t: WarpTarget | null) => void;
+}
+
+// Warp sends Link through a place's door, into the underworld at its entrance or out onto the overworld at its exit,
+// or to the point of an underworld room picked on the map.
+function Warp({send, ready, warpTarget, setWarpTarget}: WarpProps) {
     // the group and the index of the place chosen:
     const [chosen, setChosen] = useState("0:0");
     const [g, i] = chosen.split(":").map(n => parseInt(n, 10));
@@ -496,12 +503,28 @@ function Warp({send, ready}: Common) {
                     Overworld exit
                 </button>
             </div>
+            <div class="dbg-row">
+                <span class="dbg-sub" title="Pick a point of an underworld room on the map below; Escape or a right click on the map clears it">
+                    {warpTarget ? "Map point: " + targetText(warpTarget) : "Map point: pick one in an underworld room on the map (double-click to warp there)"}
+                </span>
+            </div>
+            <div class="dbg-row">
+                <button type="button" disabled={!ready || !warpTarget}
+                        title="Enter the room's dungeon if Link isn't in it, then drop into the room at the point"
+                        onClick={() => warpTarget && send(warpOp(warpTarget))}>
+                    Warp to map point
+                </button>
+                {warpTarget && <button type="button" onClick={() => setWarpTarget(null)}>Clear</button>}
+            </div>
         </Section>
     );
 }
 
 // DebugSections shows what the player has in the alttp game view, and in debug mode changes it.
-export function DebugSections({ch, vm}: GameViewProps) {
+export function DebugSections({ch, vm, warpTarget, setWarpTarget}: GameViewProps & {
+    warpTarget: WarpTarget | null;
+    setWarpTarget: (t: WarpTarget | null) => void;
+}) {
     const game = vm.game as GameALTTPViewModel;
     const edit = !!game.debugMode;
     const state = vm["game/debug"] as DebugState | undefined;
@@ -542,7 +565,7 @@ export function DebugSections({ch, vm}: GameViewProps) {
                 <Hearts {...p}/>
                 {edit && <Progress {...p}/>}
                 {edit && <Enemies {...p}/>}
-                {edit && <Warp {...p}/>}
+                {edit && <Warp {...p} warpTarget={warpTarget} setWarpTarget={setWarpTarget}/>}
             </div>
         </Fragment>
     );

@@ -4,6 +4,7 @@ import {Fragment} from "preact";
 import {setField} from "../util";
 import {WorldMap} from "./alttpmap";
 import {DebugSections} from "./alttp/debugsections";
+import {warpOp, WarpTarget} from "./alttp/warpmap";
 
 // localStorage key of the height the user resized the notification history to:
 const historyHeightKey = "o2.alttp.notificationHistoryHeight";
@@ -26,6 +27,8 @@ function timingTitle(p: any): string {
 
 export function GameViewALTTP({ch, vm}: GameViewProps) {
     const game = vm.game as GameALTTPViewModel;
+    // the point of an underworld room picked on the map in debug mode, for the Warp section:
+    const [warpTarget, setWarpTarget] = useState<WarpTarget | null>(null);
 
     // the group reset asks first, so that a stray click doesn't reset everyone else's run:
     const [confirmReset, setConfirmReset] = useState(false);
@@ -507,10 +510,13 @@ export function GameViewALTTP({ch, vm}: GameViewProps) {
             </div>
         </div>
         <div style="grid-column: 1 / -1; margin-top: 0.5em">
-            <DebugSections ch={ch} vm={vm}/>
+            <DebugSections ch={ch} vm={vm} warpTarget={warpTarget} setWarpTarget={setWarpTarget}/>
         </div>
         <div style="grid-column: 1 / -1; margin-top: 0.5em">
-            <WorldMap vm={vm}/>
+            <WorldMap vm={vm} debug={!!game.debugMode} target={warpTarget} setTarget={setWarpTarget}
+                      warp={t => {
+                          if (game.debugMode) ch.command("game", "debug", {ops: [warpOp(t)]});
+                      }}/>
         </div>
     </div>;
 }

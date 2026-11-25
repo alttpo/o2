@@ -357,6 +357,9 @@ func (vm *ViewModel) tryCreateGame() bool {
 	// game will notify us of its viewModel on Start()/Reset():
 	game.ProvideViewModelContainer(vm)
 	game.ProvideConfigurationSystem(vm)
+	if u, ok := game.(games.UnpatchedROMUser); ok && vm.unpatchedRomContents != nil {
+		u.ProvideUnpatchedROM(append([]byte(nil), vm.unpatchedRomContents...))
+	}
 
 	// initialize the game state:
 	game.Reset()

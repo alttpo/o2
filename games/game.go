@@ -33,3 +33,9 @@ type Game interface {
 	Start()
 	Stop()
 }
+
+// UnpatchedROMUser is a Game that wants the contents of the ROM it was created with as they were before it was
+// patched; the engine provides them right after creating the game.
+type UnpatchedROMUser interface {
+	ProvideUnpatchedROM(rom []byte)
+}

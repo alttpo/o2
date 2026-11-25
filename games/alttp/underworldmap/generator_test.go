@@ -54,6 +54,21 @@ func TestGenerate(t *testing.T) {
 				}
 			}
 
+			// Thieves' Town's rooms are drawn from its entrance ($0DB), through the corridors of BG2 its entrance hall has
+			// under BG1's walls, and not from the secret passage under Hyrule Castle ($055, entrance $32), whose door
+			// to the overworld on its south edge isn't a way to room $065 below it:
+			if tt := m.Rooms[0x0DB]; tt != nil {
+				for _, room := range []uint16{0x0CB, 0x0CC, 0x0BB, 0x0BC, 0x0AB, 0x064, 0x065, 0x044, 0x045} {
+					if r := m.Rooms[room]; r == nil || r.Entrance != tt.Entrance {
+						t.Errorf("room $%03x: expected drawn from Thieves' Town's entrance $%02x", room, tt.Entrance)
+					}
+				}
+			}
+			// caves are drawn from their own entrance, not from the cave above them on the map through its door out:
+			if r := m.Rooms[0x110]; r == nil || len(r.Starts) == 0 || r.EntranceState.Room != 0x110 {
+				t.Errorf("room $110: expected drawn from its own entrance")
+			}
+
 			if out == "" {
 				return
 			}

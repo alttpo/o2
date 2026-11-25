@@ -14,7 +14,7 @@ export interface DebugOp {
     a?: number;
     v?: number;
     m?: number;
-    // the equipment for gfx, what to fill for fill, or "entrance" or "exit" for warp:
+    // the equipment for gfx, what to fill for fill, or "entrance", "exit" or "room" for warp:
     w?: string;
     // the change for keys, and for hearts the containers and the pieces:
     d?: number;
@@ -22,6 +22,11 @@ export interface DebugOp {
     p?: number;
     // the entrance for warp; v is the place's exit:
     e?: number;
+    // the room, Link's coordinates in it and the layer for a warp to a room:
+    r?: number;
+    x?: number;
+    y?: number;
+    l?: number;
 }
 
 export interface Gfx {

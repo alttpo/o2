@@ -20,6 +20,7 @@ import (
 	"o2/webui/dist"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,11 +38,9 @@ type WebServer struct {
 	// broadcast channel to all sockets:
 	q chan ViewModelUpdate
 
-	// the last underworld map made, for the ROM contents and scale it was made from:
-	underworldLock  sync.Mutex
-	underworldROM   []byte
-	underworldScale int
-	underworldPNG   []byte
+	// the underworld map of the loaded ROM, which /rom/underworld/events last started or found:
+	underworldLock   sync.Mutex
+	underworldStream *underworldmap.Stream
 }
 
 type Socket struct {
@@ -113,8 +112,11 @@ func NewWebServer(listenAddr string) *WebServer {
 		http.ServeContent(w, r, romName, time.Now(), bytes.NewReader(rom.Contents))
 	}))
 
-	// a map of every underworld room, drawn from the loaded ROM; ?scale=2 (or 4, 8, ...) makes it smaller:
-	s.mux.Handle("/rom/underworld.png", http.HandlerFunc(s.serveUnderworldMap))
+	// the underworld map of the loaded ROM, streamed room by room as the rooms are drawn: the events tell which rooms
+	// are ready, then each room's image and where Link can be in it are fetched by the map's id and the room:
+	s.mux.Handle("/rom/underworld/events", http.HandlerFunc(s.serveUnderworldEvents))
+	s.mux.Handle("/rom/underworld/room.png", http.HandlerFunc(s.serveUnderworldRoomPNG))
+	s.mux.Handle("/rom/underworld/walk.json", http.HandlerFunc(s.serveUnderworldWalk))
 	// the light world and dark world maps, drawn from the loaded ROM:
 	s.mux.Handle("/rom/lightworld.png", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.serveWorldMap(w, r, false)
@@ -422,48 +424,121 @@ func (k *Socket) writeHandler() {
 	}
 }
 
-// serveUnderworldMap draws a map of every underworld room from the loaded ROM, before o2 patched it. Making one takes
-// a few seconds, so the last one made is kept.
-func (s *WebServer) serveUnderworldMap(w http.ResponseWriter, r *http.Request) {
-	if s.commandHandler == nil {
-		http.NotFound(w, r)
-		return
-	}
-	scale := 1
-	if q := r.URL.Query().Get("scale"); q != "" {
-		var err error
-		if scale, err = strconv.Atoi(q); err != nil || scale < 1 || underworldmap.RoomPixels%scale != 0 {
-			http.Error(w, "scale must be a power of 2 from 1 to 512", http.StatusBadRequest)
-			return
-		}
-	}
-
+// serveUnderworldEvents streams the underworld map of the loaded ROM, before o2 patched it, as server-sent events:
+// "map" with the map's id first, then "room" with the number of each room as soon as it is drawn (all those drawn
+// before too), and "done" at the end, or "failed" with the error. Drawing every room takes a few seconds; the map of
+// the last ROM is kept.
+func (s *WebServer) serveUnderworldEvents(w http.ResponseWriter, r *http.Request) {
 	rom, ok := s.unpatchedROM(w, r)
 	if !ok {
 		return
 	}
-
+	stream := underworldmap.Shared(rom)
 	s.underworldLock.Lock()
-	defer s.underworldLock.Unlock()
-	if s.underworldPNG == nil || s.underworldScale != scale || !bytes.Equal(s.underworldROM, rom) {
-		m, err := underworldmap.Generate(rom, underworldmap.Options{Scale: scale})
-		if err != nil {
-			log.Println(fmt.Errorf("underworld map: %w", err))
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		// the fastest compression takes half the time of the default, for a third more bytes:
-		var b bytes.Buffer
-		if err = (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&b, m.Image); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		s.underworldROM, s.underworldScale, s.underworldPNG = rom, scale, b.Bytes()
-	}
+	s.underworldStream = stream
+	s.underworldLock.Unlock()
 
-	w.Header().Set("Content-Type", "image/png")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(s.underworldPNG)
+	_, _ = fmt.Fprintf(w, "event: map\ndata: %d\n\n", stream.ID)
+	flusher.Flush()
+
+	sent := 0
+	for {
+		rooms, done, err, changed := stream.Progress(sent)
+		for _, room := range rooms {
+			_, _ = fmt.Fprintf(w, "event: room\ndata: %d\n\n", room)
+		}
+		sent += len(rooms)
+		if done {
+			if err != nil {
+				_, _ = fmt.Fprintf(w, "event: failed\ndata: %s\n\n", strings.ReplaceAll(err.Error(), "\n", " "))
+			} else {
+				_, _ = fmt.Fprint(w, "event: done\ndata: \n\n")
+			}
+			flusher.Flush()
+			return
+		}
+		flusher.Flush()
+		select {
+		case <-changed:
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// underworldRoom returns the room of the ?room= of the underworld map whose id is in ?id=, or writes an error
+// response if that map is no longer the current one or the room isn't drawn.
+func (s *WebServer) underworldRoom(w http.ResponseWriter, r *http.Request) (*underworldmap.StreamRoom, bool) {
+	q := r.URL.Query()
+	id, err1 := strconv.ParseUint(q.Get("id"), 10, 32)
+	room, err2 := strconv.ParseUint(q.Get("room"), 10, 16)
+	if err1 != nil || err2 != nil {
+		http.Error(w, "id and room are required", http.StatusBadRequest)
+		return nil, false
+	}
+	s.underworldLock.Lock()
+	stream := s.underworldStream
+	s.underworldLock.Unlock()
+	if stream == nil || uint64(stream.ID) != id {
+		http.Error(w, "no such map", http.StatusNotFound)
+		return nil, false
+	}
+	sr := stream.Room(uint16(room))
+	if sr == nil {
+		http.Error(w, "no such room", http.StatusNotFound)
+		return nil, false
+	}
+	return sr, true
+}
+
+// serveUnderworldRoomPNG serves the image of a room of the underworld map, a quarter of its size unless ?full=1.
+func (s *WebServer) serveUnderworldRoomPNG(w http.ResponseWriter, r *http.Request) {
+	sr, ok := s.underworldRoom(w, r)
+	if !ok {
+		return
+	}
+	b := sr.Thumb
+	if r.URL.Query().Get("full") == "1" {
+		b = sr.PNG
+	}
+	w.Header().Set("Content-Type", "image/png")
+	// the map's id is in the URL, so a room's image never changes:
+	w.Header().Set("Cache-Control", "max-age=86400")
+	_, _ = w.Write(b)
+}
+
+// underworldWalk is where Link can be in a room of the underworld map; see underworldmap.Walk.
+type underworldWalk struct {
+	Room     uint16 `json:"room"`
+	Entrance uint8  `json:"entrance"`
+	// Palace is the dungeon ($040C) Link is in in the room, $FF for caves and houses:
+	Palace uint8 `json:"palace"`
+	// Layers are the layers Link can be on: bit 0 BG1, bit 1 BG2:
+	Layers uint8 `json:"layers"`
+	// Cells is the base64 of the flags of the 64x64 cells of BG1 then BG2, one byte each:
+	Cells []byte `json:"cells"`
+}
+
+// serveUnderworldWalk serves where Link can be in a room of the underworld map.
+func (s *WebServer) serveUnderworldWalk(w http.ResponseWriter, r *http.Request) {
+	sr, ok := s.underworldRoom(w, r)
+	if !ok {
+		return
+	}
+	walk := sr.Walk
+	u := underworldWalk{Room: sr.Room.Room, Entrance: sr.Entrance, Palace: sr.Palace, Layers: walk.Layers}
+	u.Cells = append(append(u.Cells, walk.Cells[0][:]...), walk.Cells[1][:]...)
+	w.Header().Set("Content-Type", "application/json")
+	// small, and what it says changes more often than the images do:
+	w.Header().Set("Cache-Control", "no-cache")
+	_ = json.NewEncoder(w).Encode(&u)
 }
 
 // unpatchedROM gets the contents of the loaded ROM before o2 patched it, or writes an error response if there is none.

@@ -1,9 +1,12 @@
 // The world map: the light world, dark world or underworld map of the loaded ROM, with lines between its areas or
 // rooms, the areas and rooms the players are in outlined, the area and room numbers around it, and a dot for each
-// player. A port of alttpo's WorldMapWindow.
-import {useEffect, useState} from "preact/hooks";
+// player. A port of alttpo's WorldMapWindow. The underworld's rooms show up one by one as the backend draws them, and
+// in debug mode a point of a room can be picked to warp Link to, or double-clicked to warp him there (see
+// alttp/warpmap.tsx).
+import {useEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {ViewModel} from "../viewmodel";
+import {roomImageURL, useUnderworldStream, WarpLens, WarpTarget} from "./alttp/warpmap";
 
 // a player's position, from the "game/positions" view model:
 export interface PlayerPosition {
@@ -49,9 +52,6 @@ const uwRoomCount = 0x128;
 const uwRoom = 512;
 const uwWidth = uwCols * uwRoom;
 const uwHeight = uwRows * uwRoom;
-// the underworld map image is made 4 times smaller than full size:
-const uwScale = 4;
-
 // the lines between areas and rooms are half as bright as the brightest of the maps, and the lines around the
 // players' areas and rooms brighter than it (alttpo's mapMaxBrightness of 140); the underworld map image is darkened
 // to about as bright as the overworld maps:
@@ -327,7 +327,28 @@ function saveSetting(key: string, value: string) {
     }
 }
 
-export function WorldMap({vm}: { vm: ViewModel }) {
+export interface WorldMapProps {
+    vm: ViewModel;
+    // debug mode: a point of an underworld room can be picked as the warp target:
+    debug: boolean;
+    target: WarpTarget | null;
+    setTarget: (t: WarpTarget | null) => void;
+    // warps Link to the target, on a double click:
+    warp: (t: WarpTarget) => void;
+}
+
+// the room and point of the room under the cursor, and where the lens goes:
+interface Hover {
+    room: number;
+    px: number;
+    py: number;
+    left: number;
+    top: number;
+    flipX: boolean;
+    flipY: boolean;
+}
+
+export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
     const players = (vm["game/positions"] || []) as PlayerPosition[];
     const local = players.find(p => p.local);
 
@@ -348,9 +369,69 @@ export function WorldMap({vm}: { vm: ViewModel }) {
     const urls = [
         `/rom/lightworld.png?r=${romKey}`,
         `/rom/darkworld.png?r=${romKey}`,
-        `/rom/underworld.png?scale=${uwScale}&r=${romKey}`,
     ];
     useEffect(() => setFailed({}), [romKey]);
+    const uw = useUnderworldStream(romKey);
+
+    // picking a warp target in debug mode:
+    const frame = useRef<HTMLDivElement>(null);
+    const [hover, setHover] = useState<Hover | null>(null);
+    const snapped = useRef<WarpTarget | null>(null);
+    const picking = debug && screen === Screen.Underworld && uw.id !== 0;
+    useEffect(() => {
+        if (!picking) setHover(null);
+    }, [picking]);
+    useEffect(() => {
+        if (!debug) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setTarget(null);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [debug]);
+
+    const onPointerMove = (e: PointerEvent) => {
+        const el = frame.current;
+        if (!picking || !el) return;
+        const rect = el.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width * uwWidth;
+        const my = (e.clientY - rect.top) / rect.height * uwHeight;
+        const c = Math.floor(mx / uwRoom);
+        const r = Math.floor(my / uwRoom);
+        const room = r * uwCols + c;
+        if (!uwHasRoom(r, c) || !uw.rooms.has(room)) {
+            setHover(null);
+            return;
+        }
+        const left = e.clientX - rect.left;
+        const top = e.clientY - rect.top;
+        setHover({
+            room,
+            px: mx - c * uwRoom,
+            py: my - r * uwRoom,
+            left,
+            top,
+            flipX: left > rect.width / 2,
+            flipY: top > rect.height / 2,
+        });
+    };
+    // the point under the cursor, if Link can be placed there:
+    const pointed = (): WarpTarget | null => {
+        if (!picking || !hover || !snapped.current || snapped.current.room !== hover.room) return null;
+        return snapped.current;
+    };
+    const onClick = () => {
+        const t = pointed();
+        if (!t) return;
+        setTarget(t);
+        if (auto) {
+            // keep showing the map the target is on:
+            setPicked(screen);
+            saveSetting(screenKey, screen.toString());
+            setAuto(false);
+            saveSetting(autoKey, "0");
+        }
+    };
 
     const g = geometryFor(screen);
     const rects = highlightRects(players, screen);
@@ -404,19 +485,50 @@ export function WorldMap({vm}: { vm: ViewModel }) {
         </div>
         {!romKey ? <div class="world-map-empty">Load a ROM to see the map.</div> : (
             <div class="world-map-axes">
-                <div class="world-map-frame"
+                <div class={"world-map-frame" + (picking ? " world-map-picking" : "")}
+                     ref={frame}
+                     onPointerMove={onPointerMove}
+                     onPointerLeave={() => setHover(null)}
+                     onClick={onClick}
+                     onDblClick={e => {
+                         // the clicks before it already picked the point:
+                         const t = pointed();
+                         if (!t) return;
+                         e.preventDefault();
+                         warp(t);
+                     }}
+                     onContextMenu={e => {
+                         if (picking && target) {
+                             e.preventDefault();
+                             setTarget(null);
+                         }
+                     }}
                      style={`aspect-ratio: ${g.width} / ${g.height}; width: min(100%, calc(80vh * ${g.width} / ${g.height}))`}>
                     {urls.map((url, i) => (
                         <img key={i}
                              src={url}
                              alt=""
-                             class={i === Screen.Underworld ? "" : "pixelated"}
-                             style={`display: ${i === screen && !failed[url] ? "block" : "none"}` +
-                                 (i === Screen.Underworld ? `; filter: ${underworldFilter}` : "")}
+                             class="pixelated"
+                             style={`display: ${i === screen && !failed[url] ? "block" : "none"}`}
                              onError={() => setFailed(f => ({...f, [url]: true}))}
                              onLoad={() => setFailed(f => (f[url] ? {...f, [url]: false} : f))}/>
                     ))}
-                    {failed[urls[screen]] && <div class="world-map-empty">The map could not be drawn from this ROM.</div>}
+                    <div class="world-map-rooms"
+                         style={`display: ${screen === Screen.Underworld ? "block" : "none"}; filter: ${underworldFilter}`}>
+                        {uw.id !== 0 && Array.from(uw.rooms).map(room => (
+                            <img key={uw.id + ":" + room}
+                                 src={roomImageURL(uw.id, room, false)}
+                                 alt=""
+                                 style={`left: ${(room % uwCols) / uwCols * 100}%; top: ${Math.floor(room / uwCols) / uwRows * 100}%; ` +
+                                     `width: ${100 / uwCols}%; height: ${100 / uwRows}%`}/>
+                        ))}
+                    </div>
+                    {screen !== Screen.Underworld && failed[urls[screen]] &&
+                        <div class="world-map-empty">The map could not be drawn from this ROM.</div>}
+                    {screen === Screen.Underworld && uw.error &&
+                        <div class="world-map-empty">The map could not be drawn from this ROM: {uw.error}</div>}
+                    {screen === Screen.Underworld && !uw.done &&
+                        <div class="world-map-progress">Drawing the rooms… {uw.rooms.size}</div>}
                     <svg viewBox={`0 0 ${g.width} ${g.height}`} preserveAspectRatio="none">
                         <path d={gridPath(screen, g)} stroke={gridColor} stroke-width={1} fill="none"
                               vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
@@ -426,6 +538,16 @@ export function WorldMap({vm}: { vm: ViewModel }) {
                                   stroke={highlightColor} stroke-width={1} fill="none"
                                   vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
                         ))}
+                        {debug && screen === Screen.Underworld && target && (() => {
+                            // the warp target: where Link's feet will be, and a ring around it to find it:
+                            const x = (target.room % uwCols) * uwRoom + target.x;
+                            const y = Math.floor(target.room / uwCols) * uwRoom + target.y;
+                            return <g class="world-map-target">
+                                <circle cx={x + 8} cy={y + 16} r={48} fill="none" stroke="rgb(0, 255, 0)" stroke-width={2}
+                                        vector-effect="non-scaling-stroke"/>
+                                <rect x={x} y={y + 8} width={16} height={16} fill="rgb(0, 255, 0)"/>
+                            </g>;
+                        })()}
                     </svg>
                     {axisTop.map(a => (<Fragment key={"c" + a.text}>
                         <div class="world-map-axis world-map-axis-top" style={`left: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
@@ -435,6 +557,12 @@ export function WorldMap({vm}: { vm: ViewModel }) {
                         <div class="world-map-axis world-map-axis-left" style={`top: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
                         <div class="world-map-axis world-map-axis-right" style={`top: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
                     </Fragment>))}
+                    {picking && hover && <WarpLens mapId={uw.id} room={hover.room} px={hover.px} py={hover.py}
+                                                   left={hover.left} top={hover.top}
+                                                   flipX={hover.flipX} flipY={hover.flipY}
+                                                   onSnap={t => {
+                                                       snapped.current = t;
+                                                   }}/>}
                     {players.filter(p => inGame(p) && showsOnScreen(p, screen)).map(p => {
                         const [x, y] = mapCoord(p, screen);
                         // keyed by the screen too, so that a dot doesn't glide across the map when the map changes:

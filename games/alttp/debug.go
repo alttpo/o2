@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"o2/games/alttp/underworldmap"
 	"o2/interfaces"
 	"slices"
 	"sync"
@@ -62,7 +63,9 @@ const (
 	debugOpKill = "kill"
 	// debugOpWarp sends Link through the iris to the underworld entrance E (W = "entrance") or out of the
 	// underworld exit V to the overworld (W = "exit"). V is the index in the ROM's underworld exit table of the
-	// place's exit, which also tells which world it is in (see emitDebugWarp).
+	// place's exit, which also tells which world it is in (see emitDebugWarp). With W = "room", it places Link at X,
+	// Y (the room's pixels, multiples of 8) on layer L (0 for BG1, 1 for BG2) of underworld room R, a point the
+	// debug page picked on the map where Link can stand (see emitDebugRoomWarp).
 	debugOpWarp = "warp"
 )
 
@@ -77,12 +80,21 @@ type debugOp struct {
 	C int    `json:"c,omitempty"`
 	P int    `json:"p,omitempty"`
 	E uint8  `json:"e,omitempty"`
+	R uint16 `json:"r,omitempty"`
+	X uint16 `json:"x,omitempty"`
+	Y uint16 `json:"y,omitempty"`
+	L uint8  `json:"l,omitempty"`
+
+	// what a room warp needs from the map (see prepareRoomWarp):
+	room *roomWarp
 }
 
 // debugQueued is a debugOp waiting for the next update routine.
 type debugQueued struct {
 	op  debugOp
 	due time.Time
+	// when a room warp's routine was last sent:
+	sent time.Time
 }
 
 // debugState is what the page shows of the game.
@@ -169,11 +181,20 @@ func (c *debugCmd) Execute(args interfaces.CommandArgs) error {
 			log.Printf("alttp: debug: %v\n", err)
 			continue
 		}
+		opDue := due
+		if op.T == debugOpWarp && op.W == "room" {
+			if err := g.prepareRoomWarp(&op); err != nil {
+				log.Printf("alttp: debug: %v\n", err)
+				continue
+			}
+			log.Printf("alttp: debug: warp to room $%03x at ($%03x, $%03x) layer %d through entrance $%02x\n", op.R, op.X, op.Y, op.L, op.room.entrance)
+			opDue = time.Now().Add(debugRoomWarpTTL)
+		}
 		if len(d.queue) >= debugMaxOps {
 			log.Printf("alttp: debug: too many operations queued; dropped %s\n", op.T)
 			continue
 		}
-		d.queue = append(d.queue, debugQueued{op: op, due: due})
+		d.queue = append(d.queue, debugQueued{op: op, due: opDue})
 	}
 	return nil
 }
@@ -208,6 +229,13 @@ func (op *debugOp) validate() error {
 		}
 	case debugOpKill:
 	case debugOpWarp:
+		if op.W == "room" {
+			if op.R >= underworldmap.RoomCount || op.X >= underworldmap.RoomPixels || op.Y >= underworldmap.RoomPixels ||
+				op.X&7 != 0 || op.Y&7 != 0 || op.L > 1 {
+				return fmt.Errorf("warp: bad point ($%03x, $%03x) layer %d of room $%03x", op.X, op.Y, op.L, op.R)
+			}
+			return nil
+		}
 		if op.W != "entrance" && op.W != "exit" {
 			return fmt.Errorf("warp: unknown kind '%s'", op.W)
 		}
@@ -252,6 +280,17 @@ func (g *Game) generateDebugAsm(a *asm.Emitter, newEmitter func() *asm.Emitter) 
 			// wait for Link to be on his feet in the overworld or the underworld (the menus also run updates):
 			break
 		}
+		if q.op.T == debugOpWarp && q.op.W == "room" && !q.sent.IsZero() {
+			if now.Sub(q.sent) < debugRoomWarpEvery {
+				// the routine sent last may not have run yet:
+				break
+			}
+			if g.debugRoomWarpDone(&q.op) {
+				log.Printf("alttp: debug: warped to room $%03x\n", q.op.R)
+				n++
+				continue
+			}
+		}
 
 		ta := newEmitter()
 		d.labelNo++
@@ -273,6 +312,11 @@ func (g *Game) generateDebugAsm(a *asm.Emitter, newEmitter func() *asm.Emitter) 
 		a.Comment(fmt.Sprintf("debug %s:", q.op.T))
 		a.Append(ta)
 		updated = true
+		if q.op.T == debugOpWarp && q.op.W == "room" {
+			// stays queued until Link stands in the room:
+			d.queue[n].sent = now
+			break
+		}
 		n++
 	}
 	d.queue = append(d.queue[:0], d.queue[n:]...)
@@ -402,7 +446,11 @@ func (g *Game) emitDebugOp(a *asm.Emitter, op *debugOp, no int) {
 		}
 
 	case debugOpWarp:
-		g.emitDebugWarp(a, op, lbl)
+		if op.W == "room" {
+			g.emitDebugRoomWarp(a, op, lbl)
+		} else {
+			g.emitDebugWarp(a, op, lbl)
+		}
 
 	case debugOpKill:
 		// like PrepareSpriteToDie: the death state with the poof timer. The sprites that are not enemies (the items

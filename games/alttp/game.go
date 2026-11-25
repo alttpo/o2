@@ -21,6 +21,9 @@ const MaxPlayers = 256
 type Game struct {
 	// rom cannot be nil
 	rom *snes.ROM
+	// unpatchedROM is the ROM's contents before o2 patched it, which the debug warp's underworld map is made from; nil
+	// if the engine didn't provide it:
+	unpatchedROM []byte
 
 	// queue can be nil at any time
 	// queue is replaced (or cleared on disconnect) by other goroutines; access it with getQueue/setQueue:
