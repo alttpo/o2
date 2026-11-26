@@ -101,3 +101,71 @@ func TestUnderworldStream(t *testing.T) {
 		t.Errorf("expected 404 for another map; got %s", r.Status)
 	}
 }
+
+// TestOverworldStream streams the overworld's areas of the vanilla JP ROM and fetches an area's image and walk.
+func TestOverworldStream(t *testing.T) {
+	rom, err := os.ReadFile("../../games/alttp/alttp-jp-vanilla.sfc")
+	if err != nil {
+		t.Skip(err)
+	}
+	s := NewWebServer("127.0.0.1:0")
+	s.commandHandler = &romHandler{&romCmd{rom}}
+	srv := httptest.NewServer(s.mux)
+	defer srv.Close()
+
+	rsp, err := http.Get(srv.URL + "/rom/overworld/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rsp.Body.Close()
+	var id string
+	areas := 0
+	event := ""
+	sc := bufio.NewScanner(rsp.Body)
+	done := false
+	for !done && sc.Scan() {
+		line := sc.Text()
+		switch {
+		case strings.HasPrefix(line, "event: "):
+			event = line[7:]
+		case strings.HasPrefix(line, "data: "):
+			switch event {
+			case "map":
+				id = line[6:]
+			case "area":
+				areas++
+			case "done":
+				done = true
+			case "failed":
+				t.Fatal(line)
+			}
+		}
+	}
+	if !done || id == "" || areas != 80 {
+		t.Fatalf("done %v, id %q, %d areas", done, id, areas)
+	}
+
+	// Hyrule Castle, a large area:
+	r, err := http.Get(srv.URL + "/rom/overworld/area.png?id=" + id + "&area=27")
+	if err != nil || r.StatusCode != 200 || r.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("area.png: %v %v", err, r.Status)
+	}
+	r.Body.Close()
+	r, err = http.Get(srv.URL + "/rom/overworld/walk.json?id=" + id + "&area=27")
+	if err != nil || r.StatusCode != 200 {
+		t.Fatalf("walk: %v %v", err, r.Status)
+	}
+	var w struct {
+		Size  int    `json:"size"`
+		Cells []byte `json:"cells"`
+	}
+	if err = json.NewDecoder(r.Body).Decode(&w); err != nil || w.Size != 1024 || len(w.Cells) != 128*128 {
+		t.Fatalf("walk: %v, size %d, %d cells", err, w.Size, len(w.Cells))
+	}
+	r.Body.Close()
+
+	// a screen that isn't an area's parent has no image:
+	if r, _ := http.Get(srv.URL + "/rom/overworld/area.png?id=" + id + "&area=28"); r.StatusCode != 404 {
+		t.Errorf("expected 404 for a screen of a large area; got %s", r.Status)
+	}
+}

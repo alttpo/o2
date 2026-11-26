@@ -65,7 +65,8 @@ const (
 	// underworld exit V to the overworld (W = "exit"). V is the index in the ROM's underworld exit table of the
 	// place's exit, which also tells which world it is in (see emitDebugWarp). With W = "room", it places Link at X,
 	// Y (the room's pixels, multiples of 8) on layer L (0 for BG1, 1 for BG2) of underworld room R, a point the
-	// debug page picked on the map where Link can stand (see emitDebugRoomWarp).
+	// debug page picked on the map where Link can stand (see emitDebugRoomWarp). With W = "area", it places Link at
+	// X, Y (the area's pixels, multiples of 8) of overworld area R, a parent area (see emitDebugAreaWarp).
 	debugOpWarp = "warp"
 )
 
@@ -85,8 +86,15 @@ type debugOp struct {
 	Y uint16 `json:"y,omitempty"`
 	L uint8  `json:"l,omitempty"`
 
-	// what a room warp needs from the map (see prepareRoomWarp):
+	// what a room warp needs from the map (see prepareRoomWarp), and an area warp (see prepareAreaWarp):
 	room *roomWarp
+	area *underworldmap.AreaPlacement
+}
+
+// isMapWarp reports whether the op warps to a point picked on the map: such a warp stays queued, its routine sent
+// again every debugRoomWarpEvery, until Link stands at the point.
+func (op *debugOp) isMapWarp() bool {
+	return op.T == debugOpWarp && (op.W == "room" || op.W == "area")
 }
 
 // debugQueued is a debugOp waiting for the next update routine.
@@ -190,6 +198,26 @@ func (c *debugCmd) Execute(args interfaces.CommandArgs) error {
 			log.Printf("alttp: debug: warp to room $%03x at ($%03x, $%03x) layer %d through entrance $%02x\n", op.R, op.X, op.Y, op.L, op.room.entrance)
 			opDue = time.Now().Add(debugRoomWarpTTL)
 		}
+		if op.T == debugOpWarp && op.W == "area" {
+			if err := g.prepareAreaWarp(&op); err != nil {
+				log.Printf("alttp: debug: %v\n", err)
+				continue
+			}
+			log.Printf("alttp: debug: warp to area $%02x at ($%03x, $%03x)\n", op.R, op.X, op.Y)
+			opDue = time.Now().Add(debugRoomWarpTTL)
+		}
+		if op.isMapWarp() {
+			// a new point picked on the map replaces the one Link is still on his way to:
+			kept := d.queue[:0]
+			for _, q := range d.queue {
+				if q.op.isMapWarp() {
+					log.Printf("alttp: debug: warp to %s $%03x replaced\n", q.op.W, q.op.R)
+					continue
+				}
+				kept = append(kept, q)
+			}
+			d.queue = kept
+		}
 		if len(d.queue) >= debugMaxOps {
 			log.Printf("alttp: debug: too many operations queued; dropped %s\n", op.T)
 			continue
@@ -233,6 +261,14 @@ func (op *debugOp) validate() error {
 			if op.R >= underworldmap.RoomCount || op.X >= underworldmap.RoomPixels || op.Y >= underworldmap.RoomPixels ||
 				op.X&7 != 0 || op.Y&7 != 0 || op.L > 1 {
 				return fmt.Errorf("warp: bad point ($%03x, $%03x) layer %d of room $%03x", op.X, op.Y, op.L, op.R)
+			}
+			return nil
+		}
+		if op.W == "area" {
+			if op.R >= underworldmap.AreaCount || underworldmap.AreaParent(uint8(op.R)) != uint8(op.R) ||
+				int(op.X) >= underworldmap.AreaSize(uint8(op.R)) || int(op.Y) >= underworldmap.AreaSize(uint8(op.R)) ||
+				op.X&7 != 0 || op.Y&7 != 0 {
+				return fmt.Errorf("warp: bad point ($%03x, $%03x) of area $%02x", op.X, op.Y, op.R)
 			}
 			return nil
 		}
@@ -280,13 +316,18 @@ func (g *Game) generateDebugAsm(a *asm.Emitter, newEmitter func() *asm.Emitter) 
 			// wait for Link to be on his feet in the overworld or the underworld (the menus also run updates):
 			break
 		}
-		if q.op.T == debugOpWarp && q.op.W == "room" && !q.sent.IsZero() {
+		if q.op.isMapWarp() && !q.sent.IsZero() {
 			if now.Sub(q.sent) < debugRoomWarpEvery {
 				// the routine sent last may not have run yet:
 				break
 			}
-			if g.debugRoomWarpDone(&q.op) {
+			if q.op.W == "room" && g.debugRoomWarpDone(&q.op) {
 				log.Printf("alttp: debug: warped to room $%03x\n", q.op.R)
+				n++
+				continue
+			}
+			if q.op.W == "area" && g.debugAreaWarpDone(&q.op) {
+				log.Printf("alttp: debug: warped to area $%02x\n", q.op.R)
 				n++
 				continue
 			}
@@ -312,8 +353,8 @@ func (g *Game) generateDebugAsm(a *asm.Emitter, newEmitter func() *asm.Emitter) 
 		a.Comment(fmt.Sprintf("debug %s:", q.op.T))
 		a.Append(ta)
 		updated = true
-		if q.op.T == debugOpWarp && q.op.W == "room" {
-			// stays queued until Link stands in the room:
+		if q.op.isMapWarp() {
+			// stays queued until Link stands at the point:
 			d.queue[n].sent = now
 			break
 		}
@@ -446,9 +487,12 @@ func (g *Game) emitDebugOp(a *asm.Emitter, op *debugOp, no int) {
 		}
 
 	case debugOpWarp:
-		if op.W == "room" {
+		switch op.W {
+		case "room":
 			g.emitDebugRoomWarp(a, op, lbl)
-		} else {
+		case "area":
+			g.emitDebugAreaWarp(a, op, lbl)
+		default:
 			g.emitDebugWarp(a, op, lbl)
 		}
 

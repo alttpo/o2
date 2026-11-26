@@ -33,6 +33,7 @@ type emu struct {
 	pcInit         uint32
 	pcLoadEntrance uint32
 	pcLoadRoom     uint32
+	pcLoadArea     uint32
 	// pcPeekEntrance runs only LoadUnderworldEntrance, to find the room an entrance starts in; 0 if the ROM doesn't
 	// call it where the vanilla game does:
 	pcPeekEntrance uint32
@@ -241,6 +242,20 @@ func (e *emu) emitRoutines() (err error) {
 		a.JSL(pcPeekBank02)
 		a.STP()
 	}
+
+	// load the overworld area of the state in $7EC140.. as Link leaves the cave in $A0 for it: module $08 to its end:
+	e.pcLoadArea = a.Label("loadArea")
+	a.SEP(0x30)
+	a.LDA_imm8_b(0x08)
+	a.STA_dp(0x10)
+	a.STZ_dp(0x11)
+	a.STZ_dp(0xB0)
+	a.Label("loadAreaNext")
+	a.JSL(r.runModule)
+	a.LDA_dp(0x10)
+	a.CMP_imm8_b(0x08)
+	a.BEQ("loadAreaNext")
+	a.BRA("updateVRAM")
 
 	// load and draw the room in $A0 with the graphics state of the entrance loaded before:
 	e.pcLoadRoom = a.Label("loadRoom")

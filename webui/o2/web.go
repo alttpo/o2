@@ -38,9 +38,12 @@ type WebServer struct {
 	// broadcast channel to all sockets:
 	q chan ViewModelUpdate
 
-	// the underworld map of the loaded ROM, which /rom/underworld/events last started or found:
+	// the underworld map of the loaded ROM, which /rom/underworld/events last started or found (underworldLock guards
+	// overworldStream too):
 	underworldLock   sync.Mutex
 	underworldStream *underworldmap.Stream
+	// the overworld's areas of the loaded ROM, which /rom/overworld/events last started or found:
+	overworldStream *underworldmap.OverworldStream
 }
 
 type Socket struct {
@@ -117,6 +120,10 @@ func NewWebServer(listenAddr string) *WebServer {
 	s.mux.Handle("/rom/underworld/events", http.HandlerFunc(s.serveUnderworldEvents))
 	s.mux.Handle("/rom/underworld/room.png", http.HandlerFunc(s.serveUnderworldRoomPNG))
 	s.mux.Handle("/rom/underworld/walk.json", http.HandlerFunc(s.serveUnderworldWalk))
+	// the overworld's areas, drawn at full size area by area the same way, for the debug page's warp to a point:
+	s.mux.Handle("/rom/overworld/events", http.HandlerFunc(s.serveOverworldEvents))
+	s.mux.Handle("/rom/overworld/area.png", http.HandlerFunc(s.serveOverworldAreaPNG))
+	s.mux.Handle("/rom/overworld/walk.json", http.HandlerFunc(s.serveOverworldWalk))
 	// the light world and dark world maps, drawn from the loaded ROM:
 	s.mux.Handle("/rom/lightworld.png", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.serveWorldMap(w, r, false)
@@ -438,6 +445,20 @@ func (s *WebServer) serveUnderworldEvents(w http.ResponseWriter, r *http.Request
 	s.underworldStream = stream
 	s.underworldLock.Unlock()
 
+	serveMapEvents(w, r, stream.ID, "room", func(from int) ([]int, bool, error, <-chan struct{}) {
+		rooms, done, err, changed := stream.Progress(from)
+		ids := make([]int, len(rooms))
+		for i, room := range rooms {
+			ids[i] = int(room)
+		}
+		return ids, done, err, changed
+	})
+}
+
+// serveMapEvents streams the progress of a map as server-sent events: "map" with its id, then an event named `item`
+// with each room's or area's number as it is drawn, then "done" or "failed".
+func serveMapEvents(w http.ResponseWriter, r *http.Request, id uint32, item string,
+	progress func(from int) (items []int, done bool, err error, changed <-chan struct{})) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
@@ -445,16 +466,16 @@ func (s *WebServer) serveUnderworldEvents(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = fmt.Fprintf(w, "event: map\ndata: %d\n\n", stream.ID)
+	_, _ = fmt.Fprintf(w, "event: map\ndata: %d\n\n", id)
 	flusher.Flush()
 
 	sent := 0
 	for {
-		rooms, done, err, changed := stream.Progress(sent)
-		for _, room := range rooms {
-			_, _ = fmt.Fprintf(w, "event: room\ndata: %d\n\n", room)
+		items, done, err, changed := progress(sent)
+		for _, n := range items {
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %d\n\n", item, n)
 		}
-		sent += len(rooms)
+		sent += len(items)
 		if done {
 			if err != nil {
 				_, _ = fmt.Fprintf(w, "event: failed\ndata: %s\n\n", strings.ReplaceAll(err.Error(), "\n", " "))
@@ -539,6 +560,82 @@ func (s *WebServer) serveUnderworldWalk(w http.ResponseWriter, r *http.Request) 
 	// small, and what it says changes more often than the images do:
 	w.Header().Set("Cache-Control", "no-cache")
 	_ = json.NewEncoder(w).Encode(&u)
+}
+
+// serveOverworldEvents streams the overworld's areas of the loaded ROM as serveUnderworldEvents does its rooms, with
+// "area" events.
+func (s *WebServer) serveOverworldEvents(w http.ResponseWriter, r *http.Request) {
+	rom, ok := s.unpatchedROM(w, r)
+	if !ok {
+		return
+	}
+	stream := underworldmap.SharedOverworld(rom)
+	s.underworldLock.Lock()
+	s.overworldStream = stream
+	s.underworldLock.Unlock()
+
+	serveMapEvents(w, r, stream.ID, "area", func(from int) ([]int, bool, error, <-chan struct{}) {
+		areas, done, err, changed := stream.Progress(from)
+		ids := make([]int, len(areas))
+		for i, a := range areas {
+			ids[i] = int(a)
+		}
+		return ids, done, err, changed
+	})
+}
+
+// overworldArea returns the area of ?area= of the overworld whose id is in ?id=, or writes an error response.
+func (s *WebServer) overworldArea(w http.ResponseWriter, r *http.Request) (*underworldmap.StreamArea, bool) {
+	q := r.URL.Query()
+	id, err1 := strconv.ParseUint(q.Get("id"), 10, 32)
+	area, err2 := strconv.ParseUint(q.Get("area"), 10, 8)
+	if err1 != nil || err2 != nil {
+		http.Error(w, "id and area are required", http.StatusBadRequest)
+		return nil, false
+	}
+	s.underworldLock.Lock()
+	stream := s.overworldStream
+	s.underworldLock.Unlock()
+	if stream == nil || uint64(stream.ID) != id {
+		http.Error(w, "no such map", http.StatusNotFound)
+		return nil, false
+	}
+	sa := stream.Area(uint8(area))
+	if sa == nil {
+		http.Error(w, "no such area", http.StatusNotFound)
+		return nil, false
+	}
+	return sa, true
+}
+
+// serveOverworldAreaPNG serves the image of an area at full size.
+func (s *WebServer) serveOverworldAreaPNG(w http.ResponseWriter, r *http.Request) {
+	sa, ok := s.overworldArea(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "max-age=86400")
+	_, _ = w.Write(sa.PNG)
+}
+
+// overworldWalk is where Link can be in an area; see underworldmap.AreaWalk.
+type overworldWalk struct {
+	Area uint8 `json:"area"`
+	// Size is the area's size in pixels; Cells has (Size/8)^2 cells, row by row:
+	Size  int    `json:"size"`
+	Cells []byte `json:"cells"`
+}
+
+// serveOverworldWalk serves where Link can be in an area.
+func (s *WebServer) serveOverworldWalk(w http.ResponseWriter, r *http.Request) {
+	sa, ok := s.overworldArea(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	_ = json.NewEncoder(w).Encode(&overworldWalk{Area: sa.Area.Area, Size: sa.Size, Cells: sa.Walk.Cells})
 }
 
 // unpatchedROM gets the contents of the loaded ROM before o2 patched it, or writes an error response if there is none.

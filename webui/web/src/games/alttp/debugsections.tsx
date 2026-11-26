@@ -473,7 +473,7 @@ interface WarpProps extends Common {
 }
 
 // Warp sends Link through a place's door, into the underworld at its entrance or out onto the overworld at its exit,
-// or to the point of an underworld room picked on the map.
+// or to the point of an underworld room or an overworld area picked on the map.
 function Warp({send, ready, warpTarget, setWarpTarget}: WarpProps) {
     // the group and the index of the place chosen:
     const [chosen, setChosen] = useState("0:0");
@@ -504,13 +504,14 @@ function Warp({send, ready, warpTarget, setWarpTarget}: WarpProps) {
                 </button>
             </div>
             <div class="dbg-row">
-                <span class="dbg-sub" title="Pick a point of an underworld room on the map below; Escape or a right click on the map clears it">
-                    {warpTarget ? "Map point: " + targetText(warpTarget) : "Map point: pick one in an underworld room on the map (double-click to warp there)"}
+                <span class="dbg-sub" title="Pick a point of an underworld room or an overworld area on the map below; Escape or a right click on the map clears it">
+                    {warpTarget ? "Map point: " + targetText(warpTarget) : "Map point: pick one in an underworld room or an overworld area on the map (double-click to warp there)"}
                 </span>
             </div>
             <div class="dbg-row">
                 <button type="button" disabled={!ready || !warpTarget}
-                        title="Enter the room's dungeon if Link isn't in it, then drop into the room at the point"
+                        title={warpTarget?.kind === "area" ? "Leave for the area as from a cave, at the point"
+                            : "Enter the room's dungeon if Link isn't in it, then drop into the room at the point"}
                         onClick={() => warpTarget && send(warpOp(warpTarget))}>
                     Warp to map point
                 </button>

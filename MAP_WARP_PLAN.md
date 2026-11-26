@@ -7,7 +7,8 @@ sends Link there, moved to the nearest spot he can stand on and walk away from.
 ## Status
 
 - **Underworld: implemented** (steps 1–4 below). See "As built" for where it differs from the original plan.
-- **Overworld: not started** (steps 5–6).
+- **Overworld: implemented** (steps 5–6); first emulator test found the two bugs at the end of "As built (overworld)",
+  since fixed. See "As built (overworld)".
 
 ## What existed before
 
@@ -277,6 +278,57 @@ choice.
   carries as `palace`), its number and its name (`roomnames.ts`, from ZScream's room names).
 - Verified in an emulator by the user: a warp to the HC entrance room worked. That test found the off-center camera
   and the Sanctuary-first entrance, both fixed since.
+
+## As built (overworld)
+
+- No shared `romemu` package: the overworld is drawn by the underworld map's emulator, in the same package
+  (`underworldmap/overworld.go`, `overworldwalk.go`, `overworldstream.go`).
+- The generator loads each area **the way the warp does**: it writes the cached overworld state
+  ($7EC140.., `AreaPlacement.CacheWords`), sets $A0 = $0100 and runs the game's module $08 until it ends. So the
+  generator runs the warp's way into all 80 areas on the real game code. `TestGenerateOverworld` checks that the
+  game puts Link, the scroll, the camera triggers, $84 and the counters exactly where the placement asked, in every
+  area, on the US, JP and VT ROMs.
+- Room $0100 rather than ≥ $0124: `LoadCachedEntranceProperties` takes $10 off Link's Y for rooms below $0124 (the
+  cache gets Y + $10), and `PreOverworld_LoadProperties` picks the music by `dungeon_room_index`'s low byte, which is
+  only the overworld's song for $00 (or $E1). $0696 and $0698 are 0 (no door opening).
+- The cache's other words are overwritten after it is read (the camera's bounds by `SetOverworldCameraBoundaries`,
+  $0AA1..$0AA4 by `LoadGraphicsAndScreenSize`, TM/TS by `Overworld_LoadOverlays2`), so only the area, Link, the
+  scroll, the camera triggers, $84 and the four counters matter. The warp keeps $0AA0..$0AA3 as they are.
+- **The exit table isn't an exact oracle.** Its scroll isn't a function of Link's position (hand-placed), and its
+  camera triggers ($6D or $6F below the scroll, $75..$8D right of it) and map16 rows vary between exits. What holds
+  for most exits: the counters are (−scroll) mod 16 and $84's row/column is (scroll + counter) / 16, i.e. the next
+  map16 boundary up/left. `PlaceInArea` uses that, with the scroll centering Link (X − $76, Y − $60, clamped to the
+  area: $100/$300 wide, $11E/$31E tall) and the triggers at scroll + $7F / + $6D, which is where
+  `Overworld_OperateCameraScroll` follows Link from the first step. `TestPlaceInAreaExits` checks the invariant on
+  the exits that have it. Being off by a row would only shift the 32×32 map16 window in VRAM, which has 6–8 rows and
+  7 columns of margin around the screen.
+- Images: the area's map16 ($7E2000) → map8 (`Map16Definitions`) drawn with the VRAM the module loaded and the
+  palette at $7EC300. Only BG2 (no canopy/fog overlay of BG1), and the base state of a new save file (progress 2).
+- Walk cells: one byte per 8×8 cell (64×64 or 128×128), the same flags as rooms, one layer. Attributes from
+  `GetOverworldTileType` (map16 → map8 → `OverworldTileTypes`, the tables found by that routine's code). Classes
+  from `TileDetect_ExecuteInner` outdoors (thick grass, shallow water, diggable ground are floor; deep water, holes,
+  spikes/cactus and the entrance tiles $8E/$8F are hazards Link isn't walked onto). Reachability floods from the area's
+  edges and from below each exit-table position (the houses' and Hyrule Castle's exits put Link inside a closed door
+  frame he walks down out of). Ledges are walked both ways. Hyrule Castle's inner moat is attribute $00, so it counts
+  as floor.
+- Endpoints `/rom/overworld/events` (event `area`), `/rom/overworld/area.png?id&area` (full size only),
+  `/rom/overworld/walk.json?id&area` → `{area, size, cells}`. The page starts the overworld stream only in debug
+  mode, and keeps the Mode 7 overview as the background: the area images are only shown in the lens.
+- The op is `{t:"warp", w:"area", r: parent area, x, y}` (the area's pixels). `prepareAreaWarp` rejects
+  unstandable points; `emitDebugAreaWarp` writes the cache and goes through `emitWarpDoor` with room $0100 and the
+  area's world. It stays queued until Link stands at the point in module $09 (`debugAreaWarpDone`).
+- Area names aren't shown (just "Light World $1B").
+- After the iris opens, module $09 walks Link down out of the cave's door (submodule $0A: 16 + 3 px), so the cache's
+  Y is the point's − 19 (`ExitWalkDown`). Without it Link ended below the point, the warp never saw him there, and
+  re-sent it (the iris loop of the first emulator test).
+- From the overworld, the iris's first step (`Dungeon_PrepExitWithSpotlight`) copies Link's Y into $7EC148
+  (`link_y_coord_exit`), which undid the warp's Y: Link landed at his old Y with the screen at the new point, and
+  the iris opened slowly around him. The warp sets $1B = 1 for the iris (as from a cave; `LoadOverworldFromUnderworld`
+  clears it) and the black fixed color ($9C..$9E) the iris sets only outdoors. `TestAreaWarpInGame` runs the real
+  game through the iris and the walk out, from a fresh state and from the overworld, and checks Link, the scroll and
+  that $84 stays in step with the scroll (it also does as Link walks: the game's own $84 is always
+  (scroll + counter) / 16).
+- A new map warp replaces any map warp still queued (two double-clicks queued two).
 
 ## 4. Tests
 

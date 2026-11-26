@@ -1,12 +1,22 @@
 // The world map: the light world, dark world or underworld map of the loaded ROM, with lines between its areas or
 // rooms, the areas and rooms the players are in outlined, the area and room numbers around it, and a dot for each
 // player. A port of alttpo's WorldMapWindow. The underworld's rooms show up one by one as the backend draws them, and
-// in debug mode a point of a room can be picked to warp Link to, or double-clicked to warp him there (see
-// alttp/warpmap.tsx).
+// in debug mode a point of a room or of an overworld area can be picked to warp Link to, or double-clicked to warp him
+// there (see alttp/warpmap.tsx).
 import {useEffect, useRef, useState} from "preact/hooks";
 import {Fragment} from "preact";
 import {ViewModel} from "../viewmodel";
-import {roomImageURL, useUnderworldStream, WarpLens, WarpTarget} from "./alttp/warpmap";
+import {
+    areaPixels,
+    owBlock,
+    Place,
+    roomImageURL,
+    targetPlace,
+    useOverworldStream,
+    useUnderworldStream,
+    WarpLens,
+    WarpTarget
+} from "./alttp/warpmap";
 
 // a player's position, from the "game/positions" view model:
 export interface PlayerPosition {
@@ -84,30 +94,6 @@ function geometryFor(screen: Screen): Geometry {
         y0: owSprTop / 16 - owTop,
         cell: 512 / 16,
     };
-}
-
-// which screens of the overworld are part of a large area, which is 2x2 screens as one; from the table
-// OverworldScreenSizeFlag in bank $02. The light world and the dark world are laid out the same:
-const owLarge = [
-    1, 1, 0, 1, 1, 1, 1, 0,
-    1, 1, 0, 1, 1, 1, 1, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    1, 1, 0, 1, 1, 0, 1, 1,
-    1, 1, 0, 1, 1, 0, 1, 1,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    1, 1, 0, 0, 0, 1, 1, 0,
-    1, 1, 0, 0, 0, 1, 1, 0,
-];
-
-// owBlock is the same for all the screens of one area: a small area is its own screen and a large area is its top
-// left screen; large areas are in pairs of rows 0-1, 3-4 and 6-7 and in pairs of columns within each run of columns:
-function owBlock(r: number, c: number): number {
-    if (owLarge[r * 8 + c] === 0) return r * 8 + c;
-    const top = Math.floor(r / 3) * 3;
-    let start = c;
-    while (start > 0 && owLarge[r * 8 + start - 1] !== 0) start--;
-    const left = start + ((c - start) & ~1);
-    return top * 8 + left;
 }
 
 function hex(value: number, digits: number): string {
@@ -337,9 +323,14 @@ export interface WorldMapProps {
     warp: (t: WarpTarget) => void;
 }
 
-// the room and point of the room under the cursor, and where the lens goes:
+// owOrigin is where an overworld area starts in the overworld's coordinates, the same in both worlds:
+function owOrigin(area: number): [number, number] {
+    return [(area & 7) * areaPixels, ((area >> 3) & 7) * areaPixels];
+}
+
+// the room or area and point of it under the cursor, and where the lens goes:
 interface Hover {
-    room: number;
+    place: Place;
     px: number;
     py: number;
     left: number;
@@ -372,12 +363,15 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
     ];
     useEffect(() => setFailed({}), [romKey]);
     const uw = useUnderworldStream(romKey);
+    // the overworld's areas at full size, for picking a point of one in debug mode:
+    const ow = useOverworldStream(debug ? romKey : "");
+    const stream = screen === Screen.Underworld ? uw : ow;
 
     // picking a warp target in debug mode:
     const frame = useRef<HTMLDivElement>(null);
     const [hover, setHover] = useState<Hover | null>(null);
     const snapped = useRef<WarpTarget | null>(null);
-    const picking = debug && screen === Screen.Underworld && uw.id !== 0;
+    const picking = debug && stream.id !== 0;
     useEffect(() => {
         if (!picking) setHover(null);
     }, [picking]);
@@ -394,21 +388,46 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
         const el = frame.current;
         if (!picking || !el) return;
         const rect = el.getBoundingClientRect();
-        const mx = (e.clientX - rect.left) / rect.width * uwWidth;
-        const my = (e.clientY - rect.top) / rect.height * uwHeight;
-        const c = Math.floor(mx / uwRoom);
-        const r = Math.floor(my / uwRoom);
-        const room = r * uwCols + c;
-        if (!uwHasRoom(r, c) || !uw.rooms.has(room)) {
+        const g = geometryFor(screen);
+        const mx = (e.clientX - rect.left) / rect.width * g.width;
+        const my = (e.clientY - rect.top) / rect.height * g.height;
+        let place: Place, px: number, py: number;
+        if (screen === Screen.Underworld) {
+            const c = Math.floor(mx / uwRoom);
+            const r = Math.floor(my / uwRoom);
+            place = {kind: "room", id: r * uwCols + c};
+            if (!uwHasRoom(r, c)) {
+                setHover(null);
+                return;
+            }
+            px = mx - c * uwRoom;
+            py = my - r * uwRoom;
+        } else {
+            // the inverse of mapCoord, in the overworld's coordinates:
+            const wx = (mx + owLeft) * 16 - owSprLeft;
+            const wy = (my + owTop) * 16 - owSprTop;
+            const c = Math.floor(wx / areaPixels);
+            const r = Math.floor(wy / areaPixels);
+            if (c < 0 || c > 7 || r < 0 || r > 7) {
+                setHover(null);
+                return;
+            }
+            const area = owBlock(r, c) | (screen === Screen.DarkWorld ? 0x40 : 0);
+            const [ox, oy] = owOrigin(area);
+            place = {kind: "area", id: area};
+            px = wx - ox;
+            py = wy - oy;
+        }
+        if (!stream.items.has(place.id)) {
             setHover(null);
             return;
         }
         const left = e.clientX - rect.left;
         const top = e.clientY - rect.top;
         setHover({
-            room,
-            px: mx - c * uwRoom,
-            py: my - r * uwRoom,
+            place,
+            px,
+            py,
             left,
             top,
             flipX: left > rect.width / 2,
@@ -417,7 +436,9 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
     };
     // the point under the cursor, if Link can be placed there:
     const pointed = (): WarpTarget | null => {
-        if (!picking || !hover || !snapped.current || snapped.current.room !== hover.room) return null;
+        if (!picking || !hover || !snapped.current) return null;
+        const p = targetPlace(snapped.current);
+        if (p.kind !== hover.place.kind || p.id !== hover.place.id) return null;
         return snapped.current;
     };
     const onClick = () => {
@@ -515,7 +536,7 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
                     ))}
                     <div class="world-map-rooms"
                          style={`display: ${screen === Screen.Underworld ? "block" : "none"}; filter: ${underworldFilter}`}>
-                        {uw.id !== 0 && Array.from(uw.rooms).map(room => (
+                        {uw.id !== 0 && Array.from(uw.items).map(room => (
                             <img key={uw.id + ":" + room}
                                  src={roomImageURL(uw.id, room, false)}
                                  alt=""
@@ -528,7 +549,11 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
                     {screen === Screen.Underworld && uw.error &&
                         <div class="world-map-empty">The map could not be drawn from this ROM: {uw.error}</div>}
                     {screen === Screen.Underworld && !uw.done &&
-                        <div class="world-map-progress">Drawing the rooms… {uw.rooms.size}</div>}
+                        <div class="world-map-progress">Drawing the rooms… {uw.items.size}</div>}
+                    {screen !== Screen.Underworld && debug && ow.error &&
+                        <div class="world-map-progress">The areas could not be drawn from this ROM: {ow.error}</div>}
+                    {screen !== Screen.Underworld && debug && romKey && !ow.done &&
+                        <div class="world-map-progress">Drawing the areas… {ow.items.size}</div>}
                     <svg viewBox={`0 0 ${g.width} ${g.height}`} preserveAspectRatio="none">
                         <path d={gridPath(screen, g)} stroke={gridColor} stroke-width={1} fill="none"
                               vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
@@ -538,7 +563,7 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
                                   stroke={highlightColor} stroke-width={1} fill="none"
                                   vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
                         ))}
-                        {debug && screen === Screen.Underworld && target && (() => {
+                        {debug && target && target.kind === "room" && screen === Screen.Underworld && (() => {
                             // the warp target: where Link's feet will be, and a ring around it to find it:
                             const x = (target.room % uwCols) * uwRoom + target.x;
                             const y = Math.floor(target.room / uwCols) * uwRoom + target.y;
@@ -548,6 +573,18 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
                                 <rect x={x} y={y + 8} width={16} height={16} fill="rgb(0, 255, 0)"/>
                             </g>;
                         })()}
+                        {debug && target && target.kind === "area" &&
+                            screen === ((target.area & 0x40) ? Screen.DarkWorld : Screen.LightWorld) && (() => {
+                                // the same in the overworld map's units, 16 pixels each:
+                                const [ox, oy] = owOrigin(target.area);
+                                const x = (ox + target.x + owSprLeft) / 16 - owLeft;
+                                const y = (oy + target.y + owSprTop) / 16 - owTop;
+                                return <g class="world-map-target">
+                                    <circle cx={x + 0.5} cy={y + 1} r={4} fill="none" stroke="rgb(0, 255, 0)"
+                                            stroke-width={2} vector-effect="non-scaling-stroke"/>
+                                    <rect x={x} y={y + 0.5} width={1} height={1} fill="rgb(0, 255, 0)"/>
+                                </g>;
+                            })()}
                     </svg>
                     {axisTop.map(a => (<Fragment key={"c" + a.text}>
                         <div class="world-map-axis world-map-axis-top" style={`left: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
@@ -557,7 +594,7 @@ export function WorldMap({vm, debug, target, setTarget, warp}: WorldMapProps) {
                         <div class="world-map-axis world-map-axis-left" style={`top: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
                         <div class="world-map-axis world-map-axis-right" style={`top: ${a.at}%; color: ${axisColor}`}>{a.text}</div>
                     </Fragment>))}
-                    {picking && hover && <WarpLens mapId={uw.id} room={hover.room} px={hover.px} py={hover.py}
+                    {picking && hover && <WarpLens mapId={stream.id} place={hover.place} px={hover.px} py={hover.py}
                                                    left={hover.left} top={hover.top}
                                                    flipX={hover.flipX} flipY={hover.flipY}
                                                    onSnap={t => {
